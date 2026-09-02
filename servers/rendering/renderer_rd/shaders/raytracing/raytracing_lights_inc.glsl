@@ -165,12 +165,12 @@ float lights_get_specular_multiplier(float specular_amount, float roughness) {
 
 /// Inline alpha test for ray query candidates. Returns true if the hit is opaque (alpha >= 0.5).
 /// Mirrors the any-hit shader logic for use with inline ray queries.
-bool ray_query_alpha_test(uint geometry_idx, uint primitive_id, vec2 candidate_bary) {
+bool ray_query_alpha_test(uint geometry_idx, uint primitive_id, int cluster_id, vec2 candidate_bary) {
 	vec3 bary = vec3(1.0 - candidate_bary.x - candidate_bary.y, candidate_bary.x, candidate_bary.y);
 
 	GeometryData geom = geometries[geometry_idx];
 	uint i0, i1, i2;
-	get_triangle_indices_ex(geom, primitive_id, i0, i1, i2);
+	get_triangle_indices_ex(geom, cluster_resolve_primitive_id(geom, cluster_id, primitive_id), i0, i1, i2);
 	vec2 uv = fetch_uv(geom, i0, i1, i2, bary);
 
 	MaterialData mat = materials[geometry_idx];

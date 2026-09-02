@@ -1,6 +1,8 @@
 // Shared utilities for hit shaders (closest_hit, any_hit)
 // Requires: GL_EXT_buffer_reference, GL_ARB_gpu_shader_int64, oct_inc.glsl, raytracing_inc.glsl
 
+#extension GL_NV_cluster_acceleration_structure : require
+
 #include "raytracing_data_inc.glsl"
 
 // ============================================================================
@@ -60,9 +62,23 @@ void get_triangle_indices_ex(in GeometryData geom, uint primitive_id, out uint i
 	}
 }
 
+uint cluster_resolve_primitive_id(in GeometryData geom, int cluster_id, uint primitive_id) {
+	// Deformed and procedural geometry stays on a monolithic BLAS and shares this path,
+	// where the cluster id carries no meaning and the primitive index is already global.
+	if ((geom.flags & FLAG_CLUSTERED) == 0u) {
+		return primitive_id;
+	}
+	uint64_t remap_address = packUint2x32(uvec2(geom.cluster_remap_address_lo, geom.cluster_remap_address_hi));
+	if (remap_address == 0ul || cluster_id < 0 || uint(cluster_id) >= geom.cluster_count) {
+		return 0u;
+	}
+	Uint32Buffer remap = Uint32Buffer(remap_address);
+	return remap.v[uint(cluster_id)] + primitive_id;
+}
+
 /// Convenience wrapper using gl_PrimitiveID (hit shaders only).
 void get_triangle_indices(in GeometryData geom, out uint i0, out uint i1, out uint i2) {
-	get_triangle_indices_ex(geom, gl_PrimitiveID, i0, i1, i2);
+	get_triangle_indices_ex(geom, cluster_resolve_primitive_id(geom, gl_ClusterIDNV, uint(gl_PrimitiveID)), i0, i1, i2);
 }
 
 // ============================================================================

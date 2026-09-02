@@ -506,6 +506,7 @@ void shade_and_bounce(HitData h, MaterialResult m) {
 					if (ray_query_alpha_test(
 								rayQueryGetIntersectionInstanceCustomIndexEXT(spec_rq, false),
 								rayQueryGetIntersectionPrimitiveIndexEXT(spec_rq, false),
+								rayQueryGetIntersectionClusterIdNV(spec_rq, false),
 								rayQueryGetIntersectionBarycentricsEXT(spec_rq, false))) {
 						rayQueryConfirmIntersectionEXT(spec_rq);
 					}
