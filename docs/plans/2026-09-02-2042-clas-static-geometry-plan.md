@@ -519,16 +519,27 @@ objaw wyglądający jak błąd shadera, diagnozowany godzinami.
    `bin/godot.windows.editor.x86_64.exe --headless --test` — Krok 7.
 4. `... --headless --path rt_test_scenes --import` — re-import Sponzy; w logu liczba
    klastrów per powierzchnia.
-5. `... -e --path rt_test_scenes res://sponza_pt.tscn` — Sponza w path tracingu.
+5. **Pierwszy przebieg MUSI iść pod warstwami walidacyjnymi Vulkana** (`dev_build=yes`
+   plus włączone warstwy). Powód jest konkretny: `indexBufferStride = 0` w rekordzie
+   klastra to wartość, której **nie da się ustalić z tego drzewa** — `vulkan_core.h`
+   nie niesie semantyki pola, a w repo nie ma `vk.xml`. Jeśli 0 nie jest sentinelem
+   „ciasno upakowane", geometria wewnątrz klastrów wyjdzie pomieszana **bez żadnego
+   komunikatu**. Warstwa walidacyjna łapie to za darmo; bez niej to godziny diagnozy.
+   Objaw do rozpoznania: rozmieszczenie samych klastrów poprawne, trójkąty w środku nie.
+   Pierwsza stała do zmiany w takim wypadku: `indexBufferStride = 1`.
+
+6. `... -e --path rt_test_scenes res://sponza_pt.tscn` — Sponza w path tracingu.
    **Kryterium: obraz nieodróżnialny od tego sprzed zmiany.** Cała geometria przeszła
    na cluster BLAS, więc identyczny obraz dowodzi poprawności remapu `primitiveID`;
    błąd objawia się pomieszanymi UV, normalnymi albo materiałami, a pomyłka
    w `aabb_transform` (Krok 4) — złą skalą i pozycją całych meshy.
    **Scena jest zdatna:** wyłącznie `Node3D`, `WorldEnvironment`, `DirectionalLight3D`,
    `Camera3D` i instancja glTF; zero `PrimitiveMesh` i zero meshy budowanych w runtime.
-6. `F1` cykluje `pathtracing_debug_mode`; tryb 23 pokazuje łaty rzędu 128 trójkątów.
-   Jednolity kolor = jeden klaster = generacja nie zadziałała.
-7. PIX/Nsight: czas budowy AS i pamięć AS przed i po. Oczekiwane: mniej pamięci,
+7. `F1` cykluje `pathtracing_debug_mode`; tryb 23 pokazuje łaty rzędu 128 trójkątów.
+   Jednolity kolor = jeden klaster = generacja nie zadziałała. Czarń = powierzchnia
+   nieklastrowa (`gl_ClusterIDNoneNV`), czyli deformowana albo proceduralna — w tej
+   scenie nie powinno jej być.
+8. PIX/Nsight: czas budowy AS i pamięć AS przed i po. Oczekiwane: mniej pamięci,
    czas trace'u bez zmian lub minimalnie gorszy. **To nie jest optymalizacja czasu
    klatki** i nie należy jej tak mierzyć.
 
