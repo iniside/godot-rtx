@@ -163,13 +163,12 @@ i `render_raytracing.*` są **fork-local** (nie istniały w upstream w merge bas
 `6b1004bbeb`). `rendering_device.*` i sterownik Vulkan są natomiast **patchowanym
 upstreamem** — każda linia tam to trwała powierzchnia konfliktów przy merge'u.
 
-### Luka w researchu
+### Luka w researchu — DOMKNIĘTA, patrz §8
 
-Agent od lifecycle'u nie dostarczył pełnego przebiegu sterowania
-`render_raytracing.cpp` (tworzenie/przebudowa BLAS per powierzchnia, dirty tracking,
-skinning/blendshape, merge multimesh, cząsteczki) ani szczegółów implementacji
-sterownika Vulkan (flagi budowania, strategia scratcha, bariery). **To trzeba
-domknąć przed pisaniem planu Etapu 2/4.**
+Pierwszy przebieg nie dostarczył przebiegu sterowania `render_raytracing.cpp`
+(tworzenie/przebudowa BLAS per powierzchnia, dirty tracking, skinning/blendshape,
+merge multimesh, cząsteczki) ani szczegółów implementacji sterownika Vulkan
+(flagi budowania, strategia scratcha, bariery). **Uzupełnione w §8.**
 
 ---
 
@@ -402,3 +401,156 @@ Trzy rzeczy przestawiają wcześniejszy szkic etapów:
 - **D3D12 wypada z zakresu** — nie ma czego rozszerzać.
 
 Plan implementacyjny powstaje osobno, zgodnie z Plan Writing Workflow.
+
+---
+
+## 8. Domknięcie luki — lifecycle RT i warstwy RD/Vulkan
+
+Uzupełnienie luki zgłoszonej w §2. Dwa osobne przebiegi read-only, każdy z regułą
+„cytowana linia musi być otwarta i przeczytana".
+
+### 8.1 Przebieg per-frame
+
+Wołane z `render_forward_clustered.cpp`: `build_tlas` (`:2170`) →
+`update_uniform_set` (`:2172`), później `register_raytracing_buffer_dependencies`
+(`:2562`) wewnątrz `raytracing_list_begin/end`, na końcu `copy_output_texture` (`:2584`).
+
+`build_tlas` (`render_raytracing.cpp:2179-2714`) w kolejności:
+
+1. `prepare_frame()` (`:2189`, def. `:433-531`) — czyści tablice scratch,
+   TTL-eviction cache'ów deformowanych i merged-MM, drenaż asynchronicznych kompilacji
+   hit-group, `bindless_block` begin-frame.
+2. `ensure_pipeline_bundle()` (`:2193`).
+3. **Faza 1** (`:2210-2572`) — iteracja `rt_instances`. Proceduralne (`:2245-2313`)
+   i zwykłe powierzchnie (`:2420-2571`) trafiają od razu do tablic scratch;
+   MultiMesh (`:2318-2418`) tylko rozgrzewa cache i odkłada pracę do
+   `pending_mm_surfaces`.
+4. **Faza 2** (`:2574-2688`) — `compute_list_begin()` (`:2577`),
+   `_build_merged_mm_blas` per odłożona powierzchnia; przy niepowodzeniu fallback
+   na „expanded" (jedna instancja TLAS na instancję MM, wspólny BLAS) (`:2623-2671`).
+   `finalize_custom_shaders()` (`:2705`), `compute_list_end()` (`:2708`).
+5. `build_acceleration_structures()` (`:2710`, def. `:1689-1730`) — buduje/aktualizuje
+   zabrudzone BLAS-y, potem TLAS.
+6. `finalize_buffers()` (`:2711`, def. `:1732-1760`).
+
+**Barier w tym pliku nie ma.** `register_raytracing_buffer_dependencies`
+(`:3219-3264`) deklaruje bufory adresowane przez BDA do render grafu, a ten wstawia
+bariery przed `raytracing_list_trace_rays`. Statyczne VB/AB/IB są z tego wyłączone
+(komentarz `:3226-3227`) — jednorazowy upload przez transfer worker.
+
+### 8.2 Cache'e BLAS
+
+| Rodzaj | Klucz / miejsce | Trigger przebudowy | Zwolnienie |
+|---|---|---|---|
+| statyczna powierzchnia | `(mesh_rid.local_index<<8) \| (surface & 0xFF)` (`:559`), `surface_chunks` po 256 wpisów (`:356-373`) | `!ptr \|\| cached_rid_version != mesh_version \|\| cached_counter != invalidation_counter` (`:566-568`) | brak w `cleanup_caches()` — liczy na kaskadowe free RD przy zwolnieniu VB (komentarz `:239-240`) |
+| deformowana (`FLAG_DEFORMED`) | `RID_Owner deformed_pool`, uchwyt na powierzchni (`:407-417`) | pełna przebudowa przy zmianie layoutu/wersji/countera (`:658-660`); sam `data_changed` → refit (`:732-734`) | TTL w `prepare_frame` (`:456-484`) + `cleanup_caches` (`:257-282`) |
+| MultiMesh merged | `RID_Owner merged_mm_pool` + `mm_handles` (`:419-427`) | `structure_changed` → free+rebuild (`:1857-1871`); `transforms_changed` (z `multimesh_get_last_change`) → re-bake (`:1966-2120`) | TTL `prepare_frame` (`:486-516`), detekcja recyklingu RID (`:1801-1835`), `cleanup_caches` (`:284-310`) |
+| proceduralna (AABB) | stan w `RTProceduralState` na instancji (`render_raytracing.h:179-189`) | flaga `dirty`, ustawiana poza tym plikiem | **ścieżka free nieznaleziona w tym pliku** |
+| cząsteczki | **nie istnieje** — plik przeczytany w całości, zero kodu | — | — |
+
+`rt_invalidation_counter` (`mesh_storage.h:144`) dostaje świeżą wartość przy tworzeniu
+powierzchni (`mesh_storage.cpp:373-375`) i jest inkrementowany w
+`mesh_surface_update_*_region` (`mesh_storage.cpp:592`, `608`, `624`, `640`).
+
+**Co leci bezwarunkowo co klatkę:** `tlas_build` (`:1729`), upload czterech SSBO
+w `finalize_buffers` (bez sprawdzania zmian), oraz `params_buffer`/`light_buffer`
+w `update_uniform_set` (`:3053`, `:3060`). Zawartość BLAS-ów — nie.
+
+### 8.3 Bufor instancji TLAS
+
+`build_acceleration_structures:1719-1726`:
+
+```cpp
+inst.id = i;
+inst.transform = blas_transforms[i];
+inst.blas = blass[i];
+inst.flags = BitField<...>(instance_flags[i]);
+inst.mask = (i < instance_masks.size()) ? instance_masks[i] : 0xFF;
+uint32_t sbt_off = (i < sbt_offsets.size()) ? sbt_offsets[i] : 0;
+inst.hit_sbt_range = RD::HitShaderBindingTableRange((1ULL << 32) | uint64_t(sbt_off));
+```
+
+`inst.id = i` — czyli `gl_InstanceCustomIndexEXT` to numer w pętli. Wszystkie tablice
+(`blass`, `geometry_data`, `material_data`, `sbt_offsets`, `motion_indices`) są
+pushowane w tych samych iteracjach, więc `i` zgrywa się 1:1 przez `geometries[]`,
+`materials[]` i SBT. **To jest cały mechanizm adresowania — i to on musi się zmienić
+przy CLAS.**
+
+`inst.mask` to zawsze `0xFF` (`:2311`, `:2568`, `:2598`, `:2670`) — maskowanie
+promieni nie jest dziś używane. TLAS rośnie z podwajaniem, nigdy się nie kurczy
+(`:1706-1714`).
+
+### 8.4 Warstwa RD
+
+`blas_create` / `tlas_create` (`rendering_device.cpp:308`, `:474`) **nie idą przez
+render graf** — alokują od razu i zwracają RID. `blas_build` / `blas_update` /
+`tlas_build` (`:496`, `:517`, `:538`) **idą** — `draw_graph.add_blas_build` (`:509`),
+`add_blas_update` (`:530`), `add_tlas_build` (`:646`), z guardami
+`ERR_RENDER_THREAD_GUARD_V` i zakazem wywołania przy aktywnej liście draw/compute/RT.
+
+Bufor instancji jest zarządzany na poziomie RD, nie sterownika (`:538-651`):
+per-TLAS `LocalVector<InstanceBuffer>`, ring-buforowany per klatka, trwale
+zmapowany write-combined (`MEMORY_ALLOCATION_TYPE_CPU`). Instancje są składane
+w cieniu CPU i wrzucane jednym `memcpy` — komentarz w kodzie tłumaczy dlaczego:
+rozproszone zapisy do WC są o rzędy wielkości wolniejsze.
+
+Deferred free jest oparty na klatkach: `free(RID)` (`:7849-7858`) wrzuca strukturę
+na `frames[frame].acceleration_structures_to_dispose_of`, realne zwolnienie
+w `:8065-8092`.
+
+### 8.5 Sterownik Vulkan
+
+- **Flagi budowania idą surowo od wołającego** — `build_info.flags = p_flags`
+  (`rendering_device_driver_vulkan.cpp:6515`, `:6557`), bity RDD są statycznie
+  asertowane jako identyczne z `VkBuildAccelerationStructureFlagBitsKHR` (`:6441`).
+  Rozmiary z `vkGetAccelerationStructureBuildSizesKHR` (`:6520`).
+- **Scratch jest per-AS, własność RD**, nie pula i nie per-frame
+  (`_acceleration_structure_create:6605-6613`): `MAX(buildScratchSize,
+  updateScratchSize)` gdy `ALLOW_UPDATE`, plus zapas na wyrównanie. RD tworzy go
+  leniwie (`rendering_device.cpp:256-281`), przy za małym wrzuca stary na listę
+  utylizacji klatki.
+- **Buildy nie są batchowane** — `command_build_blas` (`:6662-6678`),
+  `command_update_blas` (`:6680-6696`), `command_build_tlas` (`:6698-6714`) każdy
+  robi dokładnie jedno `vkCmdBuildAccelerationStructuresKHR(cmd, 1, ...)`.
+- **Bariery liczy render graf**, nie sterownik. Użycia tagowane jako
+  `RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ/_READ_WRITE`
+  (`rendering_device_graph.cpp:1790`, `:1817`, `:1843`, `:1864`), mapowanie na
+  access maski w `:178-204`. Sterownik dostaje je osobnym parametrem i wystawia
+  **drugie, oddzielne** `vkCmdPipelineBarrier` na buforze podkładowym AS
+  (`rendering_device_driver_vulkan.cpp:3067-3076`, `:3110-3119`).
+- **Kompakcji nie ma.** Bit `ALLOW_COMPACTION` przechodzi do sterownika, ale nie ma
+  ani zapytania o rozmiar, ani `vkCmdCopyAccelerationStructureKHR` z trybem
+  kompaktującym — nigdzie w pliku.
+- **`VkRayTracingPipelineCreateInfoKHR.pNext` jest puste** (`:6821-6828`, struktura
+  zero-inicjalizowana i nigdy nieprzypisana). Tam wchodzi
+  `VkRayTracingPipelineClusterAccelerationStructureCreateInfoNV`.
+
+### 8.6 Gdzie wpiąć CLAS — wzorzec do skopiowania
+
+Rejestracja rozszerzenia: `_initialize_device_extensions` (`:568-635`), wszystkie RT
+rejestrowane jako opcjonalne (`false`), np. `VK_KHR_ACCELERATION_STRUCTURE` na `:590`.
+
+Feature działa w dwóch przebiegach:
+1. **Query** (`:997-1009`, wynik do pól capabilities w `:1118-1127`) — struktura
+   feature jest doczepiana do `next_features` **tylko jeśli rozszerzenie zostało
+   włączone**, potem jedno `GetPhysicalDeviceFeatures2`.
+2. **Enable** (`:1462-1478`) — lustrzane odbicie, ale bramkowane już na
+   *capability*, nie na fladze rozszerzenia; łańcuch ląduje w `VkDeviceCreateInfo.pNext`.
+
+`has_feature` (`:7611-7635`): `SUPPORTS_RAY_QUERY` i `SUPPORTS_RAYTRACING_PIPELINE`
+oba wymagają `acceleration_structure_support` jako warunku wstępnego.
+
+BDA: `buffer_get_device_address()` (`:2252-2259`) to jedyna droga do adresu; VMA
+dostaje `VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT` (`:1639-1641`). CLAS jest
+w całości sterowany adresami, więc to jest już gotowe.
+
+### 8.7 Co zostało niezweryfikowane w tym przebiegu
+
+- ścieżka zwalniania `RTProceduralState` i jego RID-ów (poza plikiem)
+- łańcuch ustawiania `RTProceduralState::dirty` (potwierdzone tylko do
+  `renderer_scene_cull.cpp:1122-1141`)
+- wnętrza rodziny `hit_sbt_*` (sygnatury i struktury tak, ciała guardów nie)
+- które punkty wejścia RT poza `CreateAccelerationStructureKHR` i
+  `CreateRaytracingPipelinesKHR` idą przez `device_functions`, a które przez volk
+- prowenancja fork vs upstream dla `rendering_device_driver.h` — wnioskowana
+  z kształtu API, `git blame` nie uruchomiony
