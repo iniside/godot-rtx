@@ -330,7 +330,8 @@ BLAS-a statycznej powierzchni są gorsze niż zepsuty stan pośredni.
 
 **(c)**
 - `RTSurfaceData` + `clas_buffer`, `clas_addresses_buffer`, `cluster_remap_buffer`,
-  `clas_count_buffer` (4 bajty, `srcInfosCount` — sterownik go nie fabrykuje),
+  `clas_count_buffer` (4 bajty, `srcInfosCount` — **tylko dla `clas_build`**;
+  budowa dolnego poziomu już go nie przyjmuje, sterownik trzyma tam literalne `1`),
   `cluster_count`.
   **`blas_dst_buffer` nie istnieje** — bufor docelowy dolnego poziomu jest
   własnością sterownika, alokowany w `blas_create_from_clusters` i zwalniany
@@ -377,8 +378,12 @@ BLAS-a statycznej powierzchni są gorsze niż zepsuty stan pośredni.
   3. `clas_get_build_sizes` → alokacja `clas_buffer`, `clas_addresses_buffer`, scratch,
   4. `command_build_clas` (`IMPLICIT_DESTINATIONS`),
   5. `blas_create_from_clusters` (sterownik alokuje docelowy bufor sam), potem
-     `command_build_blas_from_clusters` karmione `clas_addresses_buffer`
-     i `clas_count_buffer`.
+     `blas_build_from_clusters` karmione samym `clas_addresses_buffer`.
+     **BLAS z klastrów można zbudować tylko raz** — drugie wywołanie to `ERR_FAIL`.
+     Gałąź re-populacji musi zwolnić BLAS i utworzyć nowy, co i tak robi.
+     `p_dst_sizes` jest opcjonalne — przekazujemy `{}`, bo per-CLAS rozmiary
+     nie są nam do niczego potrzebne.
+     Każdy region musi spełniać `size % stride == 0`.
 - **`cluster_remap_buffer`**: `cluster_count` × u32 = `base_triangle`. Tyle shader
   potrzebuje, by z pary (klaster, lokalny trójkąt) wrócić do globalnego indeksu.
 - `RT_GeometryData` (`render_raytracing.h:61-89`) ma `uint32_t _pad[5]` (`:87`).
@@ -505,9 +510,13 @@ objaw wyglądający jak błąd shadera, diagnozowany godzinami.
 ## Weryfikacja
 
 1. `scons platform=windows target=editor -j16` — zielony.
+   **Do uruchomienia testów potrzebny jest `tests=yes`** — zwykły `target=editor`
+   po cichu pomija drzewo `tests/` (`SConstruct:1278`), więc `--test` nie zobaczyłby
+   zestawu z Kroku 7 w ogóle.
 2. `scons platform=windows target=template_debug` — dowodzi, że `#ifdef`-y edytorowe
    nie wyciekły.
-3. `bin/godot.windows.editor.x86_64.exe --test` — Krok 7.
+3. `scons platform=windows target=editor tests=yes -j16`, potem
+   `bin/godot.windows.editor.x86_64.exe --headless --test` — Krok 7.
 4. `... --headless --path rt_test_scenes --import` — re-import Sponzy; w logu liczba
    klastrów per powierzchnia.
 5. `... -e --path rt_test_scenes res://sponza_pt.tscn` — Sponza w path tracingu.
