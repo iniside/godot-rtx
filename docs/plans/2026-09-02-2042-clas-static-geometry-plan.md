@@ -97,8 +97,23 @@ byłaby przełącznikiem między nową ścieżką a niewidocznością (Krok 4), 
 - **Kolejność krytyczna:** po `optimize_indices()` (`resource_importer_scene.cpp:2820`).
   Ono robi cache-optimize (`importer_mesh.cpp:514`), remap LOD-ów (`:517-521`, `:540-544`),
   `optimize_vertex_fetch_remap` (`:534`) i `_remap_arrays` (`:546`) — **zmienia też
-  liczbę wierzchołków**. Klastry po tym nie wymagają remapu, a nic dalej nie przestawia
-  trójkątów.
+  liczbę wierzchołków**.
+
+  **Korekta po review Kroku 1 (commit `a643a15e48`):** pierwotnie napisałem tu, że
+  „nic dalej nie przestawia trójkątów". To było błędne — przestawia je **sam
+  klasteryzator**. `meshopt_buildMeshletsSpatial` konsumuje ścianki w kolejności
+  posortowanej przestrzennie przez BVH (`thirdparty/meshoptimizer/clusterizer.cpp:1339`:
+  `unsigned int index = axes[i];`, gdzie `axes` pochodzi z `bvhSplit` w `:1313`).
+  Czyli lokalny trójkąt *t* klastra *j* to oryginalna ścianka `axes[prefix + t]` —
+  dowolna permutacja, a nie `base_triangle + t`.
+
+  **Dlatego `generate_clusters()` przepisuje `s.arrays[ARRAY_INDEX]` w kolejność
+  klastrów**, po czym suma prefiksowa staje się poprawnym globalnym indeksem
+  z konstrukcji. Tablice `Surface::LOD::indices` są niezależne i nie są ruszane;
+  shadow mesh to osobny `ImporterMesh` i klastrów nie dostaje. Kosztem jest
+  utrata uporządkowania pod cache wierzchołków z `optimize_indices()` — akceptowalne,
+  bo kolejność klastrowa jest przestrzennie spójna, a rasteryzacja nie jest tu
+  priorytetem.
 - **Blob (little-endian), dwie sekcje o jawnych bazach:**
   - nagłówek 32 B: `magic` u32, `version` u32, `cluster_count` u32, `total_triangles` u32,
     `index_section_offset` u32, `position_section_offset` u32, `position_vertex_total` u32,
@@ -448,7 +463,12 @@ Test jednostkowy bez `[SceneTree]`. Asercje:
 
 0. `cluster_count > 0` — **bez tego test przechodzi próżno** na pustym blobie
 1. suma `triangle_count` == liczba trójkątów powierzchni
-2. `base_triangle` pokrywają zakres bez dziur i nakładek
+2. **dla każdego klastra *j* i lokalnego trójkąta *t*: przepisany bufor indeksów
+   pod `3*(base_triangle_j + t)` równa się trójkątowi zrekonstruowanemu z klastra**
+   (`meshlet_vertices[vertex_offset + meshlet_triangles[...]]`).
+   Sama asercja „`base_triangle` pokrywają zakres bez dziur i nakładek" przechodzi
+   **próżno** na sumie prefiksowej i nie wykryje permutacji z `clusterizer.cpp:1339` —
+   to musi być porównanie z faktyczną zawartością bufora indeksów
 3. `vertex_count`/`triangle_count` w limitach
 4. sekcja pozycji ma dokładnie `position_vertex_total × 12` bajtów, każdy indeks
    lokalny `< vertex_count` swojego klastra, a `position_offset`/`index_offset`
