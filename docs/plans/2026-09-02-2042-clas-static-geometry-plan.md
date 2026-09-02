@@ -90,8 +90,12 @@ byłaby przełącznikiem między nową ścieżką a niewidocznością (Krok 4), 
 
 **(c)**
 - `meshopt_buildMeshletsSpatial` (`meshoptimizer.h:734`) + `meshopt_optimizeMeshlet`
-  (`:743`). `clusterizer.cpp` już w buildzie (`modules/meshoptimizer/SCsub:16`) —
-  **zero zmian w SCons**.
+  (`:743`). `clusterizer.cpp` jest już w buildzie (`modules/meshoptimizer/SCsub:16`),
+  **ale `meshopt_optimizeMeshlet` mieszka w `meshletutils.cpp`, którego w liście
+  nie ma** — plan pierwotnie twierdził „zero zmian w SCons" i było to błędne;
+  wyszło dopiero linkerem (`LNK2019: unresolved external symbol
+  meshopt_optimizeMeshlet`). **`meshletutils.cpp` dochodzi do
+  `modules/meshoptimizer/SCsub`.**
 - `max_vertices = 128`, `min_triangles = 96`, `max_triangles = 128`, `fill_weight = 0.5`.
   Realne limity urządzenia odpytuje Krok 3.
 - **Kolejność krytyczna:** po `optimize_indices()` (`resource_importer_scene.cpp:2820`).
@@ -140,11 +144,10 @@ byłaby przełącznikiem między nową ścieżką a niewidocznością (Krok 4), 
 ### Krok 2 — Transport bloba na GPU `[sonnet]`
 
 **(a)** `servers/rendering/rendering_server_types.h` (`SurfaceData` +
-`Vector<uint8_t> cluster_data`, `+ uint32_t cluster_count`, obok `:83-111`),
-`servers/rendering/rendering_server_enums.h` (`ARRAY_FLAG_HAS_CLUSTER_DATA`,
-**bit 34**), `scene/resources/mesh.{h,cpp}` (**niebindowane**
-`ArrayMesh::add_surface` `:348` dostaje dwa parametry; `_get_surfaces` `:1512-1571`
-i `_set_surfaces` `:1587-1719` — klucze `"cluster_data"`/`"cluster_count"`),
+`Vector<uint8_t> cluster_data`, obok `:83-111`),
+`scene/resources/mesh.{h,cpp}` (**niebindowane**
+`ArrayMesh::add_surface` `:348` dostaje jeden parametr; `_get_surfaces` `:1512-1571`
+i `_set_surfaces` `:1587-1719` — klucz `"cluster_data"`),
 `scene/resources/3d/importer_mesh.cpp` (`get_mesh()` `:859-909`),
 `servers/rendering/renderer_rd/storage_rd/mesh_storage.{h,cpp}`
 (`Mesh::Surface` + `cluster_buffer`, `cluster_position_buffer`, `cluster_count`,
@@ -191,13 +194,21 @@ z niezmienioną sygnaturą. `ArrayMesh::add_surface` (`mesh.h:348`) jest niebind
 - `rt_invalidation_counter` (`mesh_storage.h:144`) — nowa powierzchnia i tak dostaje
   świeżą wartość w `mesh_add_surface` (`:373-375`); osobny bump nie jest potrzebny,
   bo nie ma ścieżki aktualizacji samych klastrów.
-- **Bit 34, zapisany jako `1ULL << (ARRAY_COMPRESS_FLAGS_BASE + 9)`.**
-  `rendering_server_enums.h:187-193` używa `1 <<` na `int`; przy przesunięciu 34
-  to UB mimo `enum ArrayFormat : uint64_t`. `ARRAY_COMPRESS_FLAGS_BASE = 25` (`:185`),
-  flagi zajmują 25-29, komentarz `:194` rezerwuje 30-34, wersja startuje na 35 (`:196`).
-  Bit 30 jest następny w kolejce dla upstreamu — bierzemy ostatni z piątki.
-- `fix_surface_compatibility` (`mesh.cpp:1666`): brak bitu 34 = brak klastrów.
-  **Bez migracji** — stare zasoby regeneruje re-import.
+- **Bez flagi formatu.** Pierwotnie plan rezerwował `ARRAY_FLAG_HAS_CLUSTER_DATA`
+  na bicie 34. Review Kroku 2 wykazał, że nikt jej nie ustawia ani nie czyta —
+  obecność klastrów sygnalizuje `cluster_data.size()` we wszystkich trzech
+  konsumentach. Bit zaparkowany „na później" to dokładnie ten kształt, który
+  odrzuca *No Backward Compatibility*. **Flaga usunięta.**
+- **Blob jest jedynym źródłem prawdy o liczbie klastrów.** Pierwotnie plan kładł
+  `cluster_count` również w `SurfaceData`, w kluczu Dictionary i w parametrze
+  `add_surface` — przyjmowane na słowo, bez cross-checka. Zapisany zasób z poprawnym
+  blobem i `"cluster_count" = 0x7FFFFFFF` dałby iterację po dwóch miliardach
+  16-bajtowych rekordów nad 200-bajtowym buforem. **Pole usunięte**;
+  `mesh_add_surface` dekoduje offset 8 zwalidowanego nagłówka.
+- **Walidacja nagłówka przed `memnew(Mesh::Surface)`**, nie po — inaczej każde
+  `ERR_FAIL` na złym blobie przecieka `s` i sześć RID-ów utworzonych wcześniej.
+  Walidacja obejmuje `index_section_offset == 32 + cluster_count * 16`, bez czego
+  spreparowany nagłówek wskazuje rekordy poza buforem.
 
 **(d)** `[sonnet]`.
 
@@ -318,8 +329,12 @@ całej funkcji. Bez flagi projektowej, bez „usuniemy jak się sprawdzi".
 BLAS-a statycznej powierzchni są gorsze niż zepsuty stan pośredni.
 
 **(c)**
-- `RTSurfaceData` + `clas_buffer`, `clas_addresses_buffer`, `blas_dst_buffer`,
-  `cluster_remap_buffer`, `cluster_count`.
+- `RTSurfaceData` + `clas_buffer`, `clas_addresses_buffer`, `cluster_remap_buffer`,
+  `clas_count_buffer` (4 bajty, `srcInfosCount` — sterownik go nie fabrykuje),
+  `cluster_count`.
+  **`blas_dst_buffer` nie istnieje** — bufor docelowy dolnego poziomu jest
+  własnością sterownika, alokowany w `blas_create_from_clusters` i zwalniany
+  kaskadowo przez `acceleration_structure_free` (Krok 3).
 - **`aabb_transform` NIE wolno stosować do powierzchni klastrowych.** Dziś dla
   skompresowanej powierzchni BLAS jest budowany z pozycji `R16G16B16A16_UNORM`
   w znormalizowanej przestrzeni AABB, a transform instancji to kompensuje:
@@ -352,13 +367,18 @@ BLAS-a statycznej powierzchni są gorsze niż zepsuty stan pośredni.
   1. adresy urządzenia `cluster_buffer` i `cluster_position_buffer` (Krok 2),
   2. wypełnienie `srcInfos` rekordami per klaster;
      `vertexBuffer` = adres `cluster_position_buffer` + `position_offset`,
-     `indexBuffer` = adres `cluster_buffer` + `index_offset`
-     (oba offsety liczone od początku swojej sekcji — Krok 1),
+     `indexBuffer` = adres `cluster_buffer` + **`cluster_index_section_offset`**
+     + `index_offset`.
+     **Podział na dwa bufory jest niesymetryczny.** `cluster_position_buffer`
+     zaczyna się dokładnie na sekcji pozycji, więc `position_offset` działa wprost.
+     Sekcja indeksów leży **wewnątrz** `cluster_buffer`, za nagłówkiem i rekordami,
+     więc trzeba dodać `cluster_index_section_offset` z `Mesh::Surface` (Krok 2).
+     Pominięcie tego daje złą geometrię bez żadnego błędu,
   3. `clas_get_build_sizes` → alokacja `clas_buffer`, `clas_addresses_buffer`, scratch,
   4. `command_build_clas` (`IMPLICIT_DESTINATIONS`),
-  5. `blas_create_from_clusters` → alokacja `blas_dst_buffer`, potem
-     `command_build_blas_from_clusters` (`EXPLICIT_DESTINATIONS`) karmione
-     `clas_addresses_buffer`.
+  5. `blas_create_from_clusters` (sterownik alokuje docelowy bufor sam), potem
+     `command_build_blas_from_clusters` karmione `clas_addresses_buffer`
+     i `clas_count_buffer`.
 - **`cluster_remap_buffer`**: `cluster_count` × u32 = `base_triangle`. Tyle shader
   potrzebuje, by z pary (klaster, lokalny trójkąt) wrócić do globalnego indeksu.
 - `RT_GeometryData` (`render_raytracing.h:61-89`) ma `uint32_t _pad[5]` (`:87`).
