@@ -445,7 +445,7 @@ bariery przed `raytracing_list_trace_rays`. Statyczne VB/AB/IB są z tego wyłą
 | statyczna powierzchnia | `(mesh_rid.local_index<<8) \| (surface & 0xFF)` (`:559`), `surface_chunks` po 256 wpisów (`:356-373`) | `!ptr \|\| cached_rid_version != mesh_version \|\| cached_counter != invalidation_counter` (`:566-568`) | brak w `cleanup_caches()` — liczy na kaskadowe free RD przy zwolnieniu VB (komentarz `:239-240`) |
 | deformowana (`FLAG_DEFORMED`) | `RID_Owner deformed_pool`, uchwyt na powierzchni (`:407-417`) | pełna przebudowa przy zmianie layoutu/wersji/countera (`:658-660`); sam `data_changed` → refit (`:732-734`) | TTL w `prepare_frame` (`:456-484`) + `cleanup_caches` (`:257-282`) |
 | MultiMesh merged | `RID_Owner merged_mm_pool` + `mm_handles` (`:419-427`) | `structure_changed` → free+rebuild (`:1857-1871`); `transforms_changed` (z `multimesh_get_last_change`) → re-bake (`:1966-2120`) | TTL `prepare_frame` (`:486-516`), detekcja recyklingu RID (`:1801-1835`), `cleanup_caches` (`:284-310`) |
-| proceduralna (AABB) | stan w `RTProceduralState` na instancji (`render_raytracing.h:179-189`) | flaga `dirty`, ustawiana poza tym plikiem | **ścieżka free nieznaleziona w tym pliku** |
+| proceduralna (AABB) | stan w `RTProceduralState` na instancji (`render_raytracing.h:179-189`) | flaga `dirty`, ustawiana poza tym plikiem | `update_procedural_blas` zwalnia `blas` i `gpu_buffer` przy zmianie rozmiaru/liczby AABB (`:1277-1284`); **brak zwolnienia przy zniszczeniu instancji** — `cleanup_caches()` nie dotyka `RTProceduralState` |
 | cząsteczki | **nie istnieje** — plik przeczytany w całości, zero kodu | — | — |
 
 `rt_invalidation_counter` (`mesh_storage.h:144`) dostaje świeżą wartość przy tworzeniu
@@ -454,17 +454,22 @@ powierzchni (`mesh_storage.cpp:373-375`) i jest inkrementowany w
 
 **Co leci bezwarunkowo co klatkę:** `tlas_build` (`:1729`), upload czterech SSBO
 w `finalize_buffers` (bez sprawdzania zmian), oraz `params_buffer`/`light_buffer`
-w `update_uniform_set` (`:3053`, `:3060`). Zawartość BLAS-ów — nie.
+oraz `light_buffer` (`:3053`) i `params_buffer` (`:3060`) w `update_uniform_set`.
+SET 0 jest odbudowywany od zera co klatkę (`uniform_set_create`, `:3199`),
+a `compute_list_begin`/`end` (`:2577`, `:2708`) otwierają się nawet przy pustym
+`pending_mm_surfaces`. `finalize_buffers` pomija bufor o zerowym rozmiarze
+(`:1735-1737`), więc cztery SSBO to górna granica, nie stała.
+Zawartość BLAS-ów — nie.
 
 ### 8.3 Bufor instancji TLAS
 
-`build_acceleration_structures:1719-1726`:
+`build_acceleration_structures:1720-1726`:
 
 ```cpp
 inst.id = i;
 inst.transform = blas_transforms[i];
 inst.blas = blass[i];
-inst.flags = BitField<...>(instance_flags[i]);
+inst.flags = BitField<RD::AccelerationStructureInstanceFlagBits>(instance_flags[i]);
 inst.mask = (i < instance_masks.size()) ? instance_masks[i] : 0xFF;
 uint32_t sbt_off = (i < sbt_offsets.size()) ? sbt_offsets[i] : 0;
 inst.hit_sbt_range = RD::HitShaderBindingTableRange((1ULL << 32) | uint64_t(sbt_off));
@@ -494,7 +499,7 @@ zmapowany write-combined (`MEMORY_ALLOCATION_TYPE_CPU`). Instancje są składane
 w cieniu CPU i wrzucane jednym `memcpy` — komentarz w kodzie tłumaczy dlaczego:
 rozproszone zapisy do WC są o rzędy wielkości wolniejsze.
 
-Deferred free jest oparty na klatkach: `free(RID)` (`:7849-7858`) wrzuca strukturę
+Deferred free jest oparty na klatkach: `free_rid()` (`:7731`) → `_free_internal()` (`:7738`), gałąź AS `:7849-7858`, wrzuca strukturę
 na `frames[frame].acceleration_structures_to_dispose_of`, realne zwolnienie
 w `:8065-8092`.
 
@@ -502,7 +507,7 @@ w `:8065-8092`.
 
 - **Flagi budowania idą surowo od wołającego** — `build_info.flags = p_flags`
   (`rendering_device_driver_vulkan.cpp:6515`, `:6557`), bity RDD są statycznie
-  asertowane jako identyczne z `VkBuildAccelerationStructureFlagBitsKHR` (`:6441`).
+  asertowane jako identyczne z `VkBuildAccelerationStructureFlagBitsKHR` (`:6439-6444`).
   Rozmiary z `vkGetAccelerationStructureBuildSizesKHR` (`:6520`).
 - **Scratch jest per-AS, własność RD**, nie pula i nie per-frame
   (`_acceleration_structure_create:6605-6613`): `MAX(buildScratchSize,
@@ -546,9 +551,10 @@ w całości sterowany adresami, więc to jest już gotowe.
 
 ### 8.7 Co zostało niezweryfikowane w tym przebiegu
 
-- ścieżka zwalniania `RTProceduralState` i jego RID-ów (poza plikiem)
+- zwalnianie `RTProceduralState` i jego RID-ów **przy zniszczeniu instancji** — ścieżka
+  przy zmianie rozmiaru istnieje (`:1277-1284`), przy destrukcji nie znaleziona
 - łańcuch ustawiania `RTProceduralState::dirty` (potwierdzone tylko do
-  `renderer_scene_cull.cpp:1122-1141`)
+  `renderer_scene_cull.cpp:1122-1144`)
 - wnętrza rodziny `hit_sbt_*` (sygnatury i struktury tak, ciała guardów nie)
 - które punkty wejścia RT poza `CreateAccelerationStructureKHR` i
   `CreateRaytracingPipelinesKHR` idą przez `device_functions`, a które przez volk
