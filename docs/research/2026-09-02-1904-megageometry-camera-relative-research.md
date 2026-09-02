@@ -7,6 +7,24 @@ Khronos, upstream Godot).
 
 Dokument jest **raportem ustaleń**, nie planem. Plan powstaje osobno w `docs/plans/`.
 
+### Skróty ścieżek
+
+Kotwice `plik:linia` są w treści skracane do samej nazwy pliku. Pełne ścieżki:
+
+| Skrót | Ścieżka |
+|---|---|
+| `render_raytracing.*`, `scene_shader_raytracing.*`, `render_forward_clustered.*` | `servers/rendering/renderer_rd/forward_clustered/` |
+| `render_forward_mobile.*` | `servers/rendering/renderer_rd/forward_mobile/` |
+| `render_scene_data_rd.*`, `material_storage.*`, `light_storage.cpp`, `texture_storage.cpp`, `particles_storage.cpp`, `mesh_storage.*` | `servers/rendering/renderer_rd/storage_rd/` |
+| `gi.cpp`, `fog.cpp`, `sky.cpp` | `servers/rendering/renderer_rd/environment/` |
+| `cluster_builder_rd.h` | `servers/rendering/renderer_rd/` |
+| `*.glsl` z prefiksem `raytracing_` lub `scene_raytracing_` | `servers/rendering/renderer_rd/shaders/raytracing/` |
+| `scene_forward_clustered*.glsl` | `servers/rendering/renderer_rd/shaders/forward_clustered/` |
+| `scene_forward_mobile*.glsl` | `servers/rendering/renderer_rd/shaders/forward_mobile/` |
+| `rendering_device.*`, `rendering_device_driver.h`, `rendering_device_commons.h` | `servers/rendering/` |
+| `rendering_device_driver_d3d12.cpp`, `rendering_shader_container_d3d12.cpp` | `drivers/d3d12/` |
+| `renderer_scene_cull.h` | `servers/rendering/` |
+
 ---
 
 ## 1. Co jest już w drzewie (nic do zdobycia z zewnątrz)
@@ -27,19 +45,24 @@ Punkty wejścia (dwa na rozszerzenie):
 ```
 vkGetClusterAccelerationStructureBuildSizesNV        vulkan_core.h:23359
 vkCmdBuildClusterAccelerationStructureIndirectNV     vulkan_core.h:23360
-vkGetPartitionedAccelerationStructuresBuildSizesNV   vulkan_core.h:23476
-vkCmdBuildPartitionedAccelerationStructuresNV        vulkan_core.h:23477
+vkGetPartitionedAccelerationStructuresBuildSizesNV   vulkan_core.h:23475
+vkCmdBuildPartitionedAccelerationStructuresNV        vulkan_core.h:23476
 ```
 
-`thirdparty/volk` ładuje wszystkie cztery **bezwarunkowo** w `volkGenLoadDevice`
+`thirdparty/volk` ładuje wszystkie cztery w `volkGenLoadDevice`
 (`volk.c:1226-1229`, `volk.c:1304-1307`) i w `volkGenLoadDeviceTable`
-(`volk.c:2465-2466`, `volk.c:2543-2544`). Żadnej zmiany w thirdparty nie trzeba.
+(`volk.c:2464-2467`, `volk.c:2542-2545`). Ładowanie jest opakowane w
+`#if defined(VK_NV_...)` — token definiuje sam nagłówek (`vulkan_core.h:23128`),
+więc kompiluje się zawsze. **Ale `load()` zwraca NULL, gdy sterownik nie ma danego
+punktu wejścia** — sprawdzenie na NULL w runtime jest po naszej stronie.
+Żadnej zmiany w thirdparty nie trzeba.
 
 Limity są **właściwościami urządzenia**, nie stałymi —
 `VkPhysicalDeviceClusterAccelerationStructurePropertiesNV` (`vulkan_core.h:23195`)
 niesie `maxVerticesPerCluster`, `maxTrianglesPerCluster`, `maxClusterGeometryIndex`
-i cztery osobne wyrównania (`clusterByteAlignment`, `clusterTemplateByteAlignment`,
-`clusterBottomLevelByteAlignment`, `clusterScratchByteAlignment`).
+i pięć osobnych wyrównań (`clusterScratchByteAlignment`, `clusterByteAlignment`,
+`clusterTemplateByteAlignment`, `clusterBottomLevelByteAlignment`,
+`clusterTemplateBoundsByteAlignment`).
 Trzeba je odpytać w runtime, nie zaszywać.
 
 Rozszerzenie wymaga też opt-inu na pipelinie:
@@ -64,7 +87,7 @@ kompiluje** `clusterizer.cpp` i `partition.cpp`, więc dostępne bez zmian w SCo
 Na dysku, ale **poza buildem**: `meshletcodec.cpp`, `meshletutils.cpp`,
 `opacitymap.cpp`. Ich symbole nie linkują się dziś do silnika.
 
-`modules/meshoptimizer/register_types.cpp:37-50` podpina do `SurfaceTool` wyłącznie
+`modules/meshoptimizer/register_types.cpp:41-48` podpina do `SurfaceTool` wyłącznie
 funkcje uproszczania/remapu — API meshletów nie jest wołane nigdzie w silniku.
 
 W całym forku (poza `thirdparty/`) nie ma żadnego kodu meshlet/cluster/Nanite.
@@ -78,9 +101,10 @@ W całym forku (poza `thirdparty/`) nie ma żadnego kodu meshlet/cluster/Nanite.
 Shadery RT mapują trafienie na dane w dwóch krokach:
 
 1. `gl_InstanceCustomIndexEXT` indeksuje **płasko** oba SSBO, `geometries[]`
-   i `materials[]` — ten sam indeks do obu:
-   - `raytracing_closest_hit_common_inc.glsl:31-32`
-   - `scene_raytracing_raygen.glsl:470-471`, `:509`, `:619-624`
+   i `materials[]` — ten sam indeks do obu. Oba naraz widać w
+   `scene_raytracing_raygen.glsl:470-471`+`:509` oraz `raytracing_lights_inc.glsl:172`+`:176`;
+   samo `geometries[]` w `raytracing_closest_hit_common_inc.glsl:31-32`
+   i `scene_raytracing_raygen.glsl:619-624`.
 2. `gl_PrimitiveID` wybiera trójkąt w obrębie tej geometrii —
    `get_triangle_indices_ex()` w `raytracing_hit_inc.glsl:33-61`, wołane
    z `gl_PrimitiveID` w `:65`.
@@ -96,18 +120,24 @@ rozpakowaniem dwóch indeksów na słowo, dla UINT32 `primitive_id*3`.
 **To jest dokładnie założenie, które łamie CLAS.** W cluster BLAS `primitiveID` jest
 względny wobec klastra i wymaga dodatkowej indyrekcji przez cluster ID.
 
-Wszystkie konsumenty `primitiveID` w drzewie (wyczerpujący grep):
+Konsumenci `primitiveID` — lista obejmuje zarówno odczyty `gl_PrimitiveID` wprost,
+jak i wywołania `get_triangle_indices*`, bo każde z nich trzeba będzie ruszyć osobno.
+Sweep po `servers/rendering/renderer_rd/shaders/raytracing/`, z pominięciem `.gen.h`
+(wygenerowane kopie tych samych źródeł):
 
 | Miejsce | Znaczenie |
 |---|---|
-| `raytracing_hit_inc.glsl:65` | indeks trójkąta (closest hit) |
-| `scene_raytracing_raygen.glsl:629` | indeks AABB w shaderze intersekcji (`*6` floatów) |
-| `raytracing_closest_hit_common_inc.glsl:508` | `rayQueryGetIntersectionPrimitiveIndexEXT` (inline ray query, DLSS-RR) |
-| `raytracing_closest_hit_common_inc.glsl:182` | ponowne wyliczenie indeksów dla motion vectorów przy `FLAG_DEFORMED` |
+| `raytracing_hit_inc.glsl:65` | jedyny odczyt `gl_PrimitiveID` w ścieżce trójkątowej — wrapper `get_triangle_indices()` |
+| `raytracing_hit_inc.glsl:250` | wywołanie wrappera w `fetch_vertex_attributes()` |
+| `scene_raytracing_raygen.glsl:474` | wywołanie wrappera w stage `#[any_hit]` (blok od `:409`) |
+| `raytracing_closest_hit_common_inc.glsl:182` | wywołanie wrappera dla motion vectorów przy `FLAG_DEFORMED` |
+| `raytracing_lights_inc.glsl:173` | `get_triangle_indices_ex()` w `ray_query_alpha_test()` — konsument ID z wiersza niżej |
+| `raytracing_closest_hit_common_inc.glsl:508` | `rayQueryGetIntersectionPrimitiveIndexEXT` (inline ray query, DLSS-RR) — producent ID dla wiersza wyżej |
+| `scene_raytracing_raygen.glsl:629` | `gl_PrimitiveID` jako indeks AABB w shaderze intersekcji (`*6` floatów), nie trójkąt |
 
 Ścieżka proceduralna (`RT_GEOM_FLAG_PROCEDURAL`) **nie** przechodzi przez
 `get_triangle_indices` — czyta atrybuty z `hitAttributeEXT`
-(`raytracing_closest_hit_common_inc.glsl:50-64`), a `gl_PrimitiveID` wybiera tam
+(`raytracing_closest_hit_common_inc.glsl:51-65`), a `gl_PrimitiveID` wybiera tam
 tylko slot AABB.
 
 ### RT_GeometryData
@@ -122,8 +152,10 @@ Lustro GLSL: `raytracing_data_inc.glsl:17-52`, pole w pole.
 
 Budowane asynchronicznie per wariant flag RT w `scene_shader_raytracing.cpp`:
 ścieżka synchroniczna `:818-892`, pełna asynchroniczna `:1178-1299`.
-`HIT_SBT_CAPACITY = 4096`. Stary SBT jest zwalniany dopiero po zbudowaniu nowego
-(`:1291-1292`, swap `:1299`) — zgodne z regułą frames-in-flight.
+`HIT_SBT_CAPACITY = 4096` — zdefiniowane **dwa razy**, jako osobne
+`static constexpr` lokalne dla funkcji (`:866` i `:1264`).
+Stary SBT jest zwalniany dopiero po zbudowaniu nowego (`:1291-1292`, swap `:1299`)
+— zgodne z regułą frames-in-flight.
 
 Wszystkie pliki `shaders/raytracing/*.glsl`, `scene_shader_raytracing.*`
 i `render_raytracing.*` są **fork-local** (nie istniały w upstream w merge base
@@ -147,10 +179,12 @@ domknąć przed pisaniem planu Etapu 2/4.**
 Większość podsystemów rasteryzacji **już jest** camera-relative:
 
 - `light_storage.cpp:718` liczy `inverse_transform` i premnaża przez nie **każdą**
-  pozycję światła i macierz cienia przed zapisem (`:836`, `:1064-1066`, `:1186`,
-  `:1202`, `:1221`, `:2037`)
-- `cluster_builder_rd.h:289,332,365,412` — wszystkie cztery robią `view_xform * transform`
-- dekale: `texture_storage.cpp:4089` — `camera_inverse_xform * xform * ...`
+  pozycję światła i macierz cienia przed zapisem: mnożenia w `:1063`, `:1184`, `:1200`,
+  zapisy w `:836`, `:1064-1066`, `:1186`, `:1202`, `:1221`.
+  `:2037` to nie światło, tylko `local_matrix` reflection probe — też view-relative
+- `cluster_builder_rd.h` — dwa mnożenia `view_xform * p_transform` (`:249` w `add_light`
+  oraz `:382`) zasilają cztery zapisy `store_transform_transposed_3x4` (`:289`, `:332`, `:365`, `:412`)
+- dekale: `texture_storage.cpp:4088` liczy `camera_inverse_xform * xform * ...`, zapis w `:4089`
 - SDFGI robi to wprost: `gi.cpp:1886` — `pos -= cam_origin; //make pos local to camera,
   to reduce numerical error`
 
@@ -179,16 +213,24 @@ drivers/vulkan/rendering_device_driver_vulkan.cpp:6530-6543  _store_transform_tr
 drivers/vulkan/rendering_device_driver_vulkan.cpp:6579       wywołanie z acceleration_structure_instance_write()
 ```
 
-RT dostaje dokładnie te same dane co rasteryzator i psuje je **później**, na granicy
-sterownika. To dobra wiadomość: jest jedno wąskie gardło, gdzie odjęcie origin
-załatwia transformy instancji TLAS.
+RT dostaje dokładnie te same dane co rasteryzator i psuje je **później** — dla
+transformów instancji TLAS dopiero na granicy sterownika. Dla nich jest to jedno
+wąskie gardło.
+
+**Ale to nie jest jedyne miejsce truncation w ścieżce RT** i nie wolno tego uogólniać.
+Dwa dalsze siedzą w kodzie fork-local, po stronie CPU, i wymagają osobnej obsługi:
+
+- `render_raytracing.cpp:2296`, `:2510`, `:2663` — `store_transform_transposed_3x4()`
+  do `float prev_object_to_world[12]` (`render_raytracing.h:129`); helper ma sygnaturę
+  `(const Transform3D &, float *)` — `material_storage.h:388`
+- `render_raytracing.cpp:2860-2862` — do `float position[3]` (`render_raytracing.h:127`)
 
 ### Istniejąca emulacja split-double
 
 Jedyna odpowiedź upstreamu na double-vs-float. Pisarze CPU:
-`render_scene_data_rd.cpp:95-99` i `:285-289` (origin kamery),
-`render_forward_clustered.cpp:930-939` i `render_forward_mobile.cpp:2113-2120`
-(origin instancji). Define wchodzi do shaderów w dwóch miejscach:
+`render_scene_data_rd.cpp:95-99` i `:284-288` (origin kamery),
+`render_forward_clustered.cpp:934-939` (blok `#ifdef` od `:931`)
+i `render_forward_mobile.cpp:2115-2120` (origin instancji). Define wchodzi do shaderów w dwóch miejscach:
 `render_forward_clustered.cpp:5671-5675`, `render_forward_mobile.cpp:3600`.
 
 Matematyka (`quick_two_sum`/`two_sum`/`double_add_vec3`) jest **zduplikowana**
@@ -198,7 +240,7 @@ między clustered a mobile:
 shaders/scene_data_inc.glsl:22-24
 shaders/forward_clustered/scene_forward_clustered.glsl:190-215, 233, 252, 339-346, 422-439, 814, 858
 shaders/forward_clustered/scene_forward_clustered_inc.glsl:363
-shaders/forward_mobile/scene_forward_mobile.glsl:175-215, 258, 378-385, 446-462, 732, 794
+shaders/forward_mobile/scene_forward_mobile.glsl:175-200, 258, 378-385, 446-462, 732, 794
 shaders/forward_mobile/scene_forward_mobile_inc.glsl:362
 ```
 
@@ -212,8 +254,9 @@ W całym drzewie nie ma nic o nazwie `camera_relative`/`floating_origin`/`world_
 ## 4. D3D12 — pytanie odpada
 
 Raytracing na D3D12 w tym forku **nie istnieje**. Wszystkie wirtuale AS
-w `rendering_device_driver_d3d12.cpp:5547-5605` to jednolinijkowe
-`ERR_FAIL_V_MSG("Ray tracing is not currently supported by the D3D12 driver.")`.
+w `rendering_device_driver_d3d12.cpp:5546-5603` to jednolinijkowe `ERR_FAIL_V_MSG`
+(zwracające wartość) albo `ERR_FAIL_MSG` (void), z tym samym komunikatem
+"Ray tracing is not currently supported by the D3D12 driver.".
 `has_feature` (`:5915-5934`) nie ma `case` dla `SUPPORTS_RAYTRACING_PIPELINE`
 ani `SUPPORTS_RAY_QUERY` — leci w `default: return false`, więc warstwa RD odrzuca
 wywołania RT jeszcze przed stubami.
@@ -257,7 +300,8 @@ CLAS **nie może** trafić bezpośrednio do TLAS.
 
 ### CLAS nie przyspiesza trace'owania
 
-`vk_animated_clusters`, RTX 6000 Ada, 2560×1440, 8.43M animowanych trójkątów:
+`vk_animated_clusters`, RTX 6000 Ada, 2560×1440, 8.43M animowanych trójkątów
+(liczby z README sampla nvpro, nie mierzone przez nas):
 
 | Konfiguracja | build/refit | render | total |
 |---|---|---|---|
@@ -284,10 +328,16 @@ GPU-driven sparse allocator zamiast ufać sizingowi hosta.
 
 ### PTLAS to natywny mechanizm rebasingu
 
-Ze specyfikacji Khronosa: partycje niosą osobny wektor translacji, a
+Partycje niosą osobny wektor translacji, a cytowane zdanie brzmi:
 „when the user wishes to re-center the world space coordinates of all objects,
 the position translations can be updated efficiently without triggering a rebuild
-of the entire Partitioned TLAS". To samo zdanie jest w specyfikacji DXR.
+of the entire Partitioned TLAS".
+
+**Uwaga o źródle:** cytat pochodzi z dokumentu proposala w repo Vulkan-Docs
+(`KhronosGroup/Vulkan-Docs/proposals/VK_NV_partitioned_acceleration_structure.adoc`),
+nie z pełnej specyfikacji — ta zwracała 403 (§6.4). Twierdzenie „to samo zdanie jest
+w specyfikacji DXR" **nie zostało zweryfikowane u źródła**. Ponieważ na tym cytacie
+stoi przesunięcie PTLAS w §7, trzeba go potwierdzić przed pisaniem planu.
 
 Czyli camera-relative i PTLAS **nie są niezależnymi etapami** — PTLAS jest
 API-owym rozwiązaniem dokładnie tego problemu. NVIDIA używa go tak w NvRTX UE5.6.
