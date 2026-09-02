@@ -584,9 +584,20 @@ void ImporterMesh::generate_clusters() {
 
 		size_t vertex_count = vertices.size();
 		size_t index_count = indices.size();
-		if (vertex_count == 0 || index_count == 0) {
+		if (vertex_count == 0) {
 			continue;
 		}
+
+		if (index_count == 0) {
+			ERR_CONTINUE_MSG(vertex_count % 3 != 0, "ImporterMesh::generate_clusters: non-indexed surface " + itos(i) + " has a vertex count that is not a multiple of 3.");
+			indices.resize(vertex_count);
+			int32_t *indices_w = indices.ptrw();
+			for (size_t j = 0; j < vertex_count; j++) {
+				indices_w[j] = (int32_t)j;
+			}
+			index_count = vertex_count;
+		}
+		ERR_CONTINUE_MSG(index_count % 3 != 0, "ImporterMesh::generate_clusters: surface " + itos(i) + " has an index count that is not a multiple of 3.");
 
 		LocalVector<unsigned int> indices_u32;
 		indices_u32.resize(index_count);
@@ -616,14 +627,20 @@ void ImporterMesh::generate_clusters() {
 
 		uint32_t total_triangles = 0;
 		uint32_t position_vertex_total = 0;
+		bool cluster_overflow = false;
 		for (size_t j = 0; j < meshlet_count; j++) {
 			SurfaceTool::optimize_meshlet_func(
 					meshlet_vertices.ptr() + meshlets[j].vertex_offset,
 					meshlet_triangles.ptr() + meshlets[j].triangle_offset,
 					meshlets[j].triangle_count, meshlets[j].vertex_count);
+			if (meshlets[j].vertex_count > 255 || meshlets[j].triangle_count > 255) {
+				cluster_overflow = true;
+				break;
+			}
 			total_triangles += meshlets[j].triangle_count;
 			position_vertex_total += meshlets[j].vertex_count;
 		}
+		ERR_CONTINUE_MSG(cluster_overflow, "ImporterMesh::generate_clusters: cluster vertex/triangle count exceeds the 8-bit blob record capacity (surface " + itos(i) + ").");
 
 		uint32_t index_section_offset = CLUSTER_HEADER_SIZE + (uint32_t)meshlet_count * CLUSTER_RECORD_SIZE;
 		uint32_t index_section_size = total_triangles * 3;
@@ -631,7 +648,8 @@ void ImporterMesh::generate_clusters() {
 		uint32_t position_section_size = position_vertex_total * (uint32_t)sizeof(float) * 3;
 
 		Vector<uint8_t> blob;
-		blob.resize(position_section_offset + position_section_size);
+		Error blob_err = blob.resize(position_section_offset + position_section_size);
+		ERR_CONTINUE_MSG(blob_err != OK, "ImporterMesh::generate_clusters: failed to allocate cluster blob for surface " + itos(i) + ".");
 		uint8_t *w = blob.ptrw();
 
 		encode_uint32(CLUSTER_BLOB_MAGIC, w + 0);
@@ -647,6 +665,12 @@ void ImporterMesh::generate_clusters() {
 		uint32_t running_index_offset = 0;
 		uint32_t running_position_offset = 0;
 		const float *vertices_f32_ptr = vertices_f32.ptr();
+
+		// base_triangle is a valid global triangle index only if ARRAY_INDEX is rewritten into this same cluster order below,
+		// since meshopt_buildMeshletsSpatial consumes faces in BVH-sorted order, not original index-buffer order.
+		PackedInt32Array cluster_order_indices;
+		cluster_order_indices.resize(total_triangles * 3);
+		int32_t *cluster_order_indices_w = cluster_order_indices.ptrw();
 
 		for (size_t j = 0; j < meshlet_count; j++) {
 			const SurfaceTool::Meshlet &m = meshlets[j];
@@ -672,11 +696,20 @@ void ImporterMesh::generate_clusters() {
 				encode_float(p[2], pos_dst + v * 12 + 8);
 			}
 
+			int32_t *cluster_tri_dst = cluster_order_indices_w + base_triangle * 3;
+			for (uint32_t t = 0; t < m.triangle_count; t++) {
+				for (uint32_t k = 0; k < 3; k++) {
+					unsigned int local_vertex = tri_src[t * 3 + k];
+					cluster_tri_dst[t * 3 + k] = (int32_t)vert_src[local_vertex];
+				}
+			}
+
 			running_index_offset += m.triangle_count * 3;
 			running_position_offset += m.vertex_count * 12;
 			base_triangle += m.triangle_count;
 		}
 
+		s.arrays[RSE::ARRAY_INDEX] = cluster_order_indices;
 		s.cluster_data = blob;
 	}
 }
@@ -1215,8 +1248,9 @@ void ImporterMesh::_set_data(const Dictionary &p_data) {
 			if (s.has("flags")) {
 				flags = s["flags"];
 			}
+			int surface_count_before = surfaces.size();
 			add_surface(prim, arr, b_shapes, lods, material, surf_name, flags);
-			if (s.has("clusters")) {
+			if (s.has("clusters") && surfaces.size() > surface_count_before) {
 				surfaces.write[surfaces.size() - 1].cluster_data = s["clusters"];
 			}
 		}
