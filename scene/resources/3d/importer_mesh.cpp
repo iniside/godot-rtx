@@ -590,7 +590,8 @@ void ImporterMesh::generate_clusters() {
 
 		if (index_count == 0) {
 			ERR_CONTINUE_MSG(vertex_count % 3 != 0, "ImporterMesh::generate_clusters: non-indexed surface " + itos(i) + " has a vertex count that is not a multiple of 3.");
-			indices.resize(vertex_count);
+			Error indices_err = indices.resize(vertex_count);
+			ERR_CONTINUE_MSG(indices_err != OK, "ImporterMesh::generate_clusters: failed to allocate index buffer for surface " + itos(i) + ".");
 			int32_t *indices_w = indices.ptrw();
 			for (size_t j = 0; j < vertex_count; j++) {
 				indices_w[j] = (int32_t)j;
@@ -666,10 +667,10 @@ void ImporterMesh::generate_clusters() {
 		uint32_t running_position_offset = 0;
 		const float *vertices_f32_ptr = vertices_f32.ptr();
 
-		// base_triangle is a valid global triangle index only if ARRAY_INDEX is rewritten into this same cluster order below,
-		// since meshopt_buildMeshletsSpatial consumes faces in BVH-sorted order, not original index-buffer order.
+		// base_triangle is a valid global triangle index only if ARRAY_INDEX is rewritten into this same cluster order below.
 		PackedInt32Array cluster_order_indices;
-		cluster_order_indices.resize(total_triangles * 3);
+		Error cluster_order_err = cluster_order_indices.resize(total_triangles * 3);
+		ERR_CONTINUE_MSG(cluster_order_err != OK, "ImporterMesh::generate_clusters: failed to allocate cluster-ordered index buffer for surface " + itos(i) + ".");
 		int32_t *cluster_order_indices_w = cluster_order_indices.ptrw();
 
 		for (size_t j = 0; j < meshlet_count; j++) {
@@ -708,6 +709,8 @@ void ImporterMesh::generate_clusters() {
 			running_position_offset += m.vertex_count * 12;
 			base_triangle += m.triangle_count;
 		}
+
+		ERR_CONTINUE_MSG((uint32_t)cluster_order_indices.size() != index_count, "ImporterMesh::generate_clusters: cluster-ordered triangle count does not match the original index count for surface " + itos(i) + ".");
 
 		s.arrays[RSE::ARRAY_INDEX] = cluster_order_indices;
 		s.cluster_data = blob;
@@ -1252,7 +1255,19 @@ void ImporterMesh::_set_data(const Dictionary &p_data) {
 			int surface_count_before = surfaces.size();
 			add_surface(prim, arr, b_shapes, lods, material, surf_name, flags);
 			if (s.has("clusters") && surfaces.size() > surface_count_before) {
-				surfaces.write[surfaces.size() - 1].cluster_data = s["clusters"];
+				Vector<uint8_t> cluster_data = s["clusters"];
+				if (cluster_data.size() >= (int)CLUSTER_HEADER_SIZE) {
+					const uint8_t *cluster_ptr = cluster_data.ptr();
+					uint32_t magic = decode_uint32(cluster_ptr + 0);
+					uint32_t version = decode_uint32(cluster_ptr + 4);
+					if (magic == CLUSTER_BLOB_MAGIC && version == CLUSTER_BLOB_VERSION) {
+						surfaces.write[surfaces.size() - 1].cluster_data = cluster_data;
+					} else {
+						WARN_PRINT("ImporterMesh::_set_data: surface " + itos(surfaces.size() - 1) + " has a cluster blob with an unrecognized magic/version, discarding it.");
+					}
+				} else if (!cluster_data.is_empty()) {
+					WARN_PRINT("ImporterMesh::_set_data: surface " + itos(surfaces.size() - 1) + " has a cluster blob smaller than the header size, discarding it.");
+				}
 			}
 		}
 	}
