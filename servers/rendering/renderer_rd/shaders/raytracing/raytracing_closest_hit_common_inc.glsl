@@ -426,6 +426,19 @@ void debug_visualize(
 		} else {
 			ps.radiance = vec3(1.0, 0.0, 0.0);
 		}
+	} else if (vis_mode == 23) {
+		int cluster_id = gl_ClusterIDNV;
+		if (cluster_id == gl_ClusterIDNoneNV) {
+			ps.radiance = vec3(0.0);
+		} else {
+			uint h = uint(cluster_id);
+			h ^= h >> 16;
+			h *= 0x7feb352du;
+			h ^= h >> 15;
+			h *= 0x846ca68bu;
+			h ^= h >> 16;
+			ps.radiance = vec3(h & 0xffu, (h >> 8) & 0xffu, (h >> 16) & 0xffu) / 255.0;
+		}
 	}
 
 	ps.packed_bounces_flags = set_path_terminated(ps.packed_bounces_flags);
