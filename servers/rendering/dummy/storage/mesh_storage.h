@@ -96,6 +96,7 @@ public:
 		s->blend_shape_data = p_surface.blend_shape_data;
 		s->uv_scale = p_surface.uv_scale;
 		s->material = p_surface.material;
+		s->cluster_data = p_surface.cluster_data;
 		m->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MESH);
 	}
 
