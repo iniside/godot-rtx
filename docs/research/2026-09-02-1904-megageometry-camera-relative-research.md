@@ -87,7 +87,7 @@ kompiluje** `clusterizer.cpp` i `partition.cpp`, więc dostępne bez zmian w SCo
 Na dysku, ale **poza buildem**: `meshletcodec.cpp`, `meshletutils.cpp`,
 `opacitymap.cpp`. Ich symbole nie linkują się dziś do silnika.
 
-`modules/meshoptimizer/register_types.cpp:41-48` podpina do `SurfaceTool` wyłącznie
+`modules/meshoptimizer/register_types.cpp:42-49` podpina do `SurfaceTool` wyłącznie
 funkcje uproszczania/remapu — API meshletów nie jest wołane nigdzie w silniku.
 
 W całym forku (poza `thirdparty/`) nie ma żadnego kodu meshlet/cluster/Nanite.
@@ -102,7 +102,7 @@ Shadery RT mapują trafienie na dane w dwóch krokach:
 
 1. `gl_InstanceCustomIndexEXT` indeksuje **płasko** oba SSBO, `geometries[]`
    i `materials[]` — ten sam indeks do obu. Oba naraz widać w
-   `scene_raytracing_raygen.glsl:470-471`+`:509` oraz `raytracing_lights_inc.glsl:172`+`:176`;
+   `scene_raytracing_raygen.glsl:470-471`+`:509` oraz `raytracing_lights_inc.glsl:171`+`:176`;
    samo `geometries[]` w `raytracing_closest_hit_common_inc.glsl:31-32`
    i `scene_raytracing_raygen.glsl:619-624`.
 2. `gl_PrimitiveID` wybiera trójkąt w obrębie tej geometrii —
@@ -121,7 +121,8 @@ rozpakowaniem dwóch indeksów na słowo, dla UINT32 `primitive_id*3`.
 względny wobec klastra i wymaga dodatkowej indyrekcji przez cluster ID.
 
 Konsumenci `primitiveID` — lista obejmuje zarówno odczyty `gl_PrimitiveID` wprost,
-jak i wywołania `get_triangle_indices*`, bo każde z nich trzeba będzie ruszyć osobno.
+jak i wywołania `get_triangle_indices*` oraz ray-query produkujące primitive index —
+każde z nich trzeba będzie ruszyć osobno.
 Sweep po `servers/rendering/renderer_rd/shaders/raytracing/`, z pominięciem `.gen.h`
 (wygenerowane kopie tych samych źródeł):
 
@@ -221,7 +222,7 @@ wąskie gardło.
 Dwa dalsze siedzą w kodzie fork-local, po stronie CPU, i wymagają osobnej obsługi:
 
 - `render_raytracing.cpp:2296`, `:2510`, `:2663` — `store_transform_transposed_3x4()`
-  do `float prev_object_to_world[12]` (`render_raytracing.h:129`); helper ma sygnaturę
+  do `float prev_object_to_world[12]` (`render_raytracing.h:93`, w `RT_InstanceMotionData`); helper ma sygnaturę
   `(const Transform3D &, float *)` — `material_storage.h:388`
 - `render_raytracing.cpp:2860-2862` — do `float position[3]` (`render_raytracing.h:127`)
 
@@ -254,7 +255,7 @@ W całym drzewie nie ma nic o nazwie `camera_relative`/`floating_origin`/`world_
 ## 4. D3D12 — pytanie odpada
 
 Raytracing na D3D12 w tym forku **nie istnieje**. Wszystkie wirtuale AS
-w `rendering_device_driver_d3d12.cpp:5546-5603` to jednolinijkowe `ERR_FAIL_V_MSG`
+w `rendering_device_driver_d3d12.cpp:5547-5605` to jednolinijkowe `ERR_FAIL_V_MSG`
 (zwracające wartość) albo `ERR_FAIL_MSG` (void), z tym samym komunikatem
 "Ray tracing is not currently supported by the D3D12 driver.".
 `has_feature` (`:5915-5934`) nie ma `case` dla `SUPPORTS_RAYTRACING_PIPELINE`
