@@ -1099,7 +1099,7 @@ void RenderingDeviceGraph::_run_render_commands(int32_t p_level, const RecordedC
 			} break;
 			case RecordedCommand::TYPE_BOTTOM_LEVEL_ACCELERATION_STRUCTURE_FROM_CLUSTERS_BUILD: {
 				const RecordedBottomLevelAccelerationStructureFromClustersBuildCommand *blas_from_clusters_command = reinterpret_cast<const RecordedBottomLevelAccelerationStructureFromClustersBuildCommand *>(command);
-				driver->command_build_blas_from_clusters(r_command_buffer, blas_from_clusters_command->acceleration_structure, blas_from_clusters_command->scratch_buffer, blas_from_clusters_command->cluster_addresses, blas_from_clusters_command->src_infos_count_buffer);
+				driver->command_build_blas_from_clusters(r_command_buffer, blas_from_clusters_command->acceleration_structure, blas_from_clusters_command->scratch_buffer, blas_from_clusters_command->cluster_addresses);
 			} break;
 			case RecordedCommand::TYPE_BUFFER_CLEAR: {
 				const RecordedBufferClearCommand *buffer_clear_command = reinterpret_cast<const RecordedBufferClearCommand *>(command);
@@ -1911,7 +1911,7 @@ void RenderingDeviceGraph::add_clas_build(const RDD::ClusterBuildInput &p_input,
 	_add_command_to_graph(trackers.ptr(), usages.ptr(), usages.size(), command_index, command);
 }
 
-void RenderingDeviceGraph::add_blas_build_from_clusters(RDD::AccelerationStructureID p_blas, RDD::BufferID p_scratch_buffer, const RDD::ClusterAddressRegion &p_cluster_addresses, RDD::BufferID p_src_infos_count_buffer, ResourceTracker *p_dst_tracker, VectorView<ResourceTracker *> p_src_trackers) {
+void RenderingDeviceGraph::add_blas_build_from_clusters(RDD::AccelerationStructureID p_blas, RDD::BufferID p_scratch_buffer, const RDD::ClusterAddressRegion &p_cluster_addresses, ResourceTracker *p_dst_tracker, VectorView<ResourceTracker *> p_src_trackers) {
 	int32_t command_index;
 	RecordedBottomLevelAccelerationStructureFromClustersBuildCommand *command = static_cast<RecordedBottomLevelAccelerationStructureFromClustersBuildCommand *>(_allocate_command(sizeof(RecordedBottomLevelAccelerationStructureFromClustersBuildCommand), command_index));
 	command->type = RecordedCommand::TYPE_BOTTOM_LEVEL_ACCELERATION_STRUCTURE_FROM_CLUSTERS_BUILD;
@@ -1919,7 +1919,6 @@ void RenderingDeviceGraph::add_blas_build_from_clusters(RDD::AccelerationStructu
 	command->acceleration_structure = p_blas;
 	command->scratch_buffer = p_scratch_buffer;
 	command->cluster_addresses = p_cluster_addresses;
-	command->src_infos_count_buffer = p_src_infos_count_buffer;
 
 	thread_local LocalVector<ResourceTracker *> trackers;
 	thread_local LocalVector<ResourceUsage> usages;

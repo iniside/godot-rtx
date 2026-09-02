@@ -2383,6 +2383,9 @@
 			[/gdscript]
 			[/codeblocks]
 		</constant>
+		<constant name="BUFFER_CREATION_ACCELERATION_STRUCTURE_STORAGE_BIT" value="16" enum="BufferCreationBits" is_bitfield="true" experimental="">
+			Allows acceleration structures to be built into this buffer. Required for the destination buffer of a cluster acceleration structure build. You must first check that the GPU supports it with [constant SUPPORTS_RAYTRACING_PIPELINE] or [constant SUPPORTS_RAY_QUERY].
+		</constant>
 		<constant name="ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT" value="1" enum="AccelerationStructureFlagBits" is_bitfield="true" experimental="">
 			Allows the acceleration structure to be updated after it has been built.
 		</constant>

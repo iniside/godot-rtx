@@ -858,6 +858,7 @@ public:
 		BUFFER_CREATION_AS_STORAGE_BIT = (1 << 1),
 		BUFFER_CREATION_DYNAMIC_PERSISTENT_BIT = (1 << 2),
 		BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT = (1 << 3),
+		BUFFER_CREATION_ACCELERATION_STRUCTURE_STORAGE_BIT = (1 << 4),
 	};
 
 	enum StorageBufferUsage {
@@ -1339,6 +1340,7 @@ private:
 		Vector<RDG::ResourceTracker *> draw_trackers;
 		HashSet<RID> untracked_buffers;
 		bool cluster_based = false;
+		bool cluster_built = false;
 
 		// --- Top Level ---
 		uint32_t max_instance_count = 0;
@@ -1436,12 +1438,12 @@ public:
 	Error blas_build(RID p_blas);
 	Error blas_update(RID p_blas);
 	Error clas_build(const ClusterBuildInput &p_input, RID p_dst_implicit_buffer, const ClusterAddressRegion &p_dst_addresses, const ClusterAddressRegion &p_dst_sizes, RID p_scratch_buffer, const ClusterAddressRegion &p_src_infos, RID p_src_infos_count_buffer);
-	Error blas_build_from_clusters(RID p_blas, const ClusterAddressRegion &p_cluster_addresses, RID p_src_infos_count_buffer);
+	Error blas_build_from_clusters(RID p_blas, const ClusterAddressRegion &p_cluster_addresses);
 	Error tlas_build(RID p_tlas, Span<AccelerationStructureInstance> p_instances);
 
 private:
 	Error _cluster_address_region_resolve(const ClusterAddressRegion &p_region, RDD::ClusterAddressRegion &r_region, LocalVector<RDG::ResourceTracker *> &r_trackers);
-	Error _cluster_buffer_resolve(RID p_buffer, RDD::BufferID &r_buffer, LocalVector<RDG::ResourceTracker *> &r_trackers);
+	Error _cluster_buffer_resolve(RID p_buffer, bool p_require_acceleration_structure_storage, RDD::BufferID &r_buffer, LocalVector<RDG::ResourceTracker *> &r_trackers);
 
 	/**********************************/
 	/**** HIT SHADER BINDING TABLE ****/

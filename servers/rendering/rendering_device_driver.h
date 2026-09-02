@@ -819,26 +819,11 @@ public:
 		uint32_t cluster_template_bounds_byte_alignment = 0;
 	};
 
-	enum ClusterAccelerationStructureOpType {
-		CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_MOVE_OBJECTS,
-		CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_CLUSTERS_BOTTOM_LEVEL,
-		CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_TRIANGLE_CLUSTER,
-		CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_TRIANGLE_CLUSTER_TEMPLATE,
-		CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_INSTANTIATE_TRIANGLE_CLUSTER,
-		CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_GET_CLUSTER_TEMPLATE_INDICES,
-	};
-
-	enum ClusterAccelerationStructureOpMode {
-		CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_IMPLICIT_DESTINATIONS,
-		CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_EXPLICIT_DESTINATIONS,
-		CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_COMPUTE_SIZES,
-	};
-
+	// Triangle clusters built into an implicit destination: the only cluster operation
+	// implemented by clas_get_build_sizes() and command_build_clas().
 	struct ClusterBuildInput {
 		uint32_t max_acceleration_structure_count = 0;
 		BitField<AccelerationStructureFlagBits> flags = {};
-		ClusterAccelerationStructureOpType op_type = CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_TRIANGLE_CLUSTER;
-		ClusterAccelerationStructureOpMode op_mode = CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_IMPLICIT_DESTINATIONS;
 
 		DataFormat vertex_format = DATA_FORMAT_R32G32B32_SFLOAT;
 		uint32_t max_geometry_index_value = 0;
@@ -894,7 +879,7 @@ public:
 	virtual void command_update_blas(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer) = 0;
 	virtual void command_build_tlas(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer, BufferID p_instance_buffer, uint32_t p_instance_offset, uint32_t p_instance_count) = 0;
 	virtual void command_build_clas(CommandBufferID p_cmd_buffer, const ClusterBuildInput &p_input, BufferID p_dst_implicit_buffer, const ClusterAddressRegion &p_dst_addresses, const ClusterAddressRegion &p_dst_sizes, BufferID p_scratch_buffer, const ClusterAddressRegion &p_src_infos, BufferID p_src_infos_count_buffer) = 0;
-	virtual void command_build_blas_from_clusters(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer, const ClusterAddressRegion &p_cluster_addresses, BufferID p_src_infos_count_buffer) = 0;
+	virtual void command_build_blas_from_clusters(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer, const ClusterAddressRegion &p_cluster_addresses) = 0;
 	virtual void command_bind_raytracing_pipeline(CommandBufferID p_cmd_buffer, RaytracingPipelineID p_pipeline) = 0;
 	virtual void command_bind_raytracing_uniform_set(CommandBufferID p_cmd_buffer, UniformSetID p_uniform_set, ShaderID p_shader, uint32_t p_set_index) = 0;
 

@@ -364,7 +364,6 @@ private:
 		RDD::AccelerationStructureID acceleration_structure;
 		RDD::BufferID scratch_buffer;
 		RDD::ClusterAddressRegion cluster_addresses;
-		RDD::BufferID src_infos_count_buffer;
 	};
 
 	struct RecordedTopLevelAccelerationStructureBuildCommand : RecordedCommand {
@@ -913,7 +912,7 @@ public:
 	void add_blas_build(RDD::AccelerationStructureID p_blas, RDD::BufferID p_scratch_buffer, ResourceTracker *p_dst_tracker, VectorView<ResourceTracker *> p_src_trackers);
 	void add_blas_update(RDD::AccelerationStructureID p_blas, RDD::BufferID p_scratch_buffer, ResourceTracker *p_dst_tracker, VectorView<ResourceTracker *> p_src_trackers);
 	void add_clas_build(const RDD::ClusterBuildInput &p_input, RDD::BufferID p_dst_implicit_buffer, const RDD::ClusterAddressRegion &p_dst_addresses, const RDD::ClusterAddressRegion &p_dst_sizes, RDD::BufferID p_scratch_buffer, const RDD::ClusterAddressRegion &p_src_infos, RDD::BufferID p_src_infos_count_buffer, VectorView<ResourceTracker *> p_write_trackers, VectorView<ResourceTracker *> p_read_trackers);
-	void add_blas_build_from_clusters(RDD::AccelerationStructureID p_blas, RDD::BufferID p_scratch_buffer, const RDD::ClusterAddressRegion &p_cluster_addresses, RDD::BufferID p_src_infos_count_buffer, ResourceTracker *p_dst_tracker, VectorView<ResourceTracker *> p_src_trackers);
+	void add_blas_build_from_clusters(RDD::AccelerationStructureID p_blas, RDD::BufferID p_scratch_buffer, const RDD::ClusterAddressRegion &p_cluster_addresses, ResourceTracker *p_dst_tracker, VectorView<ResourceTracker *> p_src_trackers);
 	void add_tlas_build(RDD::AccelerationStructureID p_tlas, RDD::BufferID p_scratch_buffer, RDD::BufferID p_instance_buffer, uint32_t p_instance_offset, uint32_t p_instance_count, ResourceTracker *p_dst_tracker, VectorView<ResourceTracker *> p_src_trackers);
 	void add_buffer_clear(RDD::BufferID p_dst, ResourceTracker *p_dst_tracker, uint32_t p_offset, uint32_t p_size);
 	void add_buffer_copy(RDD::BufferID p_src, ResourceTracker *p_src_tracker, RDD::BufferID p_dst, ResourceTracker *p_dst_tracker, RDD::BufferCopyRegion p_region);

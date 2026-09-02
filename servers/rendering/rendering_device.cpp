@@ -468,6 +468,14 @@ BitField<RDD::BufferUsageBits> RenderingDevice::_creation_to_usage_bits(BitField
 		usage.set_flag(RDD::BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT);
 	}
 
+	if (p_creation_bits.has_flag(BUFFER_CREATION_ACCELERATION_STRUCTURE_STORAGE_BIT)) {
+#ifdef DEBUG_ENABLED
+		ERR_FAIL_COND_V_MSG(!has_feature(SUPPORTS_RAYTRACING_PIPELINE) && !has_feature(SUPPORTS_RAY_QUERY), 0,
+				"The GPU doesn't support acceleration structure storage flag.");
+#endif
+		usage.set_flag(RDD::BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT);
+	}
+
 	return usage;
 }
 
@@ -551,6 +559,14 @@ void RenderingDevice::clas_get_build_sizes(const ClusterBuildInput &p_input, Clu
 	driver->clas_get_build_sizes(p_input, r_sizes);
 }
 
+// A tracker may back several arguments of the same build when the caller packs them into one
+// buffer; the graph rejects a command that lists the same tracker twice.
+static void _cluster_tracker_push_unique(LocalVector<RDG::ResourceTracker *> &r_trackers, RDG::ResourceTracker *p_tracker) {
+	if (!r_trackers.has(p_tracker)) {
+		r_trackers.push_back(p_tracker);
+	}
+}
+
 Error RenderingDevice::_cluster_address_region_resolve(const ClusterAddressRegion &p_region, RDD::ClusterAddressRegion &r_region, LocalVector<RDG::ResourceTracker *> &r_trackers) {
 	r_region = RDD::ClusterAddressRegion();
 
@@ -559,6 +575,7 @@ Error RenderingDevice::_cluster_address_region_resolve(const ClusterAddressRegio
 	ERR_FAIL_COND_V_MSG(!buffer->usage.has_flag(RDD::BUFFER_USAGE_DEVICE_ADDRESS_BIT), ERR_INVALID_PARAMETER, "Cluster address region buffer was not created with the device address flag.");
 	ERR_FAIL_COND_V_MSG(p_region.stride == 0, ERR_INVALID_PARAMETER, "Cluster address region stride must not be zero.");
 	ERR_FAIL_COND_V_MSG(p_region.size == 0, ERR_INVALID_PARAMETER, "Cluster address region size must not be zero.");
+	ERR_FAIL_COND_V_MSG((p_region.size % p_region.stride) != 0, ERR_INVALID_PARAMETER, "Cluster address region size must be a multiple of its stride.");
 	ERR_FAIL_COND_V_MSG((p_region.offset + p_region.size) > buffer->size, ERR_INVALID_PARAMETER, "Cluster address region is outside the range of its buffer.");
 
 	_check_transfer_worker_buffer(buffer);
@@ -571,17 +588,18 @@ Error RenderingDevice::_cluster_address_region_resolve(const ClusterAddressRegio
 	r_region.offset = p_region.offset;
 	r_region.stride = p_region.stride;
 	r_region.size = p_region.size;
-	r_trackers.push_back(buffer->draw_tracker);
+	_cluster_tracker_push_unique(r_trackers, buffer->draw_tracker);
 
 	return OK;
 }
 
-Error RenderingDevice::_cluster_buffer_resolve(RID p_buffer, RDD::BufferID &r_buffer, LocalVector<RDG::ResourceTracker *> &r_trackers) {
+Error RenderingDevice::_cluster_buffer_resolve(RID p_buffer, bool p_require_acceleration_structure_storage, RDD::BufferID &r_buffer, LocalVector<RDG::ResourceTracker *> &r_trackers) {
 	r_buffer = RDD::BufferID();
 
 	Buffer *buffer = _get_buffer_from_owner(p_buffer);
 	ERR_FAIL_NULL_V_MSG(buffer, ERR_INVALID_PARAMETER, "Cluster build buffer is not a valid buffer of any type.");
 	ERR_FAIL_COND_V_MSG(!buffer->usage.has_flag(RDD::BUFFER_USAGE_DEVICE_ADDRESS_BIT), ERR_INVALID_PARAMETER, "Cluster build buffer was not created with the device address flag.");
+	ERR_FAIL_COND_V_MSG(p_require_acceleration_structure_storage && !buffer->usage.has_flag(RDD::BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT), ERR_INVALID_PARAMETER, "Cluster build buffer was not created with BUFFER_CREATION_ACCELERATION_STRUCTURE_STORAGE_BIT.");
 
 	_check_transfer_worker_buffer(buffer);
 
@@ -590,7 +608,7 @@ Error RenderingDevice::_cluster_buffer_resolve(RID p_buffer, RDD::BufferID &r_bu
 	}
 
 	r_buffer = buffer->driver_id;
-	r_trackers.push_back(buffer->draw_tracker);
+	_cluster_tracker_push_unique(r_trackers, buffer->draw_tracker);
 
 	return OK;
 }
@@ -606,7 +624,6 @@ RID RenderingDevice::blas_create_from_clusters(uint32_t p_max_cluster_count, uin
 
 	acceleration_structure.draw_tracker = RDG::resource_tracker_create();
 	acceleration_structure.draw_tracker->acceleration_structure_driver_id = acceleration_structure.driver_id;
-	// Assume we are going to build this acceleration structure
 	acceleration_structure.draw_tracker->usage = RDG::RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ_WRITE;
 
 	RID id = acceleration_structure_owner.make_rid(acceleration_structure);
@@ -630,11 +647,11 @@ Error RenderingDevice::clas_build(const ClusterBuildInput &p_input, RID p_dst_im
 	read_trackers.clear();
 
 	RDD::BufferID dst_implicit_buffer;
-	Error err = _cluster_buffer_resolve(p_dst_implicit_buffer, dst_implicit_buffer, write_trackers);
+	Error err = _cluster_buffer_resolve(p_dst_implicit_buffer, true, dst_implicit_buffer, write_trackers);
 	ERR_FAIL_COND_V(err != OK, err);
 
 	RDD::BufferID scratch_buffer;
-	err = _cluster_buffer_resolve(p_scratch_buffer, scratch_buffer, write_trackers);
+	err = _cluster_buffer_resolve(p_scratch_buffer, false, scratch_buffer, write_trackers);
 	ERR_FAIL_COND_V(err != OK, err);
 
 	RDD::ClusterAddressRegion dst_addresses;
@@ -642,23 +659,31 @@ Error RenderingDevice::clas_build(const ClusterBuildInput &p_input, RID p_dst_im
 	ERR_FAIL_COND_V(err != OK, err);
 
 	RDD::ClusterAddressRegion dst_sizes;
-	err = _cluster_address_region_resolve(p_dst_sizes, dst_sizes, write_trackers);
-	ERR_FAIL_COND_V(err != OK, err);
+	if (p_dst_sizes.buffer.is_valid()) {
+		err = _cluster_address_region_resolve(p_dst_sizes, dst_sizes, write_trackers);
+		ERR_FAIL_COND_V(err != OK, err);
+	}
 
 	RDD::ClusterAddressRegion src_infos;
 	err = _cluster_address_region_resolve(p_src_infos, src_infos, read_trackers);
 	ERR_FAIL_COND_V(err != OK, err);
 
 	RDD::BufferID src_infos_count_buffer;
-	err = _cluster_buffer_resolve(p_src_infos_count_buffer, src_infos_count_buffer, read_trackers);
+	err = _cluster_buffer_resolve(p_src_infos_count_buffer, false, src_infos_count_buffer, read_trackers);
 	ERR_FAIL_COND_V(err != OK, err);
+
+	for (uint32_t i = read_trackers.size(); i > 0; i--) {
+		if (write_trackers.has(read_trackers[i - 1])) {
+			read_trackers.remove_at(i - 1);
+		}
+	}
 
 	draw_graph.add_clas_build(p_input, dst_implicit_buffer, dst_addresses, dst_sizes, scratch_buffer, src_infos, src_infos_count_buffer, write_trackers, read_trackers);
 
 	return OK;
 }
 
-Error RenderingDevice::blas_build_from_clusters(RID p_blas, const ClusterAddressRegion &p_cluster_addresses, RID p_src_infos_count_buffer) {
+Error RenderingDevice::blas_build_from_clusters(RID p_blas, const ClusterAddressRegion &p_cluster_addresses) {
 	ERR_RENDER_THREAD_GUARD_V(ERR_UNAVAILABLE);
 
 	ERR_FAIL_COND_V_MSG(draw_list.active, ERR_INVALID_PARAMETER, "Building BLAS is forbidden during creation of a draw list.");
@@ -668,6 +693,7 @@ Error RenderingDevice::blas_build_from_clusters(RID p_blas, const ClusterAddress
 	AccelerationStructure *blas = acceleration_structure_owner.get_or_null(p_blas);
 	ERR_FAIL_NULL_V_MSG(blas, ERR_INVALID_PARAMETER, "BLAS argument is not valid.");
 	ERR_FAIL_COND_V_MSG(!blas->cluster_based, ERR_INVALID_PARAMETER, "BLAS was not created from clusters.");
+	ERR_FAIL_COND_V_MSG(blas->cluster_built, ERR_INVALID_PARAMETER, "A cluster BLAS can only be built once. Free it and create a new one to rebuild it.");
 
 	thread_local LocalVector<RDG::ResourceTracker *> draw_trackers;
 	draw_trackers.clear();
@@ -676,20 +702,12 @@ Error RenderingDevice::blas_build_from_clusters(RID p_blas, const ClusterAddress
 	Error err = _cluster_address_region_resolve(p_cluster_addresses, cluster_addresses, draw_trackers);
 	ERR_FAIL_COND_V(err != OK, err);
 
-	RDD::BufferID src_infos_count_buffer;
-	err = _cluster_buffer_resolve(p_src_infos_count_buffer, src_infos_count_buffer, draw_trackers);
-	ERR_FAIL_COND_V(err != OK, err);
-
 	err = _acceleration_structure_scratch_buffer_create(blas);
 	ERR_FAIL_COND_V(err != OK, err);
 
-	blas->draw_trackers.clear();
-	for (RDG::ResourceTracker *tracker : draw_trackers) {
-		blas->draw_trackers.push_back(tracker);
-	}
+	draw_graph.add_blas_build_from_clusters(blas->driver_id, blas->scratch_buffer, cluster_addresses, blas->draw_tracker, draw_trackers);
 
-	draw_graph.add_blas_build_from_clusters(blas->driver_id, blas->scratch_buffer, cluster_addresses, src_infos_count_buffer, blas->draw_tracker, draw_trackers);
-
+	blas->cluster_built = true;
 	blas->invalidated = false;
 	_blas_remove_tlas_dependencies(blas, p_blas);
 
@@ -9894,6 +9912,7 @@ void RenderingDevice::_bind_methods() {
 	// Not exposed on purpose. This flag is too dangerous to be exposed to regular GD users.
 	//BIND_BITFIELD_FLAG(BUFFER_CREATION_DYNAMIC_PERSISTENT_BIT);
 	BIND_BITFIELD_FLAG(BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT);
+	BIND_BITFIELD_FLAG(BUFFER_CREATION_ACCELERATION_STRUCTURE_STORAGE_BIT);
 
 	BIND_BITFIELD_FLAG(ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT);
 	BIND_BITFIELD_FLAG(ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT);

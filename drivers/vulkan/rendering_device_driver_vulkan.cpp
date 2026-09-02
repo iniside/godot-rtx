@@ -6702,16 +6702,19 @@ uint32_t RenderingDeviceDriverVulkan::acceleration_structure_get_scratch_size_by
 // ----- CLUSTER ACCELERATION STRUCTURE -----
 
 #if VULKAN_RAYTRACING_ENABLED
+// Single-buffered and host-written: the acceleration structure this belongs to may only be built
+// once (RenderingDevice::blas_build_from_clusters enforces that), so no in-flight frame can be
+// reading these bytes while they are written.
 struct ClusterBottomLevelBuildArgs {
 	VkDeviceAddress dst_address;
-	uint64_t dst_size;
+	uint32_t src_infos_count;
+	uint32_t padding;
 	VkClusterAccelerationStructureBuildClustersBottomLevelInfoNV src_info;
 };
 #endif
 
 bool RenderingDeviceDriverVulkan::clas_is_supported() {
 #if VULKAN_RAYTRACING_ENABLED
-	// volk resolves these unconditionally; they stay null on a driver that does not expose the extension.
 	return cluster_acceleration_structure_capabilities.cluster_acceleration_structure_support &&
 			vkGetClusterAccelerationStructureBuildSizesNV != nullptr &&
 			vkCmdBuildClusterAccelerationStructureIndirectNV != nullptr;
@@ -6725,11 +6728,6 @@ RDD::ClusterAccelerationStructureLimits RenderingDeviceDriverVulkan::clas_get_li
 }
 
 void RenderingDeviceDriverVulkan::_cluster_build_input_to_vk(const ClusterBuildInput &p_input, VkClusterAccelerationStructureTriangleClusterInputNV &r_triangle_input, VkClusterAccelerationStructureInputInfoNV &r_input_info) {
-	static_assert(int(CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_CLUSTERS_BOTTOM_LEVEL) == int(VK_CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_CLUSTERS_BOTTOM_LEVEL_NV));
-	static_assert(int(CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_TRIANGLE_CLUSTER) == int(VK_CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_TRIANGLE_CLUSTER_NV));
-	static_assert(int(CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_IMPLICIT_DESTINATIONS) == int(VK_CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_IMPLICIT_DESTINATIONS_NV));
-	static_assert(int(CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_EXPLICIT_DESTINATIONS) == int(VK_CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_EXPLICIT_DESTINATIONS_NV));
-
 	r_triangle_input = {};
 	r_triangle_input.sType = VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_TRIANGLE_CLUSTER_INPUT_NV;
 	r_triangle_input.vertexFormat = RD_TO_VK_FORMAT[p_input.vertex_format];
@@ -6745,8 +6743,8 @@ void RenderingDeviceDriverVulkan::_cluster_build_input_to_vk(const ClusterBuildI
 	r_input_info.sType = VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_INPUT_INFO_NV;
 	r_input_info.maxAccelerationStructureCount = p_input.max_acceleration_structure_count;
 	r_input_info.flags = p_input.flags;
-	r_input_info.opType = VkClusterAccelerationStructureOpTypeNV(p_input.op_type);
-	r_input_info.opMode = VkClusterAccelerationStructureOpModeNV(p_input.op_mode);
+	r_input_info.opType = VK_CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_TRIANGLE_CLUSTER_NV;
+	r_input_info.opMode = VK_CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_IMPLICIT_DESTINATIONS_NV;
 	r_input_info.opInput.pTriangleClusters = &r_triangle_input;
 }
 
@@ -6814,6 +6812,8 @@ RDD::AccelerationStructureID RenderingDeviceDriverVulkan::blas_create_from_clust
 	BufferID destination_buffer = buffer_create(size_info.accelerationStructureSize + destination_alignment, BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT | BUFFER_USAGE_STORAGE_BIT | BUFFER_USAGE_DEVICE_ADDRESS_BIT, MEMORY_ALLOCATION_TYPE_GPU, UINT64_MAX);
 	ERR_FAIL_COND_V_MSG(!destination_buffer, AccelerationStructureID(), "Couldn't create the destination buffer of a cluster bottom level acceleration structure.");
 
+	// BUFFER_USAGE_TRANSFER_FROM_BIT is what makes buffer_create() ask VMA for a mappable
+	// sequential-write allocation; without it vmaMapMemory() asserts on the result.
 	BufferID args_buffer = buffer_create(sizeof(ClusterBottomLevelBuildArgs), BUFFER_USAGE_TRANSFER_FROM_BIT | BUFFER_USAGE_STORAGE_BIT | BUFFER_USAGE_DEVICE_ADDRESS_BIT | BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT, MEMORY_ALLOCATION_TYPE_CPU, UINT64_MAX);
 	if (unlikely(!args_buffer)) {
 		buffer_free(destination_buffer);
@@ -6827,6 +6827,7 @@ RDD::AccelerationStructureID RenderingDeviceDriverVulkan::blas_create_from_clust
 		ERR_FAIL_V_MSG(AccelerationStructureID(), "Couldn't map the argument buffer of a cluster bottom level acceleration structure.");
 	}
 	memset(args_ptr, 0, sizeof(ClusterBottomLevelBuildArgs));
+	((ClusterBottomLevelBuildArgs *)args_ptr)->src_infos_count = 1;
 
 	AccelerationStructureInfo *accel_info = VersatileResource::allocate<AccelerationStructureInfo>(resources_allocator);
 	accel_info->buffer = destination_buffer;
@@ -6950,7 +6951,7 @@ void RenderingDeviceDriverVulkan::command_build_clas(CommandBufferID p_cmd_buffe
 #endif
 }
 
-void RenderingDeviceDriverVulkan::command_build_blas_from_clusters(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer, const ClusterAddressRegion &p_cluster_addresses, BufferID p_src_infos_count_buffer) {
+void RenderingDeviceDriverVulkan::command_build_blas_from_clusters(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer, const ClusterAddressRegion &p_cluster_addresses) {
 #if VULKAN_RAYTRACING_ENABLED
 	AccelerationStructureInfo *accel_info = (AccelerationStructureInfo *)p_acceleration_structure.id;
 	ERR_FAIL_NULL_MSG(accel_info, "Vulkan raytracing acceleration structure input parameter is not valid.");
@@ -6959,13 +6960,11 @@ void RenderingDeviceDriverVulkan::command_build_blas_from_clusters(CommandBuffer
 	ERR_FAIL_COND_MSG(!p_scratch_buffer, "A cluster bottom level acceleration structure build needs a scratch buffer.");
 	ERR_FAIL_COND_MSG(!p_cluster_addresses.buffer, "A cluster bottom level acceleration structure build needs a cluster address buffer.");
 	ERR_FAIL_COND_MSG(p_cluster_addresses.stride == 0, "A cluster bottom level acceleration structure build needs a non-zero cluster address stride.");
-	ERR_FAIL_COND_MSG(!p_src_infos_count_buffer, "A cluster bottom level acceleration structure build needs a source info count buffer.");
 
 	const CommandBufferInfo *command_buffer = (const CommandBufferInfo *)p_cmd_buffer.id;
 
 	ClusterBottomLevelBuildArgs *args = (ClusterBottomLevelBuildArgs *)accel_info->cluster_args_ptr;
 	args->dst_address = accel_info->cached_device_address;
-	args->dst_size = 0;
 	args->src_info.clusterReferencesCount = uint32_t(p_cluster_addresses.size / p_cluster_addresses.stride);
 	args->src_info.clusterReferencesStride = uint32_t(p_cluster_addresses.stride);
 	args->src_info.clusterReferences = buffer_get_device_address(p_cluster_addresses.buffer) + p_cluster_addresses.offset;
@@ -6988,13 +6987,10 @@ void RenderingDeviceDriverVulkan::command_build_blas_from_clusters(CommandBuffer
 	commands_info.dstAddressesArray.deviceAddress = args_address + offsetof(ClusterBottomLevelBuildArgs, dst_address);
 	commands_info.dstAddressesArray.stride = sizeof(VkDeviceAddress);
 	commands_info.dstAddressesArray.size = sizeof(VkDeviceAddress);
-	commands_info.dstSizesArray.deviceAddress = args_address + offsetof(ClusterBottomLevelBuildArgs, dst_size);
-	commands_info.dstSizesArray.stride = sizeof(uint64_t);
-	commands_info.dstSizesArray.size = sizeof(uint64_t);
 	commands_info.srcInfosArray.deviceAddress = args_address + offsetof(ClusterBottomLevelBuildArgs, src_info);
 	commands_info.srcInfosArray.stride = sizeof(VkClusterAccelerationStructureBuildClustersBottomLevelInfoNV);
 	commands_info.srcInfosArray.size = sizeof(VkClusterAccelerationStructureBuildClustersBottomLevelInfoNV);
-	commands_info.srcInfosCount = buffer_get_device_address(p_src_infos_count_buffer);
+	commands_info.srcInfosCount = args_address + offsetof(ClusterBottomLevelBuildArgs, src_infos_count);
 
 	vkCmdBuildClusterAccelerationStructureIndirectNV(command_buffer->vk_command_buffer, &commands_info);
 #endif
@@ -7701,7 +7697,12 @@ void RenderingDeviceDriverVulkan::set_object_name(ObjectType p_type, ID p_driver
 		} break;
 		case OBJECT_TYPE_ACCELERATION_STRUCTURE: {
 			const AccelerationStructureInfo *asi = (const AccelerationStructureInfo *)p_driver_id.id;
-			_set_object_name(VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, (uint64_t)asi->vk_acceleration_structure, p_name);
+			if (asi->cluster_bottom_level) {
+				const BufferInfo *buf_info = (const BufferInfo *)asi->buffer.id;
+				_set_object_name(VK_OBJECT_TYPE_BUFFER, (uint64_t)buf_info->vk_buffer, p_name);
+			} else {
+				_set_object_name(VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, (uint64_t)asi->vk_acceleration_structure, p_name);
+			}
 		} break;
 		case OBJECT_TYPE_RAYTRACING_PIPELINE: {
 			_set_object_name(VK_OBJECT_TYPE_PIPELINE, (uint64_t)p_driver_id.id, p_name);
