@@ -29,6 +29,7 @@
 /**************************************************************************/
 
 #include "core/config/project_settings.h"
+#include "core/io/marshalls.h"
 #include "core/math/math_funcs.h"
 #include "servers/rendering/renderer_rd/environment/sky.h"
 #include "servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h"
@@ -236,13 +237,14 @@ uint64_t RenderRaytracing::mat_ubo_pool_get_address(uint32_t p_slot) const {
 // ---------------------------------------------------------------------------
 
 void RenderRaytracing::cleanup_caches() {
-	// Static-surface BLASes are NOT freed here: they were created with the default
-	// lifetime and will be cascade-freed by RD when their source vertex buffer is freed.
+	RD *rd = RD::get_singleton();
+
 	for (uint32_t i = 0; i < surface_chunks.size(); i++) {
 		if (surface_chunks[i]) {
 			for (uint32_t j = 0; j < RT_CACHE_CHUNK_SIZE; j++) {
 				RTCacheEntry *entry = &surface_chunks[i][j];
 				if (entry->ptr) {
+					_free_cluster_blas(entry->ptr);
 					memdelete(entry->ptr);
 					entry->ptr = nullptr;
 				}
@@ -252,7 +254,25 @@ void RenderRaytracing::cleanup_caches() {
 	}
 	surface_chunks.clear();
 
-	RD *rd = RD::get_singleton();
+	for (const RTPendingClusterBuild &pending : pending_cluster_builds) {
+		if (pending.src_infos_buffer.is_valid()) {
+			rd->free_rid(pending.src_infos_buffer);
+		}
+	}
+	pending_cluster_builds.clear();
+
+	for (const RTDeferredBufferFree &deferred : cluster_deferred_frees) {
+		if (deferred.buffer.is_valid()) {
+			rd->free_rid(deferred.buffer);
+		}
+	}
+	cluster_deferred_frees.clear();
+
+	if (clas_scratch_buffer.is_valid()) {
+		rd->free_rid(clas_scratch_buffer);
+		clas_scratch_buffer = RID();
+	}
+	clas_scratch_capacity = 0;
 
 	// Free all cached deformed surface data.
 	{
@@ -452,6 +472,21 @@ void RenderRaytracing::prepare_frame() {
 	const uint32_t current_frame = RSG::rasterizer->get_frame_number();
 	RD *rd = RD::get_singleton();
 
+	pending_cluster_builds.clear();
+
+	// Cluster build inputs stay alive until the graph that recorded them has been
+	// submitted; freeing one in its own frame would destroy a tracker it still holds.
+	for (uint32_t i = cluster_deferred_frees.size(); i > 0; i--) {
+		RTDeferredBufferFree &deferred = cluster_deferred_frees[i - 1];
+		if (deferred.frame == current_frame) {
+			continue;
+		}
+		if (deferred.buffer.is_valid()) {
+			rd->free_rid(deferred.buffer);
+		}
+		cluster_deferred_frees.remove_at_unordered(i - 1);
+	}
+
 	// TTL-evict stale deformed-surface entries.
 	{
 		static const uint32_t DEFORMED_CACHE_TTL = (uint32_t)GLOBAL_GET("rendering/pathtracer/deformed_mesh_cache_ttl_frames");
@@ -579,13 +614,10 @@ RTSurfaceData *RenderRaytracing::process_surface(
 	// Allocate or reuse entry
 	if (!entry->ptr) {
 		entry->ptr = memnew(RTSurfaceData);
-	} else if (entry->ptr->blas.is_valid()) {
-		if (entry->cached_rid_version == mesh_version) {
-			// Same mesh, surface data changed: BLAS is still live, free explicitly.
-			RD::get_singleton()->free_rid(entry->ptr->blas);
-		}
-		// Version mismatch: old mesh was deleted, BLAS already cascade-freed by RD.
-		entry->ptr->blas = RID();
+	} else {
+		// Unconditional, including on a version mismatch: a cluster BLAS and its buffers
+		// hold no RD dependency on the mesh, so nothing else ever frees them.
+		_free_cluster_blas(entry->ptr);
 	}
 
 	RTSurfaceData *surf_data = entry->ptr;
@@ -911,6 +943,288 @@ static void _fill_surface_geometry_data(
 	}
 }
 
+// Layout must match VkClusterAccelerationStructureBuildTriangleClusterInfoNV
+// (thirdparty/vulkan/include/vulkan/vulkan_core.h:23292).
+struct RTClusterTriangleInfo {
+	uint32_t cluster_id = 0;
+	uint32_t cluster_flags = 0;
+	uint32_t packed_counts = 0;
+	uint32_t base_geometry_index_and_flags = 0;
+	uint16_t index_buffer_stride = 0;
+	uint16_t vertex_buffer_stride = 0;
+	uint16_t geometry_index_and_flags_buffer_stride = 0;
+	uint16_t opacity_micromap_index_buffer_stride = 0;
+	uint64_t index_buffer = 0;
+	uint64_t vertex_buffer = 0;
+	uint64_t geometry_index_and_flags_buffer = 0;
+	uint64_t opacity_micromap_array = 0;
+	uint64_t opacity_micromap_index_buffer = 0;
+};
+static_assert(sizeof(RTClusterTriangleInfo) == 64, "RTClusterTriangleInfo must match the Vulkan cluster triangle info layout");
+
+enum : uint32_t {
+	RT_CLUSTER_RECORD_SIZE = 16,
+	RT_CLUSTER_INDEX_TYPE_8BIT = 1,
+};
+
+void RenderRaytracing::_free_cluster_blas(RTSurfaceData *p_surf_data) {
+	if (!p_surf_data) {
+		return;
+	}
+
+	RD *rd = RD::get_singleton();
+	RID *owned[] = {
+		&p_surf_data->blas,
+		&p_surf_data->clas_buffer,
+		&p_surf_data->clas_addresses_buffer,
+		&p_surf_data->cluster_remap_buffer,
+		&p_surf_data->clas_count_buffer,
+	};
+	for (RID *rid : owned) {
+		if (rid->is_valid()) {
+			rd->free_rid(*rid);
+			*rid = RID();
+		}
+	}
+
+	p_surf_data->cluster_count = 0;
+	p_surf_data->is_clustered = false;
+	p_surf_data->geometry.flags &= ~(uint32_t)RT_GEOM_FLAG_CLUSTERED;
+	p_surf_data->geometry.cluster_count = 0;
+	p_surf_data->geometry.cluster_remap_address_lo = 0;
+	p_surf_data->geometry.cluster_remap_address_hi = 0;
+}
+
+bool RenderRaytracing::_populate_cluster_blas(void *p_mesh_surface, uint32_t p_cache_key, RTSurfaceData *r_surf_data) {
+	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
+	RD *rd = RD::get_singleton();
+
+	const uint32_t cluster_count = mesh_storage->mesh_surface_get_cluster_count(p_mesh_surface);
+	const RID cluster_buffer = mesh_storage->mesh_surface_get_cluster_buffer(p_mesh_surface);
+	const RID cluster_position_buffer = mesh_storage->mesh_surface_get_cluster_position_buffer(p_mesh_surface);
+	const Vector<uint8_t> &records = mesh_storage->mesh_surface_get_cluster_records(p_mesh_surface);
+
+	if (cluster_count == 0 || !cluster_buffer.is_valid() || !cluster_position_buffer.is_valid() ||
+			(uint64_t)records.size() < (uint64_t)cluster_count * RT_CLUSTER_RECORD_SIZE) {
+		ERR_PRINT_ONCE("Path tracer: a mesh surface carries no baked cluster data and will not be rendered. Re-import the mesh.");
+		return false;
+	}
+	ERR_FAIL_COND_V_MSG(!rd->clas_is_supported(), false, "Path tracer: the rendering device does not support cluster acceleration structures.");
+
+	const uint64_t cluster_base_address = rd->buffer_get_device_address(cluster_buffer);
+	const uint64_t position_base_address = rd->buffer_get_device_address(cluster_position_buffer);
+	ERR_FAIL_COND_V_MSG(cluster_base_address == 0 || position_base_address == 0, false, "Path tracer: cluster buffers have no device address.");
+
+	const RD::ClusterAccelerationStructureLimits limits = rd->clas_get_limits();
+	const uint32_t index_section_offset = mesh_storage->mesh_surface_get_cluster_index_section_offset(p_mesh_surface);
+	const uint64_t cluster_buffer_size = mesh_storage->mesh_surface_get_cluster_buffer_size(p_mesh_surface);
+	const uint64_t position_buffer_size = mesh_storage->mesh_surface_get_cluster_position_buffer_size(p_mesh_surface);
+	const uint8_t *record_ptr = records.ptr();
+
+	LocalVector<RTClusterTriangleInfo> src_infos;
+	src_infos.resize(cluster_count);
+	LocalVector<uint32_t> cluster_remap;
+	cluster_remap.resize(cluster_count);
+
+	uint32_t max_cluster_triangles = 0;
+	uint32_t max_cluster_vertices = 0;
+	uint32_t total_triangles = 0;
+	uint32_t total_vertices = 0;
+
+	for (uint32_t i = 0; i < cluster_count; i++) {
+		const uint8_t *record = record_ptr + (uint64_t)i * RT_CLUSTER_RECORD_SIZE;
+		const uint32_t position_offset = decode_uint32(record + 0);
+		const uint32_t index_offset = decode_uint32(record + 4);
+		const uint32_t vertex_count = record[8];
+		const uint32_t triangle_count = record[9];
+
+		ERR_FAIL_COND_V_MSG(vertex_count == 0 || triangle_count == 0, false, "Path tracer: a cluster record carries no geometry.");
+		ERR_FAIL_COND_V_MSG(vertex_count > limits.max_vertices_per_cluster || triangle_count > limits.max_triangles_per_cluster, false,
+				"Path tracer: a cluster exceeds the per-cluster vertex or triangle limit of this device.");
+		ERR_FAIL_COND_V_MSG((uint64_t)position_offset + (uint64_t)vertex_count * 12 > position_buffer_size, false,
+				"Path tracer: a cluster's position range lies outside the surface's cluster position buffer.");
+		// The local index section lives inside cluster_buffer, behind its header and per-cluster records.
+		ERR_FAIL_COND_V_MSG((uint64_t)index_section_offset + (uint64_t)index_offset + (uint64_t)triangle_count * 3 > cluster_buffer_size, false,
+				"Path tracer: a cluster's index range lies outside the surface's cluster buffer.");
+
+		RTClusterTriangleInfo &info = src_infos[i];
+		info.cluster_id = i;
+		info.packed_counts = (triangle_count & 0x1FFu) | ((vertex_count & 0x1FFu) << 9) | (RT_CLUSTER_INDEX_TYPE_8BIT << 24);
+		info.vertex_buffer_stride = sizeof(float) * 3;
+		info.index_buffer = cluster_base_address + index_section_offset + index_offset;
+		info.vertex_buffer = position_base_address + position_offset;
+
+		cluster_remap[i] = decode_uint32(record + 12);
+
+		max_cluster_triangles = MAX(max_cluster_triangles, triangle_count);
+		max_cluster_vertices = MAX(max_cluster_vertices, vertex_count);
+		total_triangles += triangle_count;
+		total_vertices += vertex_count;
+	}
+
+	RD::ClusterBuildInput input;
+	input.max_acceleration_structure_count = cluster_count;
+	input.flags = RD::ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT;
+	input.vertex_format = RD::DATA_FORMAT_R32G32B32_SFLOAT;
+	input.max_geometry_index_value = 0;
+	input.max_cluster_unique_geometry_count = 1;
+	input.max_cluster_triangle_count = max_cluster_triangles;
+	input.max_cluster_vertex_count = max_cluster_vertices;
+	input.max_total_triangle_count = total_triangles;
+	input.max_total_vertex_count = total_vertices;
+	input.min_position_truncate_bit_count = 0;
+
+	RD::ClusterBuildSizes sizes;
+	rd->clas_get_build_sizes(input, sizes);
+	ERR_FAIL_COND_V_MSG(sizes.acceleration_structure_size == 0 || sizes.build_scratch_size == 0, false, "Path tracer: failed to query the cluster build sizes.");
+	ERR_FAIL_COND_V_MSG(sizes.acceleration_structure_size > UINT32_MAX, false, "Path tracer: the cluster acceleration structure is too large to allocate.");
+
+	const BitField<RD::BufferCreationBits> implicit_flags = RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_STORAGE_BIT | RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT;
+	const BitField<RD::BufferCreationBits> build_input_flags = RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT | RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT;
+
+	RTPendingClusterBuild pending;
+	pending.input = input;
+	pending.cluster_count = cluster_count;
+	pending.scratch_size = sizes.build_scratch_size;
+
+	RID cluster_remap_buffer;
+	auto abort_build = [&]() {
+		RID owned[] = { pending.clas_buffer, pending.clas_addresses_buffer, pending.clas_count_buffer, pending.src_infos_buffer, cluster_remap_buffer };
+		for (const RID &rid : owned) {
+			if (rid.is_valid()) {
+				rd->free_rid(rid);
+			}
+		}
+	};
+
+	pending.clas_buffer = rd->storage_buffer_create((uint32_t)sizes.acceleration_structure_size, Span<uint8_t>(), 0, implicit_flags);
+	if (!pending.clas_buffer.is_valid()) {
+		abort_build();
+		ERR_FAIL_V_MSG(false, "Path tracer: failed to allocate the cluster acceleration structure buffer.");
+	}
+	rd->set_resource_name(pending.clas_buffer, "RT CLAS [" + itos(p_cache_key) + "]");
+
+	const uint32_t addresses_size = cluster_count * (uint32_t)sizeof(uint64_t);
+	pending.clas_addresses_buffer = rd->storage_buffer_create(addresses_size, Span<uint8_t>(), 0, build_input_flags);
+	if (!pending.clas_addresses_buffer.is_valid()) {
+		abort_build();
+		ERR_FAIL_V_MSG(false, "Path tracer: failed to allocate the cluster address buffer.");
+	}
+	rd->set_resource_name(pending.clas_addresses_buffer, "RT CLAS addresses [" + itos(p_cache_key) + "]");
+
+	const uint32_t src_infos_count = cluster_count;
+	pending.clas_count_buffer = rd->storage_buffer_create(sizeof(uint32_t), Span<uint8_t>((const uint8_t *)&src_infos_count, sizeof(uint32_t)), 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
+	if (!pending.clas_count_buffer.is_valid()) {
+		abort_build();
+		ERR_FAIL_V_MSG(false, "Path tracer: failed to allocate the cluster count buffer.");
+	}
+	rd->set_resource_name(pending.clas_count_buffer, "RT CLAS count [" + itos(p_cache_key) + "]");
+
+	const uint32_t src_infos_size = cluster_count * (uint32_t)sizeof(RTClusterTriangleInfo);
+	pending.src_infos_buffer = rd->storage_buffer_create(src_infos_size, Span<uint8_t>((const uint8_t *)src_infos.ptr(), src_infos_size), 0, build_input_flags);
+	if (!pending.src_infos_buffer.is_valid()) {
+		abort_build();
+		ERR_FAIL_V_MSG(false, "Path tracer: failed to allocate the cluster build input buffer.");
+	}
+	rd->set_resource_name(pending.src_infos_buffer, "RT CLAS build inputs [" + itos(p_cache_key) + "]");
+
+	const uint32_t remap_size = cluster_count * (uint32_t)sizeof(uint32_t);
+	cluster_remap_buffer = rd->storage_buffer_create(remap_size, Span<uint8_t>((const uint8_t *)cluster_remap.ptr(), remap_size), 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
+	if (!cluster_remap_buffer.is_valid()) {
+		abort_build();
+		ERR_FAIL_V_MSG(false, "Path tracer: failed to allocate the cluster remap buffer.");
+	}
+	rd->set_resource_name(cluster_remap_buffer, "RT cluster remap [" + itos(p_cache_key) + "]");
+
+	const uint64_t remap_address = rd->buffer_get_device_address(cluster_remap_buffer);
+	if (remap_address == 0) {
+		abort_build();
+		ERR_FAIL_V_MSG(false, "Path tracer: the cluster remap buffer has no device address.");
+	}
+
+	pending.blas = rd->blas_create_from_clusters(cluster_count, cluster_count);
+	if (!pending.blas.is_valid()) {
+		abort_build();
+		ERR_FAIL_V_MSG(false, "Path tracer: failed to create a cluster bottom level acceleration structure.");
+	}
+	rd->set_resource_name(pending.blas, "RT cluster BLAS [" + itos(p_cache_key) + "]");
+
+	r_surf_data->blas = pending.blas;
+	r_surf_data->clas_buffer = pending.clas_buffer;
+	r_surf_data->clas_addresses_buffer = pending.clas_addresses_buffer;
+	r_surf_data->clas_count_buffer = pending.clas_count_buffer;
+	r_surf_data->cluster_remap_buffer = cluster_remap_buffer;
+	r_surf_data->cluster_count = cluster_count;
+	r_surf_data->is_clustered = true;
+
+	RT_GeometryData &geom = r_surf_data->geometry;
+	geom.cluster_remap_address_lo = uint32_t(remap_address & 0xFFFFFFFFULL);
+	geom.cluster_remap_address_hi = uint32_t(remap_address >> 32);
+	geom.cluster_count = cluster_count;
+	geom.flags |= RT_GEOM_FLAG_CLUSTERED;
+
+	pending.surf_data = r_surf_data;
+	pending_cluster_builds.push_back(pending);
+
+	return true;
+}
+
+void RenderRaytracing::_flush_pending_cluster_builds() {
+	if (pending_cluster_builds.is_empty()) {
+		return;
+	}
+
+	RD *rd = RD::get_singleton();
+	const uint32_t current_frame = RSG::rasterizer->get_frame_number();
+
+	uint64_t required_scratch = 0;
+	for (const RTPendingClusterBuild &pending : pending_cluster_builds) {
+		required_scratch = MAX(required_scratch, pending.scratch_size);
+	}
+
+	if (clas_scratch_capacity < required_scratch) {
+		if (clas_scratch_buffer.is_valid()) {
+			cluster_deferred_frees.push_back({ clas_scratch_buffer, current_frame });
+			clas_scratch_buffer = RID();
+			clas_scratch_capacity = 0;
+		}
+		clas_scratch_buffer = rd->storage_buffer_create((uint32_t)required_scratch, Span<uint8_t>(), 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
+		if (clas_scratch_buffer.is_valid()) {
+			clas_scratch_capacity = required_scratch;
+			rd->set_resource_name(clas_scratch_buffer, "RT CLAS scratch");
+		}
+	}
+
+	for (const RTPendingClusterBuild &pending : pending_cluster_builds) {
+		cluster_deferred_frees.push_back({ pending.src_infos_buffer, current_frame });
+
+		RD::ClusterAddressRegion addresses;
+		addresses.buffer = pending.clas_addresses_buffer;
+		addresses.stride = sizeof(uint64_t);
+		addresses.size = (uint64_t)pending.cluster_count * sizeof(uint64_t);
+
+		RD::ClusterAddressRegion src_infos;
+		src_infos.buffer = pending.src_infos_buffer;
+		src_infos.stride = sizeof(RTClusterTriangleInfo);
+		src_infos.size = (uint64_t)pending.cluster_count * sizeof(RTClusterTriangleInfo);
+
+		Error err = clas_scratch_buffer.is_valid() ? OK : ERR_CANT_CREATE;
+		if (err == OK) {
+			err = rd->clas_build(pending.input, pending.clas_buffer, addresses, RD::ClusterAddressRegion(), clas_scratch_buffer, src_infos, pending.clas_count_buffer);
+		}
+		if (err == OK) {
+			err = rd->blas_build_from_clusters(pending.blas, addresses);
+		}
+		if (err != OK) {
+			// An unbuilt BLAS fails every later TLAS build, so drop it and let the next frame retry.
+			_free_cluster_blas(pending.surf_data);
+			ERR_PRINT("Path tracer: failed to build a cluster bottom level acceleration structure.");
+		}
+	}
+
+	pending_cluster_builds.clear();
+}
+
 void RenderRaytracing::_populate_surface_blas(
 		void *p_mesh_surface,
 		RID p_vertex_buffer_override,
@@ -939,6 +1253,11 @@ void RenderRaytracing::_populate_surface_blas(
 	}
 	if (index_buffer.is_valid() && geom.index_format != RT_INDEX_FORMAT_NONE) {
 		geom.index_buffer_address = rd->buffer_get_device_address(index_buffer);
+	}
+
+	if (!p_vertex_buffer_override.is_valid()) {
+		_populate_cluster_blas(p_mesh_surface, p_cache_key, r_surf_data);
+		return;
 	}
 
 	uint32_t vertex_count = geom.vertex_count;
@@ -1688,6 +2007,8 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 
 void RenderRaytracing::build_acceleration_structures(RTViewportState *p_state, const LocalVector<RID> &p_dirty_blas_list, const LocalVector<RID> &p_dirty_blas_update_list) {
 	RENDER_TIMESTAMP("BLAS Build");
+
+	_flush_pending_cluster_builds();
 
 	for (const RID &blas_rid : p_dirty_blas_list) {
 		if (blas_rid.is_valid()) {
@@ -2483,13 +2804,14 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 				continue;
 			}
 
-			// Compute or reuse cached final transform (instance * aabb_transform for compressed meshes).
 			Transform3D final_transform;
 			if (instance_static && surf->cached_final_transform_valid) {
 				final_transform = surf->cached_final_transform;
 			} else {
 				final_transform = instance_transform;
-				if (surf_data->is_compressed) {
+				// Cluster positions are float32 in mesh space, so the compressed-AABB
+				// compensation the monolithic BLAS needs would misplace them.
+				if (surf_data->is_compressed && !surf_data->is_clustered) {
 					final_transform = instance_transform * surf_data->aabb_transform;
 				}
 				surf->cached_final_transform = final_transform;
@@ -2504,7 +2826,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 				motion_indices.push_back((int32_t)motion_transforms.size());
 				RT_InstanceMotionData motion = {};
 				Transform3D prev_final = prev_instance_transform;
-				if (surf_data->is_compressed) {
+				if (surf_data->is_compressed && !surf_data->is_clustered) {
 					prev_final = prev_instance_transform * surf_data->aabb_transform;
 				}
 				RendererRD::MaterialStorage::store_transform_transposed_3x4(prev_final, motion.prev_object_to_world);
@@ -2643,7 +2965,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 				mm_xform.origin.z = d[11];
 
 				Transform3D final_transform = pending.instance_transform * mm_xform;
-				if (surf_data->is_compressed) {
+				if (surf_data->is_compressed && !surf_data->is_clustered) {
 					final_transform = final_transform * surf_data->aabb_transform;
 				}
 
@@ -2655,7 +2977,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 
 				if (pending.transform_moved) {
 					Transform3D prev_final = pending.prev_instance_transform * mm_xform;
-					if (surf_data->is_compressed) {
+					if (surf_data->is_compressed && !surf_data->is_clustered) {
 						prev_final = prev_final * surf_data->aabb_transform;
 					}
 					motion_indices.push_back((int32_t)motion_transforms.size());

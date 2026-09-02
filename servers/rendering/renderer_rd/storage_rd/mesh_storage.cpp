@@ -376,10 +376,11 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 	uint32_t cluster_index_section_offset = 0;
 	uint32_t cluster_count = 0;
 
+	constexpr uint32_t CLUSTER_BLOB_HEADER_SIZE = 32;
+
 	if (new_surface.cluster_data.size()) {
 		constexpr uint32_t CLUSTER_BLOB_MAGIC = 0x53554c43;
 		constexpr uint32_t CLUSTER_BLOB_VERSION = 1;
-		constexpr uint32_t CLUSTER_BLOB_HEADER_SIZE = 32;
 		constexpr uint32_t CLUSTER_RECORD_SIZE = 16;
 
 		const Vector<uint8_t> &blob = new_surface.cluster_data;
@@ -497,6 +498,12 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 
 		s->cluster_count = cluster_count;
 		s->cluster_index_section_offset = cluster_index_section_offset;
+
+		const uint32_t records_size = cluster_index_section_offset - CLUSTER_BLOB_HEADER_SIZE;
+		if (records_size > 0) {
+			s->cluster_records.resize(records_size);
+			memcpy(s->cluster_records.ptrw(), blob_ptr + CLUSTER_BLOB_HEADER_SIZE, records_size);
+		}
 	}
 
 	s->aabb = new_surface.aabb;

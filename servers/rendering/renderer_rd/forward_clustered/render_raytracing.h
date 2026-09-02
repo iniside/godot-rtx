@@ -84,7 +84,11 @@ struct alignas(16) RT_GeometryData {
 	// For deformed geometry: previous-frame position buffer used for motion vectors.
 	uint32_t prev_vertex_buffer_address_lo;
 	uint32_t prev_vertex_buffer_address_hi;
-	uint32_t _pad[5];
+	// For clustered geometry: uint32 per cluster, mapping cluster index to its first global triangle.
+	uint32_t cluster_remap_address_lo;
+	uint32_t cluster_remap_address_hi;
+	uint32_t cluster_count;
+	uint32_t _pad[2];
 };
 static_assert(sizeof(RT_GeometryData) == 128, "RT_GeometryData must be 128 bytes for std430");
 
@@ -173,6 +177,8 @@ enum {
 	RT_GEOM_FLAG_PROCEDURAL = 2u,
 	// Set when the BLAS uses a per-frame-deformed vertex buffer.
 	RT_GEOM_FLAG_DEFORMED = 4u,
+	// Set when the BLAS is built from clusters, so gl_PrimitiveID is cluster-relative.
+	RT_GEOM_FLAG_CLUSTERED = 8u,
 };
 
 /// Per-instance state for procedural RT geometry. Heap-allocated, only exists for procedural instances.
@@ -194,6 +200,35 @@ struct RTSurfaceData {
 	Transform3D aabb_transform;
 	bool is_compressed = false;
 	uint64_t blas_size = 0;
+
+	// Cluster BLAS resources. blas_create_from_clusters() registers no dependency on
+	// the mesh buffers, so nothing cascade-frees these; every one is freed explicitly.
+	RID clas_buffer;
+	RID clas_addresses_buffer;
+	RID cluster_remap_buffer;
+	RID clas_count_buffer;
+	uint32_t cluster_count = 0;
+	bool is_clustered = false;
+};
+
+/// A cluster BLAS build queued during surface processing and issued once the frame's
+/// compute list is closed; RenderingDevice forbids cluster builds inside a list.
+struct RTPendingClusterBuild {
+	RD::ClusterBuildInput input;
+	RTSurfaceData *surf_data = nullptr;
+	RID blas;
+	RID clas_buffer;
+	RID clas_addresses_buffer;
+	RID clas_count_buffer;
+	RID src_infos_buffer;
+	uint32_t cluster_count = 0;
+	uint64_t scratch_size = 0;
+};
+
+/// A buffer the render graph still references this frame; freed on a later frame.
+struct RTDeferredBufferFree {
+	RID buffer;
+	uint32_t frame = 0;
 };
 
 /// Inputs for a surface backed by a per-frame-deformed vertex buffer.
@@ -369,6 +404,12 @@ class RenderRaytracing {
 	RTDeformedCacheEntry *_access_deformed_slot(RID &r_handle);
 	RTMergedMMEntry *_access_merged_mm_slot(RID &r_handle);
 
+	// Cluster BLAS build state, all owned by this class.
+	LocalVector<RTPendingClusterBuild> pending_cluster_builds;
+	LocalVector<RTDeferredBufferFree> cluster_deferred_frees;
+	RID clas_scratch_buffer;
+	uint64_t clas_scratch_capacity = 0;
+
 	LocalVector<uint32_t> material_free_slots;
 	uint32_t next_material_slot = 0;
 	uint64_t vram_used = 0;
@@ -435,6 +476,9 @@ class RenderRaytracing {
 			uint32_t p_cache_key,
 			RTSurfaceData *r_surf_data,
 			LocalVector<RID> &r_dirty_blas_list);
+	bool _populate_cluster_blas(void *p_mesh_surface, uint32_t p_cache_key, RTSurfaceData *r_surf_data);
+	void _free_cluster_blas(RTSurfaceData *p_surf_data);
+	void _flush_pending_cluster_builds();
 	RTMaterialData *process_material(RID p_material_rid, uint16_t p_material_invalidation_counter);
 	bool _build_merged_mm_blas(
 			RID p_mm_rid,

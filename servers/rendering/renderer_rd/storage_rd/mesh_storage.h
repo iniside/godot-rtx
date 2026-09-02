@@ -121,6 +121,9 @@ private:
 			uint32_t cluster_position_buffer_size = 0;
 			uint32_t cluster_count = 0;
 			uint32_t cluster_index_section_offset = 0;
+			// CPU mirror of the blob's record section (cluster_count * 16 bytes). The BLAS
+			// builder needs it per build and buffer_get_data() would stall the whole device.
+			Vector<uint8_t> cluster_records;
 
 			struct LOD {
 				float edge_length = 0.0;
@@ -534,6 +537,42 @@ public:
 			return 0;
 		}
 		return mi->surfaces[p_surface_index].last_change;
+	}
+
+	/// Cluster acceleration structure inputs baked at import time (empty for surfaces without clusters).
+	_FORCE_INLINE_ RID mesh_surface_get_cluster_buffer(void *p_surface) {
+		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
+		return s->cluster_buffer;
+	}
+
+	_FORCE_INLINE_ RID mesh_surface_get_cluster_position_buffer(void *p_surface) {
+		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
+		return s->cluster_position_buffer;
+	}
+
+	_FORCE_INLINE_ uint32_t mesh_surface_get_cluster_count(void *p_surface) {
+		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
+		return s->cluster_count;
+	}
+
+	_FORCE_INLINE_ uint32_t mesh_surface_get_cluster_index_section_offset(void *p_surface) {
+		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
+		return s->cluster_index_section_offset;
+	}
+
+	_FORCE_INLINE_ uint32_t mesh_surface_get_cluster_buffer_size(void *p_surface) {
+		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
+		return s->cluster_buffer_size;
+	}
+
+	_FORCE_INLINE_ uint32_t mesh_surface_get_cluster_position_buffer_size(void *p_surface) {
+		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
+		return s->cluster_position_buffer_size;
+	}
+
+	_FORCE_INLINE_ const Vector<uint8_t> &mesh_surface_get_cluster_records(void *p_surface) {
+		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
+		return s->cluster_records;
 	}
 
 	/// Get the attribute buffer RID for raytracing device address access.

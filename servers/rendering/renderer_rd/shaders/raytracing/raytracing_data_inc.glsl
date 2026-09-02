@@ -48,11 +48,18 @@ struct GeometryData {
 	uint prev_vertex_address_lo;
 	uint prev_vertex_address_hi;
 
-	uint _pad[5];
+	// For clustered geometry: uint32 per cluster, mapping cluster index to its first global triangle.
+	uint cluster_remap_address_lo;
+	uint cluster_remap_address_hi;
+	uint cluster_count;
+
+	uint _pad[2];
 };
 
 void get_aabb_compression_xforms(GeometryData geom, out mat4 aabb_xform, out mat4 inv_aabb_xform) {
-	if ((geom.flags & FLAG_COMPRESSED) == 0u) {
+	// A clustered BLAS holds float32 mesh-space positions, so its instance transform carries
+	// no AABB compensation to undo even though the attribute stream stays compressed.
+	if ((geom.flags & FLAG_COMPRESSED) == 0u || (geom.flags & FLAG_CLUSTERED) != 0u) {
 		aabb_xform = mat4(1.0);
 		inv_aabb_xform = mat4(1.0);
 		return;
