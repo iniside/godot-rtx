@@ -806,6 +806,67 @@ public:
 	virtual void acceleration_structure_free(AccelerationStructureID p_acceleration_structure) = 0;
 	virtual uint32_t acceleration_structure_get_scratch_size_bytes(AccelerationStructureID p_acceleration_structure) = 0;
 
+	// ----- CLUSTER ACCELERATION STRUCTURE -----
+
+	struct ClusterAccelerationStructureLimits {
+		uint32_t max_vertices_per_cluster = 0;
+		uint32_t max_triangles_per_cluster = 0;
+		uint32_t max_cluster_geometry_index = 0;
+		uint32_t cluster_scratch_byte_alignment = 0;
+		uint32_t cluster_byte_alignment = 0;
+		uint32_t cluster_template_byte_alignment = 0;
+		uint32_t cluster_bottom_level_byte_alignment = 0;
+		uint32_t cluster_template_bounds_byte_alignment = 0;
+	};
+
+	enum ClusterAccelerationStructureOpType {
+		CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_MOVE_OBJECTS,
+		CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_CLUSTERS_BOTTOM_LEVEL,
+		CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_TRIANGLE_CLUSTER,
+		CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_TRIANGLE_CLUSTER_TEMPLATE,
+		CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_INSTANTIATE_TRIANGLE_CLUSTER,
+		CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_GET_CLUSTER_TEMPLATE_INDICES,
+	};
+
+	enum ClusterAccelerationStructureOpMode {
+		CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_IMPLICIT_DESTINATIONS,
+		CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_EXPLICIT_DESTINATIONS,
+		CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_COMPUTE_SIZES,
+	};
+
+	struct ClusterBuildInput {
+		uint32_t max_acceleration_structure_count = 0;
+		BitField<AccelerationStructureFlagBits> flags = {};
+		ClusterAccelerationStructureOpType op_type = CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_TRIANGLE_CLUSTER;
+		ClusterAccelerationStructureOpMode op_mode = CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_IMPLICIT_DESTINATIONS;
+
+		DataFormat vertex_format = DATA_FORMAT_R32G32B32_SFLOAT;
+		uint32_t max_geometry_index_value = 0;
+		uint32_t max_cluster_unique_geometry_count = 1;
+		uint32_t max_cluster_triangle_count = 0;
+		uint32_t max_cluster_vertex_count = 0;
+		uint32_t max_total_triangle_count = 0;
+		uint32_t max_total_vertex_count = 0;
+		uint32_t min_position_truncate_bit_count = 0;
+	};
+
+	struct ClusterBuildSizes {
+		uint64_t acceleration_structure_size = 0;
+		uint64_t build_scratch_size = 0;
+	};
+
+	struct ClusterAddressRegion {
+		BufferID buffer;
+		uint64_t offset = 0;
+		uint64_t stride = 0;
+		uint64_t size = 0;
+	};
+
+	virtual bool clas_is_supported() = 0;
+	virtual ClusterAccelerationStructureLimits clas_get_limits() = 0;
+	virtual void clas_get_build_sizes(const ClusterBuildInput &p_input, ClusterBuildSizes &r_sizes) = 0;
+	virtual AccelerationStructureID blas_create_from_clusters(uint32_t p_max_cluster_count, uint32_t p_max_cluster_count_per_acceleration_structure) = 0;
+
 	// ----- PIPELINE -----
 
 	struct PipelineShader {
@@ -832,6 +893,8 @@ public:
 	// Geometry topology / counts must be unchanged; only vertex positions may differ.
 	virtual void command_update_blas(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer) = 0;
 	virtual void command_build_tlas(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer, BufferID p_instance_buffer, uint32_t p_instance_offset, uint32_t p_instance_count) = 0;
+	virtual void command_build_clas(CommandBufferID p_cmd_buffer, const ClusterBuildInput &p_input, BufferID p_dst_implicit_buffer, const ClusterAddressRegion &p_dst_addresses, const ClusterAddressRegion &p_dst_sizes, BufferID p_scratch_buffer, const ClusterAddressRegion &p_src_infos, BufferID p_src_infos_count_buffer) = 0;
+	virtual void command_build_blas_from_clusters(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer, const ClusterAddressRegion &p_cluster_addresses, BufferID p_src_infos_count_buffer) = 0;
 	virtual void command_bind_raytracing_pipeline(CommandBufferID p_cmd_buffer, RaytracingPipelineID p_pipeline) = 0;
 	virtual void command_bind_raytracing_uniform_set(CommandBufferID p_cmd_buffer, UniformSetID p_uniform_set, ShaderID p_shader, uint32_t p_set_index) = 0;
 

@@ -100,6 +100,11 @@ class RenderingDeviceDriverVulkan : public RenderingDeviceDriver {
 		uint32_t min_acceleration_structure_scratch_offset_alignment = 0;
 	};
 
+	struct ClusterAccelerationStructureCapabilities {
+		bool cluster_acceleration_structure_support = false;
+		ClusterAccelerationStructureLimits limits;
+	};
+
 	struct RaytracingCapabilities {
 		bool raytracing_pipeline_support = false;
 		uint32_t shader_group_handle_size = 0;
@@ -165,6 +170,7 @@ class RenderingDeviceDriverVulkan : public RenderingDeviceDriver {
 	bool vulkan_memory_model_support = false;
 	bool vulkan_memory_model_device_scope_support = false;
 	AccelerationStructureCapabilities acceleration_structure_capabilities;
+	ClusterAccelerationStructureCapabilities cluster_acceleration_structure_capabilities;
 	bool ray_query_support = false;
 	RaytracingCapabilities raytracing_capabilities;
 	DescriptorIndexingCapabilities descriptor_indexing_capabilities;
@@ -721,6 +727,13 @@ public:
 		TightLocalVector<VkAccelerationStructureGeometryKHR> geometries;
 		VkAccelerationStructureBuildGeometryInfoKHR build_info;
 		TightLocalVector<VkAccelerationStructureBuildRangeInfoKHR> range_infos;
+
+		// Cluster bottom level only.
+		bool cluster_bottom_level = false;
+		VkClusterAccelerationStructureClustersBottomLevelInputNV cluster_bottom_level_input = {};
+		VkBuildAccelerationStructureFlagsKHR cluster_build_flags = 0;
+		RDD::BufferID cluster_args_buffer;
+		uint8_t *cluster_args_ptr = nullptr;
 	};
 
 	virtual AccelerationStructureID blas_create(VectorView<AccelerationStructureGeometry> p_geometries, BitField<AccelerationStructureFlagBits> p_flags) override final;
@@ -729,8 +742,15 @@ public:
 	virtual void acceleration_structure_free(AccelerationStructureID p_acceleration_structure) override final;
 	virtual uint32_t acceleration_structure_get_scratch_size_bytes(AccelerationStructureID p_acceleration_structure) override final;
 
+	virtual bool clas_is_supported() override final;
+	virtual ClusterAccelerationStructureLimits clas_get_limits() override final;
+	virtual void clas_get_build_sizes(const ClusterBuildInput &p_input, ClusterBuildSizes &r_sizes) override final;
+	virtual AccelerationStructureID blas_create_from_clusters(uint32_t p_max_cluster_count, uint32_t p_max_cluster_count_per_acceleration_structure) override final;
+
 private:
 	void _acceleration_structure_create(VkAccelerationStructureTypeKHR p_type, VkAccelerationStructureBuildSizesInfoKHR p_size_info, AccelerationStructureInfo *r_accel_info);
+	void _cluster_build_input_to_vk(const ClusterBuildInput &p_input, VkClusterAccelerationStructureTriangleClusterInputNV &r_triangle_input, VkClusterAccelerationStructureInputInfoNV &r_input_info);
+	VkStridedDeviceAddressRegionKHR _cluster_region_to_vk(const ClusterAddressRegion &p_region);
 
 private:
 	VkStridedDeviceAddressRegionKHR _sbt_to_vk_strided_device_address_region(const ShaderBindingTable &p_sbt);
@@ -740,6 +760,8 @@ public:
 	virtual void command_build_blas(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer) override final;
 	virtual void command_update_blas(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer) override final;
 	virtual void command_build_tlas(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer, BufferID p_instance_buffer, uint32_t p_instance_offset, uint32_t p_instance_count) override final;
+	virtual void command_build_clas(CommandBufferID p_cmd_buffer, const ClusterBuildInput &p_input, BufferID p_dst_implicit_buffer, const ClusterAddressRegion &p_dst_addresses, const ClusterAddressRegion &p_dst_sizes, BufferID p_scratch_buffer, const ClusterAddressRegion &p_src_infos, BufferID p_src_infos_count_buffer) override final;
+	virtual void command_build_blas_from_clusters(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer, const ClusterAddressRegion &p_cluster_addresses, BufferID p_src_infos_count_buffer) override final;
 	virtual void command_bind_raytracing_pipeline(CommandBufferID p_cmd_buffer, RaytracingPipelineID p_pipeline) override final;
 	virtual void command_bind_raytracing_uniform_set(CommandBufferID p_cmd_buffer, UniformSetID p_uniform_set, ShaderID p_shader, uint32_t p_set_index) override final;
 	virtual void command_trace_rays(CommandBufferID p_cmd_buffer, const ShaderBindingTable &p_raygen_sbt, const ShaderBindingTable &p_miss_sbt, const ShaderBindingTable &p_hit_sbt, uint32_t p_width, uint32_t p_height, uint32_t p_depth) override final;
@@ -825,7 +847,8 @@ private:
 			ShaderInfo,
 			UniformSetInfo,
 			RenderPassInfo,
-			CommandBufferInfo>;
+			CommandBufferInfo,
+			AccelerationStructureInfo>;
 	PagedAllocator<VersatileResource, true> resources_allocator;
 
 	/******************/

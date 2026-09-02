@@ -592,6 +592,7 @@ Error RenderingDeviceDriverVulkan::_initialize_device_extensions() {
 	_register_requested_device_extension(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME, false);
 	_register_requested_device_extension(VK_KHR_RAY_QUERY_EXTENSION_NAME, false);
 	_register_requested_device_extension(VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME, false);
+	_register_requested_device_extension(VK_NV_CLUSTER_ACCELERATION_STRUCTURE_EXTENSION_NAME, false);
 	if (Engine::get_singleton()->is_raytracing_validation_enabled()) {
 		_register_requested_device_extension(VK_NV_RAY_TRACING_VALIDATION_EXTENSION_NAME, false);
 	}
@@ -928,6 +929,7 @@ Error RenderingDeviceDriverVulkan::_check_device_capabilities() {
 		VkPhysicalDeviceRayQueryFeaturesKHR ray_query_features = {};
 		VkPhysicalDeviceSynchronization2FeaturesKHR sync_2_features = {};
 		VkPhysicalDeviceRayTracingValidationFeaturesNV raytracing_validation_features = {};
+		VkPhysicalDeviceClusterAccelerationStructureFeaturesNV cluster_acceleration_structure_features = {};
 
 		const bool use_1_2_features = physical_device_properties.apiVersion >= VK_API_VERSION_1_2;
 		if (use_1_2_features) {
@@ -1022,6 +1024,12 @@ Error RenderingDeviceDriverVulkan::_check_device_capabilities() {
 			raytracing_validation_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_VALIDATION_FEATURES_NV;
 			raytracing_validation_features.pNext = next_features;
 			next_features = &raytracing_validation_features;
+		}
+
+		if (enabled_device_extension_names.has(VK_NV_CLUSTER_ACCELERATION_STRUCTURE_EXTENSION_NAME)) {
+			cluster_acceleration_structure_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_ACCELERATION_STRUCTURE_FEATURES_NV;
+			cluster_acceleration_structure_features.pNext = next_features;
+			next_features = &cluster_acceleration_structure_features;
 		}
 
 		if (enabled_device_extension_names.has(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME)) {
@@ -1127,6 +1135,10 @@ Error RenderingDeviceDriverVulkan::_check_device_capabilities() {
 		if (enabled_device_extension_names.has(VK_KHR_RAY_QUERY_EXTENSION_NAME)) {
 			ray_query_support = ray_query_features.rayQuery;
 		}
+
+		if (enabled_device_extension_names.has(VK_NV_CLUSTER_ACCELERATION_STRUCTURE_EXTENSION_NAME)) {
+			cluster_acceleration_structure_capabilities.cluster_acceleration_structure_support = cluster_acceleration_structure_features.clusterAccelerationStructure;
+		}
 	}
 
 	if (functions.GetPhysicalDeviceProperties2 != nullptr) {
@@ -1139,6 +1151,7 @@ Error RenderingDeviceDriverVulkan::_check_device_capabilities() {
 		VkPhysicalDeviceSubgroupSizeControlProperties subgroup_size_control_properties = {};
 		VkPhysicalDeviceAccelerationStructurePropertiesKHR acceleration_structure_properties = {};
 		VkPhysicalDeviceRayTracingPipelinePropertiesKHR raytracing_properties = {};
+		VkPhysicalDeviceClusterAccelerationStructurePropertiesNV cluster_acceleration_structure_properties = {};
 		VkPhysicalDeviceProperties2 physical_device_properties_2 = {};
 
 		const bool use_1_1_properties = physical_device_properties.apiVersion >= VK_API_VERSION_1_1;
@@ -1189,6 +1202,12 @@ Error RenderingDeviceDriverVulkan::_check_device_capabilities() {
 			raytracing_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
 			raytracing_properties.pNext = next_properties;
 			next_properties = &raytracing_properties;
+		}
+
+		if (cluster_acceleration_structure_capabilities.cluster_acceleration_structure_support) {
+			cluster_acceleration_structure_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_ACCELERATION_STRUCTURE_PROPERTIES_NV;
+			cluster_acceleration_structure_properties.pNext = next_properties;
+			next_properties = &cluster_acceleration_structure_properties;
 		}
 
 		physical_device_properties_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
@@ -1313,6 +1332,28 @@ Error RenderingDeviceDriverVulkan::_check_device_capabilities() {
 			print_verbose("  shader group base alignment: " + itos(raytracing_capabilities.shader_group_base_alignment));
 		} else {
 			print_verbose("- Vulkan Raytracing not supported");
+		}
+
+		if (cluster_acceleration_structure_capabilities.cluster_acceleration_structure_support) {
+			ClusterAccelerationStructureLimits &limits = cluster_acceleration_structure_capabilities.limits;
+			limits.max_vertices_per_cluster = cluster_acceleration_structure_properties.maxVerticesPerCluster;
+			limits.max_triangles_per_cluster = cluster_acceleration_structure_properties.maxTrianglesPerCluster;
+			limits.max_cluster_geometry_index = cluster_acceleration_structure_properties.maxClusterGeometryIndex;
+			limits.cluster_scratch_byte_alignment = cluster_acceleration_structure_properties.clusterScratchByteAlignment;
+			limits.cluster_byte_alignment = cluster_acceleration_structure_properties.clusterByteAlignment;
+			limits.cluster_template_byte_alignment = cluster_acceleration_structure_properties.clusterTemplateByteAlignment;
+			limits.cluster_bottom_level_byte_alignment = cluster_acceleration_structure_properties.clusterBottomLevelByteAlignment;
+			limits.cluster_template_bounds_byte_alignment = cluster_acceleration_structure_properties.clusterTemplateBoundsByteAlignment;
+
+			print_verbose("- Vulkan Cluster Acceleration Structure supported");
+			print_verbose("  max vertices per cluster: " + itos(limits.max_vertices_per_cluster));
+			print_verbose("  max triangles per cluster: " + itos(limits.max_triangles_per_cluster));
+			print_verbose("  max cluster geometry index: " + itos(limits.max_cluster_geometry_index));
+			print_verbose("  cluster scratch byte alignment: " + itos(limits.cluster_scratch_byte_alignment));
+			print_verbose("  cluster byte alignment: " + itos(limits.cluster_byte_alignment));
+			print_verbose("  cluster bottom level byte alignment: " + itos(limits.cluster_bottom_level_byte_alignment));
+		} else {
+			print_verbose("- Vulkan Cluster Acceleration Structure not supported");
 		}
 	}
 
@@ -1480,6 +1521,14 @@ Error RenderingDeviceDriverVulkan::_initialize_device(const LocalVector<VkDevice
 		ray_query_features.pNext = create_info_next;
 		ray_query_features.rayQuery = ray_query_support;
 		create_info_next = &ray_query_features;
+	}
+
+	VkPhysicalDeviceClusterAccelerationStructureFeaturesNV cluster_acceleration_structure_features = {};
+	if (cluster_acceleration_structure_capabilities.cluster_acceleration_structure_support) {
+		cluster_acceleration_structure_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_ACCELERATION_STRUCTURE_FEATURES_NV;
+		cluster_acceleration_structure_features.pNext = create_info_next;
+		cluster_acceleration_structure_features.clusterAccelerationStructure = VK_TRUE;
+		create_info_next = &cluster_acceleration_structure_features;
 	}
 
 	VkPhysicalDeviceRayTracingInvocationReorderFeaturesEXT raytracing_invocation_reorder_features = {};
@@ -6628,6 +6677,12 @@ void RenderingDeviceDriverVulkan::acceleration_structure_free(AccelerationStruct
 #if VULKAN_RAYTRACING_ENABLED
 	AccelerationStructureInfo *accel_info = (AccelerationStructureInfo *)p_acceleration_structure.id;
 	ERR_FAIL_NULL_MSG(accel_info, "Vulkan raytracing acceleration structure input parameter is not valid.");
+	if (accel_info->cluster_args_buffer) {
+		if (accel_info->cluster_args_ptr != nullptr) {
+			buffer_unmap(accel_info->cluster_args_buffer);
+		}
+		buffer_free(accel_info->cluster_args_buffer);
+	}
 	if (accel_info->buffer) {
 		buffer_free(accel_info->buffer);
 	}
@@ -6642,6 +6697,155 @@ uint32_t RenderingDeviceDriverVulkan::acceleration_structure_get_scratch_size_by
 	AccelerationStructureInfo *accel_info = (AccelerationStructureInfo *)p_acceleration_structure.id;
 	ERR_FAIL_NULL_V_MSG(accel_info, 0, "Vulkan raytracing acceleration structure input parameter is not valid.");
 	return accel_info->scratch_size;
+}
+
+// ----- CLUSTER ACCELERATION STRUCTURE -----
+
+#if VULKAN_RAYTRACING_ENABLED
+struct ClusterBottomLevelBuildArgs {
+	VkDeviceAddress dst_address;
+	uint64_t dst_size;
+	VkClusterAccelerationStructureBuildClustersBottomLevelInfoNV src_info;
+};
+#endif
+
+bool RenderingDeviceDriverVulkan::clas_is_supported() {
+#if VULKAN_RAYTRACING_ENABLED
+	// volk resolves these unconditionally; they stay null on a driver that does not expose the extension.
+	return cluster_acceleration_structure_capabilities.cluster_acceleration_structure_support &&
+			vkGetClusterAccelerationStructureBuildSizesNV != nullptr &&
+			vkCmdBuildClusterAccelerationStructureIndirectNV != nullptr;
+#else
+	return false;
+#endif
+}
+
+RDD::ClusterAccelerationStructureLimits RenderingDeviceDriverVulkan::clas_get_limits() {
+	return cluster_acceleration_structure_capabilities.limits;
+}
+
+void RenderingDeviceDriverVulkan::_cluster_build_input_to_vk(const ClusterBuildInput &p_input, VkClusterAccelerationStructureTriangleClusterInputNV &r_triangle_input, VkClusterAccelerationStructureInputInfoNV &r_input_info) {
+	static_assert(int(CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_CLUSTERS_BOTTOM_LEVEL) == int(VK_CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_CLUSTERS_BOTTOM_LEVEL_NV));
+	static_assert(int(CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_TRIANGLE_CLUSTER) == int(VK_CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_TRIANGLE_CLUSTER_NV));
+	static_assert(int(CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_IMPLICIT_DESTINATIONS) == int(VK_CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_IMPLICIT_DESTINATIONS_NV));
+	static_assert(int(CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_EXPLICIT_DESTINATIONS) == int(VK_CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_EXPLICIT_DESTINATIONS_NV));
+
+	r_triangle_input = {};
+	r_triangle_input.sType = VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_TRIANGLE_CLUSTER_INPUT_NV;
+	r_triangle_input.vertexFormat = RD_TO_VK_FORMAT[p_input.vertex_format];
+	r_triangle_input.maxGeometryIndexValue = p_input.max_geometry_index_value;
+	r_triangle_input.maxClusterUniqueGeometryCount = p_input.max_cluster_unique_geometry_count;
+	r_triangle_input.maxClusterTriangleCount = p_input.max_cluster_triangle_count;
+	r_triangle_input.maxClusterVertexCount = p_input.max_cluster_vertex_count;
+	r_triangle_input.maxTotalTriangleCount = p_input.max_total_triangle_count;
+	r_triangle_input.maxTotalVertexCount = p_input.max_total_vertex_count;
+	r_triangle_input.minPositionTruncateBitCount = p_input.min_position_truncate_bit_count;
+
+	r_input_info = {};
+	r_input_info.sType = VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_INPUT_INFO_NV;
+	r_input_info.maxAccelerationStructureCount = p_input.max_acceleration_structure_count;
+	r_input_info.flags = p_input.flags;
+	r_input_info.opType = VkClusterAccelerationStructureOpTypeNV(p_input.op_type);
+	r_input_info.opMode = VkClusterAccelerationStructureOpModeNV(p_input.op_mode);
+	r_input_info.opInput.pTriangleClusters = &r_triangle_input;
+}
+
+VkStridedDeviceAddressRegionKHR RenderingDeviceDriverVulkan::_cluster_region_to_vk(const ClusterAddressRegion &p_region) {
+	VkStridedDeviceAddressRegionKHR vk_region = {};
+	if (p_region.buffer) {
+		vk_region.deviceAddress = buffer_get_device_address(p_region.buffer) + p_region.offset;
+		vk_region.stride = p_region.stride;
+		vk_region.size = p_region.size;
+	}
+	return vk_region;
+}
+
+void RenderingDeviceDriverVulkan::clas_get_build_sizes(const ClusterBuildInput &p_input, ClusterBuildSizes &r_sizes) {
+	r_sizes = ClusterBuildSizes();
+#if VULKAN_RAYTRACING_ENABLED
+	ERR_FAIL_COND_MSG(!clas_is_supported(), "Cluster acceleration structures are not supported by this device.");
+	ERR_FAIL_COND_MSG(p_input.max_acceleration_structure_count == 0, "A cluster build input must declare a non-zero maximum acceleration structure count.");
+	ERR_FAIL_COND_MSG(p_input.vertex_format >= DataFormat::DATA_FORMAT_MAX, "An invalid cluster vertex format was specified.");
+
+	VkClusterAccelerationStructureTriangleClusterInputNV triangle_input = {};
+	VkClusterAccelerationStructureInputInfoNV input_info = {};
+	_cluster_build_input_to_vk(p_input, triangle_input, input_info);
+
+	VkAccelerationStructureBuildSizesInfoKHR size_info = {};
+	size_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+	vkGetClusterAccelerationStructureBuildSizesNV(vk_device, &input_info, &size_info);
+
+	// The build aligns both destination and scratch addresses up, so the caller has to allocate that slack too.
+	r_sizes.acceleration_structure_size = size_info.accelerationStructureSize + cluster_acceleration_structure_capabilities.limits.cluster_byte_alignment;
+	r_sizes.build_scratch_size = size_info.buildScratchSize + cluster_acceleration_structure_capabilities.limits.cluster_scratch_byte_alignment;
+#else
+	ERR_FAIL_MSG("Cluster acceleration structures are not supported by this device.");
+#endif
+}
+
+RDD::AccelerationStructureID RenderingDeviceDriverVulkan::blas_create_from_clusters(uint32_t p_max_cluster_count, uint32_t p_max_cluster_count_per_acceleration_structure) {
+#if VULKAN_RAYTRACING_ENABLED
+	ERR_FAIL_COND_V_MSG(!clas_is_supported(), AccelerationStructureID(), "Cluster acceleration structures are not supported by this device.");
+	ERR_FAIL_COND_V_MSG(p_max_cluster_count == 0, AccelerationStructureID(), "A cluster bottom level acceleration structure must reference at least one cluster.");
+	ERR_FAIL_COND_V_MSG(p_max_cluster_count_per_acceleration_structure == 0, AccelerationStructureID(), "A cluster bottom level acceleration structure must reference at least one cluster.");
+
+	VkClusterAccelerationStructureClustersBottomLevelInputNV bottom_level_input = {};
+	bottom_level_input.sType = VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_CLUSTERS_BOTTOM_LEVEL_INPUT_NV;
+	bottom_level_input.maxTotalClusterCount = p_max_cluster_count;
+	bottom_level_input.maxClusterCountPerAccelerationStructure = p_max_cluster_count_per_acceleration_structure;
+
+	VkClusterAccelerationStructureInputInfoNV input_info = {};
+	input_info.sType = VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_INPUT_INFO_NV;
+	input_info.maxAccelerationStructureCount = 1;
+	input_info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+	input_info.opType = VK_CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_CLUSTERS_BOTTOM_LEVEL_NV;
+	// Explicit destinations, not implicit: acceleration_structure_instance_write() needs a
+	// host-known device address, and only a destination buffer allocated here has one.
+	input_info.opMode = VK_CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_EXPLICIT_DESTINATIONS_NV;
+	input_info.opInput.pClustersBottomLevel = &bottom_level_input;
+
+	VkAccelerationStructureBuildSizesInfoKHR size_info = {};
+	size_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+	vkGetClusterAccelerationStructureBuildSizesNV(vk_device, &input_info, &size_info);
+	ERR_FAIL_COND_V_MSG(size_info.accelerationStructureSize == 0, AccelerationStructureID(), "Couldn't query the size of a cluster bottom level acceleration structure.");
+
+	const uint32_t destination_alignment = MAX(1u, cluster_acceleration_structure_capabilities.limits.cluster_bottom_level_byte_alignment);
+
+	BufferID destination_buffer = buffer_create(size_info.accelerationStructureSize + destination_alignment, BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT | BUFFER_USAGE_STORAGE_BIT | BUFFER_USAGE_DEVICE_ADDRESS_BIT, MEMORY_ALLOCATION_TYPE_GPU, UINT64_MAX);
+	ERR_FAIL_COND_V_MSG(!destination_buffer, AccelerationStructureID(), "Couldn't create the destination buffer of a cluster bottom level acceleration structure.");
+
+	BufferID args_buffer = buffer_create(sizeof(ClusterBottomLevelBuildArgs), BUFFER_USAGE_TRANSFER_FROM_BIT | BUFFER_USAGE_STORAGE_BIT | BUFFER_USAGE_DEVICE_ADDRESS_BIT | BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT, MEMORY_ALLOCATION_TYPE_CPU, UINT64_MAX);
+	if (unlikely(!args_buffer)) {
+		buffer_free(destination_buffer);
+		ERR_FAIL_V_MSG(AccelerationStructureID(), "Couldn't create the argument buffer of a cluster bottom level acceleration structure.");
+	}
+
+	uint8_t *args_ptr = buffer_map(args_buffer);
+	if (unlikely(!args_ptr)) {
+		buffer_free(args_buffer);
+		buffer_free(destination_buffer);
+		ERR_FAIL_V_MSG(AccelerationStructureID(), "Couldn't map the argument buffer of a cluster bottom level acceleration structure.");
+	}
+	memset(args_ptr, 0, sizeof(ClusterBottomLevelBuildArgs));
+
+	AccelerationStructureInfo *accel_info = VersatileResource::allocate<AccelerationStructureInfo>(resources_allocator);
+	accel_info->buffer = destination_buffer;
+	accel_info->cached_device_address = _align_up_address(buffer_get_device_address(destination_buffer), destination_alignment);
+	accel_info->scratch_alignment = MAX(1u, cluster_acceleration_structure_capabilities.limits.cluster_scratch_byte_alignment);
+	accel_info->scratch_size = size_info.buildScratchSize + accel_info->scratch_alignment;
+	accel_info->build_info = {};
+	accel_info->build_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+	accel_info->build_info.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+	accel_info->cluster_bottom_level = true;
+	accel_info->cluster_bottom_level_input = bottom_level_input;
+	accel_info->cluster_build_flags = input_info.flags;
+	accel_info->cluster_args_buffer = args_buffer;
+	accel_info->cluster_args_ptr = args_ptr;
+
+	return AccelerationStructureID(accel_info);
+#else
+	ERR_FAIL_V_MSG(AccelerationStructureID(), "Cluster acceleration structures are not supported by this device.");
+#endif
 }
 
 VkStridedDeviceAddressRegionKHR RenderingDeviceDriverVulkan::_sbt_to_vk_strided_device_address_region(const ShaderBindingTable &p_sbt) {
@@ -6710,6 +6914,89 @@ void RenderingDeviceDriverVulkan::command_build_tlas(CommandBufferID p_cmd_buffe
 	const VkAccelerationStructureBuildRangeInfoKHR *range_infos = accel_info->range_infos.ptr();
 
 	vkCmdBuildAccelerationStructuresKHR(command_buffer->vk_command_buffer, 1, build_info, &range_infos);
+#endif
+}
+
+void RenderingDeviceDriverVulkan::command_build_clas(CommandBufferID p_cmd_buffer, const ClusterBuildInput &p_input, BufferID p_dst_implicit_buffer, const ClusterAddressRegion &p_dst_addresses, const ClusterAddressRegion &p_dst_sizes, BufferID p_scratch_buffer, const ClusterAddressRegion &p_src_infos, BufferID p_src_infos_count_buffer) {
+#if VULKAN_RAYTRACING_ENABLED
+	ERR_FAIL_COND_MSG(!clas_is_supported(), "Cluster acceleration structures are not supported by this device.");
+	ERR_FAIL_COND_MSG(!p_dst_implicit_buffer, "A cluster acceleration structure build needs an implicit destination buffer.");
+	ERR_FAIL_COND_MSG(!p_scratch_buffer, "A cluster acceleration structure build needs a scratch buffer.");
+	ERR_FAIL_COND_MSG(!p_dst_addresses.buffer, "A cluster acceleration structure build needs a destination address buffer.");
+	ERR_FAIL_COND_MSG(!p_src_infos.buffer, "A cluster acceleration structure build needs a source info buffer.");
+	ERR_FAIL_COND_MSG(!p_src_infos_count_buffer, "A cluster acceleration structure build needs a source info count buffer.");
+	ERR_FAIL_COND_MSG(p_input.vertex_format >= DataFormat::DATA_FORMAT_MAX, "An invalid cluster vertex format was specified.");
+
+	const CommandBufferInfo *command_buffer = (const CommandBufferInfo *)p_cmd_buffer.id;
+
+	VkClusterAccelerationStructureTriangleClusterInputNV triangle_input = {};
+	VkClusterAccelerationStructureInputInfoNV input_info = {};
+	_cluster_build_input_to_vk(p_input, triangle_input, input_info);
+
+	const uint32_t scratch_alignment = MAX(1u, cluster_acceleration_structure_capabilities.limits.cluster_scratch_byte_alignment);
+	const uint32_t cluster_alignment = MAX(1u, cluster_acceleration_structure_capabilities.limits.cluster_byte_alignment);
+
+	VkClusterAccelerationStructureCommandsInfoNV commands_info = {};
+	commands_info.sType = VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_COMMANDS_INFO_NV;
+	commands_info.input = input_info;
+	commands_info.dstImplicitData = _align_up_address(buffer_get_device_address(p_dst_implicit_buffer), cluster_alignment);
+	commands_info.scratchData = _align_up_address(buffer_get_device_address(p_scratch_buffer), scratch_alignment);
+	commands_info.dstAddressesArray = _cluster_region_to_vk(p_dst_addresses);
+	commands_info.dstSizesArray = _cluster_region_to_vk(p_dst_sizes);
+	commands_info.srcInfosArray = _cluster_region_to_vk(p_src_infos);
+	commands_info.srcInfosCount = buffer_get_device_address(p_src_infos_count_buffer);
+
+	vkCmdBuildClusterAccelerationStructureIndirectNV(command_buffer->vk_command_buffer, &commands_info);
+#endif
+}
+
+void RenderingDeviceDriverVulkan::command_build_blas_from_clusters(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer, const ClusterAddressRegion &p_cluster_addresses, BufferID p_src_infos_count_buffer) {
+#if VULKAN_RAYTRACING_ENABLED
+	AccelerationStructureInfo *accel_info = (AccelerationStructureInfo *)p_acceleration_structure.id;
+	ERR_FAIL_NULL_MSG(accel_info, "Vulkan raytracing acceleration structure input parameter is not valid.");
+	ERR_FAIL_COND_MSG(!accel_info->cluster_bottom_level, "The acceleration structure was not created from clusters.");
+	ERR_FAIL_NULL_MSG(accel_info->cluster_args_ptr, "The cluster bottom level acceleration structure has no mapped argument buffer.");
+	ERR_FAIL_COND_MSG(!p_scratch_buffer, "A cluster bottom level acceleration structure build needs a scratch buffer.");
+	ERR_FAIL_COND_MSG(!p_cluster_addresses.buffer, "A cluster bottom level acceleration structure build needs a cluster address buffer.");
+	ERR_FAIL_COND_MSG(p_cluster_addresses.stride == 0, "A cluster bottom level acceleration structure build needs a non-zero cluster address stride.");
+	ERR_FAIL_COND_MSG(!p_src_infos_count_buffer, "A cluster bottom level acceleration structure build needs a source info count buffer.");
+
+	const CommandBufferInfo *command_buffer = (const CommandBufferInfo *)p_cmd_buffer.id;
+
+	ClusterBottomLevelBuildArgs *args = (ClusterBottomLevelBuildArgs *)accel_info->cluster_args_ptr;
+	args->dst_address = accel_info->cached_device_address;
+	args->dst_size = 0;
+	args->src_info.clusterReferencesCount = uint32_t(p_cluster_addresses.size / p_cluster_addresses.stride);
+	args->src_info.clusterReferencesStride = uint32_t(p_cluster_addresses.stride);
+	args->src_info.clusterReferences = buffer_get_device_address(p_cluster_addresses.buffer) + p_cluster_addresses.offset;
+
+	VkClusterAccelerationStructureInputInfoNV input_info = {};
+	input_info.sType = VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_INPUT_INFO_NV;
+	input_info.maxAccelerationStructureCount = 1;
+	input_info.flags = accel_info->cluster_build_flags;
+	input_info.opType = VK_CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_CLUSTERS_BOTTOM_LEVEL_NV;
+	input_info.opMode = VK_CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_EXPLICIT_DESTINATIONS_NV;
+	input_info.opInput.pClustersBottomLevel = &accel_info->cluster_bottom_level_input;
+
+	const VkDeviceAddress args_address = buffer_get_device_address(accel_info->cluster_args_buffer);
+
+	VkClusterAccelerationStructureCommandsInfoNV commands_info = {};
+	commands_info.sType = VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_COMMANDS_INFO_NV;
+	commands_info.input = input_info;
+	commands_info.dstImplicitData = 0;
+	commands_info.scratchData = _align_up_address(buffer_get_device_address(p_scratch_buffer), accel_info->scratch_alignment);
+	commands_info.dstAddressesArray.deviceAddress = args_address + offsetof(ClusterBottomLevelBuildArgs, dst_address);
+	commands_info.dstAddressesArray.stride = sizeof(VkDeviceAddress);
+	commands_info.dstAddressesArray.size = sizeof(VkDeviceAddress);
+	commands_info.dstSizesArray.deviceAddress = args_address + offsetof(ClusterBottomLevelBuildArgs, dst_size);
+	commands_info.dstSizesArray.stride = sizeof(uint64_t);
+	commands_info.dstSizesArray.size = sizeof(uint64_t);
+	commands_info.srcInfosArray.deviceAddress = args_address + offsetof(ClusterBottomLevelBuildArgs, src_info);
+	commands_info.srcInfosArray.stride = sizeof(VkClusterAccelerationStructureBuildClustersBottomLevelInfoNV);
+	commands_info.srcInfosArray.size = sizeof(VkClusterAccelerationStructureBuildClustersBottomLevelInfoNV);
+	commands_info.srcInfosCount = buffer_get_device_address(p_src_infos_count_buffer);
+
+	vkCmdBuildClusterAccelerationStructureIndirectNV(command_buffer->vk_command_buffer, &commands_info);
 #endif
 }
 
@@ -6826,6 +7113,13 @@ RDD::RaytracingPipelineID RenderingDeviceDriverVulkan::raytracing_pipeline_creat
 	pipeline_create_info.groupCount = shader_group_count;
 	pipeline_create_info.pGroups = shader_groups;
 	pipeline_create_info.maxPipelineRayRecursionDepth = p_max_trace_recursion_depth;
+
+	VkRayTracingPipelineClusterAccelerationStructureCreateInfoNV cluster_create_info = {};
+	if (clas_is_supported()) {
+		cluster_create_info.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CLUSTER_ACCELERATION_STRUCTURE_CREATE_INFO_NV;
+		cluster_create_info.allowClusterAccelerationStructure = VK_TRUE;
+		pipeline_create_info.pNext = &cluster_create_info;
+	}
 
 	VkPipeline vk_pipeline = VK_NULL_HANDLE;
 	VkResult err = vkCreateRayTracingPipelinesKHR(vk_device, VK_NULL_HANDLE, pipelines_cache.vk_cache, 1, &pipeline_create_info, nullptr, &vk_pipeline);

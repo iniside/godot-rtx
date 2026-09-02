@@ -1338,6 +1338,7 @@ private:
 		// --- Bottom Level ---
 		Vector<RDG::ResourceTracker *> draw_trackers;
 		HashSet<RID> untracked_buffers;
+		bool cluster_based = false;
 
 		// --- Top Level ---
 		uint32_t max_instance_count = 0;
@@ -1405,6 +1406,22 @@ public:
 	RID blas_create(Span<AccelerationStructureGeometry> p_geometries, BitField<AccelerationStructureFlagBits> p_flags);
 	RID tlas_create(uint32_t p_max_instance_count, BitField<AccelerationStructureFlagBits> p_flags);
 
+	typedef RDD::ClusterAccelerationStructureLimits ClusterAccelerationStructureLimits;
+	typedef RDD::ClusterBuildInput ClusterBuildInput;
+	typedef RDD::ClusterBuildSizes ClusterBuildSizes;
+
+	struct ClusterAddressRegion {
+		RID buffer;
+		uint64_t offset = 0;
+		uint64_t stride = 0;
+		uint64_t size = 0;
+	};
+
+	bool clas_is_supported() const;
+	ClusterAccelerationStructureLimits clas_get_limits() const;
+	void clas_get_build_sizes(const ClusterBuildInput &p_input, ClusterBuildSizes &r_sizes);
+	RID blas_create_from_clusters(uint32_t p_max_cluster_count, uint32_t p_max_cluster_count_per_acceleration_structure);
+
 	typedef int64_t HitShaderBindingTableRange;
 
 	struct AccelerationStructureInstance {
@@ -1418,9 +1435,14 @@ public:
 
 	Error blas_build(RID p_blas);
 	Error blas_update(RID p_blas);
+	Error clas_build(const ClusterBuildInput &p_input, RID p_dst_implicit_buffer, const ClusterAddressRegion &p_dst_addresses, const ClusterAddressRegion &p_dst_sizes, RID p_scratch_buffer, const ClusterAddressRegion &p_src_infos, RID p_src_infos_count_buffer);
+	Error blas_build_from_clusters(RID p_blas, const ClusterAddressRegion &p_cluster_addresses, RID p_src_infos_count_buffer);
 	Error tlas_build(RID p_tlas, Span<AccelerationStructureInstance> p_instances);
 
 private:
+	Error _cluster_address_region_resolve(const ClusterAddressRegion &p_region, RDD::ClusterAddressRegion &r_region, LocalVector<RDG::ResourceTracker *> &r_trackers);
+	Error _cluster_buffer_resolve(RID p_buffer, RDD::BufferID &r_buffer, LocalVector<RDG::ResourceTracker *> &r_trackers);
+
 	/**********************************/
 	/**** HIT SHADER BINDING TABLE ****/
 	/**********************************/

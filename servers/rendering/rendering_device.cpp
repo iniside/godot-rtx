@@ -502,6 +502,7 @@ Error RenderingDevice::blas_build(RID p_blas) {
 
 	AccelerationStructure *blas = acceleration_structure_owner.get_or_null(p_blas);
 	ERR_FAIL_NULL_V_MSG(blas, ERR_INVALID_PARAMETER, "BLAS argument is not valid.");
+	ERR_FAIL_COND_V_MSG(blas->cluster_based, ERR_INVALID_PARAMETER, "BLAS was created from clusters and must be built with blas_build_from_clusters().");
 
 	Error err = _acceleration_structure_scratch_buffer_create(blas);
 	ERR_FAIL_COND_V(err != OK, err);
@@ -523,11 +524,171 @@ Error RenderingDevice::blas_update(RID p_blas) {
 
 	AccelerationStructure *blas = acceleration_structure_owner.get_or_null(p_blas);
 	ERR_FAIL_NULL_V_MSG(blas, ERR_INVALID_PARAMETER, "BLAS argument is not valid.");
+	ERR_FAIL_COND_V_MSG(blas->cluster_based, ERR_INVALID_PARAMETER, "BLAS was created from clusters and must be built with blas_build_from_clusters().");
 
 	Error err = _acceleration_structure_scratch_buffer_create(blas);
 	ERR_FAIL_COND_V(err != OK, err);
 
 	draw_graph.add_blas_update(blas->driver_id, blas->scratch_buffer, blas->draw_tracker, blas->draw_trackers);
+
+	blas->invalidated = false;
+	_blas_remove_tlas_dependencies(blas, p_blas);
+
+	return OK;
+}
+
+bool RenderingDevice::clas_is_supported() const {
+	return driver->clas_is_supported();
+}
+
+RenderingDevice::ClusterAccelerationStructureLimits RenderingDevice::clas_get_limits() const {
+	return driver->clas_get_limits();
+}
+
+void RenderingDevice::clas_get_build_sizes(const ClusterBuildInput &p_input, ClusterBuildSizes &r_sizes) {
+	r_sizes = ClusterBuildSizes();
+	ERR_FAIL_COND_MSG(!driver->clas_is_supported(), "Cluster acceleration structures are not supported by the current rendering device.");
+	driver->clas_get_build_sizes(p_input, r_sizes);
+}
+
+Error RenderingDevice::_cluster_address_region_resolve(const ClusterAddressRegion &p_region, RDD::ClusterAddressRegion &r_region, LocalVector<RDG::ResourceTracker *> &r_trackers) {
+	r_region = RDD::ClusterAddressRegion();
+
+	Buffer *buffer = _get_buffer_from_owner(p_region.buffer);
+	ERR_FAIL_NULL_V_MSG(buffer, ERR_INVALID_PARAMETER, "Cluster address region buffer is not a valid buffer of any type.");
+	ERR_FAIL_COND_V_MSG(!buffer->usage.has_flag(RDD::BUFFER_USAGE_DEVICE_ADDRESS_BIT), ERR_INVALID_PARAMETER, "Cluster address region buffer was not created with the device address flag.");
+	ERR_FAIL_COND_V_MSG(p_region.stride == 0, ERR_INVALID_PARAMETER, "Cluster address region stride must not be zero.");
+	ERR_FAIL_COND_V_MSG(p_region.size == 0, ERR_INVALID_PARAMETER, "Cluster address region size must not be zero.");
+	ERR_FAIL_COND_V_MSG((p_region.offset + p_region.size) > buffer->size, ERR_INVALID_PARAMETER, "Cluster address region is outside the range of its buffer.");
+
+	_check_transfer_worker_buffer(buffer);
+
+	if (_buffer_make_mutable(buffer, p_region.buffer)) {
+		draw_graph.add_synchronization();
+	}
+
+	r_region.buffer = buffer->driver_id;
+	r_region.offset = p_region.offset;
+	r_region.stride = p_region.stride;
+	r_region.size = p_region.size;
+	r_trackers.push_back(buffer->draw_tracker);
+
+	return OK;
+}
+
+Error RenderingDevice::_cluster_buffer_resolve(RID p_buffer, RDD::BufferID &r_buffer, LocalVector<RDG::ResourceTracker *> &r_trackers) {
+	r_buffer = RDD::BufferID();
+
+	Buffer *buffer = _get_buffer_from_owner(p_buffer);
+	ERR_FAIL_NULL_V_MSG(buffer, ERR_INVALID_PARAMETER, "Cluster build buffer is not a valid buffer of any type.");
+	ERR_FAIL_COND_V_MSG(!buffer->usage.has_flag(RDD::BUFFER_USAGE_DEVICE_ADDRESS_BIT), ERR_INVALID_PARAMETER, "Cluster build buffer was not created with the device address flag.");
+
+	_check_transfer_worker_buffer(buffer);
+
+	if (_buffer_make_mutable(buffer, p_buffer)) {
+		draw_graph.add_synchronization();
+	}
+
+	r_buffer = buffer->driver_id;
+	r_trackers.push_back(buffer->draw_tracker);
+
+	return OK;
+}
+
+RID RenderingDevice::blas_create_from_clusters(uint32_t p_max_cluster_count, uint32_t p_max_cluster_count_per_acceleration_structure) {
+	ERR_FAIL_COND_V_MSG(!driver->clas_is_supported(), RID(), "Cluster acceleration structures are not supported by the current rendering device.");
+
+	AccelerationStructure acceleration_structure;
+	acceleration_structure.type = RDD::ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
+	acceleration_structure.cluster_based = true;
+	acceleration_structure.driver_id = driver->blas_create_from_clusters(p_max_cluster_count, p_max_cluster_count_per_acceleration_structure);
+	ERR_FAIL_COND_V_MSG(!acceleration_structure.driver_id, RID(), "Failed to create cluster BLAS.");
+
+	acceleration_structure.draw_tracker = RDG::resource_tracker_create();
+	acceleration_structure.draw_tracker->acceleration_structure_driver_id = acceleration_structure.driver_id;
+	// Assume we are going to build this acceleration structure
+	acceleration_structure.draw_tracker->usage = RDG::RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ_WRITE;
+
+	RID id = acceleration_structure_owner.make_rid(acceleration_structure);
+#ifdef DEV_ENABLED
+	set_resource_name(id, "RID:" + itos(id.get_id()));
+#endif
+	return id;
+}
+
+Error RenderingDevice::clas_build(const ClusterBuildInput &p_input, RID p_dst_implicit_buffer, const ClusterAddressRegion &p_dst_addresses, const ClusterAddressRegion &p_dst_sizes, RID p_scratch_buffer, const ClusterAddressRegion &p_src_infos, RID p_src_infos_count_buffer) {
+	ERR_RENDER_THREAD_GUARD_V(ERR_UNAVAILABLE);
+
+	ERR_FAIL_COND_V_MSG(!driver->clas_is_supported(), ERR_UNAVAILABLE, "Cluster acceleration structures are not supported by the current rendering device.");
+	ERR_FAIL_COND_V_MSG(draw_list.active, ERR_INVALID_PARAMETER, "Building cluster acceleration structures is forbidden during creation of a draw list.");
+	ERR_FAIL_COND_V_MSG(compute_list.active, ERR_INVALID_PARAMETER, "Building cluster acceleration structures is forbidden during creation of a compute list.");
+	ERR_FAIL_COND_V_MSG(raytracing_list.active, ERR_INVALID_PARAMETER, "Building cluster acceleration structures is forbidden during creation of a raytracing list.");
+
+	thread_local LocalVector<RDG::ResourceTracker *> write_trackers;
+	thread_local LocalVector<RDG::ResourceTracker *> read_trackers;
+	write_trackers.clear();
+	read_trackers.clear();
+
+	RDD::BufferID dst_implicit_buffer;
+	Error err = _cluster_buffer_resolve(p_dst_implicit_buffer, dst_implicit_buffer, write_trackers);
+	ERR_FAIL_COND_V(err != OK, err);
+
+	RDD::BufferID scratch_buffer;
+	err = _cluster_buffer_resolve(p_scratch_buffer, scratch_buffer, write_trackers);
+	ERR_FAIL_COND_V(err != OK, err);
+
+	RDD::ClusterAddressRegion dst_addresses;
+	err = _cluster_address_region_resolve(p_dst_addresses, dst_addresses, write_trackers);
+	ERR_FAIL_COND_V(err != OK, err);
+
+	RDD::ClusterAddressRegion dst_sizes;
+	err = _cluster_address_region_resolve(p_dst_sizes, dst_sizes, write_trackers);
+	ERR_FAIL_COND_V(err != OK, err);
+
+	RDD::ClusterAddressRegion src_infos;
+	err = _cluster_address_region_resolve(p_src_infos, src_infos, read_trackers);
+	ERR_FAIL_COND_V(err != OK, err);
+
+	RDD::BufferID src_infos_count_buffer;
+	err = _cluster_buffer_resolve(p_src_infos_count_buffer, src_infos_count_buffer, read_trackers);
+	ERR_FAIL_COND_V(err != OK, err);
+
+	draw_graph.add_clas_build(p_input, dst_implicit_buffer, dst_addresses, dst_sizes, scratch_buffer, src_infos, src_infos_count_buffer, write_trackers, read_trackers);
+
+	return OK;
+}
+
+Error RenderingDevice::blas_build_from_clusters(RID p_blas, const ClusterAddressRegion &p_cluster_addresses, RID p_src_infos_count_buffer) {
+	ERR_RENDER_THREAD_GUARD_V(ERR_UNAVAILABLE);
+
+	ERR_FAIL_COND_V_MSG(draw_list.active, ERR_INVALID_PARAMETER, "Building BLAS is forbidden during creation of a draw list.");
+	ERR_FAIL_COND_V_MSG(compute_list.active, ERR_INVALID_PARAMETER, "Building BLAS is forbidden during creation of a compute list.");
+	ERR_FAIL_COND_V_MSG(raytracing_list.active, ERR_INVALID_PARAMETER, "Building BLAS is forbidden during creation of a raytracing list.");
+
+	AccelerationStructure *blas = acceleration_structure_owner.get_or_null(p_blas);
+	ERR_FAIL_NULL_V_MSG(blas, ERR_INVALID_PARAMETER, "BLAS argument is not valid.");
+	ERR_FAIL_COND_V_MSG(!blas->cluster_based, ERR_INVALID_PARAMETER, "BLAS was not created from clusters.");
+
+	thread_local LocalVector<RDG::ResourceTracker *> draw_trackers;
+	draw_trackers.clear();
+
+	RDD::ClusterAddressRegion cluster_addresses;
+	Error err = _cluster_address_region_resolve(p_cluster_addresses, cluster_addresses, draw_trackers);
+	ERR_FAIL_COND_V(err != OK, err);
+
+	RDD::BufferID src_infos_count_buffer;
+	err = _cluster_buffer_resolve(p_src_infos_count_buffer, src_infos_count_buffer, draw_trackers);
+	ERR_FAIL_COND_V(err != OK, err);
+
+	err = _acceleration_structure_scratch_buffer_create(blas);
+	ERR_FAIL_COND_V(err != OK, err);
+
+	blas->draw_trackers.clear();
+	for (RDG::ResourceTracker *tracker : draw_trackers) {
+		blas->draw_trackers.push_back(tracker);
+	}
+
+	draw_graph.add_blas_build_from_clusters(blas->driver_id, blas->scratch_buffer, cluster_addresses, src_infos_count_buffer, blas->draw_tracker, draw_trackers);
 
 	blas->invalidated = false;
 	_blas_remove_tlas_dependencies(blas, p_blas);

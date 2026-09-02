@@ -1093,6 +1093,14 @@ void RenderingDeviceGraph::_run_render_commands(int32_t p_level, const RecordedC
 				const RecordedTopLevelAccelerationStructureBuildCommand *tlas_build_command = reinterpret_cast<const RecordedTopLevelAccelerationStructureBuildCommand *>(command);
 				driver->command_build_tlas(r_command_buffer, tlas_build_command->acceleration_structure, tlas_build_command->scratch_buffer, tlas_build_command->instance_buffer, tlas_build_command->instance_offset, tlas_build_command->instance_count);
 			} break;
+			case RecordedCommand::TYPE_CLUSTER_ACCELERATION_STRUCTURE_BUILD: {
+				const RecordedClusterAccelerationStructureBuildCommand *clas_build_command = reinterpret_cast<const RecordedClusterAccelerationStructureBuildCommand *>(command);
+				driver->command_build_clas(r_command_buffer, clas_build_command->input, clas_build_command->dst_implicit_buffer, clas_build_command->dst_addresses, clas_build_command->dst_sizes, clas_build_command->scratch_buffer, clas_build_command->src_infos, clas_build_command->src_infos_count_buffer);
+			} break;
+			case RecordedCommand::TYPE_BOTTOM_LEVEL_ACCELERATION_STRUCTURE_FROM_CLUSTERS_BUILD: {
+				const RecordedBottomLevelAccelerationStructureFromClustersBuildCommand *blas_from_clusters_command = reinterpret_cast<const RecordedBottomLevelAccelerationStructureFromClustersBuildCommand *>(command);
+				driver->command_build_blas_from_clusters(r_command_buffer, blas_from_clusters_command->acceleration_structure, blas_from_clusters_command->scratch_buffer, blas_from_clusters_command->cluster_addresses, blas_from_clusters_command->src_infos_count_buffer);
+			} break;
 			case RecordedCommand::TYPE_BUFFER_CLEAR: {
 				const RecordedBufferClearCommand *buffer_clear_command = reinterpret_cast<const RecordedBufferClearCommand *>(command);
 				driver->command_clear_buffer(r_command_buffer, buffer_clear_command->buffer, buffer_clear_command->offset, buffer_clear_command->size);
@@ -1850,6 +1858,68 @@ void RenderingDeviceGraph::add_tlas_build(RDD::AccelerationStructureID p_acceler
 	command->instance_buffer = p_instance_buffer;
 	command->instance_offset = p_instance_offset;
 	command->instance_count = p_instance_count;
+
+	thread_local LocalVector<ResourceTracker *> trackers;
+	thread_local LocalVector<ResourceUsage> usages;
+
+	// Sources and destination.
+	uint32_t resource_count = p_src_trackers.size() + 1;
+	trackers.resize(resource_count);
+	usages.resize(resource_count);
+
+	for (uint32_t i = 0; i < p_src_trackers.size(); ++i) {
+		trackers[i] = p_src_trackers[i];
+		usages[i] = RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ;
+	}
+
+	trackers[resource_count - 1] = p_dst_tracker;
+	usages[resource_count - 1] = RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ_WRITE;
+
+	_add_command_to_graph(trackers.ptr(), usages.ptr(), usages.size(), command_index, command);
+}
+
+void RenderingDeviceGraph::add_clas_build(const RDD::ClusterBuildInput &p_input, RDD::BufferID p_dst_implicit_buffer, const RDD::ClusterAddressRegion &p_dst_addresses, const RDD::ClusterAddressRegion &p_dst_sizes, RDD::BufferID p_scratch_buffer, const RDD::ClusterAddressRegion &p_src_infos, RDD::BufferID p_src_infos_count_buffer, VectorView<ResourceTracker *> p_write_trackers, VectorView<ResourceTracker *> p_read_trackers) {
+	int32_t command_index;
+	RecordedClusterAccelerationStructureBuildCommand *command = static_cast<RecordedClusterAccelerationStructureBuildCommand *>(_allocate_command(sizeof(RecordedClusterAccelerationStructureBuildCommand), command_index));
+	command->type = RecordedCommand::TYPE_CLUSTER_ACCELERATION_STRUCTURE_BUILD;
+	command->self_stages = RDD::PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT;
+	command->input = p_input;
+	command->dst_implicit_buffer = p_dst_implicit_buffer;
+	command->dst_addresses = p_dst_addresses;
+	command->dst_sizes = p_dst_sizes;
+	command->scratch_buffer = p_scratch_buffer;
+	command->src_infos = p_src_infos;
+	command->src_infos_count_buffer = p_src_infos_count_buffer;
+
+	thread_local LocalVector<ResourceTracker *> trackers;
+	thread_local LocalVector<ResourceUsage> usages;
+
+	uint32_t resource_count = p_write_trackers.size() + p_read_trackers.size();
+	trackers.resize(resource_count);
+	usages.resize(resource_count);
+
+	for (uint32_t i = 0; i < p_write_trackers.size(); ++i) {
+		trackers[i] = p_write_trackers[i];
+		usages[i] = RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ_WRITE;
+	}
+
+	for (uint32_t i = 0; i < p_read_trackers.size(); ++i) {
+		trackers[p_write_trackers.size() + i] = p_read_trackers[i];
+		usages[p_write_trackers.size() + i] = RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ;
+	}
+
+	_add_command_to_graph(trackers.ptr(), usages.ptr(), usages.size(), command_index, command);
+}
+
+void RenderingDeviceGraph::add_blas_build_from_clusters(RDD::AccelerationStructureID p_blas, RDD::BufferID p_scratch_buffer, const RDD::ClusterAddressRegion &p_cluster_addresses, RDD::BufferID p_src_infos_count_buffer, ResourceTracker *p_dst_tracker, VectorView<ResourceTracker *> p_src_trackers) {
+	int32_t command_index;
+	RecordedBottomLevelAccelerationStructureFromClustersBuildCommand *command = static_cast<RecordedBottomLevelAccelerationStructureFromClustersBuildCommand *>(_allocate_command(sizeof(RecordedBottomLevelAccelerationStructureFromClustersBuildCommand), command_index));
+	command->type = RecordedCommand::TYPE_BOTTOM_LEVEL_ACCELERATION_STRUCTURE_FROM_CLUSTERS_BUILD;
+	command->self_stages = RDD::PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT;
+	command->acceleration_structure = p_blas;
+	command->scratch_buffer = p_scratch_buffer;
+	command->cluster_addresses = p_cluster_addresses;
+	command->src_infos_count_buffer = p_src_infos_count_buffer;
 
 	thread_local LocalVector<ResourceTracker *> trackers;
 	thread_local LocalVector<ResourceUsage> usages;
@@ -2693,6 +2763,8 @@ void RenderingDeviceGraph::end(bool p_reorder_commands, bool p_full_barriers, RD
 			2, // TYPE_CAPTURE_TIMESTAMP
 			5, // TYPE_DRIVER_CALLBACK
 			6, // TYPE_BOTTOM_LEVEL_ACCELERATION_STRUCTURE_UPDATE
+			6, // TYPE_CLUSTER_ACCELERATION_STRUCTURE_BUILD
+			6, // TYPE_BOTTOM_LEVEL_ACCELERATION_STRUCTURE_FROM_CLUSTERS_BUILD
 		};
 		static_assert(std_size(PriorityTable) == RecordedCommand::TYPE_MAX, "PriorityTable must have one entry per RecordedCommand::Type");
 
