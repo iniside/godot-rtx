@@ -1,5 +1,6 @@
 // Shared utilities for hit shaders (closest_hit, any_hit)
 // Requires: GL_EXT_buffer_reference, GL_ARB_gpu_shader_int64, oct_inc.glsl, raytracing_inc.glsl
+// Supplies GL_NV_cluster_acceleration_structure, so include only from stages where gl_ClusterIDNV is legal (closest_hit, any_hit).
 
 #extension GL_NV_cluster_acceleration_structure : require
 
@@ -76,7 +77,7 @@ uint cluster_resolve_primitive_id(in GeometryData geom, int cluster_id, uint pri
 	return remap.v[uint(cluster_id)] + primitive_id;
 }
 
-/// Convenience wrapper using gl_PrimitiveID (hit shaders only).
+/// Convenience wrapper using gl_PrimitiveID and gl_ClusterIDNV (hit shaders only).
 void get_triangle_indices(in GeometryData geom, out uint i0, out uint i1, out uint i2) {
 	get_triangle_indices_ex(geom, cluster_resolve_primitive_id(geom, gl_ClusterIDNV, uint(gl_PrimitiveID)), i0, i1, i2);
 }
