@@ -108,6 +108,9 @@ struct SurfaceData {
 	Vector4 uv_scale;
 
 	RID material;
+
+	Vector<uint8_t> cluster_data;
+	uint32_t cluster_count = 0;
 };
 
 struct MeshInfo {

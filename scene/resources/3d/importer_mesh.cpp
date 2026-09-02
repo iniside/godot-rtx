@@ -34,6 +34,7 @@
 #include "core/math/random_pcg.h"
 #include "core/object/class_db.h"
 #include "scene/resources/surface_tool.h"
+#include "servers/rendering/rendering_server.h"
 
 #ifndef PHYSICS_3D_DISABLED
 #include "core/math/convex_hull.h"
@@ -1014,7 +1015,12 @@ Ref<ArrayMesh> ImporterMesh::get_mesh(const Ref<ArrayMesh> &p_base) {
 				}
 			}
 
-			mesh->add_surface_from_arrays(surfaces[i].primitive, surfaces[i].arrays, bs_data, lods, surfaces[i].flags);
+			RenderingServerTypes::SurfaceData surface_data;
+			Error err = RS::get_singleton()->mesh_create_surface_data_from_arrays(&surface_data, (RSE::PrimitiveType)surfaces[i].primitive, surfaces[i].arrays, bs_data, lods, surfaces[i].flags);
+			ERR_CONTINUE(err != OK);
+			surface_data.cluster_data = surfaces[i].cluster_data;
+			surface_data.cluster_count = surfaces[i].cluster_data.is_empty() ? 0 : decode_uint32(surfaces[i].cluster_data.ptr() + 8);
+			mesh->add_surface(surface_data.format, Mesh::PrimitiveType(surface_data.primitive), surface_data.vertex_data, surface_data.attribute_data, surface_data.skin_data, surface_data.vertex_count, surface_data.index_data, surface_data.index_count, surface_data.aabb, surface_data.blend_shape_data, surface_data.bone_aabbs, surface_data.lods, surface_data.uv_scale, surface_data.cluster_data, surface_data.cluster_count);
 			if (surfaces[i].material.is_valid()) {
 				mesh->surface_set_material(mesh->get_surface_count() - 1, surfaces[i].material);
 			}

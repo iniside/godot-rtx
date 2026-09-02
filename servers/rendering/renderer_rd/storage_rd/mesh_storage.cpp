@@ -31,6 +31,7 @@
 #include "mesh_storage.h"
 
 #include "core/config/project_settings.h"
+#include "core/io/marshalls.h"
 #include "servers/rendering/renderer_viewport.h"
 #include "servers/rendering/rendering_server.h"
 #include "servers/rendering/rendering_server_types.h"
@@ -442,6 +443,42 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 		}
 	}
 
+	if (new_surface.cluster_data.size()) {
+		constexpr uint32_t CLUSTER_BLOB_MAGIC = 0x53554c43;
+		constexpr uint32_t CLUSTER_BLOB_VERSION = 1;
+		constexpr uint32_t CLUSTER_BLOB_HEADER_SIZE = 32;
+
+		const Vector<uint8_t> &blob = new_surface.cluster_data;
+		ERR_FAIL_COND_MSG(blob.size() < CLUSTER_BLOB_HEADER_SIZE, "Cluster data blob is smaller than its header.");
+
+		const uint8_t *blob_ptr = blob.ptr();
+		uint32_t magic = decode_uint32(blob_ptr + 0);
+		uint32_t version = decode_uint32(blob_ptr + 4);
+		uint32_t index_section_offset = decode_uint32(blob_ptr + 16);
+		uint32_t position_section_offset = decode_uint32(blob_ptr + 20);
+
+		ERR_FAIL_COND_MSG(magic != CLUSTER_BLOB_MAGIC, "Cluster data blob has an invalid magic number.");
+		ERR_FAIL_COND_MSG(version != CLUSTER_BLOB_VERSION, "Cluster data blob has an unsupported version.");
+		ERR_FAIL_COND_MSG(index_section_offset < CLUSTER_BLOB_HEADER_SIZE, "Cluster data blob has an invalid index section offset.");
+		ERR_FAIL_COND_MSG(index_section_offset > position_section_offset, "Cluster data blob has an invalid index/position section ordering.");
+		ERR_FAIL_COND_MSG(position_section_offset > (uint32_t)blob.size(), "Cluster data blob has an invalid position section offset.");
+
+		// cluster_buffer holds the header, per-cluster records and the local index section (everything
+		// up to position_section_offset); cluster_position_buffer holds the position section that follows.
+		uint32_t cluster_buffer_size = position_section_offset;
+		uint32_t cluster_position_buffer_size = (uint32_t)blob.size() - position_section_offset;
+
+		s->cluster_buffer = RD::get_singleton()->storage_buffer_create(cluster_buffer_size, Span<uint8_t>(blob_ptr, cluster_buffer_size), 0, buffer_flags);
+		s->cluster_buffer_size = cluster_buffer_size;
+
+		if (cluster_position_buffer_size > 0) {
+			s->cluster_position_buffer = RD::get_singleton()->storage_buffer_create(cluster_position_buffer_size, Span<uint8_t>(blob_ptr + position_section_offset, cluster_position_buffer_size), 0, buffer_flags);
+			s->cluster_position_buffer_size = cluster_position_buffer_size;
+		}
+
+		s->cluster_count = new_surface.cluster_count;
+	}
+
 	ERR_FAIL_COND_MSG(!new_surface.index_count && !new_surface.vertex_count, "Meshes must contain a vertex array, an index array, or both");
 
 	s->aabb = new_surface.aabb;
@@ -551,6 +588,13 @@ void MeshStorage::_mesh_surface_clear(Mesh *p_mesh, int p_surface) {
 
 	if (s.blend_shape_buffer.is_valid()) {
 		RD::get_singleton()->free_rid(s.blend_shape_buffer);
+	}
+
+	if (s.cluster_buffer.is_valid()) {
+		RD::get_singleton()->free_rid(s.cluster_buffer);
+	}
+	if (s.cluster_position_buffer.is_valid()) {
+		RD::get_singleton()->free_rid(s.cluster_position_buffer);
 	}
 
 	memdelete(p_mesh->surfaces[p_surface]);
@@ -701,6 +745,16 @@ RenderingServerTypes::SurfaceData MeshStorage::mesh_get_surface(RID p_mesh, int 
 
 	if (s.blend_shape_buffer.is_valid()) {
 		sd.blend_shape_data = RD::get_singleton()->buffer_get_data(s.blend_shape_buffer);
+	}
+
+	if (s.cluster_buffer.is_valid()) {
+		Vector<uint8_t> cluster_blob = RD::get_singleton()->buffer_get_data(s.cluster_buffer);
+		if (s.cluster_position_buffer.is_valid()) {
+			Vector<uint8_t> position_blob = RD::get_singleton()->buffer_get_data(s.cluster_position_buffer);
+			cluster_blob.append_array(position_blob);
+		}
+		sd.cluster_data = cluster_blob;
+		sd.cluster_count = s.cluster_count;
 	}
 
 	return sd;

@@ -115,6 +115,12 @@ private:
 			RID index_array;
 			uint32_t index_count = 0;
 
+			RID cluster_buffer;
+			uint32_t cluster_buffer_size = 0;
+			RID cluster_position_buffer;
+			uint32_t cluster_position_buffer_size = 0;
+			uint32_t cluster_count = 0;
+
 			struct LOD {
 				float edge_length = 0.0;
 				uint32_t index_count = 0;
