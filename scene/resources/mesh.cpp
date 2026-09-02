@@ -1559,7 +1559,6 @@ Array ArrayMesh::_get_surfaces() const {
 
 		if (surface.cluster_data.size()) {
 			data["cluster_data"] = surface.cluster_data;
-			data["cluster_count"] = surface.cluster_count;
 		}
 
 		if (surfaces[i].material.is_valid()) {
@@ -1649,7 +1648,6 @@ void ArrayMesh::_set_surfaces(const Array &p_surfaces) {
 
 		if (d.has("cluster_data")) {
 			surface.cluster_data = d["cluster_data"];
-			surface.cluster_count = d.has("cluster_count") ? (uint32_t)(int)d["cluster_count"] : 0;
 		}
 
 		Ref<Material> material;
@@ -1790,7 +1788,7 @@ void ArrayMesh::_recompute_aabb() {
 }
 
 // TODO: Need to add binding to add_surface using future MeshSurfaceData object.
-void ArrayMesh::add_surface(BitField<ArrayFormat> p_format, PrimitiveType p_primitive, const Vector<uint8_t> &p_array, const Vector<uint8_t> &p_attribute_array, const Vector<uint8_t> &p_skin_array, int p_vertex_count, const Vector<uint8_t> &p_index_array, int p_index_count, const AABB &p_aabb, const Vector<uint8_t> &p_blend_shape_data, const Vector<AABB> &p_bone_aabbs, const Vector<RenderingServerTypes::SurfaceData::LOD> &p_lods, const Vector4 p_uv_scale, const Vector<uint8_t> &p_cluster_data, uint32_t p_cluster_count) {
+void ArrayMesh::add_surface(BitField<ArrayFormat> p_format, PrimitiveType p_primitive, const Vector<uint8_t> &p_array, const Vector<uint8_t> &p_attribute_array, const Vector<uint8_t> &p_skin_array, int p_vertex_count, const Vector<uint8_t> &p_index_array, int p_index_count, const AABB &p_aabb, const Vector<uint8_t> &p_blend_shape_data, const Vector<AABB> &p_bone_aabbs, const Vector<RenderingServerTypes::SurfaceData::LOD> &p_lods, const Vector4 p_uv_scale, const Vector<uint8_t> &p_cluster_data) {
 	ERR_FAIL_COND(surfaces.size() == RSE::MAX_MESH_SURFACES);
 	_create_if_empty();
 
@@ -1820,7 +1818,6 @@ void ArrayMesh::add_surface(BitField<ArrayFormat> p_format, PrimitiveType p_prim
 	sd.lods = p_lods;
 	sd.uv_scale = p_uv_scale;
 	sd.cluster_data = p_cluster_data;
-	sd.cluster_count = p_cluster_count;
 
 	RenderingServer::get_singleton()->mesh_add_surface(mesh, sd);
 

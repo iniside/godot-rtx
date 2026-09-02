@@ -120,6 +120,7 @@ private:
 			RID cluster_position_buffer;
 			uint32_t cluster_position_buffer_size = 0;
 			uint32_t cluster_count = 0;
+			uint32_t cluster_index_section_offset = 0;
 
 			struct LOD {
 				float edge_length = 0.0;

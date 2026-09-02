@@ -193,9 +193,6 @@ enum ArrayFormat : uint64_t {
 	ARRAY_FLAG_COMPRESS_ATTRIBUTES = 1 << (ARRAY_COMPRESS_FLAGS_BASE + 4),
 	// We leave enough room for up to 5 more compression flags.
 
-	// 1ULL, not 1 << : this shift (34) exceeds int width, unlike the flags above.
-	ARRAY_FLAG_HAS_CLUSTER_DATA = 1ULL << (ARRAY_COMPRESS_FLAGS_BASE + 9),
-
 	ARRAY_FLAG_FORMAT_VERSION_BASE = ARRAY_COMPRESS_FLAGS_BASE + 10,
 	ARRAY_FLAG_FORMAT_VERSION_SHIFT = ARRAY_FLAG_FORMAT_VERSION_BASE,
 	// When changes are made to the mesh format, add a new version and use it for the CURRENT_VERSION.
