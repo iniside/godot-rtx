@@ -2818,6 +2818,7 @@ Node *ResourceImporterScene::_generate_meshes(Node *p_node, const Dictionary &p_
 				}
 
 				importer_mesh->optimize_indices();
+				importer_mesh->generate_clusters();
 
 				if (!save_to_file.is_empty()) {
 					String save_res_path = ResourceUID::ensure_path(save_to_file);

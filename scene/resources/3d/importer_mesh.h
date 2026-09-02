@@ -62,6 +62,7 @@ class ImporterMesh : public Resource {
 		Ref<Material> material;
 		String name;
 		uint64_t flags = 0;
+		Vector<uint8_t> cluster_data;
 
 		struct LODComparator {
 			_FORCE_INLINE_ bool operator()(const LOD &l, const LOD &r) const {
@@ -116,6 +117,8 @@ public:
 	void set_surface_material(int p_surface, const Ref<Material> &p_material);
 
 	void optimize_indices();
+
+	void generate_clusters();
 
 	void generate_lods(float p_normal_merge_angle, Array p_skin_pose_transform_array);
 

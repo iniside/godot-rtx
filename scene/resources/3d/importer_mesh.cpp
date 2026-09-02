@@ -554,6 +554,132 @@ void ImporterMesh::optimize_indices() {
 	}
 }
 
+namespace {
+constexpr uint32_t CLUSTER_BLOB_MAGIC = 0x53554c43; // "CLUS", read as little-endian bytes.
+constexpr uint32_t CLUSTER_BLOB_VERSION = 1;
+constexpr uint32_t CLUSTER_HEADER_SIZE = 32;
+constexpr uint32_t CLUSTER_RECORD_SIZE = 16;
+constexpr size_t CLUSTER_MAX_VERTICES = 128;
+constexpr size_t CLUSTER_MIN_TRIANGLES = 96;
+constexpr size_t CLUSTER_MAX_TRIANGLES = 128;
+constexpr float CLUSTER_FILL_WEIGHT = 0.5f;
+} // namespace
+
+void ImporterMesh::generate_clusters() {
+	if (!SurfaceTool::build_meshlets_bound_func || !SurfaceTool::build_meshlets_spatial_func || !SurfaceTool::optimize_meshlet_func) {
+		return;
+	}
+
+	for (int i = 0; i < surfaces.size(); i++) {
+		Surface &s = surfaces.write[i];
+		s.cluster_data.clear();
+
+		if (s.primitive != Mesh::PRIMITIVE_TRIANGLES) {
+			continue;
+		}
+
+		PackedVector3Array vertices = s.arrays[RSE::ARRAY_VERTEX];
+		PackedInt32Array indices = s.arrays[RSE::ARRAY_INDEX];
+
+		size_t vertex_count = vertices.size();
+		size_t index_count = indices.size();
+		if (vertex_count == 0 || index_count == 0) {
+			continue;
+		}
+
+		LocalVector<unsigned int> indices_u32;
+		indices_u32.resize(index_count);
+		for (size_t j = 0; j < index_count; j++) {
+			indices_u32[j] = (unsigned int)indices[j];
+		}
+
+		// vector3_to_float32_array always yields float32, unlike Vector3 itself in a precision=double build.
+		Vector<float> vertices_f32 = vector3_to_float32_array(vertices.ptr(), vertex_count);
+
+		size_t max_meshlets = SurfaceTool::build_meshlets_bound_func(index_count, CLUSTER_MAX_VERTICES, CLUSTER_MIN_TRIANGLES);
+
+		LocalVector<SurfaceTool::Meshlet> meshlets;
+		meshlets.resize(max_meshlets);
+		LocalVector<unsigned int> meshlet_vertices;
+		meshlet_vertices.resize(index_count);
+		LocalVector<unsigned char> meshlet_triangles;
+		meshlet_triangles.resize(index_count);
+
+		size_t meshlet_count = SurfaceTool::build_meshlets_spatial_func(
+				meshlets.ptr(), meshlet_vertices.ptr(), meshlet_triangles.ptr(),
+				indices_u32.ptr(), index_count,
+				vertices_f32.ptr(), vertex_count, sizeof(float) * 3,
+				CLUSTER_MAX_VERTICES, CLUSTER_MIN_TRIANGLES, CLUSTER_MAX_TRIANGLES, CLUSTER_FILL_WEIGHT);
+
+		meshlets.resize(meshlet_count);
+
+		uint32_t total_triangles = 0;
+		uint32_t position_vertex_total = 0;
+		for (size_t j = 0; j < meshlet_count; j++) {
+			SurfaceTool::optimize_meshlet_func(
+					meshlet_vertices.ptr() + meshlets[j].vertex_offset,
+					meshlet_triangles.ptr() + meshlets[j].triangle_offset,
+					meshlets[j].triangle_count, meshlets[j].vertex_count);
+			total_triangles += meshlets[j].triangle_count;
+			position_vertex_total += meshlets[j].vertex_count;
+		}
+
+		uint32_t index_section_offset = CLUSTER_HEADER_SIZE + (uint32_t)meshlet_count * CLUSTER_RECORD_SIZE;
+		uint32_t index_section_size = total_triangles * 3;
+		uint32_t position_section_offset = index_section_offset + index_section_size;
+		uint32_t position_section_size = position_vertex_total * (uint32_t)sizeof(float) * 3;
+
+		Vector<uint8_t> blob;
+		blob.resize(position_section_offset + position_section_size);
+		uint8_t *w = blob.ptrw();
+
+		encode_uint32(CLUSTER_BLOB_MAGIC, w + 0);
+		encode_uint32(CLUSTER_BLOB_VERSION, w + 4);
+		encode_uint32((uint32_t)meshlet_count, w + 8);
+		encode_uint32(total_triangles, w + 12);
+		encode_uint32(index_section_offset, w + 16);
+		encode_uint32(position_section_offset, w + 20);
+		encode_uint32(position_vertex_total, w + 24);
+		encode_uint32(0, w + 28);
+
+		uint32_t base_triangle = 0;
+		uint32_t running_index_offset = 0;
+		uint32_t running_position_offset = 0;
+		const float *vertices_f32_ptr = vertices_f32.ptr();
+
+		for (size_t j = 0; j < meshlet_count; j++) {
+			const SurfaceTool::Meshlet &m = meshlets[j];
+			uint8_t *record = w + CLUSTER_HEADER_SIZE + j * CLUSTER_RECORD_SIZE;
+			// position_offset/index_offset are relative to their own section, not the blob start.
+			encode_uint32(running_position_offset, record + 0);
+			encode_uint32(running_index_offset, record + 4);
+			record[8] = (uint8_t)m.vertex_count;
+			record[9] = (uint8_t)m.triangle_count;
+			record[10] = 0;
+			record[11] = 0;
+			encode_uint32(base_triangle, record + 12);
+
+			const unsigned char *tri_src = meshlet_triangles.ptr() + m.triangle_offset;
+			memcpy(w + index_section_offset + running_index_offset, tri_src, m.triangle_count * 3);
+
+			const unsigned int *vert_src = meshlet_vertices.ptr() + m.vertex_offset;
+			uint8_t *pos_dst = w + position_section_offset + running_position_offset;
+			for (uint32_t v = 0; v < m.vertex_count; v++) {
+				const float *p = vertices_f32_ptr + (size_t)vert_src[v] * 3;
+				encode_float(p[0], pos_dst + v * 12 + 0);
+				encode_float(p[1], pos_dst + v * 12 + 4);
+				encode_float(p[2], pos_dst + v * 12 + 8);
+			}
+
+			running_index_offset += m.triangle_count * 3;
+			running_position_offset += m.vertex_count * 12;
+			base_triangle += m.triangle_count;
+		}
+
+		s.cluster_data = blob;
+	}
+}
+
 #define VERTEX_SKIN_FUNC(bone_count, vert_idx, read_array, write_array, transform_array, bone_array, weight_array) \
 	Vector3 transformed_vert; \
 	for (unsigned int weight_idx = 0; weight_idx < bone_count; weight_idx++) { \
@@ -1084,6 +1210,9 @@ void ImporterMesh::_set_data(const Dictionary &p_data) {
 				flags = s["flags"];
 			}
 			add_surface(prim, arr, b_shapes, lods, material, surf_name, flags);
+			if (s.has("clusters")) {
+				surfaces.write[surfaces.size() - 1].cluster_data = s["clusters"];
+			}
 		}
 	}
 }
@@ -1121,6 +1250,10 @@ Dictionary ImporterMesh::_get_data() const {
 		}
 
 		d["flags"] = surfaces[i].flags;
+
+		if (!surfaces[i].cluster_data.is_empty()) {
+			d["clusters"] = surfaces[i].cluster_data;
+		}
 
 		surface_arr.push_back(d);
 	}

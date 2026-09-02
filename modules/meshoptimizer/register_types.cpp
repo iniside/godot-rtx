@@ -47,6 +47,12 @@ void initialize_meshoptimizer_module(ModuleInitializationLevel p_level) {
 	SurfaceTool::generate_remap_func = meshopt_generateVertexRemap;
 	SurfaceTool::remap_vertex_func = meshopt_remapVertexBuffer;
 	SurfaceTool::remap_index_func = meshopt_remapIndexBuffer;
+	SurfaceTool::build_meshlets_bound_func = meshopt_buildMeshletsBound;
+	// meshopt_buildMeshletsSpatial is overloaded (raw + template); pin the raw overload before
+	// reinterpreting through SurfaceTool::Meshlet, which mirrors meshopt_Meshlet's layout.
+	size_t (*build_meshlets_spatial_raw)(meshopt_Meshlet *, unsigned int *, unsigned char *, const unsigned int *, size_t, const float *, size_t, size_t, size_t, size_t, size_t, float) = meshopt_buildMeshletsSpatial;
+	SurfaceTool::build_meshlets_spatial_func = (SurfaceTool::BuildMeshletsSpatialFunc)build_meshlets_spatial_raw;
+	SurfaceTool::optimize_meshlet_func = meshopt_optimizeMeshlet;
 }
 
 void uninitialize_meshoptimizer_module(ModuleInitializationLevel p_level) {
@@ -61,4 +67,7 @@ void uninitialize_meshoptimizer_module(ModuleInitializationLevel p_level) {
 	SurfaceTool::generate_remap_func = nullptr;
 	SurfaceTool::remap_vertex_func = nullptr;
 	SurfaceTool::remap_index_func = nullptr;
+	SurfaceTool::build_meshlets_bound_func = nullptr;
+	SurfaceTool::build_meshlets_spatial_func = nullptr;
+	SurfaceTool::optimize_meshlet_func = nullptr;
 }
