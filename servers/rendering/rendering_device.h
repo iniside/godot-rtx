@@ -1341,6 +1341,7 @@ private:
 		HashSet<RID> untracked_buffers;
 		bool cluster_based = false;
 		bool cluster_built = false;
+		uint32_t max_cluster_reference_count = 0;
 
 		// --- Top Level ---
 		uint32_t max_instance_count = 0;

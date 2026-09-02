@@ -619,6 +619,8 @@ RID RenderingDevice::blas_create_from_clusters(uint32_t p_max_cluster_count, uin
 	AccelerationStructure acceleration_structure;
 	acceleration_structure.type = RDD::ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
 	acceleration_structure.cluster_based = true;
+	// A cluster BLAS is a single acceleration structure, so both creation maxima bound the same reference count.
+	acceleration_structure.max_cluster_reference_count = MIN(p_max_cluster_count, p_max_cluster_count_per_acceleration_structure);
 	acceleration_structure.driver_id = driver->blas_create_from_clusters(p_max_cluster_count, p_max_cluster_count_per_acceleration_structure);
 	ERR_FAIL_COND_V_MSG(!acceleration_structure.driver_id, RID(), "Failed to create cluster BLAS.");
 
@@ -701,6 +703,9 @@ Error RenderingDevice::blas_build_from_clusters(RID p_blas, const ClusterAddress
 	RDD::ClusterAddressRegion cluster_addresses;
 	Error err = _cluster_address_region_resolve(p_cluster_addresses, cluster_addresses, draw_trackers);
 	ERR_FAIL_COND_V(err != OK, err);
+
+	const uint64_t cluster_reference_count = cluster_addresses.size / cluster_addresses.stride;
+	ERR_FAIL_COND_V_MSG(cluster_reference_count > blas->max_cluster_reference_count, ERR_INVALID_PARAMETER, vformat("Cluster BLAS build references %d clusters, but the BLAS was created for at most %d.", cluster_reference_count, blas->max_cluster_reference_count));
 
 	err = _acceleration_structure_scratch_buffer_create(blas);
 	ERR_FAIL_COND_V(err != OK, err);

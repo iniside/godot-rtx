@@ -6961,11 +6961,15 @@ void RenderingDeviceDriverVulkan::command_build_blas_from_clusters(CommandBuffer
 	ERR_FAIL_COND_MSG(!p_cluster_addresses.buffer, "A cluster bottom level acceleration structure build needs a cluster address buffer.");
 	ERR_FAIL_COND_MSG(p_cluster_addresses.stride == 0, "A cluster bottom level acceleration structure build needs a non-zero cluster address stride.");
 
+	const uint64_t cluster_reference_count = p_cluster_addresses.size / p_cluster_addresses.stride;
+	const uint32_t max_cluster_reference_count = MIN(accel_info->cluster_bottom_level_input.maxTotalClusterCount, accel_info->cluster_bottom_level_input.maxClusterCountPerAccelerationStructure);
+	ERR_FAIL_COND_MSG(cluster_reference_count > max_cluster_reference_count, vformat("Cluster bottom level acceleration structure build references %d clusters, but it was created for at most %d.", cluster_reference_count, max_cluster_reference_count));
+
 	const CommandBufferInfo *command_buffer = (const CommandBufferInfo *)p_cmd_buffer.id;
 
 	ClusterBottomLevelBuildArgs *args = (ClusterBottomLevelBuildArgs *)accel_info->cluster_args_ptr;
 	args->dst_address = accel_info->cached_device_address;
-	args->src_info.clusterReferencesCount = uint32_t(p_cluster_addresses.size / p_cluster_addresses.stride);
+	args->src_info.clusterReferencesCount = uint32_t(cluster_reference_count);
 	args->src_info.clusterReferencesStride = uint32_t(p_cluster_addresses.stride);
 	args->src_info.clusterReferences = buffer_get_device_address(p_cluster_addresses.buffer) + p_cluster_addresses.offset;
 
