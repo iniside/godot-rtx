@@ -225,9 +225,9 @@ struct RTPendingClusterBuild {
 	uint64_t scratch_size = 0;
 };
 
-/// A buffer the render graph still references this frame; freed on a later frame.
-struct RTDeferredBufferFree {
-	RID buffer;
+/// A resource the render graph still references this frame; freed on a later frame.
+struct RTDeferredResourceFree {
+	RID resource;
 	uint32_t frame = 0;
 };
 
@@ -256,6 +256,7 @@ struct RTMaterialData {
 
 struct RTCacheEntry {
 	RTSurfaceData *ptr = nullptr;
+	RID owner_mesh;
 	uint32_t last_used_frame = 0;
 	uint32_t cached_counter = 0;
 	uint32_t cached_rid_version = 0;
@@ -406,9 +407,10 @@ class RenderRaytracing {
 
 	// Cluster BLAS build state, all owned by this class.
 	LocalVector<RTPendingClusterBuild> pending_cluster_builds;
-	LocalVector<RTDeferredBufferFree> cluster_deferred_frees;
+	LocalVector<RTDeferredResourceFree> cluster_deferred_frees;
 	RID clas_scratch_buffer;
 	uint64_t clas_scratch_capacity = 0;
+	uint32_t cluster_sweep_chunk = 0;
 
 	LocalVector<uint32_t> material_free_slots;
 	uint32_t next_material_slot = 0;
@@ -471,13 +473,12 @@ class RenderRaytracing {
 			void *p_mesh_surface,
 			RID p_vertex_buffer_override,
 			bool p_force_uncompressed,
-			bool p_prefer_fast_build,
-			bool p_allow_update,
 			uint32_t p_cache_key,
 			RTSurfaceData *r_surf_data,
 			LocalVector<RID> &r_dirty_blas_list);
 	bool _populate_cluster_blas(void *p_mesh_surface, uint32_t p_cache_key, RTSurfaceData *r_surf_data);
-	void _free_cluster_blas(RTSurfaceData *p_surf_data);
+	void _release_cluster_blas(RTSurfaceData *p_surf_data, bool p_deferred);
+	void _sweep_dead_cluster_surfaces();
 	void _flush_pending_cluster_builds();
 	RTMaterialData *process_material(RID p_material_rid, uint16_t p_material_invalidation_counter);
 	bool _build_merged_mm_blas(

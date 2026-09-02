@@ -244,7 +244,7 @@ void RenderRaytracing::cleanup_caches() {
 			for (uint32_t j = 0; j < RT_CACHE_CHUNK_SIZE; j++) {
 				RTCacheEntry *entry = &surface_chunks[i][j];
 				if (entry->ptr) {
-					_free_cluster_blas(entry->ptr);
+					_release_cluster_blas(entry->ptr, false);
 					memdelete(entry->ptr);
 					entry->ptr = nullptr;
 				}
@@ -261,9 +261,9 @@ void RenderRaytracing::cleanup_caches() {
 	}
 	pending_cluster_builds.clear();
 
-	for (const RTDeferredBufferFree &deferred : cluster_deferred_frees) {
-		if (deferred.buffer.is_valid()) {
-			rd->free_rid(deferred.buffer);
+	for (const RTDeferredResourceFree &deferred : cluster_deferred_frees) {
+		if (deferred.resource.is_valid()) {
+			rd->free_rid(deferred.resource);
 		}
 	}
 	cluster_deferred_frees.clear();
@@ -472,20 +472,27 @@ void RenderRaytracing::prepare_frame() {
 	const uint32_t current_frame = RSG::rasterizer->get_frame_number();
 	RD *rd = RD::get_singleton();
 
+	for (const RTPendingClusterBuild &pending : pending_cluster_builds) {
+		if (pending.src_infos_buffer.is_valid()) {
+			cluster_deferred_frees.push_back({ pending.src_infos_buffer, current_frame });
+		}
+	}
 	pending_cluster_builds.clear();
 
 	// Cluster build inputs stay alive until the graph that recorded them has been
 	// submitted; freeing one in its own frame would destroy a tracker it still holds.
 	for (uint32_t i = cluster_deferred_frees.size(); i > 0; i--) {
-		RTDeferredBufferFree &deferred = cluster_deferred_frees[i - 1];
+		RTDeferredResourceFree &deferred = cluster_deferred_frees[i - 1];
 		if (deferred.frame == current_frame) {
 			continue;
 		}
-		if (deferred.buffer.is_valid()) {
-			rd->free_rid(deferred.buffer);
+		if (deferred.resource.is_valid()) {
+			rd->free_rid(deferred.resource);
 		}
 		cluster_deferred_frees.remove_at_unordered(i - 1);
 	}
+
+	_sweep_dead_cluster_surfaces();
 
 	// TTL-evict stale deformed-surface entries.
 	{
@@ -617,12 +624,14 @@ RTSurfaceData *RenderRaytracing::process_surface(
 	} else {
 		// Unconditional, including on a version mismatch: a cluster BLAS and its buffers
 		// hold no RD dependency on the mesh, so nothing else ever frees them.
-		_free_cluster_blas(entry->ptr);
+		_release_cluster_blas(entry->ptr, false);
 	}
+
+	entry->owner_mesh = mesh_rid;
 
 	RTSurfaceData *surf_data = entry->ptr;
 
-	_populate_surface_blas(p_mesh_surface, RID(), false, false, false, cache_key, surf_data, r_dirty_blas_list);
+	_populate_surface_blas(p_mesh_surface, RID(), false, cache_key, surf_data, r_dirty_blas_list);
 
 	surf->cached_final_transform_valid = false;
 
@@ -758,7 +767,7 @@ RTSurfaceData *RenderRaytracing::process_deformed_surface(
 			rd->free_rid(entry.ptr->blas);
 			entry.ptr->blas = RID();
 		}
-		_populate_surface_blas(p_mesh_surface, entry.owned_vb_full, true, true, true,
+		_populate_surface_blas(p_mesh_surface, entry.owned_vb_full, true,
 				static_cast<uint32_t>(p_source.cache_key), entry.ptr, r_dirty_blas_list);
 		entry.blas_built_once = entry.ptr->blas.is_valid();
 	} else if (data_changed) {
@@ -967,12 +976,13 @@ enum : uint32_t {
 	RT_CLUSTER_INDEX_TYPE_8BIT = 1,
 };
 
-void RenderRaytracing::_free_cluster_blas(RTSurfaceData *p_surf_data) {
+void RenderRaytracing::_release_cluster_blas(RTSurfaceData *p_surf_data, bool p_deferred) {
 	if (!p_surf_data) {
 		return;
 	}
 
 	RD *rd = RD::get_singleton();
+	const uint32_t current_frame = RSG::rasterizer->get_frame_number();
 	RID *owned[] = {
 		&p_surf_data->blas,
 		&p_surf_data->clas_buffer,
@@ -981,10 +991,15 @@ void RenderRaytracing::_free_cluster_blas(RTSurfaceData *p_surf_data) {
 		&p_surf_data->clas_count_buffer,
 	};
 	for (RID *rid : owned) {
-		if (rid->is_valid()) {
-			rd->free_rid(*rid);
-			*rid = RID();
+		if (!rid->is_valid()) {
+			continue;
 		}
+		if (p_deferred) {
+			cluster_deferred_frees.push_back({ *rid, current_frame });
+		} else {
+			rd->free_rid(*rid);
+		}
+		*rid = RID();
 	}
 
 	p_surf_data->cluster_count = 0;
@@ -993,6 +1008,31 @@ void RenderRaytracing::_free_cluster_blas(RTSurfaceData *p_surf_data) {
 	p_surf_data->geometry.cluster_count = 0;
 	p_surf_data->geometry.cluster_remap_address_lo = 0;
 	p_surf_data->geometry.cluster_remap_address_hi = 0;
+}
+
+// A cluster BLAS holds no RD dependency on its mesh, so a freed mesh leaves its buffers
+// resident until this walk reaches them; one chunk per call keeps it off the frame budget.
+void RenderRaytracing::_sweep_dead_cluster_surfaces() {
+	if (surface_chunks.is_empty()) {
+		return;
+	}
+
+	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
+	cluster_sweep_chunk = (cluster_sweep_chunk + 1) % surface_chunks.size();
+	RTCacheEntry *chunk = surface_chunks[cluster_sweep_chunk];
+	if (!chunk) {
+		return;
+	}
+
+	for (uint32_t i = 0; i < RT_CACHE_CHUNK_SIZE; i++) {
+		RTCacheEntry *entry = &chunk[i];
+		if (!entry->ptr || !entry->owner_mesh.is_valid() || mesh_storage->owns_mesh(entry->owner_mesh)) {
+			continue;
+		}
+		_release_cluster_blas(entry->ptr, true);
+		memdelete(entry->ptr);
+		*entry = RTCacheEntry();
+	}
 }
 
 bool RenderRaytracing::_populate_cluster_blas(void *p_mesh_surface, uint32_t p_cache_key, RTSurfaceData *r_surf_data) {
@@ -1009,7 +1049,10 @@ bool RenderRaytracing::_populate_cluster_blas(void *p_mesh_surface, uint32_t p_c
 		ERR_PRINT_ONCE("Path tracer: a mesh surface carries no baked cluster data and will not be rendered. Re-import the mesh.");
 		return false;
 	}
-	ERR_FAIL_COND_V_MSG(!rd->clas_is_supported(), false, "Path tracer: the rendering device does not support cluster acceleration structures.");
+	if (!rd->clas_is_supported()) {
+		ERR_PRINT_ONCE("Path tracer: the rendering device does not support cluster acceleration structures, so static geometry will not be rendered.");
+		return false;
+	}
 
 	const uint64_t cluster_base_address = rd->buffer_get_device_address(cluster_buffer);
 	const uint64_t position_base_address = rd->buffer_get_device_address(cluster_position_buffer);
@@ -1213,12 +1256,21 @@ void RenderRaytracing::_flush_pending_cluster_builds() {
 			err = rd->clas_build(pending.input, pending.clas_buffer, addresses, RD::ClusterAddressRegion(), clas_scratch_buffer, src_infos, pending.clas_count_buffer);
 		}
 		if (err == OK) {
-			err = rd->blas_build_from_clusters(pending.blas, addresses);
+			err = rd->blas_build_from_clusters(pending.blas, addresses, pending.clas_buffer);
 		}
 		if (err != OK) {
-			// An unbuilt BLAS fails every later TLAS build, so drop it and let the next frame retry.
-			_free_cluster_blas(pending.surf_data);
-			ERR_PRINT("Path tracer: failed to build a cluster bottom level acceleration structure.");
+			_release_cluster_blas(pending.surf_data, true);
+			// tlas_build() rejects the whole instance list over one unbuilt BLAS, while a null one
+			// is written as an inactive instance.
+			for (uint32_t i = 0; i < blass.size(); i++) {
+				if (blass[i] == pending.blas) {
+					blass[i] = RID();
+					if (i < instance_masks.size()) {
+						instance_masks[i] = 0;
+					}
+				}
+			}
+			ERR_PRINT_ONCE("Path tracer: failed to build a cluster bottom level acceleration structure.");
 		}
 	}
 
@@ -1229,8 +1281,6 @@ void RenderRaytracing::_populate_surface_blas(
 		void *p_mesh_surface,
 		RID p_vertex_buffer_override,
 		bool p_force_uncompressed,
-		bool p_prefer_fast_build,
-		bool p_allow_update,
 		uint32_t p_cache_key,
 		RTSurfaceData *r_surf_data,
 		LocalVector<RID> &r_dirty_blas_list) {
@@ -1260,52 +1310,30 @@ void RenderRaytracing::_populate_surface_blas(
 		return;
 	}
 
-	uint32_t vertex_count = geom.vertex_count;
 	uint32_t index_count = (geom.index_format != RT_INDEX_FORMAT_NONE) ? geom.primitive_count * 3 : 0;
-	uint32_t position_stride = geom.position_stride;
-
 	bool is_2d = RendererRD::MeshStorage::get_singleton()->mesh_surface_get_format(p_mesh_surface) & RSE::ARRAY_FLAG_USE_2D_VERTICES;
-	bool compressed = r_surf_data->is_compressed;
 
-	// Create BLAS using the new geometry-based API.
-	{
-		RD::DataFormat pos_format;
-		if (is_2d) {
-			pos_format = RD::DATA_FORMAT_R32G32_SFLOAT;
-		} else if (compressed) {
-			pos_format = RD::DATA_FORMAT_R16G16B16A16_UNORM;
-		} else {
-			pos_format = RD::DATA_FORMAT_R32G32B32_SFLOAT;
-		}
+	RD::AccelerationStructureGeometry as_geom;
+	as_geom.type = RD::AccelerationStructureGeometry::TYPE_TRIANGLES;
+	as_geom.geometry.triangles.vertex_buffer = vertex_buffer;
+	as_geom.geometry.triangles.vertex_stride = geom.position_stride;
+	as_geom.geometry.triangles.vertex_count = geom.vertex_count;
+	as_geom.geometry.triangles.vertex_format = is_2d ? RD::DATA_FORMAT_R32G32_SFLOAT : RD::DATA_FORMAT_R32G32B32_SFLOAT;
 
-		RD::AccelerationStructureGeometry as_geom;
-		// Type defaults to TYPE_TRIANGLES; set explicitly for clarity.
-		as_geom.type = RD::AccelerationStructureGeometry::TYPE_TRIANGLES;
-		as_geom.geometry.triangles.vertex_buffer = vertex_buffer;
-		as_geom.geometry.triangles.vertex_stride = position_stride;
-		as_geom.geometry.triangles.vertex_count = vertex_count;
-		as_geom.geometry.triangles.vertex_format = pos_format;
-
-		if (index_buffer.is_valid() && index_count > 0) {
-			as_geom.geometry.triangles.index_buffer = index_buffer;
-			as_geom.geometry.triangles.index_count = index_count;
-		}
-
-		BitField<RD::AccelerationStructureFlagBits> as_flags = p_prefer_fast_build
-				? RD::ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT
-				: RD::ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT;
-		if (p_allow_update) {
-			as_flags.set_flag(RD::ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT);
-		}
-
-		r_surf_data->blas = RD::get_singleton()->blas_create({ &as_geom, 1 }, as_flags);
-		if (!r_surf_data->blas.is_valid()) {
-			return;
-		}
-		RD::get_singleton()->set_resource_name(r_surf_data->blas,
-				String(p_vertex_buffer_override.is_valid() ? "RT BLAS deformed [" : "RT BLAS [") + itos(p_cache_key) + "]");
-		r_dirty_blas_list.push_back(r_surf_data->blas);
+	if (index_buffer.is_valid() && index_count > 0) {
+		as_geom.geometry.triangles.index_buffer = index_buffer;
+		as_geom.geometry.triangles.index_count = index_count;
 	}
+
+	BitField<RD::AccelerationStructureFlagBits> as_flags = RD::ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT;
+	as_flags.set_flag(RD::ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT);
+
+	r_surf_data->blas = rd->blas_create({ &as_geom, 1 }, as_flags);
+	if (!r_surf_data->blas.is_valid()) {
+		return;
+	}
+	rd->set_resource_name(r_surf_data->blas, "RT BLAS deformed [" + itos(p_cache_key) + "]");
+	r_dirty_blas_list.push_back(r_surf_data->blas);
 }
 
 // ---------------------------------------------------------------------------

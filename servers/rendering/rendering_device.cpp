@@ -685,7 +685,7 @@ Error RenderingDevice::clas_build(const ClusterBuildInput &p_input, RID p_dst_im
 	return OK;
 }
 
-Error RenderingDevice::blas_build_from_clusters(RID p_blas, const ClusterAddressRegion &p_cluster_addresses) {
+Error RenderingDevice::blas_build_from_clusters(RID p_blas, const ClusterAddressRegion &p_cluster_addresses, RID p_clas_storage_buffer) {
 	ERR_RENDER_THREAD_GUARD_V(ERR_UNAVAILABLE);
 
 	ERR_FAIL_COND_V_MSG(draw_list.active, ERR_INVALID_PARAMETER, "Building BLAS is forbidden during creation of a draw list.");
@@ -702,6 +702,12 @@ Error RenderingDevice::blas_build_from_clusters(RID p_blas, const ClusterAddress
 
 	RDD::ClusterAddressRegion cluster_addresses;
 	Error err = _cluster_address_region_resolve(p_cluster_addresses, cluster_addresses, draw_trackers);
+	ERR_FAIL_COND_V(err != OK, err);
+
+	// The build dereferences the CLAS payload through the addresses, so the storage backing it is a
+	// read of this command even though the driver never receives the buffer.
+	RDD::BufferID clas_storage_buffer;
+	err = _cluster_buffer_resolve(p_clas_storage_buffer, true, clas_storage_buffer, draw_trackers);
 	ERR_FAIL_COND_V(err != OK, err);
 
 	const uint64_t cluster_reference_count = cluster_addresses.size / cluster_addresses.stride;

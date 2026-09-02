@@ -1439,7 +1439,7 @@ public:
 	Error blas_build(RID p_blas);
 	Error blas_update(RID p_blas);
 	Error clas_build(const ClusterBuildInput &p_input, RID p_dst_implicit_buffer, const ClusterAddressRegion &p_dst_addresses, const ClusterAddressRegion &p_dst_sizes, RID p_scratch_buffer, const ClusterAddressRegion &p_src_infos, RID p_src_infos_count_buffer);
-	Error blas_build_from_clusters(RID p_blas, const ClusterAddressRegion &p_cluster_addresses);
+	Error blas_build_from_clusters(RID p_blas, const ClusterAddressRegion &p_cluster_addresses, RID p_clas_storage_buffer);
 	Error tlas_build(RID p_tlas, Span<AccelerationStructureInstance> p_instances);
 
 private:
