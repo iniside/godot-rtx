@@ -391,6 +391,7 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 		uint32_t blob_cluster_count = decode_uint32(blob_ptr + 8);
 		uint32_t index_section_offset = decode_uint32(blob_ptr + 16);
 		uint32_t position_section_offset = decode_uint32(blob_ptr + 20);
+		uint32_t position_vertex_total = decode_uint32(blob_ptr + 24);
 
 		ERR_FAIL_COND_MSG(magic != CLUSTER_BLOB_MAGIC, "Cluster data blob has an invalid magic number.");
 		ERR_FAIL_COND_MSG(version != CLUSTER_BLOB_VERSION, "Cluster data blob has an unsupported version.");
@@ -398,8 +399,10 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 		ERR_FAIL_COND_MSG((uint64_t)index_section_offset != (uint64_t)CLUSTER_BLOB_HEADER_SIZE + (uint64_t)blob_cluster_count * CLUSTER_RECORD_SIZE, "Cluster data blob's index section offset does not match its cluster record count.");
 		ERR_FAIL_COND_MSG(index_section_offset > position_section_offset, "Cluster data blob has an invalid index/position section ordering.");
 		ERR_FAIL_COND_MSG(position_section_offset > (uint32_t)blob.size(), "Cluster data blob has an invalid position section offset.");
+		ERR_FAIL_COND_MSG((uint64_t)blob.size() - (uint64_t)position_section_offset != (uint64_t)position_vertex_total * 12, "Cluster data blob's position section size does not match its position vertex count.");
+		ERR_FAIL_COND_MSG(blob_cluster_count > 0 && position_vertex_total == 0, "Cluster data blob has clusters but no position vertices.");
 
-		// cluster_buffer holds the header, per-cluster records and the local index section; its
+		// cluster_buffer spans the header, per-cluster records and the local index section; the
 		// index section starts at cluster_index_section_offset, not at the start of cluster_buffer.
 		cluster_buffer_size = position_section_offset;
 		cluster_position_buffer_size = (uint32_t)blob.size() - position_section_offset;
@@ -479,6 +482,8 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 		}
 	}
 
+	ERR_FAIL_COND_MSG(!new_surface.index_count && !new_surface.vertex_count, "Meshes must contain a vertex array, an index array, or both");
+
 	if (new_surface.cluster_data.size()) {
 		const uint8_t *blob_ptr = new_surface.cluster_data.ptr();
 
@@ -493,8 +498,6 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 		s->cluster_count = cluster_count;
 		s->cluster_index_section_offset = cluster_index_section_offset;
 	}
-
-	ERR_FAIL_COND_MSG(!new_surface.index_count && !new_surface.vertex_count, "Meshes must contain a vertex array, an index array, or both");
 
 	s->aabb = new_surface.aabb;
 	s->bone_aabbs = new_surface.bone_aabbs; //only really useful for returning them.
