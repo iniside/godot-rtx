@@ -510,6 +510,11 @@ void ImporterMesh::optimize_indices() {
 			continue;
 		}
 
+		// A baked cluster blob indexes into ARRAY_INDEX/ARRAY_VERTEX by base_triangle and vertex
+		// position; remapping either below without invalidating it would leave the blob pointing
+		// at the wrong geometry (the a643a15e48 bug class, reintroduced by call order).
+		surfaces.write[i].cluster_data.clear();
+
 		// Optimize indices for vertex cache to establish final triangle order.
 		int *indices_ptr = indices.ptrw();
 		SurfaceTool::optimize_vertex_cache_func((unsigned int *)indices_ptr, (const unsigned int *)indices_ptr, index_count, vertex_count);

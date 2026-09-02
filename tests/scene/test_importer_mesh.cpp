@@ -93,6 +93,45 @@ Array make_grid_arrays() {
 	return arr;
 }
 
+struct Triangle3 {
+	int32_t a = 0, b = 0, c = 0;
+	bool operator==(const Triangle3 &p_other) const {
+		return a == p_other.a && b == p_other.b && c == p_other.c;
+	}
+	bool operator<(const Triangle3 &p_other) const {
+		if (a != p_other.a) {
+			return a < p_other.a;
+		}
+		if (b != p_other.b) {
+			return b < p_other.b;
+		}
+		return c < p_other.c;
+	}
+};
+
+// Rotates a triangle's vertex order so its smallest index comes first, without reversing it.
+// Two triangles referring to the same face with the same winding canonicalize to the same value;
+// a reflected (flipped-winding) copy of the same face does not.
+Triangle3 canonical_winding(int32_t p_a, int32_t p_b, int32_t p_c) {
+	if (p_a <= p_b && p_a <= p_c) {
+		return { p_a, p_b, p_c };
+	}
+	if (p_b <= p_a && p_b <= p_c) {
+		return { p_b, p_c, p_a };
+	}
+	return { p_c, p_a, p_b };
+}
+
+Vector<Triangle3> triangle_multiset(const PackedInt32Array &p_indices) {
+	Vector<Triangle3> tris;
+	tris.resize(p_indices.size() / 3);
+	for (int t = 0; t < tris.size(); t++) {
+		tris.set(t, canonical_winding(p_indices[t * 3 + 0], p_indices[t * 3 + 1], p_indices[t * 3 + 2]));
+	}
+	tris.sort();
+	return tris;
+}
+
 struct ClusterHeader {
 	uint32_t cluster_count;
 	uint32_t total_triangles;
@@ -150,6 +189,10 @@ TEST_CASE("[ImporterMesh] generate_clusters bakes a valid, spatially-correct clu
 	mesh->generate_clusters();
 
 	Vector<uint8_t> blob = get_surface_cluster_blob(mesh, 0);
+	// decode_header() reads through blob.ptr() with no size check of its own; on an empty blob that
+	// is nullptr, and every decode_uint32 call segfaults instead of failing with a diagnostic. This
+	// must run before decode_header(), not after.
+	REQUIRE((uint32_t)blob.size() >= CLUSTER_HEADER_SIZE);
 	ClusterHeader header = decode_header(blob);
 
 	// Assertion 0: guards the whole test file against a null meshoptimizer function pointer table
@@ -201,6 +244,28 @@ TEST_CASE("[ImporterMesh] generate_clusters bakes a valid, spatially-correct clu
 		CHECK(any_triangle_checked);
 	}
 
+	SUBCASE("Rewritten index buffer's triangles are exactly the original mesh's triangles, winding included") {
+		// The "matches at base_triangle" subcase above decodes both sides from the same vert_src/tri_src
+		// pointers ten lines apart in generate_clusters()'s own loop; an error inside those pointers (or
+		// a vertex_offset/triangle_offset swap) corrupts both sides identically and stays green. This
+		// compares against make_grid_arrays()'s original index buffer instead, which the rewrite must
+		// preserve as a set of triangles independent of any bug in generate_clusters()'s internals.
+		Array original_arrays = make_grid_arrays();
+		PackedInt32Array original_indices = original_arrays[RSE::ARRAY_INDEX];
+		Vector<Triangle3> original_tris = triangle_multiset(original_indices);
+		Vector<Triangle3> rewritten_tris = triangle_multiset(rewritten_indices);
+
+		REQUIRE(original_tris.size() == rewritten_tris.size());
+		bool all_triangles_match = true;
+		for (int t = 0; t < original_tris.size(); t++) {
+			if (!(original_tris[t] == rewritten_tris[t])) {
+				all_triangles_match = false;
+				break;
+			}
+		}
+		CHECK(all_triangles_match);
+	}
+
 	SUBCASE("Per-cluster vertex/triangle counts stay within the 8-bit blob record's limits") {
 		for (uint32_t j = 0; j < header.cluster_count; j++) {
 			ClusterRecord rec = decode_record(blob, j);
@@ -222,6 +287,26 @@ TEST_CASE("[ImporterMesh] generate_clusters bakes a valid, spatially-correct clu
 			CHECK(rec.index_offset + (uint32_t)rec.triangle_count * 3 <= index_section_size);
 		}
 	}
+
+	SUBCASE("Section offsets and per-cluster running offsets match structurally, independent of the header's own claims") {
+		// The subcase above validates header-declared sizes against header-declared offsets, which is
+		// self-referential: a header that is internally consistent but wrong (e.g. built from swapped
+		// section sizes) would still pass it. These identities are computed independently of the header
+		// fields they check, from cluster_count/total_triangles and each record's own vertex/triangle
+		// counts, and are the same identities mesh_storage's loader enforces (88bf193745).
+		CHECK(header.index_section_offset == CLUSTER_HEADER_SIZE + header.cluster_count * CLUSTER_RECORD_SIZE);
+		CHECK(header.position_section_offset == header.index_section_offset + header.total_triangles * 3);
+
+		uint32_t expected_index_offset = 0;
+		uint32_t expected_position_offset = 0;
+		for (uint32_t j = 0; j < header.cluster_count; j++) {
+			ClusterRecord rec = decode_record(blob, j);
+			CHECK(rec.index_offset == expected_index_offset);
+			CHECK(rec.position_offset == expected_position_offset);
+			expected_index_offset += (uint32_t)rec.triangle_count * 3;
+			expected_position_offset += (uint32_t)rec.vertex_count * 12;
+		}
+	}
 }
 
 TEST_CASE("[ImporterMesh] generate_clusters _get_data/_set_data round-trips the cluster blob byte for byte") {
@@ -231,6 +316,7 @@ TEST_CASE("[ImporterMesh] generate_clusters _get_data/_set_data round-trips the 
 	mesh->generate_clusters();
 
 	Vector<uint8_t> original_blob = get_surface_cluster_blob(mesh, 0);
+	REQUIRE((uint32_t)original_blob.size() >= CLUSTER_HEADER_SIZE);
 	REQUIRE(decode_header(original_blob).cluster_count > 0);
 
 	Dictionary data = mesh->get("_data");
@@ -273,6 +359,7 @@ TEST_CASE("[ImporterMesh] generate_clusters synthesizes an index buffer for non-
 	mesh->generate_clusters();
 
 	Vector<uint8_t> blob = get_surface_cluster_blob(mesh, 0);
+	REQUIRE((uint32_t)blob.size() >= CLUSTER_HEADER_SIZE);
 	ClusterHeader header = decode_header(blob);
 	REQUIRE(header.cluster_count > 0);
 	CHECK(header.total_triangles == 3);
@@ -280,6 +367,83 @@ TEST_CASE("[ImporterMesh] generate_clusters synthesizes an index buffer for non-
 	PackedInt32Array synthesized_indices = mesh->get_surface_arrays(0)[RSE::ARRAY_INDEX];
 	CHECK(synthesized_indices.size() == vertices.size());
 }
+
+TEST_CASE("[ImporterMesh] _set_data does not write to surfaces[-1] when add_surface rejects a surface carrying a \"clusters\" key") {
+	Array empty_arrays;
+	empty_arrays.resize(Mesh::ARRAY_MAX);
+	empty_arrays[RSE::ARRAY_VERTEX] = PackedVector3Array(); // add_surface's ERR_FAIL_COND(vertex_count == 0) rejects this.
+
+	Dictionary surface_dict;
+	surface_dict["primitive"] = Mesh::PRIMITIVE_TRIANGLES;
+	surface_dict["arrays"] = empty_arrays;
+	surface_dict["clusters"] = PackedByteArray();
+
+	Array surface_arr;
+	surface_arr.push_back(surface_dict);
+	Dictionary data;
+	data["surfaces"] = surface_arr;
+
+	Ref<ImporterMesh> mesh;
+	mesh.instantiate();
+	ERR_PRINT_OFF;
+	mesh->set("_data", data);
+	ERR_PRINT_ON;
+
+	CHECK(mesh->get_surface_count() == 0);
+}
+
+TEST_CASE("[ImporterMesh] _set_data discards a cluster blob that fails magic/version or size validation") {
+	Ref<ImporterMesh> mesh;
+	mesh.instantiate();
+	mesh->add_surface(Mesh::PRIMITIVE_TRIANGLES, make_grid_arrays());
+
+	Dictionary data = mesh->get("_data");
+	Array surface_arr = data["surfaces"];
+	Dictionary s = surface_arr[0];
+
+	SUBCASE("Blob smaller than the header size") {
+		PackedByteArray too_small;
+		too_small.resize(10);
+		s["clusters"] = too_small;
+	}
+
+	SUBCASE("Blob at the header size but with the wrong magic") {
+		PackedByteArray wrong_magic;
+		wrong_magic.resize(CLUSTER_HEADER_SIZE);
+		wrong_magic.fill(0);
+		s["clusters"] = wrong_magic;
+	}
+
+	surface_arr[0] = s;
+	data["surfaces"] = surface_arr;
+
+	Ref<ImporterMesh> reloaded;
+	reloaded.instantiate();
+	reloaded->set("_data", data);
+
+	CHECK(get_surface_cluster_blob(reloaded, 0).is_empty());
+}
+
+TEST_CASE("[ImporterMesh] optimize_indices clears cluster data instead of leaving it pointing at rewritten geometry") {
+	Ref<ImporterMesh> mesh;
+	mesh.instantiate();
+	mesh->add_surface(Mesh::PRIMITIVE_TRIANGLES, make_grid_arrays());
+	mesh->generate_clusters();
+	REQUIRE(!get_surface_cluster_blob(mesh, 0).is_empty());
+
+	mesh->optimize_indices();
+
+	CHECK(get_surface_cluster_blob(mesh, 0).is_empty());
+}
+
+// Known unreachable guards, all in ImporterMesh::generate_clusters() (scene/resources/3d/importer_mesh.cpp):
+// - The ERR_CONTINUE_MSG for total_triangles*3 != index_count (introduced alongside e887eafb11's
+//   validation) only fires if meshopt_buildMeshletsSpatial's own accounting of its output disagrees
+//   with its return value, which requires mocking the library, not reachable from real input.
+// - The cluster_overflow / 255-truncation ERR_CONTINUE_MSG and the blob.resize()/indices.resize()
+//   Error guards are unreachable by construction from the current constants: max_vertices and
+//   max_triangles are hardcoded to 128, so neither count can exceed 255. cluster_overflow becomes
+//   reachable the moment Krok 3's device-queried limits replace those constants.
 
 } // namespace TestImporterMesh
 
