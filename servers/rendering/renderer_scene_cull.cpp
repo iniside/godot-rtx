@@ -49,21 +49,6 @@
 #include "core/os/os.h"
 #endif
 
-/* HALTON SEQUENCE */
-
-#ifndef _3D_DISABLED
-static float get_halton_value(int p_index, int p_base) {
-	float f = 1;
-	float r = 0;
-	while (p_index > 0) {
-		f = f / static_cast<float>(p_base);
-		r = r + f * (p_index % p_base);
-		p_index = p_index / p_base;
-	}
-	return r * 2.0f - 1.0f;
-}
-#endif // _3D_DISABLED
-
 /* EVENT QUEUING */
 
 void RendererSceneCull::tick() {
@@ -2704,18 +2689,15 @@ void RendererSceneCull::render_camera(const Ref<RenderSceneBuffers> &p_render_bu
 	Vector2 jitter;
 	float taa_frame_count = 0.0f;
 	if (p_jitter_phase_count > 0) {
-		uint32_t current_jitter_count = camera_jitter_array.size();
-		if (p_jitter_phase_count != current_jitter_count) {
-			// Resize the jitter array and fill it with the pre-computed Halton sequence.
-			camera_jitter_array.resize(p_jitter_phase_count);
-
-			for (uint32_t i = current_jitter_count; i < p_jitter_phase_count; i++) {
-				camera_jitter_array[i].x = get_halton_value(i, 2);
-				camera_jitter_array[i].y = get_halton_value(i, 3);
-			}
-		}
-
-		jitter = camera_jitter_array[RSG::rasterizer->get_frame_number() % p_jitter_phase_count] / p_viewport_size;
+		// R2 additive sequence: successive samples are a constant step apart, so a temporal
+		// upscaler never has to resolve a wrap discontinuity between two frames.
+		constexpr double plastic_number = 1.32471795724474602596;
+		constexpr double alpha_x = 1.0 / plastic_number;
+		constexpr double alpha_y = 1.0 / (plastic_number * plastic_number);
+		const double frame = double(RSG::rasterizer->get_frame_number());
+		const double offset_x = Math::fract(0.5 + alpha_x * frame) * 2.0 - 1.0;
+		const double offset_y = Math::fract(0.5 + alpha_y * frame) * 2.0 - 1.0;
+		jitter = Vector2(real_t(offset_x), real_t(offset_y)) / p_viewport_size;
 		taa_frame_count = float(RSG::rasterizer->get_frame_number() % p_jitter_phase_count);
 	}
 

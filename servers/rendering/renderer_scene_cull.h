@@ -1031,7 +1031,6 @@ public:
 
 	uint32_t geometry_instance_pair_mask = 0; // used in traditional forward, unnecessary on clustered
 
-	LocalVector<Vector2> camera_jitter_array;
 	RenderingLightCuller *light_culler = nullptr;
 
 	virtual RID instance_allocate();
