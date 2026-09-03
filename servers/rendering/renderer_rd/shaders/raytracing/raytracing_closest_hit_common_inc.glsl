@@ -471,7 +471,7 @@ void shade_and_bounce(HitData h, MaterialResult m) {
 	ps.radiance += ps.throughput * m.emissive;
 
 	// Bounce limit check.
-	if (total_bounces >= RT_GET_MAX_BOUNCES() || diffuse_bounces >= MAX_DIFFUSE_BOUNCES) {
+	if (total_bounces >= RT_GET_MAX_BOUNCES()) {
 		ps.packed_bounces_flags = set_path_terminated(ps.packed_bounces_flags);
 		path_pack(payload, ps);
 		return;
