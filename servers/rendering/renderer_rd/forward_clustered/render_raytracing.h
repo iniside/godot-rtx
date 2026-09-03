@@ -74,13 +74,7 @@ struct alignas(16) RT_GeometryData {
 	uint32_t index_format;
 	uint32_t primitive_count;
 	uint32_t flags;
-	float aabb_size_x;
-	float aabb_size_y;
-	float aabb_size_z;
 	uint32_t color_byte_offset;
-	float aabb_pos_x;
-	float aabb_pos_y;
-	float aabb_pos_z;
 	// For deformed geometry: previous-frame position buffer used for motion vectors.
 	uint32_t prev_vertex_buffer_address_lo;
 	uint32_t prev_vertex_buffer_address_hi;
@@ -88,7 +82,7 @@ struct alignas(16) RT_GeometryData {
 	uint32_t cluster_remap_address_lo;
 	uint32_t cluster_remap_address_hi;
 	uint32_t cluster_count;
-	uint32_t _pad[2];
+	uint32_t _pad[8];
 };
 static_assert(sizeof(RT_GeometryData) == 128, "RT_GeometryData must be 128 bytes for std430");
 
@@ -197,8 +191,6 @@ struct RTProceduralState {
 struct RTSurfaceData {
 	RID blas;
 	RT_GeometryData geometry = {};
-	Transform3D aabb_transform;
-	bool is_compressed = false;
 	uint64_t blas_size = 0;
 
 	// Cluster BLAS resources. blas_create_from_clusters() registers no dependency on

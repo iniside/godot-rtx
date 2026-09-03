@@ -631,11 +631,8 @@ void main() {
 		m_AABB_MAX = vec3(aabb_buf.v[base + 3], aabb_buf.v[base + 4], aabb_buf.v[base + 5]);
 	}
 
-	mat4 rt_aabb_xform;
-	mat4 rt_inv_aabb_xform;
-	get_aabb_compression_xforms(rt_geom, rt_aabb_xform, rt_inv_aabb_xform);
-	read_model_matrix = mat4(gl_ObjectToWorldEXT) * rt_inv_aabb_xform;
-	m_INV_MODEL_MATRIX = rt_aabb_xform * mat4(gl_WorldToObjectEXT);
+	read_model_matrix = mat4(gl_ObjectToWorldEXT);
+	m_INV_MODEL_MATRIX = mat4(gl_WorldToObjectEXT);
 
 	/* RT_CUSTOM_INTERSECTION_CODE */
 

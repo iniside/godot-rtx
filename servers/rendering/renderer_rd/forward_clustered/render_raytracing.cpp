@@ -622,12 +622,11 @@ RTSurfaceData *RenderRaytracing::process_surface(
 	if (!entry->ptr) {
 		entry->ptr = memnew(RTSurfaceData);
 	} else {
-		// Unconditional, including on a version mismatch: a cluster BLAS and its buffers
-		// hold no RD dependency on the mesh, so nothing else ever frees them.
+		// Unconditional, including on a version mismatch.
 		_release_cluster_blas(entry->ptr, false);
 	}
 
-	entry->owner_mesh = mesh_rid;
+	entry->owner_mesh = mesh_storage->owns_mesh(mesh_rid) ? mesh_rid : RID();
 
 	RTSurfaceData *surf_data = entry->ptr;
 
@@ -816,16 +815,6 @@ static void _fill_surface_geometry_data(
 	bool compressed = (surface_format & RSE::ARRAY_FLAG_COMPRESS_ATTRIBUTES) && !p_force_uncompressed;
 	bool is_2d = surface_format & RSE::ARRAY_FLAG_USE_2D_VERTICES;
 
-	r_surf_data->is_compressed = compressed;
-
-	if (compressed) {
-		AABB surface_aabb = mesh_storage->mesh_surface_get_aabb(p_mesh_surface);
-		r_surf_data->aabb_transform.basis = Basis::from_scale(surface_aabb.size);
-		r_surf_data->aabb_transform.origin = surface_aabb.position;
-	} else {
-		r_surf_data->aabb_transform = Transform3D();
-	}
-
 	RT_GeometryData &geom = r_surf_data->geometry;
 	memset(&geom, 0, sizeof(geom));
 
@@ -893,23 +882,6 @@ static void _fill_surface_geometry_data(
 	geom.normal_stride = normal_stride;
 	geom.tangent_stride = tangent_stride;
 	geom.flags = compressed ? RT_GEOM_FLAG_COMPRESSED : 0;
-
-	if (compressed) {
-		AABB surface_aabb = mesh_storage->mesh_surface_get_aabb(p_mesh_surface);
-		geom.aabb_size_x = surface_aabb.size.x;
-		geom.aabb_size_y = surface_aabb.size.y;
-		geom.aabb_size_z = surface_aabb.size.z;
-		geom.aabb_pos_x = surface_aabb.position.x;
-		geom.aabb_pos_y = surface_aabb.position.y;
-		geom.aabb_pos_z = surface_aabb.position.z;
-	} else {
-		geom.aabb_size_x = 1.0f;
-		geom.aabb_size_y = 1.0f;
-		geom.aabb_size_z = 1.0f;
-		geom.aabb_pos_x = 0.0f;
-		geom.aabb_pos_y = 0.0f;
-		geom.aabb_pos_z = 0.0f;
-	}
 
 	// Attribute buffer layout
 	uint32_t attrib_offset = 0;
@@ -1156,7 +1128,7 @@ bool RenderRaytracing::_populate_cluster_blas(void *p_mesh_surface, uint32_t p_c
 	rd->set_resource_name(pending.clas_addresses_buffer, "RT CLAS addresses [" + itos(p_cache_key) + "]");
 
 	const uint32_t src_infos_count = cluster_count;
-	pending.clas_count_buffer = rd->storage_buffer_create(sizeof(uint32_t), Span<uint8_t>((const uint8_t *)&src_infos_count, sizeof(uint32_t)), 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
+	pending.clas_count_buffer = rd->storage_buffer_create(sizeof(uint32_t), Span<uint8_t>((const uint8_t *)&src_infos_count, sizeof(uint32_t)), 0, build_input_flags);
 	if (!pending.clas_count_buffer.is_valid()) {
 		abort_build();
 		ERR_FAIL_V_MSG(false, "Path tracer: failed to allocate the cluster count buffer.");
@@ -2471,8 +2443,6 @@ bool RenderRaytracing::_build_merged_mm_blas(
 	// --- Populate r_surf_data from the metadata already computed above, then override merged buffer addresses.
 	*r_surf_data = meta_sd;
 	r_surf_data->blas = entry.blas;
-	r_surf_data->is_compressed = false;
-	r_surf_data->aabb_transform = Transform3D();
 
 	RT_GeometryData &geom = r_surf_data->geometry;
 
@@ -2634,9 +2604,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 				RT_GeometryData geom = {};
 				geom.flags = RT_GEOM_FLAG_PROCEDURAL;
 				geom.vertex_buffer_address = ps->gpu_buffer_address;
-				geom.aabb_size_x = (float)ps->culling_aabb.size.x;
-				geom.aabb_size_y = (float)ps->culling_aabb.size.y;
-				geom.aabb_size_z = (float)ps->culling_aabb.size.z;
 				geometry_data.push_back(geom);
 
 				if (inst->transform_status == RenderForwardClustered::GeometryInstanceForwardClustered::TransformStatus::MOVED) {
@@ -2837,11 +2804,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 				final_transform = surf->cached_final_transform;
 			} else {
 				final_transform = instance_transform;
-				// Cluster positions are float32 in mesh space, so the compressed-AABB
-				// compensation the monolithic BLAS needs would misplace them.
-				if (surf_data->is_compressed && !surf_data->is_clustered) {
-					final_transform = instance_transform * surf_data->aabb_transform;
-				}
 				surf->cached_final_transform = final_transform;
 				surf->cached_final_transform_valid = true;
 			}
@@ -2854,9 +2816,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 				motion_indices.push_back((int32_t)motion_transforms.size());
 				RT_InstanceMotionData motion = {};
 				Transform3D prev_final = prev_instance_transform;
-				if (surf_data->is_compressed && !surf_data->is_clustered) {
-					prev_final = prev_instance_transform * surf_data->aabb_transform;
-				}
 				RendererRD::MaterialStorage::store_transform_transposed_3x4(prev_final, motion.prev_object_to_world);
 				motion_transforms.push_back(motion);
 			} else {
@@ -2993,9 +2952,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 				mm_xform.origin.z = d[11];
 
 				Transform3D final_transform = pending.instance_transform * mm_xform;
-				if (surf_data->is_compressed && !surf_data->is_clustered) {
-					final_transform = final_transform * surf_data->aabb_transform;
-				}
 
 				blass.push_back(surf_data->blas);
 				blas_transforms.push_back(final_transform);
@@ -3005,9 +2961,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 
 				if (pending.transform_moved) {
 					Transform3D prev_final = pending.prev_instance_transform * mm_xform;
-					if (surf_data->is_compressed && !surf_data->is_clustered) {
-						prev_final = prev_final * surf_data->aabb_transform;
-					}
 					motion_indices.push_back((int32_t)motion_transforms.size());
 					RT_InstanceMotionData motion = {};
 					RendererRD::MaterialStorage::store_transform_transposed_3x4(prev_final, motion.prev_object_to_world);
