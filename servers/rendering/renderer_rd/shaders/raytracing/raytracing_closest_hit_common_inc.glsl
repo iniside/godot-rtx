@@ -226,11 +226,12 @@ vec3 fog_get_directional_direction(uint index) {
 
 vec3 fog_sample_radiance(vec3 vertex, float mip_level) {
 	vec3 cube_view = scene_data_block.data.radiance_inverse_xform * vertex;
-	float roughness_lod = mip_level * MAX_ROUGHNESS_LOD;
 	vec2 border = vec2(scene_data_block.data.radiance_border_size,
 			1.0 - scene_data_block.data.radiance_border_size * 2.0);
 	vec2 cube_uv = vec3_to_oct_with_border(cube_view, border);
-	return textureLod(sampler2D(radiance_octmap, radiance_sampler), cube_uv, roughness_lod).rgb;
+	// mip_level is a normalized roughness (0..1); radiance_octmap_sample maps it
+	// onto the prefiltered roughness array layers.
+	return radiance_octmap_sample(cube_uv, mip_level);
 }
 
 #include "../fog_inc.glsl"
@@ -497,11 +498,11 @@ void shade_and_bounce(HitData h, MaterialResult m) {
 	if (total_bounces == 0u && is_sample_zero(ps.packed_bounces_flags)) {
 		ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
 
-		vec3 diffuse_albedo = DLSSRR_computeDiffuseAlbedo(m.albedo, m.metalness);
+		vec3 diffuse_albedo = DLSSRR_encodeDiffuseAlbedo(DLSSRR_computeDiffuseAlbedo(m.albedo, m.metalness));
 		imageStore(dlss_rr_diffuse_albedo, pixel, vec4(diffuse_albedo, 1.0));
 
 		vec3 specular_albedo = DLSSRR_computeSpecularAlbedo(m.albedo, m.metalness, brdf_mat.dielectricF0, m.roughness, NdotV);
-		imageStore(dlss_rr_specular_albedo, pixel, vec4(clamp(specular_albedo, vec3(0.0), vec3(1.0)), 1.0)); // match UNORM8 like before - fixes some issues with garbling..
+		imageStore(dlss_rr_specular_albedo, pixel, vec4(clamp(specular_albedo, vec3(0.04), vec3(1.0)), 1.0)); // match UNORM8 like before - fixes some issues with garbling..
 
 		imageStore(dlss_rr_normal_roughness, pixel, vec4(N, m.roughness));
 
