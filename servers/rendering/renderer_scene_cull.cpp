@@ -2689,8 +2689,6 @@ void RendererSceneCull::render_camera(const Ref<RenderSceneBuffers> &p_render_bu
 	Vector2 jitter;
 	float taa_frame_count = 0.0f;
 	if (p_jitter_phase_count > 0) {
-		// R2 additive sequence: successive samples are a constant step apart, so a temporal
-		// upscaler never has to resolve a wrap discontinuity between two frames.
 		constexpr double plastic_number = 1.32471795724474602596;
 		constexpr double alpha_x = 1.0 / plastic_number;
 		constexpr double alpha_y = 1.0 / (plastic_number * plastic_number);
