@@ -131,6 +131,7 @@ bool is_path_terminated(uint packed) {
 }
 
 #define MAX_DENOISER_SPECULAR_HIT_THRESHOLD 0.25
+#define DLSS_RR_MICRO_JITTER 0.1
 
 // ============================================================================
 // CONSTANTS

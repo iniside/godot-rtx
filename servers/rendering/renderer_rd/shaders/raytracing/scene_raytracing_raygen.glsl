@@ -28,18 +28,13 @@ layout(location = 0) rayPayloadEXT PathPayload payload;
 
 void main() {
 	uvec2 pixel = gl_LaunchIDEXT.xy;
-	const vec2 pixel_center = vec2(pixel) + vec2(0.5);
-	const vec2 in_uv = pixel_center / vec2(gl_LaunchSizeEXT.xy);
-	vec2 d = in_uv * 2.0 - 1.0;
 
 	mat4 inv_view = transpose(mat4(scene_data_block.data.inv_view_matrix[0],
 			scene_data_block.data.inv_view_matrix[1],
 			scene_data_block.data.inv_view_matrix[2],
 			vec4(0.0, 0.0, 0.0, 1.0)));
 
-	vec4 target = scene_data_block.data.inv_projection_matrix * vec4(d.x, d.y, 1.0, 1.0);
 	vec4 origin = inv_view * vec4(0.0, 0.0, 0.0, 1.0);
-	vec4 direction = inv_view * vec4(normalize(target.xyz), 0);
 
 	// Sample count from specialization constant, frame index from uniform
 	const uint samples_per_pixel = RT_GET_SAMPLE_COUNT();
@@ -50,9 +45,6 @@ void main() {
 
 	const uint max_bounces = RT_GET_MAX_BOUNCES();
 
-	// TODO: when we have a spp > 0 the first raycast is always identical,
-	// we should move it out of the loop
-
 	[[dont_unroll]] for (uint sample_idx = 0u; sample_idx < samples_per_pixel; sample_idx++) {
 		PathState ps;
 		ps.radiance = vec3(0.0);
@@ -60,8 +52,17 @@ void main() {
 		ps.packed_bounces_flags = (sample_idx == 0u) ? set_sample_zero(0u) : 0u;
 		ps.rng_state = init_rng(pixel, frame_index, sample_idx);
 
+		vec2 sample_center = vec2(pixel) + vec2(0.5);
+#ifdef DLSS_RR_ENABLED
+		// The camera jitter repeats with a fixed period, so a random per-pixel offset is
+		// what keeps the temporal denoiser converging instead of cycling with it.
+		sample_center += (rand2(ps.rng_state) - vec2(0.5)) * DLSS_RR_MICRO_JITTER;
+#endif
+		const vec2 d = (sample_center / vec2(gl_LaunchSizeEXT.xy)) * 2.0 - 1.0;
+		vec4 target = scene_data_block.data.inv_projection_matrix * vec4(d.x, d.y, 1.0, 1.0);
+
 		vec3 ray_origin = origin.xyz;
-		vec3 ray_dir = direction.xyz;
+		vec3 ray_dir = (inv_view * vec4(normalize(target.xyz), 0.0)).xyz;
 
 		[[dont_unroll]] for (uint bounce = 0u; bounce <= max_bounces; bounce++) {
 			path_pack(payload, ps);
