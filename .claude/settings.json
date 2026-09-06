@@ -1,0 +1,100 @@
+{
+  "env": {},
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/ref_reminder.py"
+            ],
+            "statusMessage": "Checking reference docs"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/ref_reminder.py"
+            ],
+            "statusMessage": "Checking reference docs"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/git_safety_hook.py"
+            ],
+            "statusMessage": "Git safety + commit-trailer guard"
+          }
+        ]
+      },
+      {
+        "matcher": "Task|Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": [
+              "-c",
+              "import sys,json\nd=json.load(sys.stdin)\nm=(d.get('tool_input') or {}).get('model')\nsys.exit(0) if (m and str(m).strip()) else print(json.dumps({'hookSpecificOutput':{'hookEventName':'PreToolUse','permissionDecision':'deny','permissionDecisionReason':'Explicit-model rule (.agents/adapters/claude.md): every Agent/Task call must set model. Use sonnet for mechanical/research work, haiku for listing-only research, and opus for the independent lane. Add the model field and retry.'}}))"
+            ],
+            "statusMessage": "Enforcing explicit subagent model"
+          }
+        ]
+      },
+      {
+        "matcher": "Task|Agent",
+        "hooks": [
+          {
+            "type": "prompt",
+            "statusMessage": "Sprawdzam typ agenta pod zadanie...",
+            "timeout": 30,
+            "prompt": "You are a hard guardrail for the godot-rtx repo (a Godot 4.8-dev C++/SCons fork carrying the NVIDIA path tracer, DLSS/Streamline and Aftermath). A subagent is about to be dispatched via the Agent/Task tool. Decide whether the chosen subagent_type fits the actual task, using ONLY these role rules:\n\n- general-purpose, Explore, Plan, feature-dev:code-explorer, feature-dev:code-architect: research, code-search, reading, mapping an API surface, locating callers/wiring, planning. STRICTLY READ-ONLY. Must NEVER be dispatched to implement, fix, edit, refactor, or write code/files.\n- core-implementer: implementing / fixing / writing / refactoring a fully-specified plan step or named fix (engine classes and ClassDB bindings, RenderingDevice / render-graph / raytracing work, GLSL shaders and their SCons wiring, drivers, editor plugins, or the repository's Godot projects). This is the sanctioned lane for writing non-trivial production C++/GLSL; general-purpose is research-only. Adding logging, print_line, profiler markers, counters, diagnostics or instrumentation to existing source IS production-code writing and belongs here.\n- hostile-reviewer: ONE fresh adversarial review pass over a produced diff or plan. Reviews go here, NOT to general-purpose.\n- proof-auditor: auditing whether existing or owner-requested proof detects violations of expected behavior, whether a regression test executes the previously wrong branch, whether a gate really gates what it claims, or whether a fixture drives the production path.\n- test-author: writing tests only on explicit owner request for an ALREADY-LANDED, compiling implementation, as a separate step after production code. Regression tests exercise the previously wrong branch; new-feature tests prove expected behavior.\n\nJudge the subagent_type field against the description and prompt. PASS when it matches, when intent is genuinely ambiguous, or when a specialized/plugin agent fits its stated purpose. FAIL only on a clear mismatch, and name the correct subagent_type. A task that edits source is writing work even when framed as diagnostics.\n\nThe pending Agent call:\n$ARGUMENTS"
+          }
+        ]
+      },
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": [
+              "-c",
+              "import sys,json\nsys.stdin.read()\nprint(json.dumps({'hookSpecificOutput':{'hookEventName':'PreToolUse','additionalContext':'PLAN FINALIZATION CHECKLIST (AGENTS.md and planning-dispatch.md). 1) Confirm a fresh hostile-reviewer reviewed the plan using an explicit model. 2) Confirm every whole step carries one shared dispatch lane: [inline], [independent], [mechanical], [test-author], or [review]. 3) Confirm each step names what it replaces and the non-mechanical Godot closure where applicable: ClassDB binding plus doc/classes XML, GLSL plus SCons wiring, RID/resource free order, build-axis gates, and sibling rendering paths/backends. 4) Include a test step only when the owner explicitly requested tests. After approval, proceed with the approved lanes and adapter default effort; do not ask again unless a genuinely missing choice would materially change the result.'}}))"
+            ],
+            "statusMessage": "Plan finalization checklist"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/post_commit_review_reminder.py"
+            ],
+            "statusMessage": "Reminding to dispatch hostile-reviewer after commit"
+          }
+        ]
+      }
+    ]
+  }
+}
