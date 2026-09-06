@@ -143,6 +143,8 @@ const uint FLAG_PROCEDURAL = 2u;
 const uint FLAG_DEFORMED = 4u;
 // Set when the BLAS is built from clusters, so gl_PrimitiveID is cluster-relative.
 const uint FLAG_CLUSTERED = 8u;
+const uint FLAG_CASTS_SHADOWS = 16u;
+const uint FLAG_SHADOWS_ONLY = 32u;
 
 // ============================================================================
 // RANDOM NUMBER GENERATION - PCG (Permuted Congruential Generator)

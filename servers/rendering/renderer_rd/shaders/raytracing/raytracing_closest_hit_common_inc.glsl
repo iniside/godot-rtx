@@ -214,7 +214,7 @@ vec3 fog_get_directional_color(uint index) {
 }
 
 vec3 fog_get_directional_direction(uint index) {
-	vec3 world_dir = -normalize(rt_lights[index].position);
+	vec3 world_dir = -normalize(rt_lights[index].direction);
 	mat3 view_rot = transpose(mat3(
 			scene_data_block.data.view_matrix[0].xyz,
 			scene_data_block.data.view_matrix[1].xyz,

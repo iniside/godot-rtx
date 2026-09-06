@@ -46,7 +46,10 @@ struct GeometryData {
 	uint cluster_remap_address_hi;
 	uint cluster_count;
 
-	uint _pad[8];
+	vec3 position_offset;
+	uint instance_layer_mask;
+	vec3 position_scale;
+	float _pad1;
 };
 
 // ============================================================================

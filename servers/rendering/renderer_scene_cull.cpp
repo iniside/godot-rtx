@@ -710,6 +710,7 @@ void RendererSceneCull::instance_set_base(RID p_instance, RID p_base) {
 
 				ERR_FAIL_NULL(geom->geometry_instance);
 
+				geom->geometry_instance->set_instance_rid(instance->self);
 				geom->geometry_instance->set_skeleton(instance->skeleton);
 				geom->geometry_instance->set_material_override(instance->material_override);
 				geom->geometry_instance->set_material_overlay(instance->material_overlay);
@@ -3274,46 +3275,19 @@ void RendererSceneCull::_scene_cull(CullData &cull_data, InstanceCullResult &cul
 				}
 			}
 
-			// RT: collect ALL instances inside the camera AABB for TLAS and light gathering.
-			// Frustum-visible instances are guaranteed to be inside the AABB (superset),
-			// so skip the AABB test for them. Only test AABB for non-frustum instances.
-			// Mask out editor-only layers (20+) so gizmos/grid don't enter the TLAS.
-			//
-			// Visibility-range parity: instances that failed VIS_CHECK for raster (i.e. they
-			// have NEEDS_CHECK flags and are off-frustum) must be re-checked here, otherwise
-			// out-of-range distant meshes can still enter the TLAS.
-			//
-			// Visibility-parent binary fix: when a parent mesh is in the FADE_CHILDREN band
-			// (cross-fading with its LOD child in raster), we have no alpha blending in PT.
-			// Prefer the parent: exclude the child from RT until the parent becomes
-			// HIDDEN_CLOSE_RANGE (fully faded out), matching the point where raster
-			// switches over. In-frustum children are subject to the same rule.
-			if (cull_data.cull->rt_enabled && (idata.layer_mask & ((1 << 20) - 1))) {
-				// For off-frustum instances, also run VIS_CHECK to match raster gating.
-				bool rt_in_range = in_frustum || (cull_data.scenario->instance_aabbs[i].in_aabb(cull_data.cull->rt_aabb) && VIS_CHECK);
-				if (rt_in_range) {
-					// Exclude visibility-parent children while their parent is in the
-					// FADE_CHILDREN cross-fade band. PT is binary: only one LOD at a time.
-					bool excluded_by_parent_fade = false;
-					if (idata.parent_array_index >= 0) {
-						const uint32_t parent_flags = cull_data.scenario->instance_data[idata.parent_array_index].flags;
-						// FADE_CHILDREN set means the parent is still visible but fading out.
-						// Keep the parent in PT and suppress the child until parent is gone.
-						if (parent_flags & InstanceData::FLAG_VISIBILITY_DEPENDENCY_FADE_CHILDREN) {
-							excluded_by_parent_fade = true;
-						}
-					}
+		}
 
-					if (!excluded_by_parent_fade) {
-						uint32_t base_type = idata.flags & InstanceData::FLAG_BASE_TYPE_MASK;
-						if (base_type == RSE::INSTANCE_LIGHT) {
-							cull_result.rt_light_instances.push_back(RID::from_uint64(idata.instance_data_rid));
-						} else if ((base_type == RSE::INSTANCE_MESH || base_type == RSE::INSTANCE_MULTIMESH) &&
-								!(idata.flags & InstanceData::FLAG_CAST_SHADOWS_ONLY)) {
-							cull_result.rt_geometry_instances.push_back(idata.instance_geometry);
-							mesh_visible = true; // For skinned/deformed meshes..
-						}
-					}
+		if (idata.instance != nullptr && idata.instance->visible) {
+			uint32_t base_type = idata.flags & InstanceData::FLAG_BASE_TYPE_MASK;
+			if (base_type == RSE::INSTANCE_LIGHT) {
+				cull_result.rt_light_instances.push_back(RID::from_uint64(idata.instance_data_rid));
+			} else if (base_type == RSE::INSTANCE_MESH || base_type == RSE::INSTANCE_MULTIMESH) {
+				const bool visible_receiver = (LAYER_CHECK != 0) && !(idata.flags & InstanceData::FLAG_CAST_SHADOWS_ONLY);
+				const bool shadow_caster = (idata.flags & InstanceData::FLAG_CAST_SHADOWS) != 0;
+				if (visible_receiver || shadow_caster) {
+					idata.instance_geometry->set_rt_visibility(visible_receiver, shadow_caster, (idata.flags & InstanceData::FLAG_CAST_SHADOWS_ONLY) != 0);
+					cull_result.rt_geometry_instances.push_back(idata.instance_geometry);
+					mesh_visible = true;
 				}
 			}
 		}
@@ -3415,11 +3389,6 @@ void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_c
 
 	Vector<Plane> planes = p_camera_data->main_projection.get_projection_planes(p_camera_data->main_transform);
 	cull.frustum = Frustum(planes);
-
-	cull.rt_enabled = true;
-	float z_far = p_camera_data->main_projection.get_z_far();
-	Vector3 cam_origin = p_camera_data->main_transform.origin;
-	cull.rt_aabb = AABB(cam_origin - Vector3(z_far, z_far, z_far), Vector3(z_far, z_far, z_far) * 2.0);
 
 	Vector<RID> directional_lights;
 	// directional lights

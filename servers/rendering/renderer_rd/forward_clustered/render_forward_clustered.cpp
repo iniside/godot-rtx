@@ -2128,7 +2128,6 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	_fill_instance_data(RENDER_LIST_ALPHA, render_info);
 
 	RD::get_singleton()->draw_command_end_label();
-
 	if (!is_reflection_probe) {
 		if (using_voxelgi) {
 			depth_pass_mode = PASS_MODE_DEPTH_NORMAL_ROUGHNESS_VOXEL_GI;
@@ -2302,6 +2301,9 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	}
 
 	// After this point clear_color has linear encoding.
+	if (!is_reflection_probe) {
+		raytracing->build_tlas(p_render_data, 0);
+	}
 
 	RSE::ViewportMSAA msaa = rb->get_msaa_3d();
 	bool use_msaa = msaa != RSE::VIEWPORT_MSAA_DISABLED;

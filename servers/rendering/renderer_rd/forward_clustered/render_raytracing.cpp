@@ -48,6 +48,17 @@ using namespace RendererSceneRenderImplementation;
 void RenderRaytracing::initialize(RenderForwardClustered *p_owner) {
 	owner = p_owner;
 	bindless_block = memnew(BindlessBlock);
+	shader = SceneShaderRaytracing::get_singleton();
+	String rt_defines;
+	rt_defines += "\n#define RT 1\n";
+	rt_defines += "\n#define MAX_ROUGHNESS_LOD " + itos(owner->get_roughness_layers() - 1) + ".0\n";
+#ifdef REAL_T_IS_DOUBLE
+	rt_defines += "\n#define USE_DOUBLE_PRECISION \n";
+#endif
+	if (owner->is_using_radiance_octmap_array()) {
+		rt_defines += "\n#define USE_RADIANCE_OCTMAP_ARRAY \n";
+	}
+	shader->init(rt_defines);
 
 	// Initialize merged MultiMesh BLAS compute shader.
 	Vector<String> merge_modes;
@@ -77,6 +88,10 @@ RenderRaytracing::~RenderRaytracing() {
 	if (bindless_block) {
 		memdelete(bindless_block);
 		bindless_block = nullptr;
+	}
+	if (shader) {
+		memdelete(shader);
+		shader = nullptr;
 	}
 	mm_merge_shader.shader.version_free(mm_merge_shader.version);
 }
@@ -126,6 +141,20 @@ void RenderRaytracing::_free_viewport_state_internal(RTViewportState *p_state) {
 	}
 	if (p_state->motion_transform_buffer.is_valid()) {
 		RD::get_singleton()->free_rid(p_state->motion_transform_buffer);
+	}
+	for (RTLightSnapshot &snapshot : p_state->light_snapshots) {
+		if (snapshot.light_buffer.is_valid()) {
+			RD::get_singleton()->free_rid(snapshot.light_buffer);
+		}
+		if (snapshot.current_to_previous_buffer.is_valid()) {
+			RD::get_singleton()->free_rid(snapshot.current_to_previous_buffer);
+		}
+		if (snapshot.previous_to_current_buffer.is_valid()) {
+			RD::get_singleton()->free_rid(snapshot.previous_to_current_buffer);
+		}
+		if (snapshot.parameters_buffer.is_valid()) {
+			RD::get_singleton()->free_rid(snapshot.parameters_buffer);
+		}
 	}
 	memdelete(p_state);
 }
@@ -440,6 +469,7 @@ void RenderRaytracing::prepare_frame() {
 	material_data.clear();
 	motion_indices.clear();
 	motion_transforms.clear();
+	emissive_sources.clear();
 	deformed_active_this_frame.clear();
 	merged_mm_active_this_frame.clear();
 
@@ -771,6 +801,9 @@ static void _fill_surface_geometry_data(
 
 	RT_GeometryData &geom = r_surf_data->geometry;
 	memset(&geom, 0, sizeof(geom));
+	geom.position_scale[0] = 1.0f;
+	geom.position_scale[1] = 1.0f;
+	geom.position_scale[2] = 1.0f;
 
 	RID vertex_buffer = mesh_storage->mesh_surface_get_vertex_buffer(p_mesh_surface);
 	RID attribute_buffer = mesh_storage->mesh_surface_get_attribute_buffer(p_mesh_surface);
@@ -801,6 +834,15 @@ static void _fill_surface_geometry_data(
 		position_stride = sizeof(float) * 3;
 	}
 	geom.position_stride = position_stride;
+	if (compressed) {
+		AABB surface_aabb = mesh_storage->mesh_surface_get_aabb(p_mesh_surface);
+		geom.position_offset[0] = surface_aabb.position.x;
+		geom.position_offset[1] = surface_aabb.position.y;
+		geom.position_offset[2] = surface_aabb.position.z;
+		geom.position_scale[0] = surface_aabb.size.x;
+		geom.position_scale[1] = surface_aabb.size.y;
+		geom.position_scale[2] = surface_aabb.size.z;
+	}
 
 	// Normal/tangent layout
 	uint32_t normal_stride;
@@ -2496,6 +2538,43 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 	};
 	LocalVector<PendingMMSurface> pending_mm_surfaces;
 
+	auto register_emissive_source = [&](const RenderForwardClustered::GeometryInstanceForwardClustered *p_instance,
+			RID p_resource, uint32_t p_surface_index, uint32_t p_surface_counter, uint32_t p_geometry_index,
+			uint32_t p_key_primitive_offset, uint32_t p_primitive_count, const Transform3D &p_transform, RTMaterialData *p_material) {
+		if (!p_instance || !p_instance->rt_visible_receiver || !p_material || p_material->is_custom_shader || p_primitive_count == 0) {
+			return;
+		}
+		const RT_MaterialData &material = p_material->data;
+		const bool textured = (material.flags & RT_MAT_FLAG_HAS_EMISSION_TEX) != 0;
+		const bool colored = material.emission_color[0] != 0.0f || material.emission_color[1] != 0.0f || material.emission_color[2] != 0.0f;
+		if (material.emission_strength == 0.0f || (!textured && !colored)) {
+			return;
+		}
+
+		RTEmissiveSource source;
+		source.instance_id = p_instance->get_instance_rid().get_id();
+		source.resource_id = p_resource.get_id();
+		source.surface_generation = (uint64_t(p_surface_counter) << 32) | uint64_t(p_surface_index);
+		source.geometry_index = p_geometry_index;
+		source.key_primitive_offset = p_key_primitive_offset;
+		source.primitive_count = p_primitive_count;
+		source.topology_generation = hash_murmur3_one_64(source.resource_id, hash_murmur3_one_64(source.surface_generation));
+		source.transform = p_transform;
+		source.material = p_material;
+		emissive_sources.push_back(source);
+	};
+	auto instance_geometry = [](const RenderForwardClustered::GeometryInstanceForwardClustered *p_instance, const RT_GeometryData &p_geometry) {
+		RT_GeometryData geometry = p_geometry;
+		geometry.instance_layer_mask = p_instance->layer_mask;
+		if (p_instance->rt_casts_shadows) {
+			geometry.flags |= RT_GEOM_FLAG_CASTS_SHADOWS;
+		}
+		if (p_instance->rt_shadows_only) {
+			geometry.flags |= RT_GEOM_FLAG_SHADOWS_ONLY;
+		}
+		return geometry;
+	};
+
 	const PagedArray<RenderGeometryInstance *> &rt_instances = *p_render_data->rt_instances;
 	for (uint32_t i = 0; i < (uint32_t)rt_instances.size(); i++) {
 		const RenderForwardClustered::GeometryInstanceForwardClustered *inst =
@@ -2555,7 +2634,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 				RT_GeometryData geom = {};
 				geom.flags = RT_GEOM_FLAG_PROCEDURAL;
 				geom.vertex_buffer_address = ps->gpu_buffer_address;
-				geometry_data.push_back(geom);
+				geometry_data.push_back(instance_geometry(inst, geom));
 
 				if (inst->transform_status == RenderForwardClustered::GeometryInstanceForwardClustered::TransformStatus::MOVED) {
 					motion_indices.push_back((int32_t)motion_transforms.size());
@@ -2761,7 +2840,10 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 			blas_transforms.push_back(final_transform);
 
 			blass.push_back(surf_data->blas);
-			geometry_data.push_back(surf_data->geometry);
+			const uint32_t geometry_index = geometry_data.size();
+			geometry_data.push_back(instance_geometry(inst, surf_data->geometry));
+			register_emissive_source(inst, inst->data->base, surf->surface_index, surface_counter, geometry_index, 0,
+					surf_data->geometry.primitive_count, final_transform, mat_data);
 
 			if (inst->transform_status == RenderForwardClustered::GeometryInstanceForwardClustered::TransformStatus::MOVED) {
 				motion_indices.push_back((int32_t)motion_transforms.size());
@@ -2850,7 +2932,10 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 		if (use_merged) {
 			blass.push_back(merged_sd.blas);
 			blas_transforms.push_back(pending.instance_transform);
-			geometry_data.push_back(merged_sd.geometry);
+			const uint32_t geometry_index = geometry_data.size();
+			geometry_data.push_back(instance_geometry(pending.mm_surf->owner, merged_sd.geometry));
+			register_emissive_source(pending.mm_surf->owner, pending.mm_rid, pending.surface_index, pending.surface_counter,
+					geometry_index, 0, merged_sd.geometry.primitive_count, pending.instance_transform, pending.mat_data);
 			sbt_offsets.push_back(pending.mat_data->rt_sbt_offset);
 			material_data.push_back(pending.mat_data->data);
 			motion_indices.push_back(-1);
@@ -2905,7 +2990,10 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 
 				blass.push_back(surf_data->blas);
 				blas_transforms.push_back(final_transform);
-				geometry_data.push_back(surf_data->geometry);
+				const uint32_t geometry_index = geometry_data.size();
+				geometry_data.push_back(instance_geometry(pending.mm_surf->owner, surf_data->geometry));
+				register_emissive_source(pending.mm_surf->owner, pending.mm_rid, pending.surface_index, pending.surface_counter,
+						geometry_index, mi * surf_data->geometry.primitive_count, surf_data->geometry.primitive_count, final_transform, pending.mat_data);
 				sbt_offsets.push_back(pending.mat_data->rt_sbt_offset);
 				material_data.push_back(pending.mat_data->data);
 
@@ -2959,35 +3047,44 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 
 	build_acceleration_structures(state, dirty_blas_list, dirty_blas_update_list);
 	finalize_buffers(state);
+	build_light_registry(state, p_render_data);
+	RID shader_rd = rt_shader_singleton->get_pipeline_shader_rd(p_rt_flags);
+	if (shader_rd.is_valid()) {
+		bindless_block->finalize(shader_rd, 1);
+		bindless_uniform_set = bindless_block->get_uniform_set();
+	}
 
 	return state;
 }
 
 // ---------------------------------------------------------------------------
-// Light gathering
+// Light registry
 // ---------------------------------------------------------------------------
 
-uint32_t RenderRaytracing::gather_lights(const RenderDataRD *p_render_data, RT_LightData *r_light_data, uint32_t p_max_lights) {
-	uint32_t rt_light_count = 0;
+void RenderRaytracing::build_light_registry(RTViewportState *p_state, const RenderDataRD *p_render_data) {
+	ERR_FAIL_NULL(p_state);
+	ERR_FAIL_NULL(p_render_data);
 
-	if (!p_render_data || !p_render_data->lights) {
-		return rt_light_count;
-	}
+	LocalVector<RTLightKey> local_keys;
+	LocalVector<RT_LightData> local_lights;
+	LocalVector<RTLightKey> infinite_keys;
+	LocalVector<RT_LightData> infinite_lights;
+	LocalVector<RTLightKey> environment_keys;
+	LocalVector<RT_LightData> environment_lights;
 
 	RendererRD::LightStorage *ls = RendererRD::LightStorage::get_singleton();
-	const Transform3D &cam_xform = p_render_data->scene_data->cam_transform;
-	const Vector3 cam_pos = cam_xform.origin;
-	const Vector3 cam_forward = -cam_xform.basis.get_column(2).normalized(); // -Z is forward in Godot.
+	RendererRD::TextureStorage *ts = RendererRD::TextureStorage::get_singleton();
 
-	// Compute light energy matching rasterizer conventions
-	auto compute_light_energy = [&](RID p_base, RSE::LightType p_type) -> float {
+	auto compute_light_energy = [&](RID p_base, RSE::LightType p_type) {
 		float sign = ls->light_is_negative(p_base) ? -1.0f : 1.0f;
 		float e = sign * ls->light_get_param(p_base, RSE::LIGHT_PARAM_ENERGY);
 		if (owner->is_using_physical_light_units()) {
 			e *= ls->light_get_param(p_base, RSE::LIGHT_PARAM_INTENSITY);
 			if (p_type == RSE::LIGHT_OMNI) {
 				e *= 1.0f / (Math::PI * 4.0f);
-			} else if (p_type == RSE::LIGHT_SPOT) {
+			} else if (p_type == RSE::LIGHT_AREA) {
+				e *= 1.0f / (Math::PI * 2.0f);
+			} else {
 				e *= 1.0f / Math::PI;
 			}
 		} else {
@@ -2999,155 +3096,267 @@ uint32_t RenderRaytracing::gather_lights(const RenderDataRD *p_render_data, RT_L
 		return e;
 	};
 
-	// Scoring helper: approximate power/solid-angle contribution.
-	struct LightScore {
-		RID light_instance;
-		float score;
-	};
-
-	LocalVector<LightScore> positional_lights;
-
-	// Lights behind the camera are deprioritized. The penalty ramps in linearly
-	// over BEHIND_FRUSTUM_BUFFER_M so nearby behind-camera lights aren't punished harshly.
-	// At or in front of the camera plane: no penalty. Beyond the buffer: full penalty.
-	static const float BEHIND_FRUSTUM_PENALTY = 0.05f;
-	static const float BEHIND_FRUSTUM_BUFFER_M = 20.0f;
-
-	// Helper: score a positional light and add to candidates.
-	auto score_positional_light = [&](RID light_instance) {
-		RID base = ls->light_instance_get_base_light(light_instance);
-		Transform3D xform = ls->light_instance_get_base_transform(light_instance);
-		Vector3 light_pos = xform.origin;
-		Vector3 to_light = light_pos - cam_pos;
-		float dist_sq = MAX(to_light.dot(to_light), 0.01f);
-		Color color = ls->light_get_color(base);
-		float energy = ls->light_get_param(base, RSE::LIGHT_PARAM_ENERGY);
-		float lum = color.r * 0.2126f + color.g * 0.7152f + color.b * 0.0722f;
-
-		// Range factor: strongly prefer lights with a large influence radius.
-		// Lights with no range limit (range == 0) are treated as infinite.
-		float range = ls->light_get_param(base, RSE::LIGHT_PARAM_RANGE);
-		float range_factor = (range > 0.0f) ? (range * range) : 1.0e12f;
-
-		// Signed depth of the light along the camera forward axis (world units).
-		// Positive = in front, negative = behind. Ramp penalty in over the buffer zone.
-		float forward_depth = to_light.dot(cam_forward);
-		float t = CLAMP((forward_depth + BEHIND_FRUSTUM_BUFFER_M) / BEHIND_FRUSTUM_BUFFER_M, 0.0f, 1.0f);
-		float frustum_factor = Math::lerp(BEHIND_FRUSTUM_PENALTY, 1.0f, t);
-
-		float score = (energy * lum * range_factor * frustum_factor) / dist_sq;
-
-		LightScore ls_entry = {};
-		ls_entry.light_instance = light_instance;
-		ls_entry.score = score;
-		positional_lights.push_back(ls_entry);
-	};
-
-	// Directional lights from the frustum-culled list (they're global, always included).
-	const PagedArray<RID> &lights = *p_render_data->lights;
-	for (uint32_t li = 0; li < (uint32_t)lights.size(); li++) {
-		RID light_instance = lights[li];
-		RID base = ls->light_instance_get_base_light(light_instance);
-		RSE::LightType type = ls->light_get_type(base);
-
-		if (type != RSE::LIGHT_DIRECTIONAL) {
-			continue;
-		}
-		if (rt_light_count >= p_max_lights) {
-			break;
-		}
-		RT_LightData &ld = r_light_data[rt_light_count];
-		Transform3D xform = ls->light_instance_get_base_transform(light_instance);
-		Vector3 dir = -xform.basis.get_column(2).normalized();
-		ld.position[0] = dir.x;
-		ld.position[1] = dir.y;
-		ld.position[2] = dir.z;
-		ld.type = RT_LIGHT_TYPE_DIRECTIONAL;
-		Color linear_col = ls->light_get_color(base).srgb_to_linear();
-		float energy = compute_light_energy(base, RSE::LIGHT_DIRECTIONAL);
-		ld.emission[0] = linear_col.r * energy;
-		ld.emission[1] = linear_col.g * energy;
-		ld.emission[2] = linear_col.b * energy;
-		ld.radius = Math::deg_to_rad(ls->light_get_param(base, RSE::LIGHT_PARAM_SIZE) * 0.5f); // Half-angle in radians.
-		ld.attenuation = 0.0f; // No distance attenuation.
-		ld.inv_max_range = -1.0f; // Infinite range.
-		ld.max_range_squared = 0.0f;
-		ld.specular_amount = ls->light_get_param(base, RSE::LIGHT_PARAM_SPECULAR);
-		ld.indirect_energy = ls->light_get_param(base, RSE::LIGHT_PARAM_INDIRECT_ENERGY);
-		ld.inv_spot_attenuation = 0.0f;
-		ld.cos_spot_angle = 0.0f;
-		ld.spot_direction[0] = 0.0f;
-		ld.spot_direction[1] = 0.0f;
-		ld.spot_direction[2] = 0.0f;
-		rt_light_count++;
-	}
-
-	// Positional lights from the AABB-culled RT list (superset of frustum).
 	if (p_render_data->rt_lights) {
-		const PagedArray<RID> &rt_lights = *p_render_data->rt_lights;
-		for (uint32_t li = 0; li < (uint32_t)rt_lights.size(); li++) {
-			score_positional_light(rt_lights[li]);
+		const PagedArray<RID> &lights = *p_render_data->rt_lights;
+		for (uint32_t li = 0; li < uint32_t(lights.size()); li++) {
+			RID light_instance = lights[li];
+			if (!ls->owns_light_instance(light_instance)) {
+				continue;
+			}
+			RID base = ls->light_instance_get_base_light(light_instance);
+			if (!base.is_valid()) {
+				continue;
+			}
+			RSE::LightType type = ls->light_get_type(base);
+			RT_LightData ld = {};
+			Transform3D xform = ls->light_instance_get_base_transform(light_instance);
+			Vector3 direction = -xform.basis.get_column(2).normalized();
+			ld.position[0] = xform.origin.x;
+			ld.position[1] = xform.origin.y;
+			ld.position[2] = xform.origin.z;
+			ld.direction[0] = direction.x;
+			ld.direction[1] = direction.y;
+			ld.direction[2] = direction.z;
+			switch (type) {
+				case RSE::LIGHT_DIRECTIONAL:
+					ld.type = RT_LIGHT_TYPE_DIRECTIONAL;
+					break;
+				case RSE::LIGHT_OMNI:
+					ld.type = RT_LIGHT_TYPE_OMNI;
+					break;
+				case RSE::LIGHT_SPOT:
+					ld.type = RT_LIGHT_TYPE_SPOT;
+					break;
+				case RSE::LIGHT_AREA:
+					ld.type = RT_LIGHT_TYPE_AREA;
+					break;
+			}
+
+			Color linear_col = ls->light_get_color(base).srgb_to_linear();
+			float energy = compute_light_energy(base, type);
+			ld.emission[0] = linear_col.r * energy;
+			ld.emission[1] = linear_col.g * energy;
+			ld.emission[2] = linear_col.b * energy;
+			ld.radius = type == RSE::LIGHT_DIRECTIONAL ? Math::deg_to_rad(ls->light_get_param(base, RSE::LIGHT_PARAM_SIZE) * 0.5f) : ls->light_get_param(base, RSE::LIGHT_PARAM_SIZE);
+			ld.attenuation = ls->light_get_param(base, RSE::LIGHT_PARAM_ATTENUATION);
+			ld.range = type == RSE::LIGHT_DIRECTIONAL ? 0.0f : ls->light_get_param(base, RSE::LIGHT_PARAM_RANGE);
+			ld.specular_amount = ls->light_get_param(base, RSE::LIGHT_PARAM_SPECULAR) * 2.0f;
+			ld.receiver_mask = ls->light_get_cull_mask(base);
+			ld.caster_mask = ls->light_get_shadow_caster_mask(base);
+			if (ls->light_has_shadow(base)) {
+				ld.flags |= RT_LIGHT_FLAG_CASTS_SHADOW;
+			}
+
+			if (type == RSE::LIGHT_SPOT) {
+				ld.inv_spot_attenuation = 1.0f / MAX(0.001f, ls->light_get_param(base, RSE::LIGHT_PARAM_SPOT_ATTENUATION));
+				ld.cos_spot_angle = Math::cos(Math::deg_to_rad(ls->light_get_param(base, RSE::LIGHT_PARAM_SPOT_ANGLE)));
+			}
+
+			if (type == RSE::LIGHT_AREA) {
+				Vector2 area_size = ls->light_area_get_size(base);
+				Vector3 axis_u = xform.basis.xform(Vector3(1.0f, 0.0f, 0.0f)).normalized() * area_size.x;
+				Vector3 axis_v = xform.basis.xform(Vector3(0.0f, 1.0f, 0.0f)).normalized() * area_size.y;
+				ld.axis_u[0] = axis_u.x;
+				ld.axis_u[1] = axis_u.y;
+				ld.axis_u[2] = axis_u.z;
+				ld.axis_v[0] = axis_v.x;
+				ld.axis_v[1] = axis_v.y;
+				ld.axis_v[2] = axis_v.z;
+				float area = axis_u.cross(axis_v).length();
+				ld.inv_area = area > 0.0f ? 1.0f / area : 0.0f;
+				if (ls->light_area_get_normalize_energy(base) && area > 0.0f) {
+					ld.emission[0] /= area;
+					ld.emission[1] /= area;
+					ld.emission[2] /= area;
+				}
+			}
+
+			RID projected_texture = type == RSE::LIGHT_AREA ? ls->light_area_get_texture(base) : ls->light_get_projector(base);
+			if (projected_texture.is_valid()) {
+				Rect2 rect;
+				RID atlas_texture;
+				if (type == RSE::LIGHT_AREA) {
+					rect = ts->area_light_atlas_get_texture_rect(projected_texture);
+					atlas_texture = ts->area_light_atlas_get_texture();
+				} else {
+					rect = ts->decal_atlas_get_texture_rect(projected_texture);
+					atlas_texture = ts->decal_atlas_get_texture_srgb();
+					if (type == RSE::LIGHT_SPOT) {
+						rect.position.y += rect.size.y;
+						rect.size.y = -rect.size.y;
+					} else if (type == RSE::LIGHT_OMNI) {
+						rect.size.y *= 0.5f;
+					}
+				}
+				if (atlas_texture.is_valid()) {
+					ld.texture_index = bindless_block->add_texture(atlas_texture);
+					ld.flags |= RT_LIGHT_FLAG_TEXTURED;
+					ld.uv_rect[0] = rect.position.x;
+					ld.uv_rect[1] = rect.position.y;
+					ld.uv_rect[2] = rect.size.x;
+					ld.uv_rect[3] = rect.size.y;
+				}
+			}
+			RendererRD::MaterialStorage::store_transform_transposed_3x4(xform.affine_inverse(), ld.transform);
+
+			RTLightKey key;
+			key.instance_id = light_instance.get_id();
+			key.resource_id = base.get_id();
+			key.type = ld.type;
+			if (type == RSE::LIGHT_DIRECTIONAL) {
+				infinite_keys.push_back(key);
+				infinite_lights.push_back(ld);
+			} else {
+				local_keys.push_back(key);
+				local_lights.push_back(ld);
+			}
 		}
 	}
 
-	// Sort all positional lights by score descending.
-	struct LightScoreComparator {
-		bool operator()(const LightScore &a, const LightScore &b) const {
-			return a.score > b.score;
+	for (const RTEmissiveSource &source : emissive_sources) {
+		for (uint32_t primitive = 0; primitive < source.primitive_count; primitive++) {
+			RTLightKey key;
+			key.instance_id = source.instance_id;
+			key.resource_id = source.resource_id;
+			key.surface_generation = source.surface_generation;
+			key.primitive_index = source.key_primitive_offset + primitive;
+			key.type = RT_LIGHT_TYPE_EMISSIVE_TRIANGLE;
+
+			RT_LightData light = {};
+			light.type = RT_LIGHT_TYPE_EMISSIVE_TRIANGLE;
+			light.geometry_index = source.geometry_index;
+			light.primitive_index = primitive;
+			light.receiver_mask = UINT32_MAX;
+			light.caster_mask = UINT32_MAX;
+			light.topology_generation = source.topology_generation;
+			light.texture_index = source.material->data.emission_texture_idx;
+			light.emission[0] = source.material->data.emission_color[0] * source.material->data.emission_strength;
+			light.emission[1] = source.material->data.emission_color[1] * source.material->data.emission_strength;
+			light.emission[2] = source.material->data.emission_color[2] * source.material->data.emission_strength;
+			if ((source.material->data.flags & RT_MAT_FLAG_HAS_EMISSION_TEX) != 0) {
+				light.flags |= RT_LIGHT_FLAG_TEXTURED;
+			}
+			light.uv_rect[0] = source.material->data.uv1_scale[0];
+			light.uv_rect[1] = source.material->data.uv1_scale[1];
+			light.uv_rect[2] = source.material->data.uv1_offset[0];
+			light.uv_rect[3] = source.material->data.uv1_offset[1];
+			RendererRD::MaterialStorage::store_transform_transposed_3x4(source.transform, light.transform);
+			local_keys.push_back(key);
+			local_lights.push_back(light);
+		}
+	}
+
+	p_state->environment_texture = RID();
+	if (p_render_data->environment.is_valid()) {
+		RID sky_rid = owner->environment_get_sky(p_render_data->environment);
+		if (sky_rid.is_valid()) {
+			RID environment_texture = owner->get_sky()->sky_get_radiance_texture_rd(sky_rid);
+			if (environment_texture.is_valid()) {
+				RTLightKey key;
+				key.instance_id = p_render_data->environment.get_id();
+				key.resource_id = sky_rid.get_id();
+				key.type = RT_LIGHT_TYPE_ENVIRONMENT;
+				RT_LightData light = {};
+				light.type = RT_LIGHT_TYPE_ENVIRONMENT;
+				light.receiver_mask = UINT32_MAX;
+				light.caster_mask = UINT32_MAX;
+				environment_keys.push_back(key);
+				environment_lights.push_back(light);
+				p_state->environment_texture = environment_texture;
+			}
+		}
+	}
+
+	LocalVector<RTLightKey> current_keys;
+	LocalVector<RT_LightData> current_lights;
+	for (uint32_t i = 0; i < local_keys.size(); i++) {
+		current_keys.push_back(local_keys[i]);
+		current_lights.push_back(local_lights[i]);
+	}
+	for (uint32_t i = 0; i < infinite_keys.size(); i++) {
+		current_keys.push_back(infinite_keys[i]);
+		current_lights.push_back(infinite_lights[i]);
+	}
+	for (uint32_t i = 0; i < environment_keys.size(); i++) {
+		current_keys.push_back(environment_keys[i]);
+		current_lights.push_back(environment_lights[i]);
+	}
+
+	ERR_FAIL_COND_MSG(current_lights.size() > 0x7FFFFFFFu, "The RTXDI light registry exceeds the reservoir light-index range.");
+	ERR_FAIL_COND_MSG(uint64_t(current_lights.size()) * sizeof(RT_LightData) > UINT32_MAX, "The RTXDI light registry exceeds RenderingDevice buffer limits.");
+
+	const uint32_t previous_index = p_state->current_light_snapshot;
+	const uint32_t current_index = p_state->light_history_valid ? (previous_index ^ 1u) : previous_index;
+	RTLightSnapshot &previous = p_state->light_snapshots[previous_index];
+	RTLightSnapshot &current = p_state->light_snapshots[current_index];
+
+	LocalVector<uint32_t> current_to_previous;
+	LocalVector<uint32_t> previous_to_current;
+	current_to_previous.resize(current_keys.size());
+	previous_to_current.resize(p_state->light_history_valid ? previous.keys.size() : 0);
+	for (uint32_t i = 0; i < current_to_previous.size(); i++) {
+		current_to_previous[i] = UINT32_MAX;
+	}
+	for (uint32_t i = 0; i < previous_to_current.size(); i++) {
+		previous_to_current[i] = UINT32_MAX;
+	}
+
+	if (p_state->light_history_valid) {
+		HashMap<RTLightKey, uint32_t> previous_indices;
+		for (uint32_t i = 0; i < previous.keys.size(); i++) {
+			previous_indices.insert(previous.keys[i], i);
+		}
+		for (uint32_t i = 0; i < current_keys.size(); i++) {
+			const uint32_t *previous_light = previous_indices.getptr(current_keys[i]);
+			if (previous_light) {
+				current_to_previous[i] = *previous_light;
+				previous_to_current[*previous_light] = i;
+			}
+		}
+	}
+
+	current.keys = current_keys;
+	current.lights = current_lights;
+	current.parameters.local_first = 0;
+	current.parameters.local_count = local_lights.size();
+	current.parameters.infinite_first = local_lights.size();
+	current.parameters.infinite_count = infinite_lights.size();
+	current.parameters.environment_index = local_lights.size() + infinite_lights.size();
+	current.parameters.environment_present = environment_lights.is_empty() ? 0 : 1;
+	current.parameters.total_count = current_lights.size();
+	current.parameters.previous_count = p_state->light_history_valid ? previous.keys.size() : 0;
+
+	auto update_or_grow = [](RID &p_buffer, uint32_t &p_capacity, const void *p_data, uint32_t p_size, const String &p_name) {
+		uint32_t required_size = MAX(p_size, 4u);
+		if (required_size > p_capacity) {
+			if (p_buffer.is_valid()) {
+				RD::get_singleton()->free_rid(p_buffer);
+			}
+			Vector<uint8_t> initial_data;
+			initial_data.resize(required_size);
+			memset(initial_data.ptrw(), 0xFF, required_size);
+			if (p_size > 0) {
+				memcpy(initial_data.ptrw(), p_data, p_size);
+			}
+			p_buffer = RD::get_singleton()->storage_buffer_create(required_size, initial_data);
+			p_capacity = required_size;
+			RD::get_singleton()->set_resource_name(p_buffer, p_name);
+		} else if (p_size > 0) {
+			RD::get_singleton()->buffer_update(p_buffer, 0, p_size, p_data);
 		}
 	};
-	positional_lights.sort_custom<LightScoreComparator>();
 
-	// Fill remaining slots with top positional lights.
-	for (uint32_t i = 0; i < positional_lights.size() && rt_light_count < p_max_lights; i++) {
-		RID light_instance = positional_lights[i].light_instance;
-		RID base = ls->light_instance_get_base_light(light_instance);
-		RSE::LightType type = ls->light_get_type(base);
-
-		RT_LightData &ld = r_light_data[rt_light_count];
-		Transform3D xform = ls->light_instance_get_base_transform(light_instance);
-		ld.position[0] = xform.origin.x;
-		ld.position[1] = xform.origin.y;
-		ld.position[2] = xform.origin.z;
-		ld.type = (type == RSE::LIGHT_SPOT) ? RT_LIGHT_TYPE_SPOT : RT_LIGHT_TYPE_OMNI;
-
-		Color linear_col = ls->light_get_color(base).srgb_to_linear();
-		float energy = compute_light_energy(base, type);
-		ld.emission[0] = linear_col.r * energy;
-		ld.emission[1] = linear_col.g * energy;
-		ld.emission[2] = linear_col.b * energy;
-		ld.radius = ls->light_get_param(base, RSE::LIGHT_PARAM_SIZE);
-		ld.attenuation = ls->light_get_param(base, RSE::LIGHT_PARAM_ATTENUATION);
-		float range = ls->light_get_param(base, RSE::LIGHT_PARAM_RANGE);
-		if (range > 0.0f) {
-			ld.inv_max_range = 1.0f / range;
-			ld.max_range_squared = range * range;
-		} else {
-			ld.inv_max_range = -1.0f;
-			ld.max_range_squared = 0.0f;
-		}
-		ld.specular_amount = ls->light_get_param(base, RSE::LIGHT_PARAM_SPECULAR) * 2.0f; // Matches rasterizer convention (light_storage.cpp), normalizes 0.5 default to 1.0.
-		ld.indirect_energy = ls->light_get_param(base, RSE::LIGHT_PARAM_INDIRECT_ENERGY);
-
-		if (type == RSE::LIGHT_SPOT) {
-			ld.inv_spot_attenuation = 1.0f / MAX(0.001f, ls->light_get_param(base, RSE::LIGHT_PARAM_SPOT_ATTENUATION));
-			float spot_angle_deg = ls->light_get_param(base, RSE::LIGHT_PARAM_SPOT_ANGLE);
-			ld.cos_spot_angle = Math::cos(Math::deg_to_rad(spot_angle_deg));
-			Vector3 spot_dir = -xform.basis.get_column(2).normalized();
-			ld.spot_direction[0] = spot_dir.x;
-			ld.spot_direction[1] = spot_dir.y;
-			ld.spot_direction[2] = spot_dir.z;
-		} else {
-			ld.inv_spot_attenuation = 0.0f;
-			ld.cos_spot_angle = 0.0f;
-			ld.spot_direction[0] = 0.0f;
-			ld.spot_direction[1] = 0.0f;
-			ld.spot_direction[2] = 0.0f;
-		}
-		rt_light_count++;
+	update_or_grow(current.light_buffer, current.light_buffer_capacity, current_lights.ptr(), current_lights.size() * sizeof(RT_LightData), "RTXDI Light Snapshot");
+	update_or_grow(current.current_to_previous_buffer, current.current_to_previous_capacity, current_to_previous.ptr(), current_to_previous.size() * sizeof(uint32_t), "RTXDI Current To Previous Light Map");
+	update_or_grow(current.previous_to_current_buffer, current.previous_to_current_capacity, previous_to_current.ptr(), previous_to_current.size() * sizeof(uint32_t), "RTXDI Previous To Current Light Map");
+	if (!current.parameters_buffer.is_valid()) {
+		current.parameters_buffer = RD::get_singleton()->uniform_buffer_create(sizeof(RT_LightBufferParameters));
+		RD::get_singleton()->set_resource_name(current.parameters_buffer, "RTXDI Light Parameters");
 	}
+	RD::get_singleton()->buffer_update(current.parameters_buffer, 0, sizeof(RT_LightBufferParameters), &current.parameters);
 
-	return rt_light_count;
+	p_state->current_light_snapshot = current_index;
+	p_state->light_history_valid = true;
 }
 
 // ---------------------------------------------------------------------------

@@ -48,6 +48,9 @@ public:
 	virtual void set_material_overlay(RID p_overlay) = 0;
 	virtual void set_surface_materials(const Vector<RID> &p_materials) = 0;
 	virtual void set_mesh_instance(RID p_mesh_instance) = 0;
+	virtual void set_instance_rid(RID p_instance) {}
+	virtual RID get_instance_rid() const { return RID(); }
+	virtual void set_rt_visibility(bool p_visible_receiver, bool p_casts_shadows, bool p_shadows_only) {}
 	virtual void set_transform(const Transform3D &p_transform, const AABB &p_aabb, const AABB &p_transformed_aabb) = 0;
 	virtual void set_pivot_data(float p_sorting_offset, bool p_use_aabb_center) = 0;
 	virtual void set_lod_bias(float p_lod_bias) = 0;
@@ -90,6 +93,10 @@ public:
 	float depth = 0;
 
 	RID mesh_instance;
+	RID instance_rid;
+	bool rt_visible_receiver = false;
+	bool rt_casts_shadows = false;
+	bool rt_shadows_only = false;
 
 	Transform3D transform;
 	bool mirror = false;
@@ -140,6 +147,13 @@ public:
 	virtual void set_material_overlay(RID p_overlay) override;
 	virtual void set_surface_materials(const Vector<RID> &p_materials) override;
 	virtual void set_mesh_instance(RID p_mesh_instance) override;
+	virtual void set_instance_rid(RID p_instance) override { instance_rid = p_instance; }
+	virtual RID get_instance_rid() const override { return instance_rid; }
+	virtual void set_rt_visibility(bool p_visible_receiver, bool p_casts_shadows, bool p_shadows_only) override {
+		rt_visible_receiver = p_visible_receiver;
+		rt_casts_shadows = p_casts_shadows;
+		rt_shadows_only = p_shadows_only;
+	}
 	virtual void set_transform(const Transform3D &p_transform, const AABB &p_aabb, const AABB &p_transformed_aabb) override;
 	virtual void set_pivot_data(float p_sorting_offset, bool p_use_aabb_center) override;
 	virtual void set_lod_bias(float p_lod_bias) override;

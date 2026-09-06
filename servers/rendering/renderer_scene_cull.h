@@ -1139,9 +1139,6 @@ public:
 
 		Frustum frustum;
 
-		// Raytracing: wider AABB cull volume for TLAS and light gathering.
-		bool rt_enabled = false;
-		AABB rt_aabb;
 	} cull;
 
 	struct VisibilityCullData {

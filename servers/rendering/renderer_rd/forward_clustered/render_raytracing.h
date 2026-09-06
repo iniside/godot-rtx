@@ -46,6 +46,7 @@ class RenderSceneBuffersRD;
 namespace RendererSceneRenderImplementation {
 
 class RenderForwardClustered;
+class SceneShaderRaytracing;
 
 // Must match GLSL GeometryData (std430, 128 bytes).
 struct alignas(16) RT_GeometryData {
@@ -72,7 +73,10 @@ struct alignas(16) RT_GeometryData {
 	uint32_t cluster_remap_address_lo;
 	uint32_t cluster_remap_address_hi;
 	uint32_t cluster_count;
-	uint32_t _pad[8];
+	float position_offset[3];
+	uint32_t instance_layer_mask;
+	float position_scale[3];
+	float _pad1;
 };
 static_assert(sizeof(RT_GeometryData) == 128, "RT_GeometryData must be 128 bytes for std430");
 
@@ -107,32 +111,90 @@ static_assert(sizeof(RT_MaterialData) == 96, "RT_MaterialData must be 96 bytes f
 enum RTLightType : uint32_t {
 	RT_LIGHT_TYPE_OMNI = 0,
 	RT_LIGHT_TYPE_DIRECTIONAL = 1,
-	RT_LIGHT_TYPE_SPOT = 3,
+	RT_LIGHT_TYPE_SPOT = 2,
+	RT_LIGHT_TYPE_AREA = 3,
+	RT_LIGHT_TYPE_EMISSIVE_TRIANGLE = 4,
+	RT_LIGHT_TYPE_ENVIRONMENT = 5,
 };
 
-// Must match GLSL RTLightData (std430, 80 bytes).
+enum RTLightFlags : uint32_t {
+	RT_LIGHT_FLAG_CASTS_SHADOW = 1u,
+	RT_LIGHT_FLAG_TEXTURED = 2u,
+};
+
+// Must match GLSL RTLightData (std430, 192 bytes).
 struct alignas(16) RT_LightData {
-	float position[3]; // World position (omni/spot) or direction (directional, normalized).
+	float position[3];
 	uint32_t type;
+	float direction[3];
+	uint32_t flags;
 	float emission[3];
 	float radius;
+	float axis_u[3];
+	float inv_area;
+	float axis_v[3];
 	float attenuation;
-	float inv_max_range; // 1.0/range, or -1.0 for infinite.
-	float max_range_squared; // range*range, or 0.0 for infinite.
-	float specular_amount;
-	float indirect_energy;
-	float inv_spot_attenuation;
+	float range;
 	float cos_spot_angle;
-	float _pad0;
-	float spot_direction[3];
-	float _pad1;
+	float inv_spot_attenuation;
+	float specular_amount;
+	uint32_t texture_index;
+	uint32_t geometry_index;
+	uint32_t primitive_index;
+	uint32_t receiver_mask;
+	uint32_t caster_mask;
+	uint32_t topology_generation;
+	uint32_t _pad2;
+	uint32_t _pad3;
+	float uv_rect[4];
+	float transform[12];
 };
-static_assert(sizeof(RT_LightData) == 80, "RT_LightData must be 80 bytes for std430");
+static_assert(sizeof(RT_LightData) == 192, "RT_LightData must be 192 bytes for std430");
 
-enum {
-	RT_LIGHTS_MAX = 64,
-	RT_LIGHTS_FRUSTUM_BUDGET = 48,
-	RT_LIGHTS_INDIRECT_BUDGET = RT_LIGHTS_MAX - RT_LIGHTS_FRUSTUM_BUDGET,
+struct alignas(16) RT_LightBufferParameters {
+	uint32_t local_first = 0;
+	uint32_t local_count = 0;
+	uint32_t infinite_first = 0;
+	uint32_t infinite_count = 0;
+	uint32_t environment_index = 0;
+	uint32_t environment_present = 0;
+	uint32_t total_count = 0;
+	uint32_t previous_count = 0;
+};
+static_assert(sizeof(RT_LightBufferParameters) == 32, "RT_LightBufferParameters must be 32 bytes for std430");
+
+struct RTLightKey {
+	uint64_t instance_id = 0;
+	uint64_t resource_id = 0;
+	uint64_t surface_generation = 0;
+	uint32_t primitive_index = 0;
+	uint32_t type = 0;
+
+	_FORCE_INLINE_ bool operator==(const RTLightKey &p_other) const {
+		return instance_id == p_other.instance_id && resource_id == p_other.resource_id &&
+				surface_generation == p_other.surface_generation && primitive_index == p_other.primitive_index && type == p_other.type;
+	}
+
+	_FORCE_INLINE_ uint32_t hash() const {
+		uint32_t h = hash_murmur3_one_64(instance_id);
+		h = hash_murmur3_one_64(resource_id, h);
+		h = hash_murmur3_one_64(surface_generation, h);
+		h = hash_murmur3_one_32(primitive_index, h);
+		return hash_murmur3_one_32(type, h);
+	}
+};
+
+struct RTLightSnapshot {
+	LocalVector<RTLightKey> keys;
+	LocalVector<RT_LightData> lights;
+	RT_LightBufferParameters parameters;
+	RID light_buffer;
+	uint32_t light_buffer_capacity = 0;
+	RID current_to_previous_buffer;
+	uint32_t current_to_previous_capacity = 0;
+	RID previous_to_current_buffer;
+	uint32_t previous_to_current_capacity = 0;
+	RID parameters_buffer;
 };
 
 enum {
@@ -163,6 +225,8 @@ enum {
 	RT_GEOM_FLAG_DEFORMED = 4u,
 	// Set when the BLAS is built from clusters, so gl_PrimitiveID is cluster-relative.
 	RT_GEOM_FLAG_CLUSTERED = 8u,
+	RT_GEOM_FLAG_CASTS_SHADOWS = 16u,
+	RT_GEOM_FLAG_SHADOWS_ONLY = 32u,
 };
 
 /// Per-instance state for procedural RT geometry. Heap-allocated, only exists for procedural instances.
@@ -234,6 +298,18 @@ struct RTMaterialData {
 	RID normal_texture_rd;
 	RID orm_texture_rd;
 	RID emission_texture_rd;
+};
+
+struct RTEmissiveSource {
+	uint64_t instance_id = 0;
+	uint64_t resource_id = 0;
+	uint64_t surface_generation = 0;
+	uint32_t geometry_index = 0;
+	uint32_t key_primitive_offset = 0;
+	uint32_t primitive_count = 0;
+	uint32_t topology_generation = 0;
+	Transform3D transform;
+	RTMaterialData *material = nullptr;
 };
 
 struct RTCacheEntry {
@@ -332,12 +408,18 @@ struct RTViewportState {
 	RID motion_transform_buffer;
 	uint32_t motion_transform_buffer_capacity = 0;
 
+	RTLightSnapshot light_snapshots[2];
+	uint32_t current_light_snapshot = 0;
+	bool light_history_valid = false;
+	RID environment_texture;
+
 };
 
 class RenderRaytracing {
 	friend class RenderForwardClustered;
 
 	RenderForwardClustered *owner = nullptr;
+	SceneShaderRaytracing *shader = nullptr;
 	BindlessBlock *bindless_block = nullptr;
 
 	RID bindless_uniform_set;
@@ -405,6 +487,7 @@ class RenderRaytracing {
 	LocalVector<uint32_t> instance_flags;
 	LocalVector<uint8_t> instance_masks; // Per-instance ray mask (0x00 = invisible to rays, 0xFF = normal)
 	LocalVector<uint32_t> sbt_offsets; // 0 = default material hit group
+	LocalVector<RTEmissiveSource> emissive_sources;
 
 	HashMap<RenderSceneBuffersRD *, RTViewportState *> viewport_states;
 
@@ -472,6 +555,7 @@ class RenderRaytracing {
 	void update_procedural_blas(RTProceduralState *p_state, LocalVector<RID> &r_dirty_blas_list);
 	void build_acceleration_structures(RTViewportState *p_state, const LocalVector<RID> &p_dirty_blas_list, const LocalVector<RID> &p_dirty_blas_update_list);
 	void finalize_buffers(RTViewportState *p_state);
+	void build_light_registry(RTViewportState *p_state, const RenderDataRD *p_render_data);
 	void prepare_frame();
 
 public:
@@ -480,7 +564,6 @@ public:
 	void cleanup_caches();
 
 	RTViewportState *build_tlas(const RenderDataRD *p_render_data, uint32_t p_rt_flags);
-	uint32_t gather_lights(const RenderDataRD *p_render_data, RT_LightData *r_light_data, uint32_t p_max_lights);
 	void free_viewport_state(RenderSceneBuffersRD *p_render_buffers);
 
 	void register_raytracing_buffer_dependencies(RD::RaytracingListID p_list);
