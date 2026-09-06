@@ -53,6 +53,36 @@ bound, not proof that the features are absent elsewhere or under other names.
 
 ## Known Gaps
 
+The [staged RTXDI replacement plan](../plans/2026-09-06-1854-rtxdi-renderer-plan.md)
+received a fresh hostile plan-review PASS and owner approval on 2026-09-06 at
+`33b555c7`. The owner explicitly
+allows broken intermediate builds/rendering; the final stage requires real
+Vulkan rendering. Implementation is authorized and has started.
+
+The [concrete RTXDI design](../research/2026-09-06-1840-rtxdi-renderer-design-summary.md)
+records the 2026-09-06 RT-only/no-compatibility owner override, at Godot `33b555c7`.
+It maps surface export, RT ownership, shader includes, reservoir rotation and
+NRD 4.17.1 integration. Fog still consumes shadow maps. This is source-backed
+design research, not a reviewed execution plan or runtime proof.
+
+The [RTXDI integration research](../research/2026-09-06-1823-rtxdi-integration-summary.md)
+was recorded on 2026-09-06 at Godot `33b555c7`, SDK/sample `a6efab96` and
+runtime `f12037fa`. It covers shared direct lighting, GLSL integration,
+sample boundaries and history/resource costs. RTXDI-first ordering is recorded
+in the owner direction document. No compilation or runtime evidence.
+
+The [id Tech 8 research](../research/2026-09-06-1815-idtech8-rendering-summary.md)
+was recorded on 2026-09-06 at project `33b555c7`, using primary SIGGRAPH/GPC
+2025 materials and an NVIDIA interview. It separates baseline hybrid GI from
+optional PT and records implications for DDGI/cache budgeting. External
+architecture evidence only; no local performance or new owner decision.
+
+RTXGI-DDGI integration was researched on 2026-09-06 at Godot `33b555c7` and
+NVIDIA SDK `f33e496c` (1.3.6), using pinned SDK/sample source and targeted local
+reads. See the [integration report](../research/2026-09-06-1748-rtxgi-ddgi-integration-summary.md)
+for PT-only scene activation, probe culling coverage, RD/HLSL integration options,
+sample reuse boundaries, and open design questions. No build or runtime proof.
+
 No runtime performance was verified. The active build, enabled features, and
 hardware behavior are unknown. The older
 [Mega Geometry research](../research/2026-09-02-1904-megageometry-camera-relative-research.md)

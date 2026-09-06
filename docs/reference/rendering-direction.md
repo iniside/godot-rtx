@@ -13,6 +13,15 @@ nie jest docelową podstawą oświetlenia tych scen.
 
 - Renderer hybrydowy: rasteryzacja widocznych powierzchni, ReSTIR DI dla światła
   bezpośredniego i DDGI dla rozproszonego światła pośredniego.
+- Kolejność doprecyzowana 2026-09-06: najpierw RTXDI, potem DDGI. Wspólna
+  podstawa światła bezpośredniego ma obsługiwać powierzchnie widoczne z kamery
+  i przyszłe trafienia sond DDGI. Zlecono research, nie implementację.
+- Doprecyzowanie właściciela 2026-09-06: zgodność wsteczna i obsługa platform
+  bez ray tracingu nie są wymaganiami. Można usunąć utrudniające integrację
+  stare API i ścieżki bez RT; nie dodawać dla nich fallbacków ani migracji.
+- Plan integracji można podzielić na etapy bez działającego builda/renderowania
+  pomiędzy nimi. Wymagane jest działające renderowanie na ostatnim etapie;
+  wcześniejsze sprawdzenia mają służyć pracy, nie utrzymywaniu starej ścieżki.
 - System geometrii wzorowany na Nanite: meshlety/klastry, automatyczne budowanie
   DAG-u uproszczeń, selekcja klastrów i streaming. Mega Geometry/CLAS stanowi
   podstawę reprezentacji klastrowej dla ray tracingu.
