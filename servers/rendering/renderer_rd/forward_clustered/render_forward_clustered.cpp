@@ -1852,7 +1852,7 @@ void RenderForwardClustered::_render_3d_upscaling(const RenderDataRD *p_render_d
 		for (uint32_t v = 0; v < rb->get_view_count(); v++) {
 			real_t fov = p_render_data->scene_data->cam_projection.get_fov();
 			real_t aspect = p_render_data->scene_data->cam_projection.get_aspect();
-			real_t fovy = p_render_data->scene_data->cam_projection.get_fovy(fov, aspect);
+			real_t fovy = p_render_data->scene_data->cam_projection.get_fovy(fov, 1.0 / aspect);
 			Vector2 jitter = p_render_data->scene_data->taa_jitter * Vector2(rb->get_internal_size()) * 0.5f;
 			RendererRD::DLSSContext::Parameters params;
 			params.context = rb_data->get_dlss_context();
@@ -1884,14 +1884,16 @@ void RenderForwardClustered::_render_3d_upscaling(const RenderDataRD *p_render_d
 			}
 
 			Projection correction;
-			correction.set_depth_correction(true, true, false);
+			correction.set_depth_correction(true, true, true);
 
 			const Projection &prev_proj = p_render_data->scene_data->prev_cam_projection;
 			const Projection &cur_proj = p_render_data->scene_data->cam_projection;
 			const Transform3D &prev_transform = p_render_data->scene_data->prev_cam_transform;
 			const Transform3D &cur_transform = p_render_data->scene_data->cam_transform;
-			params.reprojection = (correction * prev_proj) * prev_transform.affine_inverse() * cur_transform * (correction * cur_proj).inverse();
-			params.cam_projection = cur_proj;
+			Projection prev_projection = correction * prev_proj;
+			Projection cur_projection = correction * cur_proj;
+			params.reprojection = prev_projection * prev_transform.affine_inverse() * cur_transform * cur_projection.inverse();
+			params.cam_projection = cur_projection;
 			params.cam_transform = cur_transform;
 
 			rb->set_upscaler_ready(dlss_effect->is_ready(rb_data->get_dlss_context()));

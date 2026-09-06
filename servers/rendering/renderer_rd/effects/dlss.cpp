@@ -194,10 +194,10 @@ static sl::float4x4 sl_make_identity_matrix() {
 
 static sl::float4x4 sl_convert_matrix(const Projection &mtx) {
 	sl::float4x4 ret;
-	ret.setRow(0, sl::float4(mtx.columns[0].x, mtx.columns[1].x, mtx.columns[2].x, mtx.columns[3].x));
-	ret.setRow(1, sl::float4(mtx.columns[0].y, mtx.columns[1].y, mtx.columns[2].y, mtx.columns[3].y));
-	ret.setRow(2, sl::float4(mtx.columns[0].z, mtx.columns[1].z, mtx.columns[2].z, mtx.columns[3].z));
-	ret.setRow(3, sl::float4(mtx.columns[0].w, mtx.columns[1].w, mtx.columns[2].w, mtx.columns[3].w));
+	ret.setRow(0, sl::float4(float(mtx.columns[0].x), float(mtx.columns[0].y), float(mtx.columns[0].z), float(mtx.columns[0].w)));
+	ret.setRow(1, sl::float4(float(mtx.columns[1].x), float(mtx.columns[1].y), float(mtx.columns[1].z), float(mtx.columns[1].w)));
+	ret.setRow(2, sl::float4(float(mtx.columns[2].x), float(mtx.columns[2].y), float(mtx.columns[2].z), float(mtx.columns[2].w)));
+	ret.setRow(3, sl::float4(float(mtx.columns[3].x), float(mtx.columns[3].y), float(mtx.columns[3].z), float(mtx.columns[3].w)));
 	return ret;
 }
 
@@ -255,7 +255,10 @@ void DLSSEffect::upscale(const DLSSContext::Parameters &p_params) {
 		push_constants[1] = texture_format.height;
 		push_constants[2] = 0.0f;
 		push_constants[3] = 0.0f;
-		memcpy(push_constants + 4, &p_params.reprojection.columns[0].x, sizeof(float) * 16);
+		Projection decoder_depth_correction;
+		decoder_depth_correction.set_depth_correction(false, false, true);
+		Projection decoder_reprojection = decoder_depth_correction.inverse() * p_params.reprojection * decoder_depth_correction;
+		material_storage->store_camera(decoder_reprojection, push_constants + 4);
 		RD::get_singleton()->compute_list_set_push_constant(compute_list, push_constants, sizeof(push_constants));
 
 		RD::get_singleton()->compute_list_dispatch_threads(compute_list, texture_format.width, texture_format.height, 1);
@@ -425,9 +428,9 @@ void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext
 		context->constants.prevClipToClip = sl_convert_matrix(p_params.reprojection.inverse()); // inverted reprojection matrix
 
 		context->constants.cameraPos = sl_convert_vector(p_params.cam_transform.get_origin());
-		context->constants.cameraFwd = sl_convert_vector(-p_params.cam_transform.get_basis().rows[2]);
-		context->constants.cameraUp = sl_convert_vector(p_params.cam_transform.get_basis().rows[1]);
-		context->constants.cameraRight = sl_convert_vector(p_params.cam_transform.get_basis().rows[0]);
+		context->constants.cameraFwd = sl_convert_vector(-p_params.cam_transform.get_basis().get_column(2));
+		context->constants.cameraUp = sl_convert_vector(p_params.cam_transform.get_basis().get_column(1));
+		context->constants.cameraRight = sl_convert_vector(p_params.cam_transform.get_basis().get_column(0));
 
 		context->constants.cameraNear = p_params.z_near;
 		context->constants.cameraFar = p_params.z_far;
