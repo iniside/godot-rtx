@@ -68,6 +68,7 @@ public:
 		};
 
 		String path;
+		bool generated_standard_material = false;
 		HashMap<StringName, ShaderLanguage::ShaderNode::Uniform> uniforms;
 		HashMap<StringName, HashMap<int, RID>> default_texture_params;
 
@@ -281,6 +282,7 @@ private:
 		HashMap<StringName, HashMap<int, RID>> default_texture_parameter;
 		HashSet<Material *> owners;
 		bool embedded = false;
+		bool generated_standard_material = false;
 	};
 
 	typedef ShaderData *(*ShaderDataRequestFunction)();
@@ -480,6 +482,7 @@ public:
 
 	virtual void shader_set_code(RID p_shader, const String &p_code) override;
 	virtual void shader_set_code_rt(RID p_shader, const String &p_code_rt) override;
+	virtual void shader_set_generated_standard_material(RID p_shader, bool p_generated) override;
 	virtual void shader_set_path_hint(RID p_shader, const String &p_path) override;
 	virtual String shader_get_code(RID p_shader) const override;
 	virtual void get_shader_parameter_list(RID p_shader, List<PropertyInfo> *p_param_list) const override;

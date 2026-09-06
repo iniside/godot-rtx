@@ -1270,12 +1270,13 @@ RID RendererViewport::viewport_get_occluder_debug_texture(RID p_viewport) const 
 	return RID();
 }
 
-void RendererViewport::viewport_set_prev_camera_data(RID p_viewport, const RendererSceneRender::CameraData *p_camera_data) {
+void RendererViewport::viewport_set_prev_camera_data(RID p_viewport, RID p_camera, const RendererSceneRender::CameraData *p_camera_data) {
 	Viewport *viewport = viewport_owner.get_or_null(p_viewport);
 	ERR_FAIL_NULL(viewport);
 	uint64_t frame = RSG::rasterizer->get_frame_number();
 	if (viewport->prev_camera_data_frame != frame) {
 		viewport->prev_camera_data = *p_camera_data;
+		viewport->prev_camera = p_camera;
 		viewport->prev_camera_data_frame = frame;
 	}
 }
@@ -1284,6 +1285,12 @@ const RendererSceneRender::CameraData *RendererViewport::viewport_get_prev_camer
 	const Viewport *viewport = viewport_owner.get_or_null(p_viewport);
 	ERR_FAIL_NULL_V(viewport, nullptr);
 	return &viewport->prev_camera_data;
+}
+
+RID RendererViewport::viewport_get_prev_camera(RID p_viewport) const {
+	const Viewport *viewport = viewport_owner.get_or_null(p_viewport);
+	ERR_FAIL_NULL_V(viewport, RID());
+	return viewport->prev_camera;
 }
 
 void RendererViewport::viewport_set_disable_2d(RID p_viewport, bool p_disable) {

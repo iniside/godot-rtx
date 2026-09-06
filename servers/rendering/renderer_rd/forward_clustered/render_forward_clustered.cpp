@@ -77,6 +77,10 @@ void RenderForwardClustered::RenderBufferDataForwardClustered::_ensure_rtxdi_sur
 		for (uint32_t attachment = 0; attachment < 6; attachment++) {
 			render_buffers->create_texture(RB_SCOPE_RTXDI_SURFACE, _get_rtxdi_surface_texture_name(set, attachment), formats[attachment], usage);
 		}
+		RD::TextureFormat depth_format = render_buffers->get_texture_format(RB_SCOPE_BUFFERS, RB_TEX_DEPTH);
+		depth_format.usage_bits |= RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_CAN_COPY_TO_BIT;
+		ERR_FAIL_COND_MSG(!RD::get_singleton()->texture_is_format_supported_for_usage(depth_format.format, depth_format.usage_bits), "The RTXDI renderer requires sampleable depth history with transfer-destination support.");
+		render_buffers->create_texture_from_format(RB_SCOPE_RTXDI_SURFACE, set == 0 ? RB_TEX_RTXDI_DEPTH_0 : RB_TEX_RTXDI_DEPTH_1, depth_format);
 	}
 }
 
@@ -87,20 +91,24 @@ RID RenderForwardClustered::RenderBufferDataForwardClustered::prepare_rtxdi_surf
 
 	const uint64_t engine_frame = RSG::rasterizer->get_frame_number();
 	const Size2i surface_size = render_buffers->get_internal_size();
-	rtxdi_surface_history_valid = rtxdi_surface_initialized && rtxdi_surface_size == surface_size && engine_frame == rtxdi_surface_last_engine_frame + 1 && !p_invalid_deformation;
+	rtxdi_surface_history_valid = rtxdi_surface_initialized && rtxdi_surface_depth_valid[rtxdi_surface_set] && rtxdi_surface_size == surface_size && engine_frame == rtxdi_surface_last_engine_frame + 1 && !p_invalid_deformation;
 	if (rtxdi_surface_history_valid) {
-		rtxdi_surface_history_valid = rtxdi_surface_camera_transform.is_equal_approx(p_scene_data->prev_cam_transform) && rtxdi_surface_camera_projection.is_same(p_scene_data->prev_cam_projection) && rtxdi_surface_camera_jitter.is_equal_approx(p_scene_data->prev_taa_jitter);
+		rtxdi_surface_history_valid = p_scene_data->camera.is_valid() && p_scene_data->camera == p_scene_data->prev_camera && rtxdi_surface_camera == p_scene_data->prev_camera && rtxdi_surface_camera_transform.is_equal_approx(p_scene_data->prev_cam_transform) && rtxdi_surface_camera_projection.is_same(p_scene_data->prev_cam_projection) && rtxdi_surface_camera_jitter.is_equal_approx(p_scene_data->prev_taa_jitter) && rtxdi_surface_camera_orthogonal == p_scene_data->prev_cam_orthogonal && p_scene_data->cam_orthogonal == p_scene_data->prev_cam_orthogonal && p_scene_data->cam_projection.is_same(p_scene_data->prev_cam_projection);
 	}
 	rtxdi_surface_set ^= 1;
+	rtxdi_surface_depth_valid[rtxdi_surface_set] = false;
 	rtxdi_surface_frame_index++;
 	rtxdi_surface_last_engine_frame = engine_frame;
 	rtxdi_surface_size = surface_size;
 	rtxdi_surface_previous_camera_transform = p_scene_data->prev_cam_transform;
 	rtxdi_surface_previous_camera_projection = p_scene_data->prev_cam_projection;
 	rtxdi_surface_previous_camera_jitter = p_scene_data->prev_taa_jitter;
+	rtxdi_surface_previous_camera_orthogonal = p_scene_data->prev_cam_orthogonal;
+	rtxdi_surface_camera = p_scene_data->camera;
 	rtxdi_surface_camera_transform = p_scene_data->cam_transform;
 	rtxdi_surface_camera_projection = p_scene_data->cam_projection;
 	rtxdi_surface_camera_jitter = p_scene_data->taa_jitter;
+	rtxdi_surface_camera_orthogonal = p_scene_data->cam_orthogonal;
 	rtxdi_surface_initialized = true;
 
 	return FramebufferCacheRD::get_singleton()->get_cache(
@@ -109,10 +117,25 @@ RID RenderForwardClustered::RenderBufferDataForwardClustered::prepare_rtxdi_surf
 			render_buffers->get_depth_texture());
 }
 
+void RenderForwardClustered::RenderBufferDataForwardClustered::commit_rtxdi_surface() {
+	ERR_FAIL_NULL(render_buffers);
+	const Size2i size = render_buffers->get_internal_size();
+	for (uint32_t view = 0; view < render_buffers->get_view_count(); view++) {
+		RD::get_singleton()->texture_copy(render_buffers->get_depth_texture(), get_rtxdi_surface_depth(), Vector3(0, 0, 0), Vector3(0, 0, 0), Vector3(size.x, size.y, 1), 0, 0, view, view);
+	}
+	rtxdi_surface_depth_valid[rtxdi_surface_set] = true;
+}
+
 RID RenderForwardClustered::RenderBufferDataForwardClustered::get_rtxdi_surface_texture(uint32_t p_attachment, bool p_previous) const {
 	ERR_FAIL_NULL_V(render_buffers, RID());
 	const uint32_t set = p_previous ? (rtxdi_surface_set ^ 1) : rtxdi_surface_set;
 	return render_buffers->get_texture(RB_SCOPE_RTXDI_SURFACE, _get_rtxdi_surface_texture_name(set, p_attachment));
+}
+
+RID RenderForwardClustered::RenderBufferDataForwardClustered::get_rtxdi_surface_depth(bool p_previous) const {
+	ERR_FAIL_NULL_V(render_buffers, RID());
+	const uint32_t set = p_previous ? (rtxdi_surface_set ^ 1) : rtxdi_surface_set;
+	return render_buffers->get_texture(RB_SCOPE_RTXDI_SURFACE, set == 0 ? RB_TEX_RTXDI_DEPTH_0 : RB_TEX_RTXDI_DEPTH_1);
 }
 
 void RenderForwardClustered::RenderBufferDataForwardClustered::ensure_specular() {
@@ -201,7 +224,12 @@ void RenderForwardClustered::RenderBufferDataForwardClustered::free_data() {
 	rtxdi_surface_last_engine_frame = 0;
 	rtxdi_surface_initialized = false;
 	rtxdi_surface_history_valid = false;
+	rtxdi_surface_depth_valid[0] = false;
+	rtxdi_surface_depth_valid[1] = false;
 	rtxdi_surface_size = Size2i();
+	rtxdi_surface_camera = RID();
+	rtxdi_surface_camera_orthogonal = false;
+	rtxdi_surface_previous_camera_orthogonal = false;
 
 	if (cluster_builder) {
 		memdelete(cluster_builder);
@@ -2450,6 +2478,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		}
 		RenderListParameters render_list_params(render_list[RENDER_LIST_OPAQUE].elements.ptr(), render_list[RENDER_LIST_OPAQUE].element_info.ptr(), render_list[RENDER_LIST_OPAQUE].elements.size(), reverse_cull, PASS_MODE_RTXDI_SURFACE, 0, true, p_render_data->directional_light_soft_shadows, rp_uniform_set, get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_WIREFRAME, Vector2(), p_render_data->scene_data->lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, 1, 0, base_specialization);
 		_render_list_with_draw_list(&render_list_params, color_framebuffer, RD::DRAW_CLEAR_ALL, surface_clear, 0.0f, 0u, p_render_data->render_region);
+		rb_data->commit_rtxdi_surface();
 		RD::get_singleton()->draw_command_end_label();
 	} else {
 		bool render_motion_pass = !render_list[RENDER_LIST_MOTION].elements.is_empty();
@@ -4427,7 +4456,7 @@ void RenderForwardClustered::_geometry_instance_add_surface_with_material(Geomet
 	sdcache->rtxdi_material_flags = GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_VALID;
 	const bool unsupported_alpha = p_material->shader_data->uses_alpha_pass();
 	const bool rt_classification_mismatch = p_material->shader_data->uses_alpha_pass() != p_material->shader_data->rt_uses_alpha_pass() || p_material->shader_data->cull_mode != p_material->shader_data->rt_cull_mode();
-	const bool procedural_emission = p_material->shader_data->uses_emission && !p_material->rtxdi_standard_material;
+	const bool procedural_emission = p_material->shader_data->uses_emission && !p_material->shader_data->generated_standard_material;
 	if (p_material->shader_data->rtxdi_surface_unsupported || p_material->shader_data->rt != nullptr || unsupported_alpha || rt_classification_mismatch || procedural_emission) {
 		sdcache->rtxdi_material_flags |= GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_UNSUPPORTED;
 	}

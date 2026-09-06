@@ -57,12 +57,14 @@
 #define RB_TEX_RTXDI_MOTION_0 SNAME("motion_0")
 #define RB_TEX_RTXDI_GEOMETRY_0 SNAME("geometry_0")
 #define RB_TEX_RTXDI_CLASSIFICATION_0 SNAME("classification_0")
+#define RB_TEX_RTXDI_DEPTH_0 SNAME("depth_0")
 #define RB_TEX_RTXDI_BASE_1 SNAME("base_1")
 #define RB_TEX_RTXDI_SHADING_1 SNAME("shading_1")
 #define RB_TEX_RTXDI_EMISSION_1 SNAME("emission_1")
 #define RB_TEX_RTXDI_MOTION_1 SNAME("motion_1")
 #define RB_TEX_RTXDI_GEOMETRY_1 SNAME("geometry_1")
 #define RB_TEX_RTXDI_CLASSIFICATION_1 SNAME("classification_1")
+#define RB_TEX_RTXDI_DEPTH_1 SNAME("depth_1")
 
 #define RB_TEX_SPECULAR SNAME("specular")
 #define RB_TEX_SPECULAR_MSAA SNAME("specular_msaa")
@@ -126,13 +128,17 @@ public:
 		uint64_t rtxdi_surface_last_engine_frame = 0;
 		bool rtxdi_surface_initialized = false;
 		bool rtxdi_surface_history_valid = false;
+		bool rtxdi_surface_depth_valid[2] = {};
 		Size2i rtxdi_surface_size;
+		RID rtxdi_surface_camera;
 		Transform3D rtxdi_surface_camera_transform;
 		Projection rtxdi_surface_camera_projection;
 		Transform3D rtxdi_surface_previous_camera_transform;
 		Projection rtxdi_surface_previous_camera_projection;
 		Vector2 rtxdi_surface_camera_jitter;
 		Vector2 rtxdi_surface_previous_camera_jitter;
+		bool rtxdi_surface_camera_orthogonal = false;
+		bool rtxdi_surface_previous_camera_orthogonal = false;
 
 		StringName _get_rtxdi_surface_texture_name(uint32_t p_set, uint32_t p_attachment) const;
 		void _ensure_rtxdi_surface();
@@ -205,7 +211,9 @@ public:
 		RID get_specular_only_fb();
 		RID get_velocity_only_fb();
 		RID prepare_rtxdi_surface(const RenderSceneDataRD *p_scene_data, bool p_invalid_deformation);
+		void commit_rtxdi_surface();
 		RID get_rtxdi_surface_texture(uint32_t p_attachment, bool p_previous = false) const;
+		RID get_rtxdi_surface_depth(bool p_previous = false) const;
 		bool is_rtxdi_surface_history_valid() const { return rtxdi_surface_history_valid; }
 		uint64_t get_rtxdi_surface_frame_index() const { return rtxdi_surface_frame_index; }
 		const Transform3D &get_rtxdi_surface_camera_transform() const { return rtxdi_surface_camera_transform; }
@@ -214,6 +222,8 @@ public:
 		const Projection &get_rtxdi_surface_previous_camera_projection() const { return rtxdi_surface_previous_camera_projection; }
 		const Vector2 &get_rtxdi_surface_camera_jitter() const { return rtxdi_surface_camera_jitter; }
 		const Vector2 &get_rtxdi_surface_previous_camera_jitter() const { return rtxdi_surface_previous_camera_jitter; }
+		bool is_rtxdi_surface_camera_orthogonal() const { return rtxdi_surface_camera_orthogonal; }
+		bool is_rtxdi_surface_previous_camera_orthogonal() const { return rtxdi_surface_previous_camera_orthogonal; }
 
 		virtual void configure(RenderSceneBuffersRD *p_render_buffers) override;
 		virtual void free_data() override;

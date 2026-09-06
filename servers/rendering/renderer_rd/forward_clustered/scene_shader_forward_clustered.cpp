@@ -744,7 +744,6 @@ void SceneShaderForwardClustered::MaterialData::set_next_pass(RID p_pass) {
 }
 
 bool SceneShaderForwardClustered::MaterialData::update_parameters(const HashMap<StringName, Variant> &p_parameters, bool p_uniform_dirty, bool p_textures_dirty) {
-	rtxdi_standard_material = p_parameters.has("albedo");
 	if (shader_data->version.is_valid()) {
 		RID shader_rid = SceneShaderForwardClustered::singleton->shader.version_get_shader(shader_data->version, 0);
 

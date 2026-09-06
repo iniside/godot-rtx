@@ -44,6 +44,7 @@ public:
 
 	Transform3D cam_transform;
 	Projection cam_projection;
+	RID camera;
 	Vector2 taa_jitter;
 	float taa_frame_count = 0.0f;
 	uint32_t camera_visible_layers;
@@ -60,6 +61,8 @@ public:
 
 	Transform3D prev_cam_transform;
 	Projection prev_cam_projection;
+	RID prev_camera;
+	bool prev_cam_orthogonal = false;
 	Vector2 prev_taa_jitter;
 	Projection prev_view_projection[RendererSceneRender::MAX_RENDER_VIEWS];
 

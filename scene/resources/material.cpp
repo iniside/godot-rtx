@@ -2041,6 +2041,7 @@ void fragment() {)";
 	// other tasks in the WorkerThreadPool simultaneously creating materials, which
 	// may also hold the shared shader_map_mutex lock.
 	RID new_shader = RS::get_singleton()->shader_create_from_code(code);
+	RS::get_singleton()->shader_set_generated_standard_material(new_shader, true);
 
 	MutexLock lock(shader_map_mutex);
 

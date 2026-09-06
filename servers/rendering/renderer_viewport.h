@@ -77,6 +77,7 @@ public:
 		bool force_motion_vectors = false;
 
 		RendererSceneRender::CameraData prev_camera_data;
+		RID prev_camera;
 		uint64_t prev_camera_data_frame = 0;
 
 		bool use_occlusion_culling = false;
@@ -251,8 +252,9 @@ public:
 	RID viewport_get_texture(RID p_viewport) const;
 	RID viewport_get_occluder_debug_texture(RID p_viewport) const;
 
-	void viewport_set_prev_camera_data(RID p_viewport, const RendererSceneRender::CameraData *p_camera_data);
+	void viewport_set_prev_camera_data(RID p_viewport, RID p_camera, const RendererSceneRender::CameraData *p_camera_data);
 	const RendererSceneRender::CameraData *viewport_get_prev_camera_data(RID p_viewport);
+	RID viewport_get_prev_camera(RID p_viewport) const;
 
 	void viewport_set_disable_2d(RID p_viewport, bool p_disable);
 	void viewport_set_environment_mode(RID p_viewport, RSE::ViewportEnvironmentMode p_mode);

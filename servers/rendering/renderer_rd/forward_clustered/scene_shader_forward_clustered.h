@@ -393,7 +393,6 @@ public:
 		uint32_t index = 0;
 		RID next_pass;
 		uint8_t priority;
-		bool rtxdi_standard_material = false;
 		bool rtxdi_diagnostic_reported = false;
 		virtual void set_render_priority(int p_priority);
 		virtual void set_next_pass(RID p_pass);
