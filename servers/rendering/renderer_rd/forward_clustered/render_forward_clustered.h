@@ -49,6 +49,20 @@
 #endif
 
 #define RB_SCOPE_FORWARD_CLUSTERED SNAME("forward_clustered")
+#define RB_SCOPE_RTXDI_SURFACE SNAME("rtxdi_surface")
+
+#define RB_TEX_RTXDI_BASE_0 SNAME("base_0")
+#define RB_TEX_RTXDI_SHADING_0 SNAME("shading_0")
+#define RB_TEX_RTXDI_EMISSION_0 SNAME("emission_0")
+#define RB_TEX_RTXDI_MOTION_0 SNAME("motion_0")
+#define RB_TEX_RTXDI_GEOMETRY_0 SNAME("geometry_0")
+#define RB_TEX_RTXDI_CLASSIFICATION_0 SNAME("classification_0")
+#define RB_TEX_RTXDI_BASE_1 SNAME("base_1")
+#define RB_TEX_RTXDI_SHADING_1 SNAME("shading_1")
+#define RB_TEX_RTXDI_EMISSION_1 SNAME("emission_1")
+#define RB_TEX_RTXDI_MOTION_1 SNAME("motion_1")
+#define RB_TEX_RTXDI_GEOMETRY_1 SNAME("geometry_1")
+#define RB_TEX_RTXDI_CLASSIFICATION_1 SNAME("classification_1")
 
 #define RB_TEX_SPECULAR SNAME("specular")
 #define RB_TEX_SPECULAR_MSAA SNAME("specular_msaa")
@@ -107,9 +121,33 @@ public:
 #ifdef METAL_MFXTEMPORAL_ENABLED
 		RendererRD::MFXTemporalContext *mfx_temporal_context = nullptr;
 #endif
+		uint32_t rtxdi_surface_set = 0;
+		uint64_t rtxdi_surface_frame_index = 0;
+		uint64_t rtxdi_surface_last_engine_frame = 0;
+		bool rtxdi_surface_initialized = false;
+		bool rtxdi_surface_history_valid = false;
+		Size2i rtxdi_surface_size;
+		Transform3D rtxdi_surface_camera_transform;
+		Projection rtxdi_surface_camera_projection;
+		Transform3D rtxdi_surface_previous_camera_transform;
+		Projection rtxdi_surface_previous_camera_projection;
+		Vector2 rtxdi_surface_camera_jitter;
+		Vector2 rtxdi_surface_previous_camera_jitter;
+
+		StringName _get_rtxdi_surface_texture_name(uint32_t p_set, uint32_t p_attachment) const;
+		void _ensure_rtxdi_surface();
 
 	public:
 		ClusterBuilderRD *cluster_builder = nullptr;
+		enum RTXDISurfaceAttachment {
+			RTXDI_SURFACE_BASE,
+			RTXDI_SURFACE_SHADING,
+			RTXDI_SURFACE_EMISSION,
+			RTXDI_SURFACE_MOTION,
+			RTXDI_SURFACE_GEOMETRY,
+			RTXDI_SURFACE_CLASSIFICATION,
+			RTXDI_SURFACE_ATTACHMENT_COUNT,
+		};
 
 		struct SSEffectsData {
 			Projection ssil_last_frame_projections[RendererSceneRender::MAX_RENDER_VIEWS];
@@ -166,6 +204,16 @@ public:
 		RID get_depth_fb(DepthFrameBufferType p_type = DEPTH_FB);
 		RID get_specular_only_fb();
 		RID get_velocity_only_fb();
+		RID prepare_rtxdi_surface(const RenderSceneDataRD *p_scene_data, bool p_invalid_deformation);
+		RID get_rtxdi_surface_texture(uint32_t p_attachment, bool p_previous = false) const;
+		bool is_rtxdi_surface_history_valid() const { return rtxdi_surface_history_valid; }
+		uint64_t get_rtxdi_surface_frame_index() const { return rtxdi_surface_frame_index; }
+		const Transform3D &get_rtxdi_surface_camera_transform() const { return rtxdi_surface_camera_transform; }
+		const Projection &get_rtxdi_surface_camera_projection() const { return rtxdi_surface_camera_projection; }
+		const Transform3D &get_rtxdi_surface_previous_camera_transform() const { return rtxdi_surface_previous_camera_transform; }
+		const Projection &get_rtxdi_surface_previous_camera_projection() const { return rtxdi_surface_previous_camera_projection; }
+		const Vector2 &get_rtxdi_surface_camera_jitter() const { return rtxdi_surface_camera_jitter; }
+		const Vector2 &get_rtxdi_surface_previous_camera_jitter() const { return rtxdi_surface_previous_camera_jitter; }
 
 		virtual void configure(RenderSceneBuffersRD *p_render_buffers) override;
 		virtual void free_data() override;
@@ -220,6 +268,7 @@ protected:
 		PASS_MODE_DEPTH_NORMAL_ROUGHNESS_VOXEL_GI,
 		PASS_MODE_DEPTH_MATERIAL,
 		PASS_MODE_SDF,
+		PASS_MODE_RTXDI_SURFACE,
 		PASS_MODE_MAX
 	};
 
@@ -353,6 +402,8 @@ protected:
 			uint32_t instance_uniforms_ofs; //base offset in global buffer for instance variables
 			uint32_t gi_offset; //GI information when using lightmapping (VCT or lightmap index)
 			uint32_t layer_mask;
+			uint32_t rtxdi_material_flags;
+			uint32_t rtxdi_padding[3];
 			float prev_transform[12];
 			float lightmap_uv_scale[4];
 #ifdef REAL_T_IS_DOUBLE
@@ -405,6 +456,8 @@ protected:
 
 		static_assert(std::is_trivially_destructible_v<InstanceData>);
 		static_assert(std::is_trivially_constructible_v<InstanceData>);
+		static_assert(offsetof(InstanceData, rtxdi_material_flags) == 112);
+		static_assert(offsetof(InstanceData, prev_transform) == 128);
 
 		UBO ubo;
 
@@ -502,6 +555,15 @@ protected:
 
 	// Cached data for drawing surfaces
 	struct GeometryInstanceSurfaceDataCache {
+		enum RTXDISurfaceMaterialFlags {
+			RTXDI_MATERIAL_VALID = 1 << 0,
+			RTXDI_MATERIAL_UNSUPPORTED = 1 << 1,
+			RTXDI_MATERIAL_ALPHA_TESTED = 1 << 2,
+			RTXDI_MATERIAL_DOUBLE_SIDED = 1 << 3,
+			RTXDI_MATERIAL_EMISSIVE = 1 << 4,
+			RTXDI_MATERIAL_NORMAL_MAP = 1 << 5,
+			RTXDI_MATERIAL_DEFORMED = 1 << 6,
+		};
 		enum {
 			FLAG_PASS_DEPTH = 1,
 			FLAG_PASS_OPAQUE = 2,
@@ -550,6 +612,7 @@ protected:
 		uint32_t rt_pass_flags = 0;
 		uint32_t surface_index = 0;
 		uint32_t color_pass_inclusion_mask = 0;
+		uint32_t rtxdi_material_flags = 0;
 
 		void *surface = nullptr;
 		RID material_uniform_set;

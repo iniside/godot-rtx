@@ -62,7 +62,8 @@ public:
 		constexpr static uint16_t SHADER_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_AND_VOXEL_GI_MULTIVIEW = 6;
 		constexpr static uint16_t SHADER_VERSION_DEPTH_PASS_WITH_MATERIAL = 7;
 		constexpr static uint16_t SHADER_VERSION_DEPTH_PASS_WITH_SDF = 8;
-		constexpr static uint16_t SHADER_VERSION_COLOR_PASS = 9;
+		constexpr static uint16_t SHADER_VERSION_RTXDI_SURFACE = 9;
+		constexpr static uint16_t SHADER_VERSION_COLOR_PASS = 10;
 	};
 
 	enum ShaderColorPassFlags {
@@ -84,6 +85,7 @@ public:
 		PIPELINE_VERSION_DEPTH_PASS_MULTIVIEW,
 		PIPELINE_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_MULTIVIEW,
 		PIPELINE_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_AND_VOXEL_GI_MULTIVIEW,
+		PIPELINE_VERSION_RTXDI_SURFACE,
 		PIPELINE_VERSION_COLOR_PASS,
 		PIPELINE_VERSION_MAX
 	};
@@ -252,6 +254,17 @@ public:
 		bool uses_particle_trails = false;
 		bool uses_normal_map = false;
 		bool uses_bent_normal_map = false;
+		bool uses_emission = false;
+		bool uses_rim = false;
+		bool uses_clearcoat = false;
+		bool uses_anisotropy = false;
+		bool uses_backlight = false;
+		bool uses_custom_radiance = false;
+		bool uses_custom_irradiance = false;
+		bool uses_custom_light = false;
+		bool uses_light_vertex = false;
+		bool uses_unsupported_shading_mode = false;
+		bool rtxdi_surface_unsupported = false;
 		bool wireframe = false;
 
 		bool unshaded = false;
@@ -380,6 +393,8 @@ public:
 		uint32_t index = 0;
 		RID next_pass;
 		uint8_t priority;
+		bool rtxdi_standard_material = false;
+		bool rtxdi_diagnostic_reported = false;
 		virtual void set_render_priority(int p_priority);
 		virtual void set_next_pass(RID p_pass);
 		virtual bool update_parameters(const HashMap<StringName, Variant> &p_parameters, bool p_uniform_dirty, bool p_textures_dirty);

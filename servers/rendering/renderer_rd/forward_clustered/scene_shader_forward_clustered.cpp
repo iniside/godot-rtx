@@ -71,6 +71,17 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 	writes_tangent = false;
 	uses_normal_map = false;
 	uses_bent_normal_map = false;
+	uses_emission = false;
+	uses_rim = false;
+	uses_clearcoat = false;
+	uses_anisotropy = false;
+	uses_backlight = false;
+	uses_custom_radiance = false;
+	uses_custom_irradiance = false;
+	uses_custom_light = false;
+	uses_light_vertex = false;
+	uses_unsupported_shading_mode = false;
+	rtxdi_surface_unsupported = false;
 	wireframe = false;
 
 	unshaded = false;
@@ -121,6 +132,14 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 	actions.render_mode_flags["wireframe"] = &wireframe;
 	actions.render_mode_flags["particle_trails"] = &uses_particle_trails;
 	actions.render_mode_flags["world_vertex_coords"] = &uses_world_coordinates;
+	actions.render_mode_flags["diffuse_lambert_wrap"] = &uses_unsupported_shading_mode;
+	actions.render_mode_flags["diffuse_toon"] = &uses_unsupported_shading_mode;
+	actions.render_mode_flags["specular_toon"] = &uses_unsupported_shading_mode;
+	actions.render_mode_flags["specular_disabled"] = &uses_unsupported_shading_mode;
+	actions.render_mode_flags["vertex_lighting"] = &uses_unsupported_shading_mode;
+	actions.render_mode_flags["shadows_disabled"] = &uses_unsupported_shading_mode;
+	actions.render_mode_flags["ambient_light_disabled"] = &uses_unsupported_shading_mode;
+	actions.render_mode_flags["shadow_to_opacity"] = &uses_unsupported_shading_mode;
 
 	actions.usage_flag_pointers["ALPHA"] = &uses_alpha;
 	actions.usage_flag_pointers["ALPHA_SCISSOR_THRESHOLD"] = &uses_alpha_clip;
@@ -138,6 +157,14 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 	actions.usage_flag_pointers["NORMAL"] = &uses_normal;
 	actions.usage_flag_pointers["NORMAL_MAP"] = &uses_normal_map;
 	actions.usage_flag_pointers["BENT_NORMAL_MAP"] = &uses_bent_normal_map;
+	actions.usage_flag_pointers["EMISSION"] = &uses_emission;
+	actions.usage_flag_pointers["RIM"] = &uses_rim;
+	actions.usage_flag_pointers["CLEARCOAT"] = &uses_clearcoat;
+	actions.usage_flag_pointers["ANISOTROPY"] = &uses_anisotropy;
+	actions.usage_flag_pointers["BACKLIGHT"] = &uses_backlight;
+	actions.usage_flag_pointers["RADIANCE"] = &uses_custom_radiance;
+	actions.usage_flag_pointers["IRRADIANCE"] = &uses_custom_irradiance;
+	actions.usage_flag_pointers["LIGHT_VERTEX"] = &uses_light_vertex;
 
 	actions.usage_flag_pointers["POINT_SIZE"] = &uses_point_size;
 	actions.usage_flag_pointers["POINT_COORD"] = &uses_point_size;
@@ -204,10 +231,16 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 	uses_normal_texture = gen_code.uses_normal_roughness_texture;
 	uses_vertex_time = gen_code.uses_vertex_time;
 	uses_fragment_time = gen_code.uses_fragment_time;
+	uses_custom_light = gen_code.code.has("light");
 	uses_normal |= uses_normal_map;
 	uses_normal |= uses_bent_normal_map;
 	uses_tangent |= uses_normal_map;
 	uses_tangent |= uses_bent_normal_map;
+	uses_tangent |= uses_anisotropy;
+	rtxdi_surface_unsupported = uses_custom_light || uses_light_vertex || uses_unsupported_shading_mode || uses_rim || uses_clearcoat || uses_anisotropy || uses_backlight || uses_sss || uses_transmittance || uses_custom_radiance || uses_custom_irradiance || unshaded || uses_screen_texture || uses_depth_texture || uses_normal_texture || uses_alpha_antialiasing || uses_world_coordinates || uses_vertex || uses_position || writes_modelview_or_projection;
+	if (rtxdi_surface_unsupported) {
+		WARN_PRINT(vformat("Forward Clustered RTXDI surface: shader %s uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.", path.is_empty() ? String("<inline>") : path));
+	}
 
 	stencil_enabled = stencil_referencei != -1;
 	stencil_flags = stencil_readi | stencil_writei | stencil_write_depth_faili;
@@ -404,6 +437,8 @@ uint16_t SceneShaderForwardClustered::ShaderData::_get_shader_version(PipelineVe
 			return ShaderVersion::SHADER_VERSION_DEPTH_PASS_WITH_MATERIAL + ubershader_base;
 		case PIPELINE_VERSION_DEPTH_PASS_WITH_SDF:
 			return ShaderVersion::SHADER_VERSION_DEPTH_PASS_WITH_SDF + ubershader_base;
+		case PIPELINE_VERSION_RTXDI_SURFACE:
+			return ShaderVersion::SHADER_VERSION_RTXDI_SURFACE + ubershader_base;
 		case PIPELINE_VERSION_COLOR_PASS: {
 			int shader_flags = 0;
 
@@ -458,6 +493,7 @@ void SceneShaderForwardClustered::ShaderData::_create_pipeline(PipelineKey p_pip
 	RD::PipelineColorBlendState blend_state_color_opaque = RD::PipelineColorBlendState::create_disabled(3);
 	RD::PipelineColorBlendState blend_state_depth_normal_roughness = RD::PipelineColorBlendState::create_disabled(1);
 	RD::PipelineColorBlendState blend_state_depth_normal_roughness_giprobe = RD::PipelineColorBlendState::create_disabled(2);
+	RD::PipelineColorBlendState blend_state_rtxdi_surface = RD::PipelineColorBlendState::create_disabled(6);
 
 	RD::PipelineDepthStencilState depth_stencil_state;
 
@@ -567,6 +603,9 @@ void SceneShaderForwardClustered::ShaderData::_create_pipeline(PipelineKey p_pip
 		}
 	} else {
 		switch (p_pipeline_key.version) {
+			case PIPELINE_VERSION_RTXDI_SURFACE:
+				blend_state = blend_state_rtxdi_surface;
+				break;
 			case PIPELINE_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS:
 			case PIPELINE_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_MULTIVIEW:
 				blend_state = blend_state_depth_normal_roughness;
@@ -705,6 +744,7 @@ void SceneShaderForwardClustered::MaterialData::set_next_pass(RID p_pass) {
 }
 
 bool SceneShaderForwardClustered::MaterialData::update_parameters(const HashMap<StringName, Variant> &p_parameters, bool p_uniform_dirty, bool p_textures_dirty) {
+	rtxdi_standard_material = p_parameters.has("albedo");
 	if (shader_data->version.is_valid()) {
 		RID shader_rid = SceneShaderForwardClustered::singleton->shader.version_get_shader(shader_data->version, 0);
 
@@ -767,6 +807,7 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_ADVANCED_MULTIVIEW, base_define + "\n#define USE_MULTIVIEW\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_NORMAL_ROUGHNESS\n#define MODE_RENDER_VOXEL_GI\n", false)); // SHADER_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_AND_VOXEL_GI_MULTIVIEW
 			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_ADVANCED, base_define + "\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_MATERIAL\n", false)); // SHADER_VERSION_DEPTH_PASS_WITH_MATERIAL
 			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_ADVANCED, base_define + "\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_SDF\n", false)); // SHADER_VERSION_DEPTH_PASS_WITH_SDF
+			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_BASE, base_define + "\n#define MODE_RTXDI_SURFACE\n#define MOTION_VECTORS\n#define NORMAL_USED\n", true)); // SHADER_VERSION_RTXDI_SURFACE
 		}
 
 		Vector<String> color_pass_flags = {
@@ -1015,7 +1056,7 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 		actions.base_texture_binding_index = 1;
 		actions.texture_layout_set = RenderForwardClustered::MATERIAL_UNIFORM_SET;
 		actions.base_uniform_string = "material.";
-		actions.base_varying_index = 15;
+		actions.base_varying_index = 16;
 
 		actions.default_filter = ShaderLanguage::FILTER_LINEAR_MIPMAP;
 		actions.default_repeat = ShaderLanguage::REPEAT_ENABLE;

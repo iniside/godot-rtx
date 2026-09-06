@@ -115,6 +115,9 @@ layout(location = 6) out vec3 binormal_interp;
 #ifdef MOTION_VECTORS
 layout(location = 7) out vec4 screen_position;
 layout(location = 8) out vec4 prev_screen_position;
+#ifdef MODE_RTXDI_SURFACE
+layout(location = 15) out vec2 linear_depth_interp;
+#endif
 #endif
 
 #ifdef MATERIAL_UNIFORMS_USED
@@ -157,7 +160,7 @@ ivec2 multiview_uv(ivec2 uv) {
 }
 #endif //USE_MULTIVIEW
 
-#if !defined(MODE_RENDER_DEPTH) && !defined(MODE_UNSHADED) && defined(USE_VERTEX_LIGHTING)
+#if !defined(MODE_RENDER_DEPTH) && !defined(MODE_UNSHADED) && !defined(MODE_RTXDI_SURFACE) && defined(USE_VERTEX_LIGHTING)
 layout(location = 12) out vec4 diffuse_light_interp;
 layout(location = 13) out vec4 specular_light_interp;
 
@@ -233,7 +236,7 @@ void vertex_shader(vec3 vertex_input,
 #ifdef USE_DOUBLE_PRECISION
 		in vec3 model_precision,
 #endif
-		out vec4 screen_pos) {
+		out vec4 screen_pos, out float linear_depth) {
 	vec4 instance_custom = vec4(0.0);
 #if defined(COLOR_USED)
 	color_interp = color_attrib;
@@ -533,9 +536,10 @@ void vertex_shader(vec3 vertex_input,
 
 #ifdef MOTION_VECTORS
 	screen_pos = gl_Position;
+	linear_depth = -vertex_interp.z;
 #endif
 
-#if !defined(MODE_RENDER_DEPTH) && !defined(MODE_UNSHADED) && defined(USE_VERTEX_LIGHTING)
+#if !defined(MODE_RENDER_DEPTH) && !defined(MODE_UNSHADED) && !defined(MODE_RTXDI_SURFACE) && defined(USE_VERTEX_LIGHTING)
 	diffuse_light_interp = vec4(0.0);
 	specular_light_interp = vec4(0.0);
 
@@ -777,6 +781,7 @@ void main() {
 
 #ifdef MOTION_VECTORS
 	// Previous vertex.
+	float prev_linear_depth;
 	vec3 prev_vertex;
 #ifdef NORMAL_USED
 	vec3 prev_normal;
@@ -814,11 +819,15 @@ void main() {
 #ifdef USE_DOUBLE_PRECISION
 			instances.data[instance_index].prev_model_precision.xyz,
 #endif
-			prev_screen_position);
+			prev_screen_position, prev_linear_depth);
+#ifdef MODE_RTXDI_SURFACE
+	linear_depth_interp.y = prev_linear_depth;
+#endif
 #else
 	// Unused output.
 	vec4 screen_position;
 #endif
+	float linear_depth;
 
 	vec3 vertex;
 #ifdef NORMAL_USED
@@ -859,7 +868,10 @@ void main() {
 			instances.data[instance_index].model_precision.xyz,
 #endif
 
-			screen_position);
+			screen_position, linear_depth);
+#ifdef MODE_RTXDI_SURFACE
+	linear_depth_interp.x = linear_depth;
+#endif
 }
 
 #[fragment]
@@ -910,6 +922,9 @@ layout(location = 6) in vec3 binormal_interp;
 #ifdef MOTION_VECTORS
 layout(location = 7) in vec4 screen_position;
 layout(location = 8) in vec4 prev_screen_position;
+#ifdef MODE_RTXDI_SURFACE
+layout(location = 15) in vec2 linear_depth_interp;
+#endif
 #endif
 
 #ifdef MODE_DUAL_PARABOLOID
@@ -1000,7 +1015,7 @@ ivec2 multiview_uv(ivec2 uv) {
 	return uv;
 }
 #endif // !USE_MULTIVIEW
-#if !defined(MODE_RENDER_DEPTH) && !defined(MODE_UNSHADED) && defined(USE_VERTEX_LIGHTING)
+#if !defined(MODE_RENDER_DEPTH) && !defined(MODE_UNSHADED) && !defined(MODE_RTXDI_SURFACE) && defined(USE_VERTEX_LIGHTING)
 layout(location = 12) in vec4 diffuse_light_interp;
 layout(location = 13) in vec4 specular_light_interp;
 #endif
@@ -1037,7 +1052,14 @@ layout(set = MATERIAL_UNIFORM_SET, binding = 0, std140) uniform MaterialUniforms
 
 #GLOBALS
 
-#ifdef MODE_RENDER_DEPTH
+#ifdef MODE_RTXDI_SURFACE
+layout(location = 0) out vec4 rtxdi_base_output;
+layout(location = 1) out vec4 rtxdi_shading_output;
+layout(location = 2) out vec4 rtxdi_emission_output;
+layout(location = 3) out vec4 rtxdi_motion_output;
+layout(location = 4) out uint rtxdi_geometry_output;
+layout(location = 5) out uvec2 rtxdi_classification_output;
+#elif defined(MODE_RENDER_DEPTH)
 
 #ifdef MODE_RENDER_MATERIAL
 
@@ -1070,13 +1092,13 @@ layout(location = 0) out vec4 frag_color;
 
 #endif // RENDER DEPTH
 
-#ifdef MOTION_VECTORS
+#if defined(MOTION_VECTORS) && !defined(MODE_RTXDI_SURFACE)
 layout(location = 2) out vec2 motion_vector;
 #endif
 
 #include "../scene_forward_aa_inc.glsl"
 
-#if !defined(MODE_RENDER_DEPTH) && !defined(MODE_UNSHADED)
+#if !defined(MODE_RENDER_DEPTH) && !defined(MODE_UNSHADED) && !defined(MODE_RTXDI_SURFACE)
 
 // Default to SPECULAR_SCHLICK_GGX.
 #if !defined(SPECULAR_DISABLED) && !defined(SPECULAR_SCHLICK_GGX) && !defined(SPECULAR_TOON)
@@ -1452,7 +1474,7 @@ void fragment_shader(in SceneData scene_data) {
 	/////////////////////// FOG //////////////////////
 #ifndef MODE_RENDER_DEPTH
 
-#ifndef FOG_DISABLED
+#if !defined(FOG_DISABLED) && !defined(MODE_RTXDI_SURFACE)
 #ifndef CUSTOM_FOG_USED
 	// fog must be processed as early as possible and then packed.
 	// to maximize VGPR usage
@@ -1651,7 +1673,7 @@ void fragment_shader(in SceneData scene_data) {
 	emission *= scene_data.emissive_exposure_normalization;
 #endif
 
-#if !defined(MODE_RENDER_DEPTH) && !defined(MODE_UNSHADED)
+#if !defined(MODE_RENDER_DEPTH) && !defined(MODE_UNSHADED) && !defined(MODE_RTXDI_SURFACE)
 
 #ifndef AMBIENT_LIGHT_DISABLED
 // Use bent normal for indirect lighting where possible
@@ -1765,7 +1787,7 @@ void fragment_shader(in SceneData scene_data) {
 	//radiance
 
 /// GI ///
-#if !defined(MODE_RENDER_DEPTH) && !defined(MODE_UNSHADED)
+#if !defined(MODE_RENDER_DEPTH) && !defined(MODE_UNSHADED) && !defined(MODE_RTXDI_SURFACE)
 #ifndef AMBIENT_LIGHT_DISABLED
 #ifdef USE_LIGHTMAP
 
@@ -2251,7 +2273,7 @@ void fragment_shader(in SceneData scene_data) {
 #endif //GI !defined(MODE_RENDER_DEPTH) && !defined(MODE_UNSHADED)
 
 // LIGHTING
-#if !defined(MODE_RENDER_DEPTH) && !defined(MODE_UNSHADED)
+#if !defined(MODE_RENDER_DEPTH) && !defined(MODE_UNSHADED) && !defined(MODE_RTXDI_SURFACE)
 
 #ifdef USE_VERTEX_LIGHTING
 	diffuse_light += diffuse_light_interp.rgb;
@@ -2870,7 +2892,19 @@ void fragment_shader(in SceneData scene_data) {
 #endif // !MODE_RENDER_DEPTH
 #endif // USE_SHADOW_TO_OPACITY
 
-#ifdef MODE_RENDER_DEPTH
+#ifdef MODE_RTXDI_SURFACE
+	vec2 position_clip = (screen_position.xy / screen_position.w) - scene_data.taa_jitter;
+	vec2 prev_position_clip = (prev_screen_position.xy / prev_screen_position.w) - scene_data_block.prev_data.taa_jitter;
+	vec3 world_normal = normalize(mat3(inv_view_matrix) * normal);
+	vec3 world_geo_normal = normalize(mat3(inv_view_matrix) * geo_normal);
+	bool unsupported = bool(instances.data[instance_index].rtxdi_material_flags & 2u);
+	rtxdi_base_output = unsupported ? vec4(1.0, 0.0, 1.0, 1.0) : vec4(albedo, alpha);
+	rtxdi_shading_output = vec4(vec3_to_oct(world_normal), roughness, specular);
+	rtxdi_emission_output = unsupported ? vec4(8.0, 0.0, 8.0, metallic) : vec4(emission, metallic);
+	rtxdi_motion_output = vec4((prev_position_clip - position_clip) * 0.5 * scene_data.viewport_size, linear_depth_interp.y - linear_depth_interp.x, ao);
+	rtxdi_geometry_output = packUnorm2x16(vec3_to_oct(world_geo_normal));
+	rtxdi_classification_output = uvec2(instances.data[instance_index].rtxdi_material_flags, instances.data[instance_index].layer_mask);
+#elif defined(MODE_RENDER_DEPTH)
 
 #ifdef MODE_RENDER_SDF
 
