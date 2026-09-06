@@ -26,23 +26,23 @@ by targeted reads of this checkout:
   The Vulkan backend records
   `vkCmdBuildClusterAccelerationStructureIndirectNV` in
   [rendering_device_driver_vulkan.cpp](../../drivers/vulkan/rendering_device_driver_vulkan.cpp).
-- The path-tracing renderer in
-  [render_forward_clustered_pt.cpp](../../servers/rendering/renderer_rd/forward_clustered/render_forward_clustered_pt.cpp)
-  replaces the opaque pass and renders at internal pre-upscale resolution.
-- The ray-generation shader has a `USE_SER` path using
-  `hitObjectTraceRayEXT`, `reorderThreadEXT`, and
-  `hitObjectExecuteShaderEXT` in
-  [scene_raytracing_raygen.glsl](../../servers/rendering/renderer_rd/shaders/raytracing/scene_raytracing_raygen.glsl).
-  Ordinary `vkCmdTraceRaysKHR` submission does not establish that SER is absent.
-- DLSS Ray Reconstruction guide production and consumption are anchored in
-  [render_raytracing.cpp](../../servers/rendering/renderer_rd/forward_clustered/render_raytracing.cpp)
-  and [dlss.cpp](../../servers/rendering/renderer_rd/effects/dlss.cpp).
 - D3D12 ray-tracing and CLAS methods remain unsupported stubs in
   [rendering_device_driver_d3d12.cpp](../../drivers/d3d12/rendering_device_driver_d3d12.cpp).
 
 Method limits: repository-root `compile_commands.json` was absent, so clangd
 navigation was unavailable. Git history identified the listed renderer work as
 fork-local.
+
+Replacement evidence, 2026-09-06 at `ee7ae4e52888eba32b1e2b62c93cb64bab4aebaa`:
+the selected PT subclass and its output/guide consumers are removed.
+[RenderForwardClustered](../../servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.cpp)
+owns the retained RT geometry/material service. Forward+ selects it after
+[Vulkan RT preflight](../../servers/rendering/renderer_rd/renderer_compositor_rd.cpp).
+[RenderingServerDefault](../../servers/rendering/rendering_server_default.cpp)
+propagates initialization failure and distinguishes partial teardown. Retained
+geometry-cache settings now use `rendering/raytracing/*`. Source and editor
+compilation establish these changes; fresh review is pending and real-device
+behavior is not yet verified. A root compile database is now available.
 
 Bounded inventory evidence: on 2026-09-06 at revision
 `6ec2368d7e705103397177b73aa3585d08df2c15`, case-insensitive
@@ -55,7 +55,9 @@ bound, not proof that the features are absent elsewhere or under other names.
 
 Active work is tracked in the [RTXDI implementation status](../research/2026-09-06-1904-rtxdi-implementation-status.md).
 Approval/plan commit: `e02ea8c87d`. Dependency integration landed in `89b35e1d1c`
-with shader/host compile evidence and a fresh hostile review PASS; step 2 is active.
+with shader/host compile evidence and a fresh hostile review PASS. RT ownership
+and API replacement landed in `ee7ae4e528`, with editor compile evidence and fresh
+review pending; step 3 is active.
 No RTXDI frame dispatch or visual proof exists yet.
 
 The [approved RTXDI replacement plan](../plans/2026-09-06-1854-rtxdi-renderer-plan.md)

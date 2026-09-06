@@ -8,8 +8,10 @@ Plan: [RTXDI replacement](../plans/2026-09-06-1854-rtxdi-renderer-plan.md).
 ## Current stage
 
 Step 1 landed in `89b35e1d1c287bc3e68ac289c2aede7363f08dc3`; its fresh hostile
-review returned PASS on 2026-09-06. Step 2 is in progress in a separate core-implementer context.
-Steps 2–7 have not landed. No RTXDI frame dispatch or rendered image is claimed.
+review returned PASS on 2026-09-06. Step 2 landed in
+`ee7ae4e52888eba32b1e2b62c93cb64bab4aebaa`; its fresh review is in progress.
+Step 3 implementation is active. Steps 3–7 have not landed. No RTXDI frame
+dispatch or rendered image is claimed.
 
 Step 1 evidence: pinned importer completed 159 NRD SPIR-V tasks; a temporary
 native GLSL reservoir/random-sampler closure passed glslangValidator Vulkan 1.2.
@@ -22,6 +24,13 @@ The independent review verified pinned upstream files and the recorded RTXDI
 patch, all 159 embedded SPIR-V variants and their binding offsets, and all 15
 host objects in the linked archive. It found no defects within Step 1's scope.
 Full DI shaders, template and real-device dispatch remain later-stage gates.
+
+Step 2 evidence (2026-09-06): the same Windows Vulkan editor build command
+completed and linked both binaries after initialization, ownership and API
+replacement. Six changed XML files parsed successfully; staged diff check passed.
+This does not prove startup failure behavior or GPU rendering. The excluded owner
+file `rt_test_scenes/capture.gd:28,30,31` still references removed PT properties;
+it was not migrated. Step 7 uses a new owned demonstration project.
 
 Intermediate builds/rendering may fail by explicit owner authorization. Final
 completion requires the plan's real-device rendering gate. Automated tests are
