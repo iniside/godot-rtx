@@ -41,7 +41,8 @@ owns the retained RT geometry/material service. Forward+ selects it after
 [RenderingServerDefault](../../servers/rendering/rendering_server_default.cpp)
 propagates initialization failure and distinguishes partial teardown. Retained
 geometry-cache settings now use `rendering/raytracing/*`. Source and editor
-compilation establish these changes; fresh review is pending and real-device
+compilation establish these changes; review found missing bindless descriptor
+capability preflight, fixed in `de61204e58` with fresh round 2 review PASS. Real-device
 behavior is not yet verified. A root compile database is now available.
 
 Bounded inventory evidence: on 2026-09-06 at revision
@@ -57,7 +58,10 @@ Active work is tracked in the [RTXDI implementation status](../research/2026-09-
 Approval/plan commit: `e02ea8c87d`. Dependency integration landed in `89b35e1d1c`
 with shader/host compile evidence and a fresh hostile review PASS. RT ownership
 and API replacement landed in `ee7ae4e528`, with editor compile evidence and fresh
-review pending; step 3 is active.
+review PASS after descriptor-indexing fix `de61204e58`. Scene/light registry
+replacement landed in `afbe198fef`, with scoped clangd/diff checks and fresh review
+pending; step 4 surface/history replacement is active. Step 3 has no full build
+or shader/GPU validation yet.
 No RTXDI frame dispatch or visual proof exists yet.
 
 The [approved RTXDI replacement plan](../plans/2026-09-06-1854-rtxdi-renderer-plan.md)

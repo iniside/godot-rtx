@@ -9,9 +9,15 @@ Plan: [RTXDI replacement](../plans/2026-09-06-1854-rtxdi-renderer-plan.md).
 
 Step 1 landed in `89b35e1d1c287bc3e68ac289c2aede7363f08dc3`; its fresh hostile
 review returned PASS on 2026-09-06. Step 2 landed in
-`ee7ae4e52888eba32b1e2b62c93cb64bab4aebaa`; its fresh review is in progress.
-Step 3 implementation is active. Steps 3–7 have not landed. No RTXDI frame
-dispatch or rendered image is claimed.
+`ee7ae4e52888eba32b1e2b62c93cb64bab4aebaa`; its first fresh review returned
+REJECT for missing bindless descriptor-indexing preflight. Scoped fix
+`de61204e58d62a8aee25fa3a4fee5a836a7fc0ce` adds an internal RD feature backed by
+the four Vulkan descriptor-indexing bits and a compositor preflight check.
+Fresh round 2 review returned PASS on 2026-09-06. The fix has a clean staged diff check but no
+separate compile yet; Step 3 owns concurrent renderer edits.
+Step 3 landed in `afbe198fefaa10ab4679cffa15e258106d4efdfb`; fresh review is active.
+Step 4 surface/history implementation is active. Steps 4–7 have not landed.
+No RTXDI frame dispatch or rendered image is claimed.
 
 Step 1 evidence: pinned importer completed 159 NRD SPIR-V tasks; a temporary
 native GLSL reservoir/random-sampler closure passed glslangValidator Vulkan 1.2.
@@ -31,6 +37,15 @@ replacement. Six changed XML files parsed successfully; staged diff check passed
 This does not prove startup failure behavior or GPU rendering. The excluded owner
 file `rt_test_scenes/capture.gd:28,30,31` still references removed PT properties;
 it was not migrated. Step 7 uses a new owned demonstration project.
+
+Step 3 evidence (2026-09-06): scoped staged diff check passed, and clangd checks
+of the changed translation units reported no compiler diagnostics. This is not
+a full compile/link or shader validation. The commit replaces camera-bounded RT
+population and the 64-light packing with resident scene collection, per-viewport
+current/previous light snapshots and invalidating remaps. Shared sampling is in
+`shaders/raytracing/rtxdi_light_sampling_inc.glsl`. It restores bindless finalization
+after geometry/material/light texture registration. Real-device correctness of
+stable identities, PDFs, deformation and resource lifetime remains unverified.
 
 Intermediate builds/rendering may fail by explicit owner authorization. Final
 completion requires the plan's real-device rendering gate. Automated tests are
