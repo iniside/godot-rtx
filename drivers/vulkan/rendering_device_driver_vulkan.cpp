@@ -7950,6 +7950,11 @@ bool RenderingDeviceDriverVulkan::has_feature(Features p_feature) {
 			return acceleration_structure_capabilities.acceleration_structure_support && ray_query_support;
 		case SUPPORTS_RAYTRACING_PIPELINE:
 			return acceleration_structure_capabilities.acceleration_structure_support && raytracing_capabilities.raytracing_pipeline_support;
+		case SUPPORTS_BINDLESS_TEXTURE_ARRAYS:
+			return descriptor_indexing_capabilities.shader_sampled_image_array_non_uniform_indexing &&
+					descriptor_indexing_capabilities.descriptor_binding_partially_bound &&
+					descriptor_indexing_capabilities.descriptor_binding_variable_descriptor_count &&
+					descriptor_indexing_capabilities.runtime_descriptor_array;
 		case SUPPORTS_HDR_OUTPUT:
 #if defined(WINDOWS_ENABLED)
 			// When using a Vulkan swapchain on Windows, some configurations
