@@ -1,5 +1,18 @@
 # Research And Navigation
 
+## Project Knowledge First - RULE
+
+Before project research, read `docs/reference/project-state.md` and the links
+relevant to the question. Start from its source anchors and reuse unchanged
+evidence. When freshness matters, inspect the scoped diff for affected paths,
+including working changes since the entry's recorded revision. Reopen only
+missing, stale, or contradictory gaps; a new session or HEAD alone does not
+justify another whole-repository scan.
+
+If the recorded baseline is unavailable, fall back to targeted source reads.
+Current source is authoritative for implementation facts, while recorded owner
+direction is authoritative for product decisions.
+
 ## Research / Search Mode - RULE
 
 Before research, read `docs/reference/research-mode.md` and, only when

@@ -10,6 +10,8 @@ Reuse already-read authorities while they remain unchanged.
 - `shared/planning-dispatch.md`: planning, implementation routing, and review.
 - `shared/godot-rules.md`: Godot C++/SCons, APIs, assets, rendering, and builds.
 - `adapters/<runtime>.md`: runtime tools, models, effort, trailers, and artifacts.
+- `docs/reference/project-state.md`: maintained project facts, source anchors,
+  decision links, evidence limits, and known gaps.
 - `docs/reference/*.md`: full action-specific contracts linked by the router.
 
 Shared authorities define behavior. Adapters translate runtime mechanics and

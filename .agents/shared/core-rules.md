@@ -20,6 +20,15 @@ Use UTC and include `HHMM` so listings sort chronologically. Do not put these
 documents in the repository root or on a scratch drive. `doc/classes/` holds
 upstream Godot class-reference XML; it is not a home for prose.
 
+## Project Knowledge Maintenance - RULE
+
+After meaningful research, implementation, or an owner decision, update the
+affected canonical entry linked from `docs/reference/project-state.md` before
+handoff. Record the date, revision, evidence source, and actual verification
+limits for only the facts checked. Preserve separate evidence stamps when other
+entries were not reverified. Replace stale facts instead of appending session
+logs, and make no update when the work produced no new durable information.
+
 Work on the current checked-out branch. During plan mode edit only the active
 adapter's harness plan artifact. After approval and before implementation, copy
 the plan to `docs/plans/`, make links repository-relative, and commit the plan

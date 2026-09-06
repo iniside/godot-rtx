@@ -1,6 +1,8 @@
 # godot-rtx Agent Core
 
 Read this file and the active runtime adapter in `.agents/adapters/` first.
+Then read `docs/reference/project-state.md` for maintained project facts and
+direction before starting repository research.
 Before each concrete action, load every authority named by its matching row.
 Classify only the next action; if unclear, keep it read-only and use the research
 row. Reuse unchanged authorities already read. `.agents/README.md` maps the files.
