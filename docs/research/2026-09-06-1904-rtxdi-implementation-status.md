@@ -36,9 +36,10 @@ The owner authorized the remaining signature fix with "to popraw" on 2026-09-07
 local time (2026-09-06 UTC). Commit
 `826dc09a5a259b0f6478c364c126e911df2f79e5` adds the two camera RIDs to the GLES3
 declaration/definition and dummy override. Both affected translation units passed
-MSVC `/Zs` syntax compilation using root compile-database flags. A fresh bounded
-review of this owner-requested correction is pending; this is not full build or
-runtime validation.
+MSVC `/Zs` syntax compilation using root compile-database flags. Fresh bounded
+review of this owner-requested correction returned PASS on 2026-09-06 UTC at
+`6e539007f842b9cfd2ce845e8a99636af176e7f8`. The last reported Step 4 defect is
+closed; this is not full build or runtime validation.
 Step 5 is paused, uncommitted and unstaged. Steps 5–7 have not landed.
 No RTXDI frame dispatch or rendered image is claimed.
 
@@ -103,7 +104,7 @@ The last confirmed defect was the missing two camera RID parameters in
 `servers/rendering/renderer_scene_render.h:325`. Non-RT gameplay remains excluded;
 these implementations still have to satisfy the shared C++ interface. The owner
 subsequently authorized correction `826dc09a5a`; its three-line code change and
-MSVC checks close the signature mismatch, pending independent review.
+MSVC checks close the signature mismatch, confirmed by fresh independent review.
 
 Attribution correction for `826dc09a5a`: the actual executing role/model was
 `core-implementer (gpt-5.6-sol)`, selected under the adapter read at dispatch time.
