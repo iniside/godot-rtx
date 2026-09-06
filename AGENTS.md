@@ -7,6 +7,8 @@ Before each concrete action, load every authority named by its matching row.
 Classify only the next action; if unclear, keep it read-only and use the research
 row. Reuse unchanged authorities already read. `.agents/README.md` maps the files.
 Shared behavior rules win; adapters translate runtime mechanics only.
+Model selection lives in `.agents/shared/planning-dispatch.md`; roles and
+plan lanes do not pin models.
 
 ## Always
 

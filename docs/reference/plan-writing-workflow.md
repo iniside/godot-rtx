@@ -90,7 +90,7 @@ needs real-device validation; a headless proxy does not replace it.
 
 For an above-threshold implementation plan, use the adapter's fresh named
 `hostile-reviewer`. Give it the original request, plan, relevant source anchors,
-Godot failure classes, and the adapter's default/approved effort. It returns a
+Godot failure classes, and model/effort selected by shared Model Selection. It returns a
 punch list, not a rewrite.
 
 The reviewer rejects only an evidence-backed scope violation, logical hole,

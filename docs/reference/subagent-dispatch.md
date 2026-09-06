@@ -9,10 +9,10 @@ tools, model slugs, effort, and trailers live in `.agents/adapters/`.
 ## Invariants
 
 1. **Select the tool/model explicitly when the live runtime exposes that
-   choice.** Use the active adapter's mapping and only values supported by the
-   current tool. Never invent a field or model.
-2. **Set effort through the runtime.** Use the adapter's approved/default
-   setting without repeated permission. Prompt wording is not a substitute for
+   choice.** Apply shared Model Selection and the active adapter's identifier
+   mapping. Never invent a field or model.
+2. **Set effort through the runtime.** Use shared Model Selection or the
+   owner's explicit choice without repeated permission. Prompt wording is not a substitute for
    an exposed effort parameter.
 3. **Hand over navigation.** Every code-touching prompt includes the chain from
    [cpp-navigation.md](cpp-navigation.md) and requires the agent to report the

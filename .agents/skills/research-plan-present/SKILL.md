@@ -19,7 +19,7 @@ instead of duplicating their policy here:
 3. Present the reviewed plan for approval before implementation. After
    approval, follow `docs/reference/implementation-mode.md` and
    `docs/reference/subagent-dispatch.md`; do not ask again for approved lanes
-   or default effort.
+   or model/effort selected by shared Model Selection.
 
 Include tests only when the owner explicitly requests them. Keep the harness
 plan artifact until approval, then copy the approved plan to the repository

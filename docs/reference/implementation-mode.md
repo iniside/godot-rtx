@@ -26,9 +26,9 @@ capabilities to tools and models actually available in the session.
   covers has built. Visual/GPU work is inspected on the real path first.
 - `[review]`: a fresh read-only reviewer context.
 
-Tags approved with a plan remain authorized. Use the adapter's approved/default
-effort and do not ask again unless scope or constraints change. Do not silently
-change lanes mid-rollout.
+Tags approved with a plan remain authorized. Select model and effort using
+shared Model Selection at dispatch time; a lane does not freeze either choice.
+Do not ask again unless scope or owner constraints change.
 
 ## Dispatch Threshold
 

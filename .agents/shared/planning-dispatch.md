@@ -1,5 +1,24 @@
 # Planning And Dispatch
 
+## Model Selection
+
+Select model and effort for the whole task by difficulty, uncertainty, and
+failure impact, independently of the main agent's model. Use the standard
+model by default; use a smaller model for simple, fully specified work, and
+the strongest model for architecture, difficult diagnosis, cross-subsystem
+behavior, concurrency/GPU lifetime, or complex rendering algorithms. Apply the
+same judgment to research and review; neither is automatically cheap.
+
+Roles define responsibilities, not fixed models. Adapters map these capability
+tiers to available runtime identifiers. Set effort to medium for simple work
+and high for ordinary or complex work unless the task or owner warrants another
+supported level. Honor explicit owner model/effort choices.
+
+Plan lanes authorize responsibilities, not frozen model choices. Select again
+when dispatching; complexity discovered during work permits escalation without
+renewed approval or a scope change. Do not bake model defaults into plans or
+role manifests. Record the selected model and a short reason in the handoff.
+
 ## Plan Writing Workflow - MANDATORY
 
 Before writing or reviewing a plan, read and follow
@@ -20,7 +39,7 @@ Before implementation or delegation, read
 `docs/reference/implementation-mode.md` and
 `docs/reference/subagent-dispatch.md`. Choose the lane for the whole plan step
 or named fix; never divide a feature to fit the inline threshold. Use the active
-adapter's explicit tool/model and approved/default effort. Existing authorization
+adapter's tools and select model/effort by Model Selection above. Existing authorization
 covers the selected lane; do not ask again unless scope or constraints change.
 
 Commit each completed above-threshold task before review unless the owner
@@ -76,7 +95,7 @@ and freeze the new target SHA before round 2. Round 2 reviews the fix commit(s),
 exact task history, and task-start-to-target cumulative diff; there is no round
 3. After round 2, stop and report every remaining issue with its recommended fix.
 
-Use the active adapter's model and effort. Changes to tests, fixtures, CI, or
+Select review model and effort by Model Selection above. Changes to tests, fixtures, CI, or
 other executable proof also require the named `proof-auditor`; policy-document
 edits alone do not.
 

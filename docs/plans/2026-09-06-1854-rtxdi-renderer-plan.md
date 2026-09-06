@@ -306,7 +306,8 @@ overridden by the owner's explicit scope.
 ## Dispatch, commits and approval
 
 Step 1 → 2 → 3 → 4 → 5 → 6 → 7. Each whole step uses a separate
-`core-implementer` context (`gpt-5.6-sol`, high) and scoped commits on the current
+`core-implementer` context with model/effort selected at dispatch by shared
+Model Selection, and scoped commits on the current
 branch. Fresh hostile review examines the exact commit and cumulative task diff.
 Review checks an intermediate step against its assigned contract, not whether
 the unfinished renderer runs. No compatibility scaffolding is added to make an

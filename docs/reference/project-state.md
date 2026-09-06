@@ -4,6 +4,15 @@ Read this compact index before project research. Follow the linked source or
 canonical decision document when detail matters; do not treat this page as an
 implementation plan or runtime proof.
 
+## Agent Workflow
+
+Owner decision, 2026-09-07, baseline `e03dca8e0a`: select delegated models by
+whole-task difficulty and uncertainty, with Sol as the Codex default, Luna for
+simple work, and Astra for complex work. The canonical policy is
+[Model Selection](../../.agents/shared/planning-dispatch.md#model-selection).
+Roles and plans do not pin models. Verified by policy/config inspection only;
+already-loaded role definitions may retain old pins, handled by the Codex adapter.
+
 ## Owner Direction
 
 The target renderer is hybrid rasterization with ReSTIR DI and DDGI. It keeps
