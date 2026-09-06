@@ -54,8 +54,9 @@ bound, not proof that the features are absent elsewhere or under other names.
 ## Known Gaps
 
 Active work is tracked in the [RTXDI implementation status](../research/2026-09-06-1904-rtxdi-implementation-status.md).
-Approval/plan commit: `e02ea8c87d`. Dependency integration is in progress; no
-replacement-renderer build or visual proof exists yet.
+Approval/plan commit: `e02ea8c87d`. Dependency integration landed in `89b35e1d1c`
+with shader/host compile evidence and a fresh hostile review PASS; step 2 is active.
+No RTXDI frame dispatch or visual proof exists yet.
 
 The [approved RTXDI replacement plan](../plans/2026-09-06-1854-rtxdi-renderer-plan.md)
 received a fresh hostile plan-review PASS and owner approval on 2026-09-06 at

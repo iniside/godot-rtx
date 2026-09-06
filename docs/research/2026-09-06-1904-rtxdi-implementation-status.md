@@ -7,8 +7,21 @@ Plan: [RTXDI replacement](../plans/2026-09-06-1854-rtxdi-renderer-plan.md).
 
 ## Current stage
 
-Step 1 is in progress in a dedicated core-implementer context. Steps 2–7 have
-not landed. No new renderer build or rendered image is claimed.
+Step 1 landed in `89b35e1d1c287bc3e68ac289c2aede7363f08dc3`; its fresh hostile
+review returned PASS on 2026-09-06. Step 2 is in progress in a separate core-implementer context.
+Steps 2–7 have not landed. No RTXDI frame dispatch or rendered image is claimed.
+
+Step 1 evidence: pinned importer completed 159 NRD SPIR-V tasks; a temporary
+native GLSL reservoir/random-sampler closure passed glslangValidator Vulkan 1.2.
+This did not cover the later complete RAB/DI passes. SCons built 15 imported
+host translation units and linked the editor/console executables with
+`platform=windows target=editor accesskit=no d3d12=no -j16`. The disabled optional
+SDKs were missing on this machine. These are compile/link results, not GPU proof.
+
+The independent review verified pinned upstream files and the recorded RTXDI
+patch, all 159 embedded SPIR-V variants and their binding offsets, and all 15
+host objects in the linked archive. It found no defects within Step 1's scope.
+Full DI shaders, template and real-device dispatch remain later-stage gates.
 
 Intermediate builds/rendering may fail by explicit owner authorization. Final
 completion requires the plan's real-device rendering gate. Automated tests are
@@ -23,7 +36,8 @@ do not prove shader-format compatibility or correct renderer execution.
 
 SCons, Python 3.14, VS18 BuildTools CMake/Ninja and Vulkan SDK 1.4.357.0
 glslangValidator are available. No Godot process was running at inspection.
-Existing binaries are pre-task artifacts and cannot validate the replacement.
+Step 1 rebuilt the normal editor binaries, but they do not yet contain the later
+RTXDI render passes. Other existing binaries remain pre-task artifacts.
 
 ## Boundaries
 
