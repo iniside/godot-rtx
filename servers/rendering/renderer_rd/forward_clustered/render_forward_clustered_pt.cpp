@@ -508,6 +508,9 @@ bool RenderForwardClusteredPT::_setup_rt() {
 		String rt_defines;
 		rt_defines += "\n#define RT 1\n";
 		rt_defines += "\n#define MAX_ROUGHNESS_LOD " + itos(get_roughness_layers() - 1) + ".0\n";
+#ifdef REAL_T_IS_DOUBLE
+		rt_defines += "\n#define USE_DOUBLE_PRECISION \n";
+#endif
 		if (is_using_radiance_octmap_array()) {
 			rt_defines += "\n#define USE_RADIANCE_OCTMAP_ARRAY \n";
 		}

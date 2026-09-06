@@ -25,6 +25,17 @@ layout(set = 0, binding = 2, std140) uniform SceneDataBlock {
 }
 scene_data_block;
 
+mat4 rt_decode_inv_view_matrix(SceneData scene_data) {
+	mat4 inv_view = transpose(mat4(scene_data.inv_view_matrix[0],
+			scene_data.inv_view_matrix[1],
+			scene_data.inv_view_matrix[2],
+			vec4(0.0, 0.0, 0.0, 1.0)));
+#ifdef USE_DOUBLE_PRECISION
+	inv_view[3].xyz = -(inv_view[3].xyz + scene_data.inv_view_precision.xyz);
+#endif
+	return inv_view;
+}
+
 layout(set = 0, binding = 14, std430) readonly buffer GlobalShaderUniformData {
 	vec4 data[256];
 }

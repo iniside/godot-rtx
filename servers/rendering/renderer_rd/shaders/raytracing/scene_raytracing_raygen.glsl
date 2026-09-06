@@ -29,10 +29,7 @@ layout(location = 0) rayPayloadEXT PathPayload payload;
 void main() {
 	uvec2 pixel = gl_LaunchIDEXT.xy;
 
-	mat4 inv_view = transpose(mat4(scene_data_block.data.inv_view_matrix[0],
-			scene_data_block.data.inv_view_matrix[1],
-			scene_data_block.data.inv_view_matrix[2],
-			vec4(0.0, 0.0, 0.0, 1.0)));
+	mat4 inv_view = rt_decode_inv_view_matrix(scene_data_block.data);
 
 	vec4 origin = inv_view * vec4(0.0, 0.0, 0.0, 1.0);
 
@@ -637,7 +634,7 @@ float global_prev_time = 0.0;
 mat4 read_model_matrix = mat4(0.0);
 mat4 m_INV_MODEL_MATRIX = mat4(0.0);
 mat4 read_view_matrix = transpose(mat4(scene_data_block.data.view_matrix[0], scene_data_block.data.view_matrix[1], scene_data_block.data.view_matrix[2], vec4(0.0, 0.0, 0.0, 1.0)));
-mat4 inv_view_matrix = transpose(mat4(scene_data_block.data.inv_view_matrix[0], scene_data_block.data.inv_view_matrix[1], scene_data_block.data.inv_view_matrix[2], vec4(0.0, 0.0, 0.0, 1.0)));
+mat4 inv_view_matrix = rt_decode_inv_view_matrix(scene_data_block.data);
 mat4 projection_matrix = scene_data_block.data.projection_matrix;
 mat4 inv_projection_matrix = scene_data_block.data.inv_projection_matrix;
 vec2 read_viewport_size = scene_data_block.data.viewport_size;

@@ -24,10 +24,7 @@ mat4 rt_view_matrix = transpose(mat4(scene_data_block.data.view_matrix[0],
 
 read_model_matrix = mat4(gl_ObjectToWorldEXT);
 read_view_matrix = rt_view_matrix;
-inv_view_matrix = transpose(mat4(scene_data_block.data.inv_view_matrix[0],
-		scene_data_block.data.inv_view_matrix[1],
-		scene_data_block.data.inv_view_matrix[2],
-		vec4(0.0, 0.0, 0.0, 1.0)));
+inv_view_matrix = rt_decode_inv_view_matrix(scene_data_block.data);
 projection_matrix = scene_data_block.data.projection_matrix;
 inv_projection_matrix = scene_data_block.data.inv_projection_matrix;
 read_viewport_size = scene_data_block.data.viewport_size;
