@@ -74,7 +74,9 @@ compile diagnostics and fresh round 2 review PASS. Surface/history replacement
 landed in `c52c951925` with C++/ABI/structural checks. Review requires previous
 depth, camera-cut and material-provenance fixes; `4f340213e8` implements them with
 clangd checks. Round 2 rejected missing GLES3/dummy overrides for the shared camera
-RID signature; implementation stopped at the repository review limit. Step 5 DI
+RID signature. The owner authorized the remaining correction; `826dc09a5a` fixes
+the three override sites, with MSVC syntax checks passed for GLES3 and dummy and
+fresh bounded review pending. Step 5 DI
 code is preserved uncommitted, with four GLSL variants compiled but its host not
 compiled or wired. The status document records the exact fix and resume point.
 Steps 3–4 have no full renderer build or GPU
