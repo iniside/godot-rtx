@@ -64,45 +64,6 @@ struct RTLightBufferParameters {
 	uint previous_count;
 };
 
-// Light buffer SSBO (binding provided by the including shader via RT_LIGHT_BUFFER_BINDING).
-#ifndef RT_LIGHT_BUFFER_BINDING
-#define RT_LIGHT_BUFFER_BINDING 13
-#endif
-
-layout(set = 0, binding = RT_LIGHT_BUFFER_BINDING, std430) readonly buffer LightBuffer {
-	RTLightData rt_lights[];
-};
-
-#ifndef RT_LIGHT_PARAMETERS_BINDING
-#define RT_LIGHT_PARAMETERS_BINDING 14
-#endif
-#ifndef RT_CURRENT_TO_PREVIOUS_BINDING
-#define RT_CURRENT_TO_PREVIOUS_BINDING 15
-#endif
-#ifndef RT_PREVIOUS_TO_CURRENT_BINDING
-#define RT_PREVIOUS_TO_CURRENT_BINDING 16
-#endif
-
-layout(set = 0, binding = RT_LIGHT_PARAMETERS_BINDING, std140) uniform LightParameters {
-	RTLightBufferParameters rt_light_parameters;
-};
-
-layout(set = 0, binding = RT_CURRENT_TO_PREVIOUS_BINDING, std430) readonly buffer CurrentToPreviousLightMap {
-	uint rt_current_to_previous[];
-};
-
-layout(set = 0, binding = RT_PREVIOUS_TO_CURRENT_BINDING, std430) readonly buffer PreviousToCurrentLightMap {
-	uint rt_previous_to_current[];
-};
-
-int rtxdi_translate_current_to_previous(uint light_index) {
-	return light_index < rt_light_parameters.total_count ? int(rt_current_to_previous[light_index]) : -1;
-}
-
-int rtxdi_translate_previous_to_current(uint light_index) {
-	return light_index < rt_light_parameters.previous_count ? int(rt_previous_to_current[light_index]) : -1;
-}
-
 struct RTLightProposal {
 	vec3 direction;
 	float distance;
@@ -215,7 +176,7 @@ vec3 rtxdi_evaluate_emission_texture(RTLightData light, vec2 uv) {
 }
 
 RTLightProposal rtxdi_sample_emissive_triangle(RTLightData light, vec3 receiver_position, vec2 random) {
-	RTLightProposal sample = RTLightProposal(vec3(0.0), 0.0, vec3(0.0), 0.0, vec3(0.0), 0u);
+	RTLightProposal proposal = RTLightProposal(vec3(0.0), 0.0, vec3(0.0), 0.0, vec3(0.0), 0u);
 	GeometryData geometry = geometries[light.geometry_index];
 	uint i0, i1, i2;
 	rtxdi_get_triangle_indices(geometry, light.primitive_index, i0, i1, i2);
@@ -225,37 +186,49 @@ RTLightProposal rtxdi_sample_emissive_triangle(RTLightData light, vec3 receiver_
 	vec3 p2 = (object_to_world * vec4(rtxdi_fetch_position(geometry, i2), 1.0)).xyz;
 	float root = sqrt(random.x);
 	vec3 barycentrics = vec3(1.0 - root, root * (1.0 - random.y), root * random.y);
-	sample.position = p0 * barycentrics.x + p1 * barycentrics.y + p2 * barycentrics.z;
-	vec3 to_light = sample.position - receiver_position;
+	proposal.position = p0 * barycentrics.x + p1 * barycentrics.y + p2 * barycentrics.z;
+	vec3 to_light = proposal.position - receiver_position;
 	float distance_squared = dot(to_light, to_light);
-	sample.distance = sqrt(distance_squared);
-	sample.direction = to_light / max(sample.distance, 1e-10);
+	proposal.distance = sqrt(distance_squared);
+	proposal.direction = to_light / max(proposal.distance, 1e-10);
 	vec3 normal_cross = cross(p1 - p0, p2 - p0);
 	float twice_area = length(normal_cross);
-	float projected_cosine = abs(dot(normal_cross / max(twice_area, 1e-10), -sample.direction));
-	sample.solid_angle_pdf = distance_squared * 2.0 / max(twice_area * projected_cosine, 1e-10);
+	float projected_cosine = abs(dot(normal_cross / max(twice_area, 1e-10), -proposal.direction));
+	proposal.solid_angle_pdf = distance_squared * 2.0 / max(twice_area * projected_cosine, 1e-10);
 	vec2 uv = rtxdi_fetch_uv(geometry, uvec3(i0, i1, i2), barycentrics);
-	sample.radiance = rtxdi_evaluate_emission_texture(light, uv);
-	sample.valid = twice_area > 0.0 && projected_cosine > 0.0 ? 1u : 0u;
-	return sample;
+	proposal.radiance = rtxdi_evaluate_emission_texture(light, uv);
+	proposal.valid = twice_area > 0.0 && projected_cosine > 0.0 ? 1u : 0u;
+	return proposal;
 }
 
 RTLightProposal rtxdi_sample_area_light(RTLightData light, vec3 receiver_position, vec2 random) {
-	RTLightProposal sample = RTLightProposal(vec3(0.0), 0.0, vec3(0.0), 0.0, vec3(0.0), 0u);
-	sample.position = light.position + (random.x - 0.5) * light.axis_u + (random.y - 0.5) * light.axis_v;
-	vec3 to_light = sample.position - receiver_position;
+	RTLightProposal proposal = RTLightProposal(vec3(0.0), 0.0, vec3(0.0), 0.0, vec3(0.0), 0u);
+	proposal.position = light.position + (random.x - 0.5) * light.axis_u + (random.y - 0.5) * light.axis_v;
+	vec3 to_light = proposal.position - receiver_position;
 	float distance_squared = dot(to_light, to_light);
-	sample.distance = sqrt(distance_squared);
-	sample.direction = to_light / max(sample.distance, 1e-10);
-	float projected_cosine = max(dot(normalize(light.direction), -sample.direction), 0.0);
-	sample.solid_angle_pdf = light.inv_area * distance_squared / max(projected_cosine, 1e-10);
-	sample.radiance = light.emission;
+	proposal.distance = sqrt(distance_squared);
+	proposal.direction = to_light / max(proposal.distance, 1e-10);
+	float projected_cosine = max(dot(normalize(light.direction), -proposal.direction), 0.0);
+	proposal.solid_angle_pdf = light.inv_area * distance_squared / max(projected_cosine, 1e-10);
+	float axis_u_length = length(light.axis_u);
+	float axis_v_length = length(light.axis_v);
+	vec3 center_to_receiver = receiver_position - light.position;
+	vec3 local_receiver = vec3(dot(center_to_receiver, light.axis_u / max(axis_u_length, 1e-10)), dot(center_to_receiver, light.axis_v / max(axis_v_length, 1e-10)), dot(center_to_receiver, -normalize(light.direction)));
+	vec3 closest_local = vec3(clamp(local_receiver.x, -0.5 * axis_u_length, 0.5 * axis_u_length), clamp(local_receiver.y, -0.5 * axis_v_length, 0.5 * axis_v_length), 0.0);
+	float closest_distance = length(closest_local - local_receiver);
+	float normalized_distance = closest_distance / max(light.range, 0.0001);
+	normalized_distance *= normalized_distance;
+	normalized_distance *= normalized_distance;
+	float range_window = max(1.0 - normalized_distance, 0.0);
+	range_window *= range_window;
+	float attenuation = range_window * pow(max(closest_distance, 0.0001), -light.attenuation) * closest_distance * closest_distance;
+	proposal.radiance = light.emission * attenuation;
 	if ((light.flags & RT_LIGHT_FLAG_TEXTURED) != 0u) {
 		vec2 atlas_uv = light.uv_rect.xy + random * light.uv_rect.zw;
-		sample.radiance *= texture(sampler2D(bindless_textures[nonuniformEXT(light.texture_index)], SAMPLER_LINEAR_CLAMP), atlas_uv).rgb;
+		proposal.radiance *= texture(sampler2D(bindless_textures[nonuniformEXT(light.texture_index)], SAMPLER_LINEAR_CLAMP), atlas_uv).rgb;
 	}
-	sample.valid = light.inv_area > 0.0 && projected_cosine > 0.0 ? 1u : 0u;
-	return sample;
+	proposal.valid = light.inv_area > 0.0 && projected_cosine > 0.0 ? 1u : 0u;
+	return proposal;
 }
 
 // ============================================================================
@@ -364,31 +337,31 @@ RTLightProposal rtxdi_sample_analytic_light(RTLightData light, vec3 receiver_pos
 	if (light.type == RT_LIGHT_TYPE_EMISSIVE_TRIANGLE) {
 		return rtxdi_sample_emissive_triangle(light, receiver_position, random);
 	}
-	RTLightProposal sample = RTLightProposal(vec3(0.0), 0.0, vec3(0.0), 1.0, vec3(0.0), 0u);
+	RTLightProposal proposal = RTLightProposal(vec3(0.0), 0.0, vec3(0.0), 1.0, vec3(0.0), 0u);
 	LightSample cone = lights_prepare_sample(receiver_position, light);
 	if (light.type == RT_LIGHT_TYPE_DIRECTIONAL) {
-		sample.direction = light.radius > 0.0 ? lights_sample_cone(cone, random, sample.solid_angle_pdf) : -normalize(light.direction);
-		sample.distance = cone.max_distance;
-		sample.radiance = light.emission;
-		sample.valid = 1u;
-		return sample;
+		proposal.direction = light.radius > 0.0 ? lights_sample_cone(cone, random, proposal.solid_angle_pdf) : -normalize(light.direction);
+		proposal.distance = cone.max_distance;
+		proposal.radiance = light.emission;
+		proposal.valid = 1u;
+		return proposal;
 	}
 	vec3 to_light = light.position - receiver_position;
 	float distance_squared = dot(to_light, to_light);
 	float center_distance = sqrt(distance_squared);
 	if (light.range > 0.0 && center_distance > light.range) {
-		return sample;
+		return proposal;
 	}
 	if (light.radius > 0.0) {
-		sample.direction = lights_sample_cone(cone, random, sample.solid_angle_pdf);
-		float center_t = dot(to_light, sample.direction);
-		vec3 perpendicular = to_light - center_t * sample.direction;
-		sample.distance = max(center_t - sqrt(max(light.radius * light.radius - dot(perpendicular, perpendicular), 0.0)), 0.0);
+		proposal.direction = lights_sample_cone(cone, random, proposal.solid_angle_pdf);
+		float center_t = dot(to_light, proposal.direction);
+		vec3 perpendicular = to_light - center_t * proposal.direction;
+		proposal.distance = max(center_t - sqrt(max(light.radius * light.radius - dot(perpendicular, perpendicular), 0.0)), 0.0);
 	} else {
-		sample.direction = to_light / max(center_distance, 1e-10);
-		sample.distance = center_distance;
+		proposal.direction = to_light / max(center_distance, 1e-10);
+		proposal.distance = center_distance;
 	}
-	sample.position = receiver_position + sample.direction * sample.distance;
+	proposal.position = receiver_position + proposal.direction * proposal.distance;
 	float attenuation = min(pow(max(center_distance, 0.0001), -light.attenuation), 1.0);
 	if (light.range > 0.0) {
 		float window = center_distance / light.range;
@@ -398,23 +371,22 @@ RTLightProposal rtxdi_sample_analytic_light(RTLightData light, vec3 receiver_pos
 		attenuation *= window * window;
 	}
 	if (light.type == RT_LIGHT_TYPE_SPOT) {
-		float spot_cosine = dot(-sample.direction, light.direction);
+		float spot_cosine = dot(-proposal.direction, light.direction);
 		if (spot_cosine <= light.cos_spot_angle) {
-			return sample;
+			return proposal;
 		}
 		float rim = max(1e-4, (1.0 - spot_cosine) / (1.0 - light.cos_spot_angle));
 		attenuation *= 1.0 - pow(rim, light.inv_spot_attenuation);
 	}
-	sample.radiance = light.emission * attenuation * rtxdi_evaluate_projector(light, receiver_position);
-	sample.valid = 1u;
-	return sample;
-}
-
-RTLightProposal rtxdi_sample_light(uint light_index, vec3 receiver_position, vec2 random) {
-	return rtxdi_sample_analytic_light(rt_lights[light_index], receiver_position, random);
+	proposal.radiance = light.emission * attenuation * rtxdi_evaluate_projector(light, receiver_position);
+	proposal.valid = 1u;
+	return proposal;
 }
 
 float rtxdi_evaluate_light_solid_angle_pdf(RTLightData light, vec3 receiver_position, vec3 sampled_position, vec3 sampled_direction) {
+	if (light.type == RT_LIGHT_TYPE_ENVIRONMENT) {
+		return 1.0 / (4.0 * PI);
+	}
 	if (light.type == RT_LIGHT_TYPE_DIRECTIONAL) {
 		float solid_angle = 2.0 * PI * (1.0 - cos(light.radius));
 		return light.radius > 0.0 ? 1.0 / max(solid_angle, 1e-10) : 1.0;
@@ -448,12 +420,12 @@ float rtxdi_evaluate_light_solid_angle_pdf(RTLightData light, vec3 receiver_posi
 }
 
 RTLightProposal rtxdi_sample_environment(vec2 random, vec3 radiance) {
-	RTLightProposal sample = RTLightProposal(vec3(0.0), 1e10, radiance, 1.0 / (4.0 * PI), vec3(0.0), 1u);
+	RTLightProposal proposal = RTLightProposal(vec3(0.0), 1e10, radiance, 1.0 / (4.0 * PI), vec3(0.0), 1u);
 	float z = 1.0 - 2.0 * random.x;
 	float radius = sqrt(max(1.0 - z * z, 0.0));
 	float phi = 2.0 * PI * random.y;
-	sample.direction = vec3(radius * cos(phi), radius * sin(phi), z);
-	return sample;
+	proposal.direction = vec3(radius * cos(phi), radius * sin(phi), z);
+	return proposal;
 }
 
 #endif

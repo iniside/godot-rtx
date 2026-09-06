@@ -3108,6 +3108,9 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 				continue;
 			}
 			RSE::LightType type = ls->light_get_type(base);
+			if (type == RSE::LIGHT_DIRECTIONAL && ls->light_directional_get_sky_mode(base) == RSE::LIGHT_DIRECTIONAL_SKY_MODE_SKY_ONLY) {
+				continue;
+			}
 			RT_LightData ld = {};
 			Transform3D xform = ls->light_instance_get_base_transform(light_instance);
 			Vector3 direction = -xform.basis.get_column(2).normalized();

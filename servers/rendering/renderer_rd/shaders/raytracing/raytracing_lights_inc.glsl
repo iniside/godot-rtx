@@ -3,6 +3,10 @@
 
 #include "rtxdi_light_sampling_inc.glsl"
 
+layout(set = 0, binding = 13, std430) readonly buffer LightBuffer {
+	RTLightData rt_lights[];
+};
+
 // ============================================================================
 // Attenuation
 // ============================================================================
