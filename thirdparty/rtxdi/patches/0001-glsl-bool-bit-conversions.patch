@@ -1,0 +1,29 @@
+diff --git a/Include/Rtxdi/Utils/Math.hlsli b/Include/Rtxdi/Utils/Math.hlsli
+index d913a29..927602f 100644
+--- a/Include/Rtxdi/Utils/Math.hlsli
++++ b/Include/Rtxdi/Utils/Math.hlsli
+@@ -33,5 +33,5 @@ void SetBit(inout uint target, uint bit, bool value)
+ void SetBit(inout uint target, uint bit, bool value)
+ {
+     target &= ~(1u << bit);
+-    target |=  (value << bit);
++    target |=  (uint(value) << bit);
+ }
+@@ -39,4 +39,4 @@ bool GetBit(uint target, uint bit)
+ bool GetBit(uint target, uint bit)
+ {
+-    return (target >> bit) & 1;
++    return ((target >> bit) & 1u) != 0u;
+ }
+diff --git a/Include/Rtxdi/RtxdiTypes.h b/Include/Rtxdi/RtxdiTypes.h
+index 59f8d13..60c2e20 100644
+--- a/Include/Rtxdi/RtxdiTypes.h
++++ b/Include/Rtxdi/RtxdiTypes.h
+@@ -28,6 +28,7 @@
+ #define float3x3 mat3
+ #define static
+ #define atan2 atan
++#define rsqrt inversesqrt
+ #define sincos(x,s,c) {s=sin(x);c=cos(x);}
+ #define saturate(x) clamp(x,0,1)
+ #define asuint floatBitsToUint

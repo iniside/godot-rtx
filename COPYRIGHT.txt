@@ -545,6 +545,21 @@ Comment: Multi-channel signed distance field generator
 Copyright: 2014-2025, Viktor Chlumsky
 License: Expat
 
+Files: thirdparty/nrd/Dependencies/MathLib/*
+Comment: NVIDIA MathLib
+Copyright: 2021-2026, NVIDIA Corporation
+License: Expat
+
+Files: thirdparty/nrd/Dependencies/ShaderMake/*
+Comment: NVIDIA ShaderMake ShaderBlob
+Copyright: 2014-2023, NVIDIA Corporation
+License: Expat
+
+Files: thirdparty/nrd/*
+Comment: NVIDIA Real-time Denoisers
+Copyright: 2022-2026, NVIDIA Corporation
+License: LicenseRef-Nvidia-RTX-SDK
+
 Files: thirdparty/openxr/*
 Comment: OpenXR Loader
 Copyright: 2020-2025, The Khronos Group Inc.
@@ -560,6 +575,11 @@ Files: thirdparty/recastnavigation/*
 Comment: Recast
 Copyright: 2009, Mikko Mononen
 License: Zlib
+
+Files: thirdparty/rtxdi/*
+Comment: NVIDIA RTX Direct Illumination
+Copyright: 2020-2026, NVIDIA Corporation
+License: LicenseRef-Nvidia-RTX-SDK
 
 Files: thirdparty/rvo2/*
 Comment: RVO2

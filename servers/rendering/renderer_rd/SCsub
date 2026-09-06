@@ -3,6 +3,61 @@ from misc.utility.scons_hints import *
 
 Import("env")
 
+rtxdi_nrd_sources = [
+    "#thirdparty/rtxdi/Source/ImportanceSamplingContext.cpp",
+    "#thirdparty/rtxdi/Source/RISBufferSegmentAllocator.cpp",
+    "#thirdparty/rtxdi/Source/ReGIR.cpp",
+    "#thirdparty/rtxdi/Source/ReSTIRDI.cpp",
+    "#thirdparty/rtxdi/Source/ReSTIRGI.cpp",
+    "#thirdparty/rtxdi/Source/ReSTIRPT.cpp",
+    "#thirdparty/rtxdi/Source/RtxdiUtils.cpp",
+    "#thirdparty/nrd/Dependencies/ShaderMake/ShaderMake/ShaderBlob.cpp",
+    "#thirdparty/nrd/Source/InstanceImpl.cpp",
+    "#thirdparty/nrd/Source/Reblur.cpp",
+    "#thirdparty/nrd/Source/Reference.cpp",
+    "#thirdparty/nrd/Source/Relax.cpp",
+    "#thirdparty/nrd/Source/Sigma.cpp",
+    "#thirdparty/nrd/Source/Timer.cpp",
+    "#thirdparty/nrd/Source/Wrapper.cpp",
+]
+
+env_rtxdi_nrd = env.Clone()
+env_rtxdi_nrd.disable_warnings()
+env_rtxdi_nrd.Prepend(
+    CPPPATH=[
+        "#thirdparty/rtxdi/Include",
+        "#thirdparty/nrd/Include",
+        "#thirdparty/nrd/Source",
+        "#thirdparty/nrd/_Shaders",
+        "#thirdparty/nrd/Dependencies/MathLib",
+        "#thirdparty/nrd/Dependencies/ShaderMake",
+    ]
+)
+env_rtxdi_nrd.Append(
+    CPPDEFINES=[
+        ("NRD_STATIC_LIBRARY", 1),
+        ("NRD_EMBEDS_SPIRV_SHADERS", 1),
+        ("NRD_EMBEDS_DXIL_SHADERS", 0),
+        ("NRD_EMBEDS_DXBC_SHADERS", 0),
+        ("NRD_SUPPORTS_VIEWPORT_OFFSET", 0),
+        ("NRD_SUPPORTS_CHECKERBOARD", 1),
+        ("NRD_SUPPORTS_HISTORY_CONFIDENCE", 1),
+        ("NRD_SUPPORTS_DISOCCLUSION_THRESHOLD_MIX", 1),
+        ("NRD_SUPPORTS_BASECOLOR_METALNESS", 1),
+        ("NRD_SUPPORTS_ANTIFIREFLY", 1),
+        ("REBLUR_PERFORMANCE_MODE", 0),
+        ("SPIRV_SREG_OFFSET", 0),
+        ("SPIRV_BREG_OFFSET", 2),
+        ("SPIRV_UREG_OFFSET", 3),
+        ("SPIRV_TREG_OFFSET", 20),
+        "WIN32_LEAN_AND_MEAN",
+        "NOMINMAX",
+    ]
+)
+if env["arch"] == "x86_64" and not env.msvc:
+    env_rtxdi_nrd.Append(CXXFLAGS=["-mssse3"])
+env_rtxdi_nrd.add_source_files(env.servers_sources, rtxdi_nrd_sources)
+
 env.add_source_files(env.servers_sources, "*.cpp")
 
 SConscript("effects/SCsub")

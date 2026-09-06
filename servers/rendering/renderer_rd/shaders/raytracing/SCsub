@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+import glob
+
 from misc.utility.scons_hints import *
 
 Import("env")
@@ -11,7 +13,13 @@ if "RD_GLSL" in env["BUILDERS"]:
     glsl_files = [str(f) for f in Glob("*.glsl") if str(f) not in gl_include_files]
 
     # make sure we recompile shaders if include files change
-    env.Depends([f + ".gen.h" for f in glsl_files], gl_include_files + ["#glsl_builders.py"])
+    rtxdi_include_root = env.Dir("#thirdparty/rtxdi/Include/Rtxdi").abspath
+    rtxdi_include_files = glob.glob(rtxdi_include_root + "/**/*.h", recursive=True)
+    rtxdi_include_files += glob.glob(rtxdi_include_root + "/**/*.hlsli", recursive=True)
+    env.Depends(
+        [f + ".gen.h" for f in glsl_files],
+        gl_include_files + rtxdi_include_files + ["#glsl_builders.py"],
+    )
 
     # compile shaders
     for glsl_file in glsl_files:

@@ -5,6 +5,11 @@ import os.path
 from methods import generated_wrapper, print_error, to_raw_cstring
 
 
+RD_HEADER_INCLUDE_ROOTS = {
+    "Rtxdi/": "thirdparty/rtxdi/Include",
+}
+
+
 class RDHeaderStruct:
     def __init__(self):
         self.vertex_lines = []
@@ -105,7 +110,13 @@ def include_file_in_rd_header(filename: str, header_data: RDHeaderStruct, depth:
             while line.find("#include ") != -1:
                 includeline = line.replace("#include ", "").strip()[1:-1]
 
-                if includeline.startswith("thirdparty/"):
+                include_root = next(
+                    (root for prefix, root in RD_HEADER_INCLUDE_ROOTS.items() if includeline.startswith(prefix)), None
+                )
+
+                if include_root is not None:
+                    included_file = os.path.relpath(os.path.join(include_root, includeline))
+                elif includeline.startswith("thirdparty/"):
                     included_file = os.path.relpath(includeline)
 
                 else:
