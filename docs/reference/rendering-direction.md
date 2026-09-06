@@ -15,7 +15,8 @@ nie jest docelową podstawą oświetlenia tych scen.
   bezpośredniego i DDGI dla rozproszonego światła pośredniego.
 - Kolejność doprecyzowana 2026-09-06: najpierw RTXDI, potem DDGI. Wspólna
   podstawa światła bezpośredniego ma obsługiwać powierzchnie widoczne z kamery
-  i przyszłe trafienia sond DDGI. Zlecono research, nie implementację.
+  i przyszłe trafienia sond DDGI. Research RTXDI zakończono; właściciel zatwierdził
+  plan integracji i polecił rozpoczęcie implementacji. DDGI pozostaje późniejszym etapem.
 - Doprecyzowanie właściciela 2026-09-06: zgodność wsteczna i obsługa platform
   bez ray tracingu nie są wymaganiami. Można usunąć utrudniające integrację
   stare API i ścieżki bez RT; nie dodawać dla nich fallbacków ani migracji.
@@ -40,8 +41,9 @@ nie jest docelową podstawą oświetlenia tych scen.
 
 - [ ] Ustalić zakres istniejącej integracji meshletów/CLAS oraz brakujące elementy
   systemu wzorowanego na Nanite: budowanie DAG-u, selekcję, rezydencję i streaming.
-- [ ] Zbadać wpięcie ReSTIR DI i DDGI w Forward Clustered: dane powierzchni,
-  światła emisyjne, historia, odszumianie i kompozycja bez podwójnego liczenia światła.
+- [x] Zbadać wpięcie ReSTIR DI w Forward Clustered: dane powierzchni, światła
+  emisyjne, historia, odszumianie i kompozycja; zatwierdzono plan implementacji.
+- [ ] Po RTXDI dopracować integrację DDGI ze wspólnym oświetleniem bezpośrednim.
 - [ ] Zbadać reprezentację wokselowego foliage: gęstość/pokrycie, materiał,
   prześwity koron oraz przechodzenie promieni cieni i GI.
 - [ ] Ustalić sposób tworzenia wokseli oraz przejścia geometria–woksele,
@@ -54,7 +56,8 @@ nie jest docelową podstawą oświetlenia tych scen.
   zabudowy i terenów z roślinnością oraz sposób obsługi odbić zwierciadlanych.
 - [ ] Określić docelowy zakres GPU, budżet klatki i VRAM przed wyborem parametrów.
 
-TODO nie upoważnia do implementacji ani uruchamiania automatycznych testów.
+Otwarte TODO nie upoważniają do ich implementacji. Integracja RTXDI jest osobno
+zatwierdzona w planie; automatyczne testy nie są autoryzowane.
 Nie ustalono jeszcze docelowego FPS, minimalnego GPU ani terminów wykonania.
 
 ## Powiązane dokumenty

@@ -53,7 +53,11 @@ bound, not proof that the features are absent elsewhere or under other names.
 
 ## Known Gaps
 
-The [staged RTXDI replacement plan](../plans/2026-09-06-1854-rtxdi-renderer-plan.md)
+Active work is tracked in the [RTXDI implementation status](../research/2026-09-06-1904-rtxdi-implementation-status.md).
+Approval/plan commit: `e02ea8c87d`. Dependency integration is in progress; no
+replacement-renderer build or visual proof exists yet.
+
+The [approved RTXDI replacement plan](../plans/2026-09-06-1854-rtxdi-renderer-plan.md)
 received a fresh hostile plan-review PASS and owner approval on 2026-09-06 at
 `33b555c7`. The owner explicitly
 allows broken intermediate builds/rendering; the final stage requires real
