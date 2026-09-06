@@ -27,11 +27,13 @@ returned REJECT for missing previous-depth history, missing authoritative camera
 cut invalidation, and parameter-name-based standard-material classification that
 allows unsupported procedural emission. Scoped fix
 `4f340213e8946d5de5a50bf1758b17b646c2e55e` adds per-set depth snapshots,
-authoritative camera identity and generated-material provenance; fresh round 2
-review is pending. Seven focused C++ translation units passed clangd checks;
+authoritative camera identity and generated-material provenance. Fresh round 2
+returned REJECT: the new shared `RendererSceneRender::render_scene()` camera RID
+parameters were not added to GLES3/dummy overrides. The three round-one behavioral
+findings are closed. Seven focused C++ translation units passed clangd checks;
 scoped diff checks passed. No full build or GPU verification was performed.
-Step 5 ReSTIR DI pass implementation and temporal history wiring are active.
-Steps 5–7 have not landed.
+Execution is stopped at the repository's two-review-round limit for Step 4.
+Step 5 is paused, uncommitted and unstaged. Steps 5–7 have not landed.
 No RTXDI frame dispatch or rendered image is claimed.
 
 Step 1 evidence: pinned importer completed 159 NRD SPIR-V tasks; a temporary
@@ -83,6 +85,40 @@ sequences on one physical line, so Git does not parse the intended body/trailer.
 The original message still contains the truthful identity. History was preserved;
 this entry records attribution and the formatting defect without claiming it was
 rewritten or that code validation covers commit-message formatting.
+
+## Resume point
+
+Evidence date: 2026-09-06 UTC. Frozen Step 4 final review target:
+`5075e8b3fc3b19213744d0e9ac9f3648ca710359`.
+
+Remaining confirmed defect: update the two camera RID parameters in
+`drivers/gles3/rasterizer_scene_gles3.h:943`, its definition at `.cpp:2388`, and
+`servers/rendering/dummy/rasterizer_scene_dummy.h:163` to match
+`servers/rendering/renderer_scene_render.h:325`. Non-RT gameplay remains excluded;
+these implementations still have to satisfy the shared C++ interface. No fix was
+made after the second review's rejection.
+
+Step 5 partial work is preserved in new `forward_clustered/render_rtxdi.{h,cpp}`,
+new `shaders/raytracing/rtxdi_di.glsl`, `rtxdi_application_bridge_inc.glsl` and
+`rtxdi_light_data_inc.glsl`, with narrow DI lifetime changes in
+`render_raytracing.{h,cpp}` and extraction from `rtxdi_light_sampling_inc.glsl`.
+The host resource/context/config/uniform-set/dispatch code is written but has not
+been compiled or wired into Forward+. It is not a completed implementation.
+
+All four native GLSL DI variants (initial, temporal, spatial, shade) passed
+glslangValidator for Vulkan 1.3 using the pinned SDK. Additional imported GLSL
+boolean fixes are recorded in
+`thirdparty/rtxdi/patches/0002-glsl-di-boolean-parameters.patch` and applied to
+InitialSampling, TemporalResampling and SpatialResampling; the importer applies
+the recorded patch directory. No generated shader was edited. The diagnostic
+`comp.spv` was removed. These temporary diagnostics are not durable runtime proof.
+
+After the shared-interface fix, resume host compile diagnostics and close any
+mono-view texture-slice needs without adding unsupported multiview behavior.
+Initialize/tear down the DI service and dispatch after `commit_rtxdi_surface()`;
+recheck the actual four variants, finish the assigned Stage 5 contract and commit
+only its owned files. NRD/composition and final editor/template/real-Vulkan visual
+validation remain Steps 6–7. No automated tests have been run.
 
 Intermediate builds/rendering may fail by explicit owner authorization. Final
 completion requires the plan's real-device rendering gate. Automated tests are
