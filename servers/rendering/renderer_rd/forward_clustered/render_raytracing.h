@@ -46,6 +46,7 @@ class RenderSceneBuffersRD;
 namespace RendererSceneRenderImplementation {
 
 class RenderForwardClustered;
+struct RenderRTXDIViewportResources;
 class SceneShaderRaytracing;
 
 // Must match GLSL GeometryData (std430, 128 bytes).
@@ -86,7 +87,7 @@ struct RT_InstanceMotionData {
 };
 static_assert(sizeof(RT_InstanceMotionData) == 48, "RT_InstanceMotionData must be 48 bytes");
 
-// Must match GLSL MaterialData (std430, 96 bytes).
+// Must match GLSL MaterialData (std430, 112 bytes).
 struct alignas(16) RT_MaterialData {
 	uint32_t albedo_texture_idx;
 	uint32_t normal_texture_idx;
@@ -104,8 +105,12 @@ struct alignas(16) RT_MaterialData {
 	float normal_map_depth; // Strength [0..N], default 1.0 (not Z-depth).
 	float specular; // Dielectric specular [0..1], default 0.5 -> F0 = 0.04.
 	uint64_t uniform_address; // BDA for custom shader uniform buffer (0 = none).
+	float alpha_scissor_threshold = 0.5f;
+	float alpha_hash_scale = 1.0f;
+	uint32_t coverage_flags = 0;
+	uint32_t _coverage_pad = 0;
 };
-static_assert(sizeof(RT_MaterialData) == 96, "RT_MaterialData must be 96 bytes for std430");
+static_assert(sizeof(RT_MaterialData) == 112, "RT_MaterialData must be 112 bytes for std430");
 
 // Light types for raytracing (matches GLSL RT_LIGHT_TYPE_* defines).
 enum RTLightType : uint32_t {
@@ -412,6 +417,7 @@ struct RTViewportState {
 	uint32_t current_light_snapshot = 0;
 	bool light_history_valid = false;
 	RID environment_texture;
+	RenderRTXDIViewportResources *rtxdi_di = nullptr;
 
 };
 
@@ -478,6 +484,7 @@ class RenderRaytracing {
 	uint32_t cache_misses = 0;
 
 	// Per-frame scratch arrays.
+	HashSet<RID> geometry_buffer_dependencies;
 	LocalVector<RT_GeometryData> geometry_data;
 	LocalVector<RT_MaterialData> material_data;
 	LocalVector<int32_t> motion_indices; ///< Per-instance: index into motion_transforms[], or -1.
@@ -566,7 +573,7 @@ public:
 	RTViewportState *build_tlas(const RenderDataRD *p_render_data, uint32_t p_rt_flags);
 	void free_viewport_state(RenderSceneBuffersRD *p_render_buffers);
 
-	void register_raytracing_buffer_dependencies(RD::RaytracingListID p_list);
+	void register_compute_buffer_dependencies(RD::ComputeListID p_list);
 
 	RID get_bindless_uniform_set() const { return bindless_uniform_set; }
 	RID get_mat_ubo_pool_buffer() const { return mat_ubo_pool_buffer; }

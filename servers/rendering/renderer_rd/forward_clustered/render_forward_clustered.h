@@ -74,6 +74,8 @@
 #define RB_TEX_VOXEL_GI_MSAA SNAME("voxel_gi_msaa")
 namespace RendererSceneRenderImplementation {
 
+class RenderRTXDI;
+
 class SceneShaderRaytracing;
 
 class RenderForwardClustered : public RendererSceneRenderRD {
@@ -109,6 +111,7 @@ protected:
 
 	SceneShaderForwardClustered scene_shader;
 	RenderRaytracing *raytracing = nullptr;
+	RenderRTXDI *rtxdi = nullptr;
 
 public:
 	/* Framebuffer */

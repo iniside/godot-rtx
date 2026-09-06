@@ -1,0 +1,103 @@
+diff --git a/Include/Rtxdi/DI/InitialSampling.hlsli b/Include/Rtxdi/DI/InitialSampling.hlsli
+index 8c4b72b..7f87a50 100644
+--- a/Include/Rtxdi/DI/InitialSampling.hlsli
++++ b/Include/Rtxdi/DI/InitialSampling.hlsli
+@@ -658,11 +658,11 @@ localSample);
+     else
+         o_lightSample = localSample;
+ 
+-	if(sampleParams.enableInitialVisibility && RTXDI_IsValidDIReservoir(state))
++	if(sampleParams.enableInitialVisibility != 0u && RTXDI_IsValidDIReservoir(state))
+ 	{
+ 		if (!RAB_GetConservativeVisibility(surface, o_lightSample))
+         {
+-            RTXDI_StoreVisibilityInDIReservoir(state, 0, true);
++            RTXDI_StoreVisibilityInDIReservoir(state, float3(0), true);
+         }
+ 
+ 	}
+@@ -670,4 +670,4 @@ localSample);
+     return state;
+ }
+ 
+-#endif
+\ No newline at end of file
++#endif
+diff --git a/Include/Rtxdi/DI/SpatialResampling.hlsli b/Include/Rtxdi/DI/SpatialResampling.hlsli
+index a2f8a35..0a00353 100644
+--- a/Include/Rtxdi/DI/SpatialResampling.hlsli
++++ b/Include/Rtxdi/DI/SpatialResampling.hlsli
+@@ -78,7 +78,7 @@ RTXDI_DIReservoir RTXDI_DISpatialResamplingWithPairwiseMIS(
+             sparams.normalThreshold, sparams.depthThreshold))
+             continue;
+ 
+-        if (sparams.enableMaterialSimilarityTest && !RAB_AreMaterialsSimilar(RAB_GetMaterial(centerSurface), RAB_GetMaterial(neighborSurface)))
++        if (sparams.enableMaterialSimilarityTest != 0u && !RAB_AreMaterialsSimilar(RAB_GetMaterial(centerSurface), RAB_GetMaterial(neighborSurface)))
+             continue;
+ 
+         // The surfaces are similar enough so we *can* reuse a neighbor from this pixel, so load it.
+@@ -88,7 +88,7 @@ RTXDI_DIReservoir RTXDI_DISpatialResamplingWithPairwiseMIS(
+ 
+         if (RTXDI_IsValidDIReservoir(neighborSample))
+         {
+-            if (sparams.discountNaiveSamples && neighborSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
++            if (sparams.discountNaiveSamples != 0u && neighborSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
+                 continue;
+         }
+ 
+@@ -199,7 +199,7 @@ RTXDI_DIReservoir RTXDI_DISpatialResampling(
+             sparams.normalThreshold, sparams.depthThreshold))
+             continue;
+ 
+-        if (sparams.enableMaterialSimilarityTest && !RAB_AreMaterialsSimilar(RAB_GetMaterial(centerSurface), RAB_GetMaterial(neighborSurface)))
++        if (sparams.enableMaterialSimilarityTest != 0u && !RAB_AreMaterialsSimilar(RAB_GetMaterial(centerSurface), RAB_GetMaterial(neighborSurface)))
+             continue;
+ 
+         uint2 neighborReservoirPos = RTXDI_PixelPosToReservoirPos(idx, rParams.activeCheckerboardField);
+@@ -217,7 +217,7 @@ RTXDI_DIReservoir RTXDI_DISpatialResampling(
+         RAB_LightSample candidateLightSample = RAB_EmptyLightSample();
+         if (RTXDI_IsValidDIReservoir(neighborSample))
+         {   
+-            if (sparams.discountNaiveSamples && neighborSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
++            if (sparams.discountNaiveSamples != 0u && neighborSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
+                 continue;
+ 
+             candidateLight = RAB_LoadLightInfo(RTXDI_GetDIReservoirLightIndex(neighborSample), false);
+diff --git a/Include/Rtxdi/DI/TemporalResampling.hlsli b/Include/Rtxdi/DI/TemporalResampling.hlsli
+index 5754e0e..0f4d2d7 100644
+--- a/Include/Rtxdi/DI/TemporalResampling.hlsli
++++ b/Include/Rtxdi/DI/TemporalResampling.hlsli
+@@ -56,7 +56,7 @@ RTXDI_DIReservoir RTXDI_DITemporalResampling(
+     // Backproject this pixel to the previous frame
+     float3 motion = screenSpaceMotion;
+     
+-    if (!tparams.enablePermutationSampling)
++    if (tparams.enablePermutationSampling == 0u)
+     {
+         motion.xy += float2(RTXDI_GetNextRandom(rng), RTXDI_GetNextRandom(rng)) - 0.5;
+     }
+@@ -82,7 +82,7 @@ RTXDI_DIReservoir RTXDI_DITemporalResampling(
+         }
+ 
+         int2 idx = prevPos + offset;
+-        if (tparams.enablePermutationSampling && i == 0)
++        if (tparams.enablePermutationSampling != 0u && i == 0)
+         {
+             RTXDI_ApplyPermutationSampling(idx, tparams.uniformRandomNumber);
+         }
+@@ -190,7 +190,7 @@ RTXDI_DIReservoir RTXDI_DITemporalResampling(
+             temporalP = RAB_GetLightSampleTargetPdfForSurface(selectedSampleAtTemporal, temporalSurface);
+ 
+ #if RTXDI_ALLOWED_BIAS_CORRECTION >= RTXDI_BIAS_CORRECTION_RAY_TRACED
+-            if (tparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_RAY_TRACED && temporalP > 0 && (!selectedPreviousSample || !tparams.enableVisibilityShortcut))
++            if (tparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_RAY_TRACED && temporalP > 0 && (!selectedPreviousSample || tparams.enableVisibilityShortcut == 0u))
+             {
+                 if (!RAB_GetTemporalConservativeVisibility(surface, temporalSurface, selectedSampleAtTemporal))
+                 {
+@@ -214,4 +214,4 @@ RTXDI_DIReservoir RTXDI_DITemporalResampling(
+     return state;
+ }
+ 
+-#endif // RTXDI_DI_TEMPORAL_RESAMPLING_HLSLI
+\ No newline at end of file
++#endif // RTXDI_DI_TEMPORAL_RESAMPLING_HLSLI

@@ -7080,6 +7080,21 @@ void RenderingDevice::compute_list_bind_uniform_set(ComputeListID p_list, RID p_
 #endif
 }
 
+void RenderingDevice::compute_list_add_buffer_dependency(ComputeListID p_list, RID p_buffer) {
+	ERR_RENDER_THREAD_GUARD();
+	ERR_FAIL_COND(p_list != ID_TYPE_COMPUTE_LIST);
+	ERR_FAIL_COND(!compute_list.active);
+	Buffer *buffer = _get_buffer_from_owner(p_buffer);
+	ERR_FAIL_NULL_MSG(buffer, "Buffer argument is not a valid buffer of any type.");
+	if (_buffer_make_mutable(buffer, p_buffer)) {
+		draw_graph.add_synchronization();
+	}
+	if (buffer->draw_tracker != nullptr) {
+		draw_graph.add_compute_list_usage(buffer->draw_tracker, RDG::RESOURCE_USAGE_STORAGE_BUFFER_READ);
+	}
+	_check_transfer_worker_buffer(buffer);
+}
+
 void RenderingDevice::compute_list_set_push_constant(ComputeListID p_list, const void *p_data, uint32_t p_data_size) {
 	ERR_RENDER_THREAD_GUARD();
 

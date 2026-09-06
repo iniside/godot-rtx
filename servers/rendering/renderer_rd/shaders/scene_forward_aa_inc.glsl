@@ -9,10 +9,7 @@ float hash_3d(vec3 p) {
 	return hash_2d(vec2(hash_2d(p.xy), p.z));
 }
 
-half compute_alpha_hash_threshold(vec3 pos, float hash_scale) {
-	vec3 dx = dFdx(pos);
-	vec3 dy = dFdy(pos);
-
+half compute_alpha_hash_threshold(vec3 pos, float hash_scale, vec3 dx, vec3 dy) {
 	float delta_max_sqr = max(length(dx), length(dy));
 	float pix_scale = 1.0 / (hash_scale * delta_max_sqr);
 
@@ -37,6 +34,12 @@ half compute_alpha_hash_threshold(vec3 pos, float hash_scale) {
 
 	return half(clamp(alpha_hash_threshold, 0.00001, 1.0));
 }
+
+#ifndef ALPHA_HASH_COMPUTE
+half compute_alpha_hash_threshold(vec3 pos, float hash_scale) {
+	return compute_alpha_hash_threshold(pos, hash_scale, dFdx(pos), dFdy(pos));
+}
+#endif
 
 #endif // ALPHA_HASH_USED
 

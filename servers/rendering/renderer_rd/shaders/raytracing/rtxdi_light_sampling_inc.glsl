@@ -4,74 +4,7 @@
 #ifndef RTXDI_LIGHT_SAMPLING_INC_GLSL
 #define RTXDI_LIGHT_SAMPLING_INC_GLSL
 
-// ============================================================================
-// Light Types and Constants
-// ============================================================================
-
-#define RT_LIGHT_TYPE_OMNI 0 // Point light with radius (soft shadows)
-#define RT_LIGHT_TYPE_DIRECTIONAL 1 // Sun/moon with angular size
-#define RT_LIGHT_TYPE_SPOT 2 // Spot light with cone falloff
-#define RT_LIGHT_TYPE_AREA 3
-#define RT_LIGHT_TYPE_EMISSIVE_TRIANGLE 4
-#define RT_LIGHT_TYPE_ENVIRONMENT 5
-
-#define RT_LIGHT_FLAG_CASTS_SHADOW 1u
-#define RT_LIGHT_FLAG_TEXTURED 2u
-
-// Reservoir sampling batch size for stochastic light selection.
-#ifndef RT_LIGHT_RESERVOIR_SIZE
-#define RT_LIGHT_RESERVOIR_SIZE 16
-#endif
-
-// ============================================================================
-// Light Data (matches C++ RT_LightData, 192 bytes, std430)
-// ============================================================================
-
-struct RTLightData {
-	vec3 position;
-	uint type;
-	vec3 direction;
-	uint flags;
-	vec3 emission;
-	float radius;
-	vec3 axis_u;
-	float inv_area;
-	vec3 axis_v;
-	float attenuation;
-	float range;
-	float cos_spot_angle;
-	float inv_spot_attenuation;
-	float specular_amount;
-	uint texture_index;
-	uint geometry_index;
-	uint primitive_index;
-	uint receiver_mask;
-	uint caster_mask;
-	uint topology_generation;
-	uvec2 _pad0;
-	vec4 uv_rect;
-	float transform[12];
-};
-
-struct RTLightBufferParameters {
-	uint local_first;
-	uint local_count;
-	uint infinite_first;
-	uint infinite_count;
-	uint environment_index;
-	uint environment_present;
-	uint total_count;
-	uint previous_count;
-};
-
-struct RTLightProposal {
-	vec3 direction;
-	float distance;
-	vec3 radiance;
-	float solid_angle_pdf;
-	vec3 position;
-	uint valid;
-};
+#include "rtxdi_light_data_inc.glsl"
 
 float rtxdi_target_pdf(vec3 contribution) {
 	return dot(abs(contribution), vec3(0.2126, 0.7152, 0.0722));
@@ -175,9 +108,20 @@ vec3 rtxdi_evaluate_emission_texture(RTLightData light, vec2 uv) {
 	return light.emission * texture(sampler2D(bindless_textures[nonuniformEXT(light.texture_index)], SAMPLER_LINEAR_WITH_MIPMAPS_REPEAT), material_uv).rgb;
 }
 
+GeometryData rtxdi_light_geometry(RTLightData light) {
+	GeometryData geometry = geometries[light.geometry_index];
+	if (light._pad0.x != 0u) {
+		uint64_t previous_address = (uint64_t(geometry.prev_vertex_address_hi) << 32u) | uint64_t(geometry.prev_vertex_address_lo);
+		if (previous_address != 0ul) {
+			geometry.vertex_address = previous_address;
+		}
+	}
+	return geometry;
+}
+
 RTLightProposal rtxdi_sample_emissive_triangle(RTLightData light, vec3 receiver_position, vec2 random) {
 	RTLightProposal proposal = RTLightProposal(vec3(0.0), 0.0, vec3(0.0), 0.0, vec3(0.0), 0u);
-	GeometryData geometry = geometries[light.geometry_index];
+	GeometryData geometry = rtxdi_light_geometry(light);
 	uint i0, i1, i2;
 	rtxdi_get_triangle_indices(geometry, light.primitive_index, i0, i1, i2);
 	mat4 object_to_world = rtxdi_decode_light_transform(light);
@@ -287,7 +231,7 @@ LightSample lights_prepare_sample(vec3 hit_pos, RTLightData light) {
 
 	// Max shadow ray distance.
 	float sphere_max = dist + light.radius;
-	float dir_max = 10000.0;
+	float dir_max = 3.402823466e+38;
 	s.max_distance = mix(sphere_max, dir_max, is_directional);
 
 	return s;
@@ -397,7 +341,7 @@ float rtxdi_evaluate_light_solid_angle_pdf(RTLightData light, vec3 receiver_posi
 		return light.inv_area * distance_squared / max(projected_cosine, 1e-10);
 	}
 	if (light.type == RT_LIGHT_TYPE_EMISSIVE_TRIANGLE) {
-		GeometryData geometry = geometries[light.geometry_index];
+		GeometryData geometry = rtxdi_light_geometry(light);
 		uint i0, i1, i2;
 		rtxdi_get_triangle_indices(geometry, light.primitive_index, i0, i1, i2);
 		mat4 object_to_world = rtxdi_decode_light_transform(light);

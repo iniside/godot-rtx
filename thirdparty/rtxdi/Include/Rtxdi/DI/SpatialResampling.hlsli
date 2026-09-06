@@ -78,7 +78,7 @@ RTXDI_DIReservoir RTXDI_DISpatialResamplingWithPairwiseMIS(
             sparams.normalThreshold, sparams.depthThreshold))
             continue;
 
-        if (sparams.enableMaterialSimilarityTest && !RAB_AreMaterialsSimilar(RAB_GetMaterial(centerSurface), RAB_GetMaterial(neighborSurface)))
+        if (sparams.enableMaterialSimilarityTest != 0u && !RAB_AreMaterialsSimilar(RAB_GetMaterial(centerSurface), RAB_GetMaterial(neighborSurface)))
             continue;
 
         // The surfaces are similar enough so we *can* reuse a neighbor from this pixel, so load it.
@@ -88,7 +88,7 @@ RTXDI_DIReservoir RTXDI_DISpatialResamplingWithPairwiseMIS(
 
         if (RTXDI_IsValidDIReservoir(neighborSample))
         {
-            if (sparams.discountNaiveSamples && neighborSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
+            if (sparams.discountNaiveSamples != 0u && neighborSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
                 continue;
         }
 
@@ -199,7 +199,7 @@ RTXDI_DIReservoir RTXDI_DISpatialResampling(
             sparams.normalThreshold, sparams.depthThreshold))
             continue;
 
-        if (sparams.enableMaterialSimilarityTest && !RAB_AreMaterialsSimilar(RAB_GetMaterial(centerSurface), RAB_GetMaterial(neighborSurface)))
+        if (sparams.enableMaterialSimilarityTest != 0u && !RAB_AreMaterialsSimilar(RAB_GetMaterial(centerSurface), RAB_GetMaterial(neighborSurface)))
             continue;
 
         uint2 neighborReservoirPos = RTXDI_PixelPosToReservoirPos(idx, rParams.activeCheckerboardField);
@@ -217,7 +217,7 @@ RTXDI_DIReservoir RTXDI_DISpatialResampling(
         RAB_LightSample candidateLightSample = RAB_EmptyLightSample();
         if (RTXDI_IsValidDIReservoir(neighborSample))
         {   
-            if (sparams.discountNaiveSamples && neighborSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
+            if (sparams.discountNaiveSamples != 0u && neighborSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
                 continue;
 
             candidateLight = RAB_LoadLightInfo(RTXDI_GetDIReservoirLightIndex(neighborSample), false);

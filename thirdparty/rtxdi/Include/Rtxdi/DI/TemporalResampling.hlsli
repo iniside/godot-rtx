@@ -56,7 +56,7 @@ RTXDI_DIReservoir RTXDI_DITemporalResampling(
     // Backproject this pixel to the previous frame
     float3 motion = screenSpaceMotion;
     
-    if (!tparams.enablePermutationSampling)
+    if (tparams.enablePermutationSampling == 0u)
     {
         motion.xy += float2(RTXDI_GetNextRandom(rng), RTXDI_GetNextRandom(rng)) - 0.5;
     }
@@ -82,7 +82,7 @@ RTXDI_DIReservoir RTXDI_DITemporalResampling(
         }
 
         int2 idx = prevPos + offset;
-        if (tparams.enablePermutationSampling && i == 0)
+        if (tparams.enablePermutationSampling != 0u && i == 0)
         {
             RTXDI_ApplyPermutationSampling(idx, tparams.uniformRandomNumber);
         }
@@ -190,7 +190,7 @@ RTXDI_DIReservoir RTXDI_DITemporalResampling(
             temporalP = RAB_GetLightSampleTargetPdfForSurface(selectedSampleAtTemporal, temporalSurface);
 
 #if RTXDI_ALLOWED_BIAS_CORRECTION >= RTXDI_BIAS_CORRECTION_RAY_TRACED
-            if (tparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_RAY_TRACED && temporalP > 0 && (!selectedPreviousSample || !tparams.enableVisibilityShortcut))
+            if (tparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_RAY_TRACED && temporalP > 0 && (!selectedPreviousSample || tparams.enableVisibilityShortcut == 0u))
             {
                 if (!RAB_GetTemporalConservativeVisibility(surface, temporalSurface, selectedSampleAtTemporal))
                 {

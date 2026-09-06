@@ -30,6 +30,8 @@
 
 #include "render_forward_clustered.h"
 
+#include "render_rtxdi.h"
+
 #include "core/config/project_settings.h"
 #include "servers/rendering/renderer_rd/environment/fog.h"
 #include "servers/rendering/renderer_rd/framebuffer_cache_rd.h"
@@ -2364,8 +2366,9 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	}
 
 	// After this point clear_color has linear encoding.
+	RTViewportState *rt_state = nullptr;
 	if (!is_reflection_probe) {
-		raytracing->build_tlas(p_render_data, 0);
+		rt_state = raytracing->build_tlas(p_render_data, 0);
 	}
 
 	RSE::ViewportMSAA msaa = rb->get_msaa_3d();
@@ -2480,6 +2483,19 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		_render_list_with_draw_list(&render_list_params, color_framebuffer, RD::DRAW_CLEAR_ALL, surface_clear, 0.0f, 0u, p_render_data->render_region);
 		rb_data->commit_rtxdi_surface();
 		RD::get_singleton()->draw_command_end_label();
+		RenderRTXDISurfaceResources surface;
+		for (uint32_t attachment = 0; attachment < 6; attachment++) {
+			surface.current[attachment] = rb_data->get_rtxdi_surface_texture(attachment);
+			surface.previous[attachment] = rb_data->get_rtxdi_surface_texture(attachment, true);
+		}
+		surface.current_depth = rb_data->get_rtxdi_surface_depth();
+		surface.previous_depth = rb_data->get_rtxdi_surface_depth(true);
+		surface.size = screen_size;
+		surface.history_valid = rb_data->is_rtxdi_surface_history_valid();
+		surface.orthogonal = rb_data->is_rtxdi_surface_camera_orthogonal();
+		surface.frame_index = rb_data->get_rtxdi_surface_frame_index();
+		RENDER_TIMESTAMP("RTXDI Direct Lighting");
+		rtxdi->render(surface, rt_state, scene_state.uniform_buffers[opaque_pass_uniform_buffer_index], 0, 1);
 	} else {
 		bool render_motion_pass = !render_list[RENDER_LIST_MOTION].elements.is_empty();
 
@@ -4456,8 +4472,9 @@ void RenderForwardClustered::_geometry_instance_add_surface_with_material(Geomet
 	sdcache->rtxdi_material_flags = GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_VALID;
 	const bool unsupported_alpha = p_material->shader_data->uses_alpha_pass();
 	const bool rt_classification_mismatch = p_material->shader_data->uses_alpha_pass() != p_material->shader_data->rt_uses_alpha_pass() || p_material->shader_data->cull_mode != p_material->shader_data->rt_cull_mode();
+	const bool procedural_coverage = (p_material->shader_data->uses_alpha_clip || p_material->shader_data->uses_discard) && !p_material->shader_data->generated_standard_material;
 	const bool procedural_emission = p_material->shader_data->uses_emission && !p_material->shader_data->generated_standard_material;
-	if (p_material->shader_data->rtxdi_surface_unsupported || p_material->shader_data->rt != nullptr || unsupported_alpha || rt_classification_mismatch || procedural_emission) {
+	if (p_material->shader_data->rtxdi_surface_unsupported || p_material->shader_data->rt != nullptr || unsupported_alpha || rt_classification_mismatch || procedural_emission || procedural_coverage) {
 		sdcache->rtxdi_material_flags |= GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_UNSUPPORTED;
 	}
 	if (p_material->shader_data->uses_alpha_clip) {
@@ -5540,6 +5557,8 @@ RenderForwardClustered::RenderForwardClustered() {
 	motion_vectors_store = memnew(RendererRD::MotionVectorsStore);
 	raytracing = memnew(RenderRaytracing);
 	raytracing->initialize(this);
+	rtxdi = memnew(RenderRTXDI);
+	rtxdi->initialize(raytracing, is_using_radiance_octmap_array(), get_roughness_layers());
 #ifdef METAL_MFXTEMPORAL_ENABLED
 	mfx_temporal_effect = memnew(RendererRD::MFXTemporalEffect);
 #endif
@@ -5547,6 +5566,10 @@ RenderForwardClustered::RenderForwardClustered() {
 }
 
 RenderForwardClustered::~RenderForwardClustered() {
+	if (rtxdi != nullptr) {
+		memdelete(rtxdi);
+		rtxdi = nullptr;
+	}
 	if (raytracing != nullptr) {
 		memdelete(raytracing);
 		raytracing = nullptr;

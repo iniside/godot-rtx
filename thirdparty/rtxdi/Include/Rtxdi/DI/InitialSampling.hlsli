@@ -658,11 +658,11 @@ localSample);
     else
         o_lightSample = localSample;
 
-	if(sampleParams.enableInitialVisibility && RTXDI_IsValidDIReservoir(state))
+	if(sampleParams.enableInitialVisibility != 0u && RTXDI_IsValidDIReservoir(state))
 	{
 		if (!RAB_GetConservativeVisibility(surface, o_lightSample))
         {
-            RTXDI_StoreVisibilityInDIReservoir(state, 0, true);
+            RTXDI_StoreVisibilityInDIReservoir(state, float3(0), true);
         }
 
 	}

@@ -32,6 +32,7 @@
 #include "core/io/marshalls.h"
 #include "core/math/math_funcs.h"
 #include "servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h"
+#include "servers/rendering/renderer_rd/forward_clustered/render_rtxdi.h"
 #include "servers/rendering/renderer_rd/forward_clustered/scene_shader_raytracing.h"
 #include "servers/rendering/renderer_rd/storage_rd/light_storage.h"
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
@@ -156,6 +157,7 @@ void RenderRaytracing::_free_viewport_state_internal(RTViewportState *p_state) {
 			RD::get_singleton()->free_rid(snapshot.parameters_buffer);
 		}
 	}
+	RenderRTXDI::free_viewport_resources(p_state);
 	memdelete(p_state);
 }
 
@@ -460,6 +462,7 @@ RTMergedMMEntry *RenderRaytracing::_access_merged_mm_slot(RID &r_handle) {
 // ---------------------------------------------------------------------------
 
 void RenderRaytracing::prepare_frame() {
+	geometry_buffer_dependencies.clear();
 	blass.clear();
 	blas_transforms.clear();
 	instance_flags.clear();
@@ -1725,6 +1728,25 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
 	RendererRD::TextureStorage *texture_storage = RendererRD::TextureStorage::get_singleton();
 
+	mat.coverage_flags = 0;
+	mat.alpha_scissor_threshold = 0.5f;
+	mat.alpha_hash_scale = 1.0f;
+	const SceneShaderForwardClustered::MaterialData *raster_material = static_cast<SceneShaderForwardClustered::MaterialData *>(material_storage->material_get_data(p_material_rid, RendererRD::MaterialStorage::SHADER_TYPE_3D));
+	if (raster_material && raster_material->shader_data && raster_material->shader_data->generated_standard_material) {
+		const String &code = raster_material->shader_data->code;
+		if (code.contains("ALPHA_SCISSOR_THRESHOLD = alpha_scissor_threshold;")) {
+			mat.coverage_flags |= 1u;
+			mat.alpha_scissor_threshold = material_storage->material_get_param(p_material_rid, "alpha_scissor_threshold");
+		}
+		if (code.contains("ALPHA_HASH_SCALE = alpha_hash_scale;")) {
+			mat.coverage_flags |= 2u;
+			mat.alpha_hash_scale = material_storage->material_get_param(p_material_rid, "alpha_hash_scale");
+		}
+		if (code.contains("albedo_tex *= COLOR;")) {
+			mat.coverage_flags |= 4u;
+		}
+	}
+
 	// Helper lambda to get texture from material parameter
 	// p_srgb should be true for color textures (albedo, emission) that need sRGB->linear conversion
 	auto get_material_texture = [&](const StringName &p_param, bool p_srgb = false) -> RID {
@@ -2075,10 +2097,12 @@ void RenderRaytracing::finalize_buffers(RTViewportState *p_state) {
 		}
 	};
 
+	RT_GeometryData empty_geometry = {};
+	RT_MaterialData empty_material = {};
 	update_or_grow(p_state->geometry_buffer, p_state->geometry_buffer_capacity,
-			geometry_data.ptr(), geometry_data.size() * sizeof(RT_GeometryData));
+			geometry_data.is_empty() ? &empty_geometry : geometry_data.ptr(), MAX(geometry_data.size(), 1u) * sizeof(RT_GeometryData));
 	update_or_grow(p_state->material_buffer, p_state->material_buffer_capacity,
-			material_data.ptr(), material_data.size() * sizeof(RT_MaterialData));
+			material_data.is_empty() ? &empty_material : material_data.ptr(), MAX(material_data.size(), 1u) * sizeof(RT_MaterialData));
 	update_or_grow(p_state->motion_index_buffer, p_state->motion_index_buffer_capacity,
 			motion_indices.ptr(), motion_indices.size() * sizeof(int32_t));
 	update_or_grow(p_state->motion_transform_buffer, p_state->motion_transform_buffer_capacity,
@@ -2842,6 +2866,11 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 			blass.push_back(surf_data->blas);
 			const uint32_t geometry_index = geometry_data.size();
 			geometry_data.push_back(instance_geometry(inst, surf_data->geometry));
+			for (RID buffer : { mesh_storage->mesh_surface_get_vertex_buffer(mesh_surface), mesh_storage->mesh_surface_get_attribute_buffer(mesh_surface), mesh_storage->mesh_surface_get_index_buffer(mesh_surface, 0), surf_data->cluster_remap_buffer }) {
+				if (buffer.is_valid()) {
+					geometry_buffer_dependencies.insert(buffer);
+				}
+			}
 			register_emissive_source(inst, inst->data->base, surf->surface_index, surface_counter, geometry_index, 0,
 					surf_data->geometry.primitive_count, final_transform, mat_data);
 
@@ -2992,6 +3021,11 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 				blas_transforms.push_back(final_transform);
 				const uint32_t geometry_index = geometry_data.size();
 				geometry_data.push_back(instance_geometry(pending.mm_surf->owner, surf_data->geometry));
+				for (RID buffer : { mesh_storage->mesh_surface_get_vertex_buffer(pending.mesh_surface), mesh_storage->mesh_surface_get_attribute_buffer(pending.mesh_surface), mesh_storage->mesh_surface_get_index_buffer(pending.mesh_surface, 0), surf_data->cluster_remap_buffer }) {
+					if (buffer.is_valid()) {
+						geometry_buffer_dependencies.insert(buffer);
+					}
+				}
 				register_emissive_source(pending.mm_surf->owner, pending.mm_rid, pending.surface_index, pending.surface_counter,
 						geometry_index, mi * surf_data->geometry.primitive_count, surf_data->geometry.primitive_count, final_transform, pending.mat_data);
 				sbt_offsets.push_back(pending.mat_data->rt_sbt_offset);
@@ -3227,6 +3261,8 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 
 			RT_LightData light = {};
 			light.type = RT_LIGHT_TYPE_EMISSIVE_TRIANGLE;
+			light.flags = RT_LIGHT_FLAG_CASTS_SHADOW;
+			light.specular_amount = 1.0f;
 			light.geometry_index = source.geometry_index;
 			light.primitive_index = primitive;
 			light.receiver_mask = UINT32_MAX;
@@ -3261,6 +3297,8 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 				key.type = RT_LIGHT_TYPE_ENVIRONMENT;
 				RT_LightData light = {};
 				light.type = RT_LIGHT_TYPE_ENVIRONMENT;
+				light.flags = RT_LIGHT_FLAG_CASTS_SHADOW;
+				light.specular_amount = 1.0f;
 				light.receiver_mask = UINT32_MAX;
 				light.caster_mask = UINT32_MAX;
 				environment_keys.push_back(key);
@@ -3366,49 +3404,43 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 // Trace-time buffer dependencies
 // ---------------------------------------------------------------------------
 
-void RenderRaytracing::register_raytracing_buffer_dependencies(RD::RaytracingListID p_list) {
+void RenderRaytracing::register_compute_buffer_dependencies(RD::ComputeListID p_list) {
 	RD *rd = RD::get_singleton();
-
-	// The hit shader reads vertex / attribute / index data via BDA stored in
-	// RT_GeometryData. The draw graph cannot infer those reads from the BDA, so
-	// every per-frame-written buffer that the trace will touch via BDA must be
-	// declared here -- otherwise the producing copy/dispatch may not be visible
-	// to the trace. (Static mesh VB/AB/IB are uploaded once via the transfer
-	// worker and don't need per-frame barriers.)
-
-	// Mat UBO pool buffer dependency.
-	if (mat_ubo_pool_buffer.is_valid()) {
-		rd->raytracing_list_add_buffer_dependency(p_list, mat_ubo_pool_buffer, /*p_writable=*/false);
+	for (RID buffer : geometry_buffer_dependencies) {
+		rd->compute_list_add_buffer_dependency(p_list, buffer);
 	}
 
-	// Deformed surface buffer dependencies.
+
+	if (mat_ubo_pool_buffer.is_valid()) {
+		rd->compute_list_add_buffer_dependency(p_list, mat_ubo_pool_buffer);
+	}
+
 	for (uint32_t i = 0; i < deformed_active_this_frame.size(); i++) {
 		RTDeformedCacheEntry *e = deformed_pool.get_or_null(deformed_active_this_frame[i]);
 		if (!e) {
 			continue;
 		}
 		if (e->owned_vb_full.is_valid()) {
-			rd->raytracing_list_add_buffer_dependency(p_list, e->owned_vb_full, /*p_writable=*/false);
+			rd->compute_list_add_buffer_dependency(p_list, e->owned_vb_full);
 		}
 		if (e->prev_pos_vb.is_valid()) {
-			rd->raytracing_list_add_buffer_dependency(p_list, e->prev_pos_vb, /*p_writable=*/false);
+			rd->compute_list_add_buffer_dependency(p_list, e->prev_pos_vb);
 		}
 	}
 
-	// Merged MultiMesh buffer dependencies.
 	for (uint32_t i = 0; i < merged_mm_active_this_frame.size(); i++) {
 		RTMergedMMEntry *e = merged_mm_pool.get_or_null(merged_mm_active_this_frame[i]);
 		if (!e) {
 			continue;
 		}
 		if (e->merged_vtx_buffer.is_valid()) {
-			rd->raytracing_list_add_buffer_dependency(p_list, e->merged_vtx_buffer, /*p_writable=*/false);
+			rd->compute_list_add_buffer_dependency(p_list, e->merged_vtx_buffer);
 		}
 		if (e->merged_attr_buffer.is_valid()) {
-			rd->raytracing_list_add_buffer_dependency(p_list, e->merged_attr_buffer, /*p_writable=*/false);
+			rd->compute_list_add_buffer_dependency(p_list, e->merged_attr_buffer);
 		}
 		if (e->replicated_idx_buffer.is_valid()) {
-			rd->raytracing_list_add_buffer_dependency(p_list, e->replicated_idx_buffer, /*p_writable=*/false);
+			rd->compute_list_add_buffer_dependency(p_list, e->replicated_idx_buffer);
 		}
 	}
 }
