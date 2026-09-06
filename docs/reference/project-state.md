@@ -59,9 +59,10 @@ Approval/plan commit: `e02ea8c87d`. Dependency integration landed in `89b35e1d1c
 with shader/host compile evidence and a fresh hostile review PASS. RT ownership
 and API replacement landed in `ee7ae4e528`, with editor compile evidence and fresh
 review PASS after descriptor-indexing fix `de61204e58`. Scene/light registry
-replacement landed in `afbe198fef`, with scoped clangd/diff checks and fresh review
-pending; step 4 surface/history replacement is active. Step 3 has no full build
-or shader/GPU validation yet.
+replacement landed in `afbe198fef`, with scoped clangd/diff checks. Fresh review
+required four shader/analytic-light fixes, landed in `1c31998c6f` with shader
+compile diagnostics and fresh round 2 review PASS. Step 4 surface/history
+replacement is active. Step 3 has no full renderer build or GPU validation yet.
 No RTXDI frame dispatch or visual proof exists yet.
 
 The [approved RTXDI replacement plan](../plans/2026-09-06-1854-rtxdi-renderer-plan.md)

@@ -15,7 +15,13 @@ REJECT for missing bindless descriptor-indexing preflight. Scoped fix
 the four Vulkan descriptor-indexing bits and a compositor preflight check.
 Fresh round 2 review returned PASS on 2026-09-06. The fix has a clean staged diff check but no
 separate compile yet; Step 3 owns concurrent renderer edits.
-Step 3 landed in `afbe198fefaa10ab4679cffa15e258106d4efdfb`; fresh review is active.
+Step 3 landed in `afbe198fefaa10ab4679cffa15e258106d4efdfb`; first fresh review
+returned REJECT for four concrete defects: shared shader binding collisions,
+missing area-light range attenuation, inconsistent environment PDF re-evaluation,
+and inclusion of SKY_ONLY directionals in scene direct lights. Scoped fix
+`1c31998c6f0ad703f39c879f2f1cbc9b83004f52` closes those findings; fresh round 2
+review returned PASS on 2026-09-06. No additional identity/lifetime defect was
+confirmed by either round.
 Step 4 surface/history implementation is active. Steps 4–7 have not landed.
 No RTXDI frame dispatch or rendered image is claimed.
 
@@ -46,6 +52,13 @@ current/previous light snapshots and invalidating remaps. Shared sampling is in
 `shaders/raytracing/rtxdi_light_sampling_inc.glsl`. It restores bindless finalization
 after geometry/material/light texture registration. Real-device correctness of
 stable identities, PDFs, deformation and resource lifetime remains unverified.
+
+Step 3 fix evidence (2026-09-06): narrow SCons shader-header generation passed;
+flattened closest-hit default and ray-query-shadow variants passed glslangValidator
+for Vulkan 1.3, with bindings 13–16 each declared once. The shared sampling include
+now declares no descriptors. A GLSL-reserved local name found by the diagnostic
+was also corrected. Changed-line clangd reported zero errors; scoped diff checks
+passed. These are shader/source diagnostics, not full renderer or GPU proof.
 
 Intermediate builds/rendering may fail by explicit owner authorization. Final
 completion requires the plan's real-device rendering gate. Automated tests are
