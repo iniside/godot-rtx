@@ -77,9 +77,9 @@ clangd checks. Round 2 rejected missing GLES3/dummy overrides for the shared cam
 RID signature. The owner authorized the remaining correction; `826dc09a5a` fixes
 the three override sites, with MSVC syntax checks passed for GLES3 and dummy and
 fresh bounded review PASS at `6e539007f8`. The reported override defect is closed.
-Step 5 DI
-code is preserved uncommitted, with four GLSL variants compiled but its host not
-compiled or wired. The status document records the exact fix and resume point.
+Step 5 DI resumed on owner request from `3e1d7ee435`, using the preserved code.
+The earlier four GLSL variants compiled, but host compilation and frame wiring
+remain unverified. The status document records the current work and evidence.
 Steps 3–4 have no full renderer build or GPU
 validation yet.
 No RTXDI frame dispatch or visual proof exists yet.

@@ -40,7 +40,11 @@ MSVC `/Zs` syntax compilation using root compile-database flags. Fresh bounded
 review of this owner-requested correction returned PASS on 2026-09-06 UTC at
 `6e539007f842b9cfd2ce845e8a99636af176e7f8`. The last reported Step 4 defect is
 closed; this is not full build or runtime validation.
-Step 5 is paused, uncommitted and unstaged. Steps 5–7 have not landed.
+Step 5 resumed on owner instruction "zacznij kolejny krok" (2026-09-07 local,
+2026-09-06 UTC), from `3e1d7ee4356c655634dba5d0f391d985e9dbf741` with the preserved
+partial work. A fresh core-implementer uses `gpt-6-astra`, high effort, because
+this step combines ReSTIR algorithm integration with GPU resource lifetime and
+dispatch synchronization. Steps 5–7 have not landed.
 No RTXDI frame dispatch or rendered image is claimed.
 
 Step 1 evidence: pinned importer completed 159 NRD SPIR-V tasks; a temporary
