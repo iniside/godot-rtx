@@ -32,7 +32,7 @@ Shared behavior rules win; adapters translate runtime mechanics only.
 | Action | Required authority |
 | --- | --- |
 | Edit source/config/docs; add or commit | `.agents/shared/core-rules.md` |
-| Research APIs/usages/data flow/overlap | `.agents/shared/research-navigation.md`; `docs/reference/research-mode.md`; for C++, `docs/reference/cpp-navigation.md` |
+| Research APIs/usages/data flow/overlap | `.agents/shared/core-rules.md`; `.agents/shared/research-navigation.md`; `docs/reference/research-mode.md`; for C++, `docs/reference/cpp-navigation.md` |
 | Write/review a plan | `.agents/shared/research-navigation.md`; `.agents/shared/planning-dispatch.md`; `docs/reference/research-mode.md`; `docs/reference/plan-writing-workflow.md` |
 | Implement/delegate a step or review a diff/commit | `.agents/shared/core-rules.md`; `.agents/shared/planning-dispatch.md`; `docs/reference/implementation-mode.md`; `docs/reference/subagent-dispatch.md`; for code, `docs/reference/godot-failure-taxonomy.md` |
 | Touch engine C++, GDScript, shaders, scenes/resources, or SCons | `.agents/shared/godot-rules.md`; relevant `docs/reference/godot-failure-taxonomy.md` classes |

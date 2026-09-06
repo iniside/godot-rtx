@@ -41,10 +41,15 @@ by targeted reads of this checkout:
   [rendering_device_driver_d3d12.cpp](../../drivers/d3d12/rendering_device_driver_d3d12.cpp).
 
 Method limits: repository-root `compile_commands.json` was absent, so clangd
-navigation was unavailable. A targeted renderer text inventory found no
-RTXGI, DDGI, ReSTIR, or NRC implementation in the inspected paths; this is a
-bounded lower bound, not proof of global absence. Git history identified the
-listed renderer work as fork-local.
+navigation was unavailable. Git history identified the listed renderer work as
+fork-local.
+
+Bounded inventory evidence: on 2026-09-06 at revision
+`6ec2368d7e705103397177b73aa3585d08df2c15`, case-insensitive
+`rg -n -i 'rtxgi|ddgi|restir|\bnrc\b'` returned no matching identifiers under
+`servers/rendering/renderer_rd/forward_clustered` and
+`servers/rendering/renderer_rd/shaders/raytracing`. This is a textual lower
+bound, not proof that the features are absent elsewhere or under other names.
 
 ## Known Gaps
 
