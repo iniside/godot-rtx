@@ -44,8 +44,13 @@ Step 5 resumed on owner instruction "zacznij kolejny krok" (2026-09-07 local,
 2026-09-06 UTC), from `3e1d7ee4356c655634dba5d0f391d985e9dbf741` with the preserved
 partial work. A fresh core-implementer uses `gpt-6-astra`, high effort, because
 this step combines ReSTIR algorithm integration with GPU resource lifetime and
-dispatch synchronization. Steps 5–7 have not landed.
-No RTXDI frame dispatch or rendered image is claimed.
+dispatch synchronization. Step 5 landed in
+`5f9177d425f4f1d8241c554bf4816bb12f523ff1`; fresh review returned REJECT on
+2026-09-06 UTC for three confirmed surface/coverage/reprojection defects listed
+below. Work stopped after this review on explicit owner instruction. No fixes
+were applied after its findings, and Steps 6–7 have not started.
+The frame dispatch is wired in code; real-device execution and rendered output
+remain unverified.
 
 Step 1 evidence: pinned importer completed 159 NRD SPIR-V tasks; a temporary
 native GLSL reservoir/random-sampler closure passed glslangValidator Vulkan 1.2.
@@ -99,6 +104,29 @@ rewritten or that code validation covers commit-message formatting.
 
 ## Resume point
 
+Step 5 first review target: `5f9177d425f4f1d8241c554bf4816bb12f523ff1`.
+Required corrections before accepting this stage:
+
+- P1: export an actual oriented triangle geometric normal. The gate at
+  `shaders/raytracing/rtxdi_application_bridge_inc.glsl:265` currently consumes
+  interpolated shading normal from `shaders/forward_clustered/scene_forward_clustered.glsl:1369,2905`.
+  Smooth shading can admit light below the actual triangle plane.
+- P1: preserve material filter/repeat/coverage sampling semantics in ray visibility
+  and emissive coverage. `rtxdi_application_bridge_inc.glsl:328` uses linear,
+  repeat and LOD 0 regardless of the standard material; a clamped raster hole can
+  therefore cast an opaque shadow. Raster authority: `scene/resources/material.cpp:702,732`.
+- P2: add jitter displacement to the motion passed to SDK temporal reprojection.
+  `rtxdi_di.glsl:201` forwards motion from which raster removed jitter; the sampled
+  previous buffer requires `(previous_jitter - current_jitter) * 0.5 * viewport_size`.
+  Raster producer: `scene_forward_clustered.glsl:2896-2904`; SDK consumer:
+  `Rtxdi/DI/TemporalResampling.hlsli:64`.
+
+The review confirmed reservoir rotation, descriptor/BDA dependencies, full masks,
+PDF measures, NRD factors and resource lifetime at the reviewed source boundary.
+It checked the linked-editor log and shader artifacts, but did not run GPU code.
+These findings were reported without implementation because the owner requested
+stopping once this review finished.
+
 Evidence date: 2026-09-06 UTC. Frozen Step 4 final review target:
 `5075e8b3fc3b19213744d0e9ac9f3648ca710359`.
 
@@ -116,27 +144,36 @@ Its trailer incorrectly says `Codex (GPT-6)`. This entry corrects the execution
 record without rewriting history. Concurrent policy commit `8078509d21` was
 preserved and is not part of the signature fix.
 
-Step 5 partial work is preserved in new `forward_clustered/render_rtxdi.{h,cpp}`,
+Step 5 implementation is committed in new `forward_clustered/render_rtxdi.{h,cpp}`,
 new `shaders/raytracing/rtxdi_di.glsl`, `rtxdi_application_bridge_inc.glsl` and
 `rtxdi_light_data_inc.glsl`, with narrow DI lifetime changes in
 `render_raytracing.{h,cpp}` and extraction from `rtxdi_light_sampling_inc.glsl`.
-The host resource/context/config/uniform-set/dispatch code is written but has not
-been compiled or wired into Forward+. It is not a completed implementation.
+The host resource/context/config/uniform-set/dispatch code is compiled and wired
+after `commit_rtxdi_surface()`. Four separate RD compute lists use SDK reservoir
+indices/pitches, with explicit compute BDA dependencies and per-viewport lifetime.
 
-All four native GLSL DI variants (initial, temporal, spatial, shade) passed
-glslangValidator for Vulkan 1.3 using the pinned SDK. Additional imported GLSL
+All four corrected native GLSL DI variants (initial, temporal, spatial, shade)
+passed glslangValidator for Vulkan 1.3 using the pinned SDK. The Windows editor
+and console linked with `scons platform=windows target=editor accesskit=no
+d3d12=no -j16`; the final build took 42.43 seconds. The local evidence log is
+`C:/Users/lukas/AppData/Local/Temp/rtxdi-step5-build-final.log`, and the four
+flattened shaders/SPIR-V files are under the adjacent `rtxdi-step5-glsl/` folder.
+No template build or GPU execution was performed. Additional imported GLSL
 boolean fixes are recorded in
 `thirdparty/rtxdi/patches/0002-glsl-di-boolean-parameters.patch` and applied to
 InitialSampling, TemporalResampling and SpatialResampling; the importer applies
 the recorded patch directory. No generated shader was edited. The diagnostic
 `comp.spv` was removed. These temporary diagnostics are not durable runtime proof.
 
-The next renderer work is to resume host compile diagnostics and close any
-mono-view texture-slice needs without adding unsupported multiview behavior.
-Initialize/tear down the DI service and dispatch after `commit_rtxdi_surface()`;
-recheck the actual four variants, finish the assigned Stage 5 contract and commit
-only its owned files. NRD/composition and final editor/template/real-Vulkan visual
-validation remain Steps 6–7. No automated tests have been run.
+Initial candidate counts are 8 local, 1 infinite, 1 environment and 0 BRDF.
+BRDF ray proposals are disabled because per-light caster masks do not share the
+visibility domain required by that proposal's MIS support assumption. Temporal
+correction uses current AS and can exhibit transient bias. Outputs are separate
+RGBA16F diffuse/specular radiance and linear hit distance, demodulated with pinned
+NRD material factors and sanitized/clamped for FP16. The next stages are NRD/HDR
+composition and final editor/template/real-Vulkan visual validation. They remain
+unstarted under the owner's stop-after-review instruction. No automated tests
+have been run.
 
 Intermediate builds/rendering may fail by explicit owner authorization. Final
 completion requires the plan's real-device rendering gate. Automated tests are

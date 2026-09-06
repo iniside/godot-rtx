@@ -77,12 +77,12 @@ clangd checks. Round 2 rejected missing GLES3/dummy overrides for the shared cam
 RID signature. The owner authorized the remaining correction; `826dc09a5a` fixes
 the three override sites, with MSVC syntax checks passed for GLES3 and dummy and
 fresh bounded review PASS at `6e539007f8`. The reported override defect is closed.
-Step 5 DI resumed on owner request from `3e1d7ee435`, using the preserved code.
-The earlier four GLSL variants compiled, but host compilation and frame wiring
-remain unverified. The status document records the current work and evidence.
-Steps 3–4 have no full renderer build or GPU
-validation yet.
-No RTXDI frame dispatch or visual proof exists yet.
+Step 5 DI landed in `5f9177d425`, with four GLSL variants and the Windows editor
+compiled/linked. Fresh review returned REJECT for triangle geometric normal,
+material coverage sampler and temporal jitter defects; exact anchors and proposed
+corrections are in the status document. Work stopped after review on owner request,
+without fixing those findings or starting NRD. Dispatch is wired in code, but
+real-device DI execution, visual correctness and template build remain unverified.
 
 The [approved RTXDI replacement plan](../plans/2026-09-06-1854-rtxdi-renderer-plan.md)
 received a fresh hostile plan-review PASS and owner approval on 2026-09-06 at
