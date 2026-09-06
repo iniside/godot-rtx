@@ -38,7 +38,6 @@
 #include "servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h"
 #include "servers/rendering/renderer_rd/renderer_compositor_rd.h"
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
-#include "servers/rendering/storage/environment_storage.h"
 
 using namespace RendererSceneRenderImplementation;
 
@@ -608,7 +607,7 @@ bool SceneShaderRaytracing::_preprocess_shader(RID p_material, bool p_is_procedu
 }
 
 void SceneShaderRaytracing::finalize_custom_shaders() {
-	async_compilation_enabled = GLOBAL_GET_CACHED(bool, "rendering/pathtracing/async_shader_compilation");
+	async_compilation_enabled = false;
 
 	_kick_rebuild_if_idle(); // Async dispatch only; sync drains below.
 
@@ -647,40 +646,6 @@ bool SceneShaderRaytracing::is_hg_ready_in_bundle(uint32_t p_slot_index, uint32_
 		return false;
 	}
 	return b.live_ready_mask[p_slot_index];
-}
-
-uint32_t SceneShaderRaytracing::compute_rt_flags(RID p_environment, bool p_fog_enabled) {
-	uint32_t flags = RT_FLAG_NONE;
-	uint32_t sample_count = 1;
-	uint32_t max_bounces = 3;
-
-	if (p_environment.is_valid()) {
-		RendererEnvironmentStorage *env_storage = RendererEnvironmentStorage::get_singleton();
-
-		if (env_storage->environment_get_pathtracing_debug_mode(p_environment) != 0) {
-			flags |= RT_FLAG_DEBUG_VIS_ENABLED;
-		}
-
-		if (GLOBAL_GET("rendering/pathtracing/use_simple_shadows")) {
-			flags |= RT_FLAG_RAY_QUERY_SHADOWS_ENABLED;
-		}
-
-		sample_count = MAX(1, env_storage->environment_get_pathtracing_samples_per_pixel(p_environment));
-		max_bounces = CLAMP(env_storage->environment_get_pathtracing_max_bounces(p_environment), 1, 8);
-		if (env_storage->environment_get_pathtracing_denoiser(p_environment) == RSE::PT_DENOISER_DLSS_RAY_RECONSTRUCTION) {
-			flags |= RT_FLAG_DLSS_RR_ENABLED;
-		}
-	}
-
-	if (p_fog_enabled) {
-		flags |= RT_FLAG_FOG_ENABLED;
-	}
-
-	if (GLOBAL_GET("rendering/pathtracing/use_shader_execution_reordering")) {
-		flags |= RT_FLAG_SER_ENABLED;
-	}
-
-	return rt_flags_pack(flags, sample_count, max_bounces);
 }
 
 SceneShaderRaytracing *SceneShaderRaytracing::get_singleton() {
@@ -1437,7 +1402,7 @@ void SceneShaderRaytracing::_join_lane_for_shutdown() {
 }
 
 void SceneShaderRaytracing::init(const String p_defines) {
-	async_compilation_enabled = (bool)GLOBAL_GET("rendering/pathtracing/async_shader_compilation");
+	async_compilation_enabled = false;
 
 	// Raygen: one mode per bitmask of RAYGEN_SHADER_OPTIONS.
 	const uint32_t variant_count = 1u << RAYGEN_SHADER_OPTION_COUNT;

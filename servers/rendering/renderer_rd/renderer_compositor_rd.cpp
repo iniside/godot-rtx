@@ -36,8 +36,7 @@
 #include "core/os/os.h"
 #include "drivers/streamline/streamline.h"
 #include "servers/display/display_server.h"
-#include "servers/rendering/renderer_rd/forward_clustered/render_forward_clustered_pt.h"
-#include "servers/rendering/renderer_rd/forward_mobile/render_forward_mobile.h"
+#include "servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h"
 #include "servers/rendering/rendering_server_types.h"
 
 void RendererCompositorRD::blit_render_targets_to_screen(DisplayServerEnums::WindowID p_screen, const RenderingServerTypes::BlitToScreen *p_render_targets, int p_amount) {
@@ -316,6 +315,38 @@ void RendererCompositorRD::set_boot_image_with_stretch(const Ref<Image> &p_image
 
 RendererCompositorRD *RendererCompositorRD::singleton = nullptr;
 
+Error RendererCompositorRD::is_viable() {
+	RenderingDevice *rd = RD::get_singleton();
+	ERR_FAIL_NULL_V_MSG(rd, ERR_UNAVAILABLE, "The RTXDI renderer requires a RenderingDevice.");
+	ERR_FAIL_COND_V_MSG(OS::get_singleton()->get_current_rendering_method() != "forward_plus", ERR_UNAVAILABLE, "The RTXDI renderer requires the Forward+ rendering method.");
+	ERR_FAIL_COND_V_MSG(OS::get_singleton()->get_current_rendering_driver_name() != "vulkan", ERR_UNAVAILABLE, "The RTXDI renderer requires the Vulkan rendering driver.");
+	ERR_FAIL_COND_V_MSG(!rd->has_feature(RD::SUPPORTS_RAY_QUERY), ERR_UNAVAILABLE, "The RTXDI renderer requires ray query support.");
+	ERR_FAIL_COND_V_MSG(!rd->has_feature(RD::SUPPORTS_BUFFER_DEVICE_ADDRESS), ERR_UNAVAILABLE, "The RTXDI renderer requires buffer device address support.");
+	ERR_FAIL_COND_V_MSG(!rd->clas_is_supported(), ERR_UNAVAILABLE, "The RTXDI renderer requires cluster acceleration structure support.");
+	ERR_FAIL_COND_V_MSG(rd->limit_get(RD::LIMIT_MAX_TEXTURES_PER_SHADER_STAGE) < 48, ERR_UNAVAILABLE, "The RTXDI renderer requires at least 48 textures per shader stage.");
+	ERR_FAIL_COND_V_MSG(rd->limit_get(RD::LIMIT_MAX_FRAMEBUFFER_COLOR_ATTACHMENTS) < 6, ERR_UNAVAILABLE, "The RTXDI renderer requires at least 6 framebuffer color attachments.");
+
+	const BitField<RD::TextureUsageBits> surface_usage = RD::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT | RD::TEXTURE_USAGE_SAMPLING_BIT;
+	const RD::DataFormat surface_formats[] = {
+		RD::DATA_FORMAT_R8G8B8A8_UNORM,
+		RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
+		RD::DATA_FORMAT_R32_UINT,
+		RD::DATA_FORMAT_R32G32_UINT,
+	};
+	for (RD::DataFormat format : surface_formats) {
+		ERR_FAIL_COND_V_MSG(!rd->texture_is_format_supported_for_usage(format, surface_usage), ERR_UNAVAILABLE, vformat("The RTXDI renderer requires color-attachment and sampling support for RenderingDevice format %d.", format));
+	}
+
+	return OK;
+}
+
+RendererCompositor *RendererCompositorRD::_create_current() {
+	if (is_viable() != OK) {
+		return nullptr;
+	}
+	return memnew(RendererCompositorRD);
+}
+
 RendererCompositorRD::RendererCompositorRD() {
 	uniform_set_cache = memnew(UniformSetCacheRD);
 	framebuffer_cache = memnew(FramebufferCacheRD);
@@ -374,22 +405,7 @@ RendererCompositorRD::RendererCompositorRD() {
 	canvas = memnew(RendererCanvasRenderRD());
 	texture_storage->_tex_blit_shader_initialize();
 
-	String rendering_method = OS::get_singleton()->get_current_rendering_method();
-	uint64_t textures_per_stage = RD::get_singleton()->limit_get(RD::LIMIT_MAX_TEXTURES_PER_SHADER_STAGE);
-
-	if (rendering_method == "mobile" || textures_per_stage < 48) {
-		if (rendering_method == "forward_plus") {
-			WARN_PRINT_ONCE("Platform supports less than 48 textures per stage which is less than required by the Clustered renderer. Defaulting to Mobile renderer.");
-		}
-		scene = memnew(RendererSceneRenderImplementation::RenderForwardMobile());
-	} else if (rendering_method == "forward_plus") {
-		scene = memnew(RendererSceneRenderImplementation::RenderForwardClusteredPT());
-	} else {
-		// Fall back to our high end renderer.
-		ERR_PRINT(vformat("Cannot instantiate RenderingDevice-based renderer with renderer type '%s'. Defaulting to Forward+ renderer.", rendering_method));
-		scene = memnew(RendererSceneRenderImplementation::RenderForwardClusteredPT());
-	}
-
+	scene = memnew(RendererSceneRenderImplementation::RenderForwardClustered());
 	scene->init();
 }
 

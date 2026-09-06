@@ -40,22 +40,12 @@
 #include "servers/rendering/renderer_rd/shaders/raytracing/multimesh_merge.glsl.gen.h"
 #include "servers/rendering/rendering_device.h"
 
-#define RB_TEX_RAYTRACING SNAME("raytracing")
-#define RB_TEX_RT_DEPTH SNAME("rt_depth")
-
-#define RB_SCOPE_DLSS_RR SNAME("dlss_rr")
-#define RB_TEX_DLSS_RR_DIFFUSE_ALBEDO SNAME("diffuse_albedo")
-#define RB_TEX_DLSS_RR_SPECULAR_ALBEDO SNAME("specular_albedo")
-#define RB_TEX_DLSS_RR_NORMAL_ROUGHNESS SNAME("normal_roughness")
-#define RB_TEX_DLSS_RR_SPECULAR_HIT_DIST SNAME("specular_hit_dist")
-
 class RenderDataRD;
 class RenderSceneBuffersRD;
 
 namespace RendererSceneRenderImplementation {
 
 class RenderForwardClustered;
-class SceneShaderRaytracing;
 
 // Must match GLSL GeometryData (std430, 128 bytes).
 struct alignas(16) RT_GeometryData {
@@ -342,19 +332,12 @@ struct RTViewportState {
 	RID motion_transform_buffer;
 	uint32_t motion_transform_buffer_capacity = 0;
 
-	RID light_buffer;
-	RID params_buffer;
-	RID scene_uniform_set;
-
-	uint32_t frame_counter = 0;
 };
 
 class RenderRaytracing {
 	friend class RenderForwardClustered;
-	friend class RenderForwardClusteredPT;
 
 	RenderForwardClustered *owner = nullptr;
-	SceneShaderRaytracing *shader = nullptr;
 	BindlessBlock *bindless_block = nullptr;
 
 	RID bindless_uniform_set;
@@ -498,30 +481,9 @@ public:
 
 	RTViewportState *build_tlas(const RenderDataRD *p_render_data, uint32_t p_rt_flags);
 	uint32_t gather_lights(const RenderDataRD *p_render_data, RT_LightData *r_light_data, uint32_t p_max_lights);
-	RID update_uniform_set(RTViewportState *p_state, const RenderDataRD *p_render_data, uint32_t p_rt_flags);
-
-	void copy_output_texture(const RenderDataRD *p_render_data);
 	void free_viewport_state(RenderSceneBuffersRD *p_render_buffers);
 
-	// Raytracing output textures (stored on the render buffers via named scopes).
-	void rt_ensure_textures(RenderSceneBuffersRD *p_render_buffers);
-	bool rt_has_texture(RenderSceneBuffersRD *p_render_buffers) const;
-	RID rt_get_texture(RenderSceneBuffersRD *p_render_buffers) const;
-	bool rt_has_depth_texture(RenderSceneBuffersRD *p_render_buffers) const;
-	RID rt_get_depth_texture(RenderSceneBuffersRD *p_render_buffers) const;
-
-	// DLSS Ray Reconstruction guide buffers (stored on the render buffers).
-	void dlss_rr_ensure_buffers(RenderSceneBuffersRD *p_render_buffers);
-	void dlss_rr_free_buffers(RenderSceneBuffersRD *p_render_buffers);
-	bool dlss_rr_has_buffers(RenderSceneBuffersRD *p_render_buffers) const;
-	RID dlss_rr_get_diffuse_albedo(RenderSceneBuffersRD *p_render_buffers) const;
-	RID dlss_rr_get_specular_albedo(RenderSceneBuffersRD *p_render_buffers) const;
-	RID dlss_rr_get_normal_roughness(RenderSceneBuffersRD *p_render_buffers) const;
-	RID dlss_rr_get_specular_hit_dist(RenderSceneBuffersRD *p_render_buffers) const;
-
 	void register_raytracing_buffer_dependencies(RD::RaytracingListID p_list);
-
-	SceneShaderRaytracing *get_shader() const { return shader; }
 
 	RID get_bindless_uniform_set() const { return bindless_uniform_set; }
 	RID get_mat_ubo_pool_buffer() const { return mat_ubo_pool_buffer; }

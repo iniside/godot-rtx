@@ -3416,14 +3416,10 @@ void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_c
 	Vector<Plane> planes = p_camera_data->main_projection.get_projection_planes(p_camera_data->main_transform);
 	cull.frustum = Frustum(planes);
 
-	// RT: build wider AABB cull volume for TLAS and light gathering.
-	cull.rt_enabled = p_environment.is_valid() &&
-			scene_render->environment_get_pathtracing_enabled(p_environment);
-	if (cull.rt_enabled) {
-		float z_far = p_camera_data->main_projection.get_z_far();
-		Vector3 cam_origin = p_camera_data->main_transform.origin;
-		cull.rt_aabb = AABB(cam_origin - Vector3(z_far, z_far, z_far), Vector3(z_far, z_far, z_far) * 2.0);
-	}
+	cull.rt_enabled = true;
+	float z_far = p_camera_data->main_projection.get_z_far();
+	Vector3 cam_origin = p_camera_data->main_transform.origin;
+	cull.rt_aabb = AABB(cam_origin - Vector3(z_far, z_far, z_far), Vector3(z_far, z_far, z_far) * 2.0);
 
 	Vector<RID> directional_lights;
 	// directional lights

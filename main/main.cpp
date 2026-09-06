@@ -818,7 +818,13 @@ Error Main::test_setup() {
 
 	RasterizerDummy::make_current();
 	rendering_server = memnew(RenderingServerDefault());
-	rendering_server->init();
+	Error rendering_error = rendering_server->init();
+	if (rendering_error != OK) {
+		rendering_server->finish();
+		memdelete(rendering_server);
+		rendering_server = nullptr;
+		return rendering_error;
+	}
 	rendering_server->set_render_loop_enabled(false);
 
 	// Initialize ThemeDB early so that scene types can register their theme items.
@@ -3601,7 +3607,47 @@ Error Main::setup2(bool p_show_boot_logo) {
 
 		rendering_server = memnew(RenderingServerDefault(OS::get_singleton()->is_separate_thread_rendering_enabled()));
 
-		rendering_server->init();
+		Error rendering_error = rendering_server->init();
+		if (rendering_error != OK) {
+			rendering_server->finish();
+			memdelete(rendering_server);
+			rendering_server = nullptr;
+			if (display_server) {
+				memdelete(display_server);
+				display_server = nullptr;
+			}
+			if (accessibility_server) {
+				memdelete(accessibility_server);
+				accessibility_server = nullptr;
+			}
+
+			GDExtensionManager::get_singleton()->deinitialize_extensions(GDExtension::INITIALIZATION_LEVEL_SERVERS);
+			uninitialize_modules(MODULE_INITIALIZATION_LEVEL_SERVERS);
+			unregister_server_types();
+
+			if (input) {
+				memdelete(input);
+				input = nullptr;
+			}
+			if (tsman) {
+				memdelete(tsman);
+				tsman = nullptr;
+			}
+#ifndef PHYSICS_3D_DISABLED
+			if (physics_server_3d_manager) {
+				memdelete(physics_server_3d_manager);
+				physics_server_3d_manager = nullptr;
+			}
+#endif // PHYSICS_3D_DISABLED
+#ifndef PHYSICS_2D_DISABLED
+			if (physics_server_2d_manager) {
+				memdelete(physics_server_2d_manager);
+				physics_server_2d_manager = nullptr;
+			}
+#endif // PHYSICS_2D_DISABLED
+
+			return rendering_error;
+		}
 		//rendering_server->call_set_use_vsync(OS::get_singleton()->_use_vsync);
 		rendering_server->set_render_loop_enabled(!disable_render_loop);
 

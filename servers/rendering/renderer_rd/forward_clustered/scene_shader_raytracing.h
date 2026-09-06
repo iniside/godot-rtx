@@ -92,7 +92,7 @@ public:
 	// 2: shadow ray from closest_hit (NEE)
 	constexpr static uint32_t RT_MAX_RECURSION_DEPTH = 2;
 
-	// Pathtracing parameter indices for the float[16] params buffer.
+	// Ray tracing parameter indices for the float[16] params buffer.
 	// Must match RT_PARAM_* defines in raytracing_inc.glsl.
 	static constexpr int RT_PARAM_VIS_MODE = 0;
 	static constexpr int RT_PARAM_SAMPLE_COUNT = 1;
@@ -109,10 +109,6 @@ public:
 		result |= (MAX(1u, MIN(8u, p_max_bounces)) - 1u) << RT_MAX_BOUNCES_SHIFT;
 		return result;
 	}
-
-	// Build the full packed rt_flags from pathtracing environment settings.
-	// `p_environment` may be invalid (RT active with no pathtracing environment).
-	static uint32_t compute_rt_flags(RID p_environment, bool p_fog_enabled);
 
 	struct ShaderSpecialization {
 		union {

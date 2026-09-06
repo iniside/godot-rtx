@@ -58,6 +58,8 @@
 #define RB_TEX_VOXEL_GI_MSAA SNAME("voxel_gi_msaa")
 namespace RendererSceneRenderImplementation {
 
+class SceneShaderRaytracing;
+
 class RenderForwardClustered : public RendererSceneRenderRD {
 	friend SceneShaderForwardClustered;
 	friend SceneShaderRaytracing;
@@ -90,6 +92,7 @@ protected:
 	/* Scene Shader */
 
 	SceneShaderForwardClustered scene_shader;
+	RenderRaytracing *raytracing = nullptr;
 
 public:
 	/* Framebuffer */
@@ -833,7 +836,6 @@ protected:
 	virtual void _render_scene(RenderDataRD *p_render_data, const Color &p_default_bg_color) override;
 	virtual void _render_buffers_debug_draw(const RenderDataRD *p_render_data) override;
 
-	// 3D scaling/upscaling shared between the raster and raytraced render paths.
 	enum Scale3DMode {
 		SCALE_3D_NONE,
 		SCALE_3D_FSR2,
@@ -841,19 +843,8 @@ protected:
 		SCALE_3D_DLSS,
 	};
 
-	// Optional DLSS Ray Reconstruction guide buffers. Supplied by the caller so
-	// the shared upscaler does not depend on the raytracing subsystem (the
-	// raytraced path fills these in; the raster path leaves them inactive).
-	struct DLSSRRGuideBuffers {
-		bool active = false;
-		RID diffuse_albedo;
-		RID specular_albedo;
-		RID normal_roughness;
-		RID specular_hit_dist;
-	};
-
 	Scale3DMode _resolve_scale_3d_mode(Ref<RenderSceneBuffersRD> p_render_buffers) const;
-	void _render_3d_upscaling(const RenderDataRD *p_render_data, Scale3DMode p_scale_type, bool p_using_taa, double p_time_step, const DLSSRRGuideBuffers &p_dlss_rr);
+	void _render_3d_upscaling(const RenderDataRD *p_render_data, Scale3DMode p_scale_type, bool p_using_taa, double p_time_step);
 	virtual void _free_rt_viewport_state(RenderSceneBuffersRD *p_render_buffers);
 
 	virtual void _render_material(const Transform3D &p_cam_transform, const Projection &p_cam_projection, bool p_cam_orthogonal, const PagedArray<RenderGeometryInstance *> &p_instances, RID p_framebuffer, const Rect2i &p_region, float p_exposure_normalization) override;

@@ -124,7 +124,6 @@ void RenderForwardClustered::RenderBufferDataForwardClustered::free_data() {
 		render_buffers->clear_context(RB_SCOPE_SSAO);
 		render_buffers->clear_context(RB_SCOPE_SSR);
 
-		// Path-tracing subclass frees its per-viewport RT/DLSS-RR state (no-op otherwise).
 		if (RenderForwardClustered *rfc = RenderForwardClustered::get_singleton()) {
 			rfc->_free_rt_viewport_state(render_buffers);
 		}
@@ -1766,8 +1765,9 @@ void RenderForwardClustered::_process_sss(Ref<RenderSceneBuffersRD> p_render_buf
 }
 
 void RenderForwardClustered::_free_rt_viewport_state(RenderSceneBuffersRD *p_render_buffers) {
-	// No raytracing state in the base raster renderer.
-	// RenderForwardClusteredPT overrides this to release its DLSS RR / RT viewport state.
+	if (raytracing != nullptr) {
+		raytracing->free_viewport_state(p_render_buffers);
+	}
 }
 
 RenderForwardClustered::Scale3DMode RenderForwardClustered::_resolve_scale_3d_mode(Ref<RenderSceneBuffersRD> p_render_buffers) const {
@@ -1787,7 +1787,7 @@ RenderForwardClustered::Scale3DMode RenderForwardClustered::_resolve_scale_3d_mo
 	}
 }
 
-void RenderForwardClustered::_render_3d_upscaling(const RenderDataRD *p_render_data, Scale3DMode p_scale_type, bool p_using_taa, double p_time_step, const DLSSRRGuideBuffers &p_dlss_rr) {
+void RenderForwardClustered::_render_3d_upscaling(const RenderDataRD *p_render_data, Scale3DMode p_scale_type, bool p_using_taa, double p_time_step) {
 	Ref<RenderSceneBuffersRD> rb = p_render_data->render_buffers;
 	ERR_FAIL_COND(rb.is_null());
 	Ref<RenderBufferDataForwardClustered> rb_data = rb->get_custom_data(RB_SCOPE_FORWARD_CLUSTERED);
@@ -1872,16 +1872,6 @@ void RenderForwardClustered::_render_3d_upscaling(const RenderDataRD *p_render_d
 			params.jitter = jitter;
 			params.delta_time = float(p_time_step);
 			params.reset_accumulation = false; // FIXME: The engine does not provide a way to reset the accumulation.
-
-			// DLSS Ray Reconstruction guide buffers are supplied by the raytraced path.
-			if (p_dlss_rr.active) {
-				params.dlss_rr = true;
-				params.dlss_rr_alpha_upscaling = false;
-				params.dlss_rr_diffuse_albedo = p_dlss_rr.diffuse_albedo;
-				params.dlss_rr_specular_albedo = p_dlss_rr.specular_albedo;
-				params.dlss_rr_normal_roughness = p_dlss_rr.normal_roughness;
-				params.dlss_rr_specular_hit_dist = p_dlss_rr.specular_hit_dist;
-			}
 
 			Projection correction;
 			correction.set_depth_correction(true, true, true);
@@ -2675,7 +2665,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	}
 
 	if (rb_data.is_valid() && (using_upscaling || using_taa)) {
-		_render_3d_upscaling(p_render_data, scale_type, using_taa, time_step, DLSSRRGuideBuffers());
+		_render_3d_upscaling(p_render_data, scale_type, using_taa, time_step);
 	}
 
 	if (rb_data.is_valid()) {
@@ -4167,9 +4157,7 @@ void RenderForwardClustered::sdfgi_update(const Ref<RenderSceneBuffers> &p_rende
 		sdfgi = rb->get_custom_data(RB_SCOPE_SDFGI);
 	}
 
-	// SDFGI is incompatible with raytracing -- disable entirely when RT is active.
-	bool rt_active = p_environment.is_valid() && environment_get_pathtracing_enabled(p_environment);
-	bool needs_sdfgi = !rt_active && p_environment.is_valid() && environment_get_sdfgi_enabled(p_environment);
+	bool needs_sdfgi = false;
 	bool needs_reset = sdfgi.is_valid() ? sdfgi->version != gi.sdfgi_current_version : false;
 
 	if (!needs_sdfgi || needs_reset) {
@@ -5450,14 +5438,20 @@ RenderForwardClustered::RenderForwardClustered() {
 	dlss_effect = memnew(RendererRD::DLSSEffect);
 	ss_effects = memnew(RendererRD::SSEffects);
 	motion_vectors_store = memnew(RendererRD::MotionVectorsStore);
+	raytracing = memnew(RenderRaytracing);
+	raytracing->initialize(this);
 #ifdef METAL_MFXTEMPORAL_ENABLED
 	mfx_temporal_effect = memnew(RendererRD::MFXTemporalEffect);
 #endif
 
-	// Raytracing will be initialized lazily when rt_set_enabled(true) is called
 }
 
 RenderForwardClustered::~RenderForwardClustered() {
+	if (raytracing != nullptr) {
+		memdelete(raytracing);
+		raytracing = nullptr;
+	}
+
 	if (ss_effects != nullptr) {
 		memdelete(ss_effects);
 		ss_effects = nullptr;

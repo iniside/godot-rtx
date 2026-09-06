@@ -895,7 +895,7 @@ public:
 		PagedArray<RID> fog_volumes;
 
 		// RT-extra: instances/lights inside the camera AABB but outside the view frustum.
-		// Used for path tracing TLAS and light gathering only (not rasterized).
+		// Used for the ray tracing TLAS and light gathering only (not rasterized).
 		PagedArray<RenderGeometryInstance *> rt_geometry_instances;
 		PagedArray<RID> rt_light_instances;
 
@@ -1383,15 +1383,6 @@ public:
 	PASS1(environment_set_sdfgi_ray_count, RSE::EnvironmentSDFGIRayCount)
 	PASS1(environment_set_sdfgi_frames_to_converge, RSE::EnvironmentSDFGIFramesToConverge)
 	PASS1(environment_set_sdfgi_frames_to_update_light, RSE::EnvironmentSDFGIFramesToUpdateLight)
-
-	// Pathtracing
-	PASS6(environment_set_pathtracing, RID, bool, int, int, int, RSE::PathtracingDenoiser)
-
-	PASS1RC(bool, environment_get_pathtracing_enabled, RID)
-	PASS1RC(int, environment_get_pathtracing_debug_mode, RID)
-	PASS1RC(int, environment_get_pathtracing_samples_per_pixel, RID)
-	PASS1RC(int, environment_get_pathtracing_max_bounces, RID)
-	PASS1RC(RSE::PathtracingDenoiser, environment_get_pathtracing_denoiser, RID)
 
 	// Adjustment
 	PASS7(environment_set_adjustment, RID, bool, float, float, float, bool, RID)

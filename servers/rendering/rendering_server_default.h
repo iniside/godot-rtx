@@ -83,6 +83,9 @@ class RenderingServerDefault : public RenderingServer {
 	WorkerThreadPool::TaskID server_task_id = WorkerThreadPool::INVALID_TASK_ID;
 	bool exit = false;
 	bool create_thread = false;
+	bool initialized = false;
+	bool rasterizer_initialized = false;
+	Error initialization_result = ERR_UNCONFIGURED;
 
 	void _assign_mt_ids(WorkerThreadPool::TaskID p_pump_task_id);
 	void _thread_exit();
@@ -892,8 +895,6 @@ public:
 	FUNC1(environment_set_sdfgi_ray_count, RSE::EnvironmentSDFGIRayCount)
 	FUNC1(environment_set_sdfgi_frames_to_converge, RSE::EnvironmentSDFGIFramesToConverge)
 	FUNC1(environment_set_sdfgi_frames_to_update_light, RSE::EnvironmentSDFGIFramesToUpdateLight)
-	FUNC6(environment_set_pathtracing, RID, bool, int, int, int, RSE::PathtracingDenoiser)
-
 	FUNC3R(Ref<Image>, environment_bake_panorama, RID, bool, const Size2i &)
 
 	FUNC3(screen_space_roughness_limiter_set_active, bool, float, float)
@@ -1215,7 +1216,7 @@ public:
 	virtual void draw(bool p_present, double frame_step) override;
 	virtual void sync() override;
 	virtual bool has_changed() const override;
-	virtual void init() override;
+	virtual Error init() override;
 	virtual void finish() override;
 	virtual void tick() override;
 	virtual void pre_draw(bool p_will_draw) override;

@@ -3021,11 +3021,6 @@ void RenderingServer::_bind_methods() {
 	BIND_ENUM_CONSTANT(RSE::VIEWPORT_DEBUG_DRAW_OCCLUDERS);
 	BIND_ENUM_CONSTANT(RSE::VIEWPORT_DEBUG_DRAW_MOTION_VECTORS);
 	BIND_ENUM_CONSTANT(RSE::VIEWPORT_DEBUG_DRAW_INTERNAL_BUFFER);
-	BIND_ENUM_CONSTANT(RSE::VIEWPORT_DEBUG_DRAW_DLSS_RR_DIFFUSE_ALBEDO);
-	BIND_ENUM_CONSTANT(RSE::VIEWPORT_DEBUG_DRAW_DLSS_RR_SPECULAR_ALBEDO);
-	BIND_ENUM_CONSTANT(RSE::VIEWPORT_DEBUG_DRAW_DLSS_RR_NORMAL_ROUGHNESS);
-	BIND_ENUM_CONSTANT(RSE::VIEWPORT_DEBUG_DRAW_DLSS_RR_SPECULAR_HIT_DIST);
-	BIND_ENUM_CONSTANT(RSE::VIEWPORT_DEBUG_DRAW_RECONSTRUCTED_DEPTH);
 
 	BIND_ENUM_CONSTANT(RSE::VIEWPORT_VRS_DISABLED);
 	BIND_ENUM_CONSTANT(RSE::VIEWPORT_VRS_TEXTURE);
@@ -3097,7 +3092,6 @@ void RenderingServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("environment_set_fog", "env", "enable", "light_color", "light_energy", "sun_scatter", "density", "height", "height_density", "aerial_perspective", "sky_affect", "fog_mode"), &RenderingServer::environment_set_fog, DEFVAL(RSE::ENV_FOG_MODE_EXPONENTIAL));
 	ClassDB::bind_method(D_METHOD("environment_set_fog_depth", "env", "curve", "begin", "end"), &RenderingServer::environment_set_fog_depth);
 	ClassDB::bind_method(D_METHOD("environment_set_sdfgi", "env", "enable", "cascades", "min_cell_size", "y_scale", "use_occlusion", "bounce_feedback", "read_sky", "energy", "normal_bias", "probe_bias"), &RenderingServer::environment_set_sdfgi);
-	ClassDB::bind_method(D_METHOD("environment_set_pathtracing", "env", "enable", "debug_mode", "samples_per_pixel", "max_bounces", "denoiser"), &RenderingServer::environment_set_pathtracing);
 	ClassDB::bind_method(D_METHOD("environment_set_volumetric_fog", "env", "enable", "density", "albedo", "emission", "emission_energy", "anisotropy", "length", "detail_spread", "gi_inject", "temporal_reprojection", "temporal_reprojection_amount", "ambient_inject", "sky_affect"), &RenderingServer::environment_set_volumetric_fog);
 
 	ClassDB::bind_method(D_METHOD("environment_glow_set_use_bicubic_upscale", "enable"), &RenderingServer::environment_glow_set_use_bicubic_upscale);
@@ -3193,9 +3187,6 @@ void RenderingServer::_bind_methods() {
 	BIND_ENUM_CONSTANT(RSE::ENV_SDFGI_UPDATE_LIGHT_IN_8_FRAMES);
 	BIND_ENUM_CONSTANT(RSE::ENV_SDFGI_UPDATE_LIGHT_IN_16_FRAMES);
 	BIND_ENUM_CONSTANT(RSE::ENV_SDFGI_UPDATE_LIGHT_MAX);
-
-	BIND_ENUM_CONSTANT(RSE::PT_DENOISER_NONE);
-	BIND_ENUM_CONSTANT(RSE::PT_DENOISER_DLSS_RAY_RECONSTRUCTION);
 
 	BIND_ENUM_CONSTANT(RSE::SUB_SURFACE_SCATTERING_QUALITY_DISABLED);
 	BIND_ENUM_CONSTANT(RSE::SUB_SURFACE_SCATTERING_QUALITY_LOW);
@@ -3678,7 +3669,7 @@ TypedArray<StringName> RenderingServer::_global_shader_parameter_get_list() cons
 	return gsp;
 }
 
-void RenderingServer::init() {
+Error RenderingServer::init() {
 	// These are overrides, even if they are false Godot will still
 	// import the texture formats that the host platform needs.
 	// See `const bool can_s3tc_bptc` in the resource importer.
@@ -3826,12 +3817,10 @@ void RenderingServer::init() {
 	GLOBAL_DEF_RST(PropertyInfo(Variant::INT, "rendering/limits/spatial_indexer/threaded_cull_minimum_instances", PROPERTY_HINT_RANGE, "32,65536,1"), 1000);
 
 	GLOBAL_DEF(PropertyInfo(Variant::FLOAT, "rendering/limits/cluster_builder/max_clustered_elements", PROPERTY_HINT_RANGE, "32,8192,1"), 512);
-	GLOBAL_DEF("rendering/pathtracing/use_shader_execution_reordering", true);
-	GLOBAL_DEF("rendering/pathtracing/async_shader_compilation", true);
-	GLOBAL_DEF_RST("rendering/pathtracing/multimesh_cache_cpu_transforms", false);
-	GLOBAL_DEF_RST(PropertyInfo(Variant::INT, "rendering/pathtracing/deformed_mesh_cache_ttl_frames", PROPERTY_HINT_RANGE, "1,3600,1"), 60);
-	GLOBAL_DEF_RST(PropertyInfo(Variant::INT, "rendering/pathtracing/multimesh_blas_cache_ttl_frames", PROPERTY_HINT_RANGE, "1,18000,1"), 3600);
-	GLOBAL_DEF_RST(PropertyInfo(Variant::INT, "rendering/pathtracing/multimesh_merged_blas_max_triangles", PROPERTY_HINT_RANGE, "256,1048576,1"), 65536);
+	GLOBAL_DEF_RST("rendering/raytracing/multimesh_cache_cpu_transforms", false);
+	GLOBAL_DEF_RST(PropertyInfo(Variant::INT, "rendering/raytracing/deformed_mesh_cache_ttl_frames", PROPERTY_HINT_RANGE, "1,3600,1"), 60);
+	GLOBAL_DEF_RST(PropertyInfo(Variant::INT, "rendering/raytracing/multimesh_blas_cache_ttl_frames", PROPERTY_HINT_RANGE, "1,18000,1"), 3600);
+	GLOBAL_DEF_RST(PropertyInfo(Variant::INT, "rendering/raytracing/multimesh_merged_blas_max_triangles", PROPERTY_HINT_RANGE, "256,1048576,1"), 65536);
 
 	// OpenGL limits
 	GLOBAL_DEF_RST(PropertyInfo(Variant::INT, "rendering/limits/opengl/max_renderable_elements", PROPERTY_HINT_RANGE, "1024,65536,1"), 65536);
@@ -3850,6 +3839,7 @@ void RenderingServer::init() {
 		GLOBAL_DEF("debug/shader_language/warnings/" + ShaderWarning::get_name_from_code((ShaderWarning::Code)i).to_lower(), true);
 	}
 #endif
+	return OK;
 }
 
 RenderingServer::~RenderingServer() {

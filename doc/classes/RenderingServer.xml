@@ -1399,17 +1399,6 @@
 				Configures glow for the specified environment RID. See [code]glow_*[/code] properties in [Environment] for more information.
 			</description>
 		</method>
-		<method name="environment_set_pathtracing">
-			<return type="void" />
-			<param index="0" name="env" type="RID" />
-			<param index="1" name="enable" type="bool" />
-			<param index="2" name="debug_mode" type="int" />
-			<param index="3" name="samples_per_pixel" type="int" />
-			<param index="4" name="max_bounces" type="int" />
-			<param index="5" name="denoiser" type="int" enum="RenderingServer.PathtracingDenoiser" />
-			<description>
-			</description>
-		</method>
 		<method name="environment_set_sdfgi">
 			<return type="void" />
 			<param index="0" name="env" type="RID" />
@@ -5714,21 +5703,6 @@
 			Internal buffer is drawn instead of regular scene so you can see the per-pixel output that will be used by post-processing effects.
 			[b]Note:[/b] Only supported when using the Forward+ or Mobile rendering methods.
 		</constant>
-		<constant name="VIEWPORT_DEBUG_DRAW_DLSS_RR_DIFFUSE_ALBEDO" value="29" enum="ViewportDebugDraw">
-			Displays the diffuse albedo input buffer provided to NVIDIA DLSS Ray Reconstruction. Only has an effect when DLSS Ray Reconstruction is active.
-		</constant>
-		<constant name="VIEWPORT_DEBUG_DRAW_DLSS_RR_SPECULAR_ALBEDO" value="30" enum="ViewportDebugDraw">
-			Displays the specular albedo input buffer provided to NVIDIA DLSS Ray Reconstruction. Only has an effect when DLSS Ray Reconstruction is active.
-		</constant>
-		<constant name="VIEWPORT_DEBUG_DRAW_DLSS_RR_NORMAL_ROUGHNESS" value="31" enum="ViewportDebugDraw">
-			Displays the packed normal and roughness input buffer provided to NVIDIA DLSS Ray Reconstruction. Only has an effect when DLSS Ray Reconstruction is active.
-		</constant>
-		<constant name="VIEWPORT_DEBUG_DRAW_DLSS_RR_SPECULAR_HIT_DIST" value="32" enum="ViewportDebugDraw">
-			Displays the specular ray hit distance input buffer provided to NVIDIA DLSS Ray Reconstruction. Only has an effect when DLSS Ray Reconstruction is active.
-		</constant>
-		<constant name="VIEWPORT_DEBUG_DRAW_RECONSTRUCTED_DEPTH" value="33" enum="ViewportDebugDraw">
-			Displays the depth buffer reconstructed by NVIDIA DLSS Ray Reconstruction after denoising. Only has an effect when DLSS Ray Reconstruction is active.
-		</constant>
 		<constant name="VIEWPORT_VRS_DISABLED" value="0" enum="ViewportVRSMode">
 			Variable rate shading is disabled.
 		</constant>
@@ -5994,12 +5968,6 @@
 		</constant>
 		<constant name="ENV_SDFGI_UPDATE_LIGHT_MAX" value="5" enum="EnvironmentSDFGIFramesToUpdateLight">
 			Represents the size of the [enum EnvironmentSDFGIFramesToUpdateLight] enum.
-		</constant>
-		<constant name="PT_DENOISER_NONE" value="0" enum="PathtracingDenoiser">
-			No denoising is applied to the path-traced image. Noise will be visible unless [member Environment.pathtracing_samples_per_pixel] is set very high.
-		</constant>
-		<constant name="PT_DENOISER_DLSS_RAY_RECONSTRUCTION" value="1" enum="PathtracingDenoiser">
-			Uses NVIDIA DLSS Ray Reconstruction to denoise the path-traced image. DLSS Ray Reconstruction is a neural temporal denoiser that accumulates information across frames to produce a clean, high-quality result at low sample counts. Requires an NVIDIA RTX GPU and the Streamline plugin to be active.
 		</constant>
 		<constant name="SUB_SURFACE_SCATTERING_QUALITY_DISABLED" value="0" enum="SubSurfaceScatteringQuality">
 			Disables subsurface scattering entirely, even on materials that have [member BaseMaterial3D.subsurf_scatter_enabled] set to [code]true[/code]. This has the lowest GPU requirements.

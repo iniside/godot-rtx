@@ -150,13 +150,8 @@ public:
 
 	virtual bool is_xr_enabled() const override { return RendererCompositor::is_xr_enabled(); }
 
-	static Error is_viable() {
-		return OK;
-	}
-
-	static RendererCompositor *_create_current() {
-		return memnew(RendererCompositorRD);
-	}
+	static Error is_viable();
+	static RendererCompositor *_create_current();
 
 	static void make_current() {
 		_create_func = _create_current;

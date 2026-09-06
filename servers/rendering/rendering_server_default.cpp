@@ -239,15 +239,28 @@ bool RenderingServerDefault::has_changed() const {
 
 void RenderingServerDefault::_init() {
 	RSG::threaded = create_thread;
+	initialization_result = ERR_UNAVAILABLE;
 
+	const String &rendering_driver = OS::get_singleton()->get_current_rendering_driver_name();
+	// test_setup selects RasterizerDummy directly without setting an OS driver name.
+	const bool dummy_driver = rendering_driver == "dummy" || (rendering_driver.is_empty() && RenderingDevice::get_singleton() == nullptr);
+	if (!dummy_driver && rendering_driver != "vulkan") {
+		ERR_PRINT(vformat("The RTXDI renderer requires the Vulkan rendering driver; '%s' cannot initialize rendering.", rendering_driver));
+		return;
+	}
+
+	RSG::rasterizer = RendererCompositor::create();
+	if (RSG::rasterizer == nullptr) {
+		return;
+	}
 	RSG::canvas = memnew(RendererCanvasCull);
 	RSG::viewport = memnew(RendererViewport);
 	RendererSceneCull *sr = memnew(RendererSceneCull);
 	RSG::camera_attributes = memnew(RendererCameraAttributes);
 	RSG::scene = sr;
-	RSG::rasterizer = RendererCompositor::create();
 	RSG::utilities = RSG::rasterizer->get_utilities();
 	RSG::rasterizer->initialize();
+	rasterizer_initialized = true;
 	RSG::light_storage = RSG::rasterizer->get_light_storage();
 	RSG::material_storage = RSG::rasterizer->get_material_storage();
 	RSG::mesh_storage = RSG::rasterizer->get_mesh_storage();
@@ -257,48 +270,94 @@ void RenderingServerDefault::_init() {
 	RSG::fog = RSG::rasterizer->get_fog();
 	RSG::canvas_render = RSG::rasterizer->get_canvas();
 	sr->set_scene_render(RSG::rasterizer->get_scene());
+	initialized = true;
+	initialization_result = OK;
 }
 
 void RenderingServerDefault::_finish() {
-	if (test_cube.is_valid()) {
+	if (test_cube.is_valid() && RSG::utilities != nullptr) {
 		free_rid(test_cube);
+		test_cube = RID();
 	}
 
-	RSG::canvas->finalize();
-	memdelete(RSG::canvas);
-	RSG::rasterizer->finalize();
-	memdelete(RSG::viewport);
-	memdelete(RSG::rasterizer);
-	memdelete(RSG::scene);
-	memdelete(RSG::camera_attributes);
+	if (RSG::canvas != nullptr && rasterizer_initialized) {
+		RSG::canvas->finalize();
+	}
+	if (RSG::canvas != nullptr) {
+		memdelete(RSG::canvas);
+	}
+	if (RSG::rasterizer != nullptr && rasterizer_initialized) {
+		RSG::rasterizer->finalize();
+	}
+	if (RSG::viewport != nullptr) {
+		memdelete(RSG::viewport);
+	}
+	if (RSG::rasterizer != nullptr) {
+		memdelete(RSG::rasterizer);
+	}
+	if (RSG::scene != nullptr) {
+		memdelete(RSG::scene);
+	}
+	if (RSG::camera_attributes != nullptr) {
+		memdelete(RSG::camera_attributes);
+	}
+
+	RSG::canvas = nullptr;
+	RSG::viewport = nullptr;
+	RSG::rasterizer = nullptr;
+	RSG::scene = nullptr;
+	RSG::camera_attributes = nullptr;
+	RSG::utilities = nullptr;
+	RSG::light_storage = nullptr;
+	RSG::material_storage = nullptr;
+	RSG::mesh_storage = nullptr;
+	RSG::particles_storage = nullptr;
+	RSG::texture_storage = nullptr;
+	RSG::gi = nullptr;
+	RSG::fog = nullptr;
+	RSG::canvas_render = nullptr;
+	RSG::threaded = false;
+	initialized = false;
+	rasterizer_initialized = false;
 }
 
-void RenderingServerDefault::init() {
+Error RenderingServerDefault::init() {
 	if (create_thread) {
 		print_verbose("RenderingServerWrapMT: Starting render thread");
+		exit = false;
 		DisplayServer::get_singleton()->release_rendering_thread();
 		WorkerThreadPool::TaskID tid = WorkerThreadPool::get_singleton()->add_task(callable_mp(this, &RenderingServerDefault::_thread_loop), true, "Rendering Server pump task", true);
 		command_queue.set_pump_task_id(tid);
 		command_queue.push(this, &RenderingServerDefault::_assign_mt_ids, tid);
 		command_queue.push_and_sync(this, &RenderingServerDefault::_init);
 		DEV_ASSERT(server_task_id == tid);
+		if (initialization_result != OK) {
+			finish();
+		}
 	} else {
 		server_thread = Thread::MAIN_ID;
 		_init();
+		if (initialization_result != OK) {
+			_finish();
+		}
 	}
+	return initialization_result;
 }
 
 void RenderingServerDefault::finish() {
 	if (create_thread) {
-		command_queue.push(this, &RenderingServerDefault::_finish);
-		command_queue.push(this, &RenderingServerDefault::_thread_exit);
 		if (server_task_id != WorkerThreadPool::INVALID_TASK_ID) {
+			command_queue.push(this, &RenderingServerDefault::_finish);
+			command_queue.push(this, &RenderingServerDefault::_thread_exit);
 			WorkerThreadPool::get_singleton()->wait_for_task_completion(server_task_id);
 			server_task_id = WorkerThreadPool::INVALID_TASK_ID;
+			command_queue.set_pump_task_id(WorkerThreadPool::INVALID_TASK_ID);
 		}
 		server_thread = Thread::MAIN_ID;
 	} else {
-		_finish();
+		if (initialized || RSG::rasterizer != nullptr) {
+			_finish();
+		}
 	}
 }
 

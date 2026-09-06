@@ -31,7 +31,6 @@
 #include "core/config/project_settings.h"
 #include "core/io/marshalls.h"
 #include "core/math/math_funcs.h"
-#include "servers/rendering/renderer_rd/environment/sky.h"
 #include "servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h"
 #include "servers/rendering/renderer_rd/forward_clustered/scene_shader_raytracing.h"
 #include "servers/rendering/renderer_rd/storage_rd/light_storage.h"
@@ -39,7 +38,6 @@
 #include "servers/rendering/renderer_rd/storage_rd/mesh_storage.h"
 #include "servers/rendering/renderer_rd/storage_rd/texture_storage.h"
 #include "servers/rendering/rendering_server_globals.h"
-#include "servers/rendering/storage/environment_storage.h"
 
 using namespace RendererSceneRenderImplementation;
 
@@ -80,11 +78,6 @@ RenderRaytracing::~RenderRaytracing() {
 		memdelete(bindless_block);
 		bindless_block = nullptr;
 	}
-	if (shader) {
-		memdelete(shader);
-		shader = nullptr;
-	}
-
 	mm_merge_shader.shader.version_free(mm_merge_shader.version);
 }
 
@@ -134,15 +127,6 @@ void RenderRaytracing::_free_viewport_state_internal(RTViewportState *p_state) {
 	if (p_state->motion_transform_buffer.is_valid()) {
 		RD::get_singleton()->free_rid(p_state->motion_transform_buffer);
 	}
-	if (p_state->light_buffer.is_valid()) {
-		RD::get_singleton()->free_rid(p_state->light_buffer);
-	}
-	if (p_state->params_buffer.is_valid()) {
-		RD::get_singleton()->free_rid(p_state->params_buffer);
-	}
-	if (p_state->scene_uniform_set.is_valid() && RD::get_singleton()->uniform_set_is_valid(p_state->scene_uniform_set)) {
-		RD::get_singleton()->free_rid(p_state->scene_uniform_set);
-	}
 	memdelete(p_state);
 }
 
@@ -153,95 +137,6 @@ void RenderRaytracing::free_viewport_state(RenderSceneBuffersRD *p_render_buffer
 	}
 	_free_viewport_state_internal(it->value);
 	viewport_states.remove(it);
-}
-
-// ---------------------------------------------------------------------------
-// Raytracing / DLSS-RR output textures (stored on the render buffers via named
-// scopes) and the per-viewport DLSS upscaler context (in RTViewportState).
-// ---------------------------------------------------------------------------
-
-void RenderRaytracing::rt_ensure_textures(RenderSceneBuffersRD *p_render_buffers) {
-	ERR_FAIL_NULL(p_render_buffers);
-
-	uint32_t usage_bits = RD::TEXTURE_USAGE_STORAGE_BIT |
-			RD::TEXTURE_USAGE_SAMPLING_BIT |
-			RD::TEXTURE_USAGE_CAN_COPY_FROM_BIT;
-
-	if (!p_render_buffers->has_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_RAYTRACING)) {
-		p_render_buffers->create_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_RAYTRACING, RD::DATA_FORMAT_R16G16B16A16_SFLOAT, usage_bits, RD::TEXTURE_SAMPLES_1);
-	}
-	if (!p_render_buffers->has_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_RT_DEPTH)) {
-		p_render_buffers->create_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_RT_DEPTH, RD::DATA_FORMAT_R32_SFLOAT, usage_bits, RD::TEXTURE_SAMPLES_1);
-	}
-}
-
-bool RenderRaytracing::rt_has_texture(RenderSceneBuffersRD *p_render_buffers) const {
-	return p_render_buffers && p_render_buffers->has_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_RAYTRACING);
-}
-
-RID RenderRaytracing::rt_get_texture(RenderSceneBuffersRD *p_render_buffers) const {
-	ERR_FAIL_NULL_V(p_render_buffers, RID());
-	return p_render_buffers->get_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_RAYTRACING);
-}
-
-bool RenderRaytracing::rt_has_depth_texture(RenderSceneBuffersRD *p_render_buffers) const {
-	return p_render_buffers && p_render_buffers->has_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_RT_DEPTH);
-}
-
-RID RenderRaytracing::rt_get_depth_texture(RenderSceneBuffersRD *p_render_buffers) const {
-	ERR_FAIL_NULL_V(p_render_buffers, RID());
-	return p_render_buffers->get_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_RT_DEPTH);
-}
-
-void RenderRaytracing::dlss_rr_ensure_buffers(RenderSceneBuffersRD *p_render_buffers) {
-	ERR_FAIL_NULL(p_render_buffers);
-
-	if (p_render_buffers->has_texture(RB_SCOPE_DLSS_RR, RB_TEX_DLSS_RR_DIFFUSE_ALBEDO)) {
-		return;
-	}
-
-	uint32_t usage_bits = RD::TEXTURE_USAGE_STORAGE_BIT |
-			RD::TEXTURE_USAGE_SAMPLING_BIT |
-			RD::TEXTURE_USAGE_CAN_COPY_FROM_BIT;
-
-	// Diffuse Albedo: linear RGB surface color for non-metals (RGBA16F; DLSS-RR expects
-	// linear albedo, and float precision avoids 8-bit dark-value banding without gamma packing).
-	p_render_buffers->create_texture(RB_SCOPE_DLSS_RR, RB_TEX_DLSS_RR_DIFFUSE_ALBEDO, RD::DATA_FORMAT_R16G16B16A16_SFLOAT, usage_bits, RD::TEXTURE_SAMPLES_1);
-	// Specular Albedo: RGB specular reflection color (RGBA16F; needs the accuracy, fixes banding artifacts).
-	p_render_buffers->create_texture(RB_SCOPE_DLSS_RR, RB_TEX_DLSS_RR_SPECULAR_ALBEDO, RD::DATA_FORMAT_R16G16B16A16_SFLOAT, usage_bits, RD::TEXTURE_SAMPLES_1);
-	// Normal + Roughness: World space normals (RGB) + roughness (A); RGBA16F per the DLSS-RR guide.
-	p_render_buffers->create_texture(RB_SCOPE_DLSS_RR, RB_TEX_DLSS_RR_NORMAL_ROUGHNESS, RD::DATA_FORMAT_R16G16B16A16_SFLOAT, usage_bits, RD::TEXTURE_SAMPLES_1);
-	// Specular Hit Distance: Single channel distance (R16F is sufficient).
-	p_render_buffers->create_texture(RB_SCOPE_DLSS_RR, RB_TEX_DLSS_RR_SPECULAR_HIT_DIST, RD::DATA_FORMAT_R16_SFLOAT, usage_bits, RD::TEXTURE_SAMPLES_1);
-}
-
-void RenderRaytracing::dlss_rr_free_buffers(RenderSceneBuffersRD *p_render_buffers) {
-	ERR_FAIL_NULL(p_render_buffers);
-	p_render_buffers->clear_context(RB_SCOPE_DLSS_RR);
-}
-
-bool RenderRaytracing::dlss_rr_has_buffers(RenderSceneBuffersRD *p_render_buffers) const {
-	return p_render_buffers && p_render_buffers->has_texture(RB_SCOPE_DLSS_RR, RB_TEX_DLSS_RR_DIFFUSE_ALBEDO);
-}
-
-RID RenderRaytracing::dlss_rr_get_diffuse_albedo(RenderSceneBuffersRD *p_render_buffers) const {
-	ERR_FAIL_NULL_V(p_render_buffers, RID());
-	return p_render_buffers->get_texture(RB_SCOPE_DLSS_RR, RB_TEX_DLSS_RR_DIFFUSE_ALBEDO);
-}
-
-RID RenderRaytracing::dlss_rr_get_specular_albedo(RenderSceneBuffersRD *p_render_buffers) const {
-	ERR_FAIL_NULL_V(p_render_buffers, RID());
-	return p_render_buffers->get_texture(RB_SCOPE_DLSS_RR, RB_TEX_DLSS_RR_SPECULAR_ALBEDO);
-}
-
-RID RenderRaytracing::dlss_rr_get_normal_roughness(RenderSceneBuffersRD *p_render_buffers) const {
-	ERR_FAIL_NULL_V(p_render_buffers, RID());
-	return p_render_buffers->get_texture(RB_SCOPE_DLSS_RR, RB_TEX_DLSS_RR_NORMAL_ROUGHNESS);
-}
-
-RID RenderRaytracing::dlss_rr_get_specular_hit_dist(RenderSceneBuffersRD *p_render_buffers) const {
-	ERR_FAIL_NULL_V(p_render_buffers, RID());
-	return p_render_buffers->get_texture(RB_SCOPE_DLSS_RR, RB_TEX_DLSS_RR_SPECULAR_HIT_DIST);
 }
 
 // ---------------------------------------------------------------------------
@@ -575,7 +470,7 @@ void RenderRaytracing::prepare_frame() {
 
 	// TTL-evict stale deformed-surface entries.
 	{
-		static const uint32_t DEFORMED_CACHE_TTL = (uint32_t)GLOBAL_GET("rendering/pathtracing/deformed_mesh_cache_ttl_frames");
+		static const uint32_t DEFORMED_CACHE_TTL = (uint32_t)GLOBAL_GET("rendering/raytracing/deformed_mesh_cache_ttl_frames");
 		LocalVector<RID> live = deformed_pool.get_owned_list();
 		for (uint32_t i = 0; i < live.size(); i++) {
 			RTDeformedCacheEntry *e = deformed_pool.get_or_null(live[i]);
@@ -606,7 +501,7 @@ void RenderRaytracing::prepare_frame() {
 
 	// TTL-evict stale merged-MultiMesh entries.
 	{
-		static const uint32_t MM_BLAS_CACHE_TTL = (uint32_t)GLOBAL_GET("rendering/pathtracing/multimesh_blas_cache_ttl_frames");
+		static const uint32_t MM_BLAS_CACHE_TTL = (uint32_t)GLOBAL_GET("rendering/raytracing/multimesh_blas_cache_ttl_frames");
 		LocalVector<RID> live = merged_mm_pool.get_owned_list();
 		for (uint32_t i = 0; i < live.size(); i++) {
 			RTMergedMMEntry *e = merged_mm_pool.get_or_null(live[i]);
@@ -1077,17 +972,17 @@ bool RenderRaytracing::_populate_cluster_blas(void *p_mesh_surface, uint32_t p_c
 
 	if (cluster_count == 0 || !cluster_buffer.is_valid() || !cluster_position_buffer.is_valid() ||
 			(uint64_t)records.size() < (uint64_t)cluster_count * RT_CLUSTER_RECORD_SIZE) {
-		ERR_PRINT_ONCE("Path tracer: a mesh surface carries no baked cluster data and will not be rendered. Re-import the mesh.");
+		ERR_PRINT_ONCE("Ray tracing: a mesh surface carries no baked cluster data and will not be rendered. Re-import the mesh.");
 		return false;
 	}
 	if (!rd->clas_is_supported()) {
-		ERR_PRINT_ONCE("Path tracer: the rendering device does not support cluster acceleration structures, so static geometry will not be rendered.");
+		ERR_PRINT_ONCE("Ray tracing: the rendering device does not support cluster acceleration structures, so static geometry will not be rendered.");
 		return false;
 	}
 
 	const uint64_t cluster_base_address = rd->buffer_get_device_address(cluster_buffer);
 	const uint64_t position_base_address = rd->buffer_get_device_address(cluster_position_buffer);
-	ERR_FAIL_COND_V_MSG(cluster_base_address == 0 || position_base_address == 0, false, "Path tracer: cluster buffers have no device address.");
+	ERR_FAIL_COND_V_MSG(cluster_base_address == 0 || position_base_address == 0, false, "Ray tracing: cluster buffers have no device address.");
 
 	const RD::ClusterAccelerationStructureLimits limits = rd->clas_get_limits();
 	const uint32_t index_section_offset = mesh_storage->mesh_surface_get_cluster_index_section_offset(p_mesh_surface);
@@ -1112,14 +1007,14 @@ bool RenderRaytracing::_populate_cluster_blas(void *p_mesh_surface, uint32_t p_c
 		const uint32_t vertex_count = record[8];
 		const uint32_t triangle_count = record[9];
 
-		ERR_FAIL_COND_V_MSG(vertex_count == 0 || triangle_count == 0, false, "Path tracer: a cluster record carries no geometry.");
+		ERR_FAIL_COND_V_MSG(vertex_count == 0 || triangle_count == 0, false, "Ray tracing: a cluster record carries no geometry.");
 		ERR_FAIL_COND_V_MSG(vertex_count > limits.max_vertices_per_cluster || triangle_count > limits.max_triangles_per_cluster, false,
-				"Path tracer: a cluster exceeds the per-cluster vertex or triangle limit of this device.");
+				"Ray tracing: a cluster exceeds the per-cluster vertex or triangle limit of this device.");
 		ERR_FAIL_COND_V_MSG((uint64_t)position_offset + (uint64_t)vertex_count * 12 > position_buffer_size, false,
-				"Path tracer: a cluster's position range lies outside the surface's cluster position buffer.");
+				"Ray tracing: a cluster's position range lies outside the surface's cluster position buffer.");
 		// The local index section lives inside cluster_buffer, behind its header and per-cluster records.
 		ERR_FAIL_COND_V_MSG((uint64_t)index_section_offset + (uint64_t)index_offset + (uint64_t)triangle_count * 3 > cluster_buffer_size, false,
-				"Path tracer: a cluster's index range lies outside the surface's cluster buffer.");
+				"Ray tracing: a cluster's index range lies outside the surface's cluster buffer.");
 
 		RTClusterTriangleInfo &info = src_infos[i];
 		info.cluster_id = i;
@@ -1150,8 +1045,8 @@ bool RenderRaytracing::_populate_cluster_blas(void *p_mesh_surface, uint32_t p_c
 
 	RD::ClusterBuildSizes sizes;
 	rd->clas_get_build_sizes(input, sizes);
-	ERR_FAIL_COND_V_MSG(sizes.acceleration_structure_size == 0 || sizes.build_scratch_size == 0, false, "Path tracer: failed to query the cluster build sizes.");
-	ERR_FAIL_COND_V_MSG(sizes.acceleration_structure_size > UINT32_MAX, false, "Path tracer: the cluster acceleration structure is too large to allocate.");
+	ERR_FAIL_COND_V_MSG(sizes.acceleration_structure_size == 0 || sizes.build_scratch_size == 0, false, "Ray tracing: failed to query the cluster build sizes.");
+	ERR_FAIL_COND_V_MSG(sizes.acceleration_structure_size > UINT32_MAX, false, "Ray tracing: the cluster acceleration structure is too large to allocate.");
 
 	const BitField<RD::BufferCreationBits> implicit_flags = RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_STORAGE_BIT | RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT;
 	const BitField<RD::BufferCreationBits> build_input_flags = RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT | RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT;
@@ -1174,7 +1069,7 @@ bool RenderRaytracing::_populate_cluster_blas(void *p_mesh_surface, uint32_t p_c
 	pending.clas_buffer = rd->storage_buffer_create((uint32_t)sizes.acceleration_structure_size, Span<uint8_t>(), 0, implicit_flags);
 	if (!pending.clas_buffer.is_valid()) {
 		abort_build();
-		ERR_FAIL_V_MSG(false, "Path tracer: failed to allocate the cluster acceleration structure buffer.");
+		ERR_FAIL_V_MSG(false, "Ray tracing: failed to allocate the cluster acceleration structure buffer.");
 	}
 	rd->set_resource_name(pending.clas_buffer, "RT CLAS [" + itos(p_cache_key) + "]");
 
@@ -1182,7 +1077,7 @@ bool RenderRaytracing::_populate_cluster_blas(void *p_mesh_surface, uint32_t p_c
 	pending.clas_addresses_buffer = rd->storage_buffer_create(addresses_size, Span<uint8_t>(), 0, build_input_flags);
 	if (!pending.clas_addresses_buffer.is_valid()) {
 		abort_build();
-		ERR_FAIL_V_MSG(false, "Path tracer: failed to allocate the cluster address buffer.");
+		ERR_FAIL_V_MSG(false, "Ray tracing: failed to allocate the cluster address buffer.");
 	}
 	rd->set_resource_name(pending.clas_addresses_buffer, "RT CLAS addresses [" + itos(p_cache_key) + "]");
 
@@ -1190,7 +1085,7 @@ bool RenderRaytracing::_populate_cluster_blas(void *p_mesh_surface, uint32_t p_c
 	pending.clas_count_buffer = rd->storage_buffer_create(sizeof(uint32_t), Span<uint8_t>((const uint8_t *)&src_infos_count, sizeof(uint32_t)), 0, build_input_flags);
 	if (!pending.clas_count_buffer.is_valid()) {
 		abort_build();
-		ERR_FAIL_V_MSG(false, "Path tracer: failed to allocate the cluster count buffer.");
+		ERR_FAIL_V_MSG(false, "Ray tracing: failed to allocate the cluster count buffer.");
 	}
 	rd->set_resource_name(pending.clas_count_buffer, "RT CLAS count [" + itos(p_cache_key) + "]");
 
@@ -1198,7 +1093,7 @@ bool RenderRaytracing::_populate_cluster_blas(void *p_mesh_surface, uint32_t p_c
 	pending.src_infos_buffer = rd->storage_buffer_create(src_infos_size, Span<uint8_t>((const uint8_t *)src_infos.ptr(), src_infos_size), 0, build_input_flags);
 	if (!pending.src_infos_buffer.is_valid()) {
 		abort_build();
-		ERR_FAIL_V_MSG(false, "Path tracer: failed to allocate the cluster build input buffer.");
+		ERR_FAIL_V_MSG(false, "Ray tracing: failed to allocate the cluster build input buffer.");
 	}
 	rd->set_resource_name(pending.src_infos_buffer, "RT CLAS build inputs [" + itos(p_cache_key) + "]");
 
@@ -1206,20 +1101,20 @@ bool RenderRaytracing::_populate_cluster_blas(void *p_mesh_surface, uint32_t p_c
 	cluster_remap_buffer = rd->storage_buffer_create(remap_size, Span<uint8_t>((const uint8_t *)cluster_remap.ptr(), remap_size), 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
 	if (!cluster_remap_buffer.is_valid()) {
 		abort_build();
-		ERR_FAIL_V_MSG(false, "Path tracer: failed to allocate the cluster remap buffer.");
+		ERR_FAIL_V_MSG(false, "Ray tracing: failed to allocate the cluster remap buffer.");
 	}
 	rd->set_resource_name(cluster_remap_buffer, "RT cluster remap [" + itos(p_cache_key) + "]");
 
 	const uint64_t remap_address = rd->buffer_get_device_address(cluster_remap_buffer);
 	if (remap_address == 0) {
 		abort_build();
-		ERR_FAIL_V_MSG(false, "Path tracer: the cluster remap buffer has no device address.");
+		ERR_FAIL_V_MSG(false, "Ray tracing: the cluster remap buffer has no device address.");
 	}
 
 	pending.blas = rd->blas_create_from_clusters(cluster_count, cluster_count);
 	if (!pending.blas.is_valid()) {
 		abort_build();
-		ERR_FAIL_V_MSG(false, "Path tracer: failed to create a cluster bottom level acceleration structure.");
+		ERR_FAIL_V_MSG(false, "Ray tracing: failed to create a cluster bottom level acceleration structure.");
 	}
 	rd->set_resource_name(pending.blas, "RT cluster BLAS [" + itos(p_cache_key) + "]");
 
@@ -1301,7 +1196,7 @@ void RenderRaytracing::_flush_pending_cluster_builds() {
 					}
 				}
 			}
-			ERR_PRINT_ONCE("Path tracer: failed to build a cluster bottom level acceleration structure.");
+			ERR_PRINT_ONCE("Ray tracing: failed to build a cluster bottom level acceleration structure.");
 		}
 	}
 
@@ -2180,7 +2075,7 @@ bool RenderRaytracing::_build_merged_mm_blas(
 	if (prim_count == 0 || vertex_count == 0) {
 		return false;
 	}
-	static const uint32_t MM_MERGED_BLAS_MAX_TRIANGLES = (uint32_t)GLOBAL_GET("rendering/pathtracing/multimesh_merged_blas_max_triangles");
+	static const uint32_t MM_MERGED_BLAS_MAX_TRIANGLES = (uint32_t)GLOBAL_GET("rendering/raytracing/multimesh_merged_blas_max_triangles");
 	if ((uint64_t)p_mm_count * prim_count > MM_MERGED_BLAS_MAX_TRIANGLES) {
 		return false; // Too large; fall back to expanded TLAS.
 	}
@@ -3256,337 +3151,6 @@ uint32_t RenderRaytracing::gather_lights(const RenderDataRD *p_render_data, RT_L
 }
 
 // ---------------------------------------------------------------------------
-// Uniform set update
-// ---------------------------------------------------------------------------
-
-RID RenderRaytracing::update_uniform_set(RTViewportState *p_state, const RenderDataRD *p_render_data, uint32_t p_rt_flags) {
-	ERR_FAIL_NULL_V(p_state, RID());
-
-	Ref<RenderForwardClustered::RenderBufferDataForwardClustered> rb_data;
-	if (p_render_data && p_render_data->render_buffers.is_valid()) {
-		if (p_render_data->render_buffers->has_custom_data(RB_SCOPE_FORWARD_CLUSTERED)) {
-			rb_data = p_render_data->render_buffers->get_custom_data(RB_SCOPE_FORWARD_CLUSTERED);
-		}
-	}
-
-	if (rb_data.is_null()) {
-		return RID();
-	}
-
-	RenderSceneBuffersRD *rb = p_render_data->render_buffers.ptr();
-
-	// SET 0 indices must match raytracing_common_inc.glsl / scene_raytracing_raygen.glsl / samplers includes.
-	Vector<RD::Uniform> uniforms;
-
-	{
-		RD::Uniform u;
-		u.binding = 0;
-		u.uniform_type = RD::UNIFORM_TYPE_IMAGE;
-		rt_ensure_textures(rb);
-		u.append_id(rt_get_texture(rb));
-		uniforms.push_back(u);
-	}
-
-	{
-		RD::Uniform u;
-		u.binding = 1;
-		u.uniform_type = RD::UNIFORM_TYPE_ACCELERATION_STRUCTURE;
-		ERR_FAIL_COND_V(p_state->tlas == RID(), RID());
-		u.append_id(p_state->tlas);
-		uniforms.push_back(u);
-	}
-
-	{
-		RD::Uniform u;
-		u.binding = 2;
-		u.uniform_type = RD::UNIFORM_TYPE_UNIFORM_BUFFER;
-		u.append_id(owner->scene_state.uniform_buffers[0]);
-		uniforms.push_back(u);
-	}
-
-	{
-		RD::Uniform u;
-		u.binding = 3;
-		u.uniform_type = RD::UNIFORM_TYPE_STORAGE_BUFFER;
-		if (p_state->geometry_buffer.is_valid()) {
-			u.append_id(p_state->geometry_buffer);
-		} else {
-			// Use a default buffer if no geometry
-			u.append_id(RendererRD::MeshStorage::get_singleton()->get_default_rd_storage_buffer());
-		}
-		uniforms.push_back(u);
-	}
-
-	// Binding 4: Per-instance motion index buffer (int32 per TLAS instance, -1 = no motion).
-	{
-		RD::Uniform u;
-		u.binding = 4;
-		u.uniform_type = RD::UNIFORM_TYPE_STORAGE_BUFFER;
-		if (p_state->motion_index_buffer.is_valid()) {
-			u.append_id(p_state->motion_index_buffer);
-		} else {
-			u.append_id(RendererRD::MeshStorage::get_singleton()->get_default_rd_storage_buffer());
-		}
-		uniforms.push_back(u);
-	}
-
-	// Motion transforms past sampler block growth reservation (bindings 28-31).
-	{
-		RD::Uniform u;
-		u.binding = 32;
-		u.uniform_type = RD::UNIFORM_TYPE_STORAGE_BUFFER;
-		if (p_state->motion_transform_buffer.is_valid()) {
-			u.append_id(p_state->motion_transform_buffer);
-		} else {
-			u.append_id(RendererRD::MeshStorage::get_singleton()->get_default_rd_storage_buffer());
-		}
-		uniforms.push_back(u);
-	}
-
-	// Binding 5: Material buffer.
-	{
-		RD::Uniform u;
-		u.binding = 5;
-		u.uniform_type = RD::UNIFORM_TYPE_STORAGE_BUFFER;
-		if (p_state->material_buffer.is_valid()) {
-			u.append_id(p_state->material_buffer);
-		} else {
-			u.append_id(RendererRD::MeshStorage::get_singleton()->get_default_rd_storage_buffer());
-		}
-		uniforms.push_back(u);
-	}
-
-	// Binding 6: Raytracing params + unjittered VP matrices.
-	{
-		struct {
-			//TODO: I see no reason why we need to pass this as a float array
-			float params[16];
-			float prev_vp_unjittered[16];
-			float curr_vp_unjittered[16];
-		} rt_ubo = {};
-		static_assert(sizeof(rt_ubo) == 48 * sizeof(float));
-
-		if (p_render_data && p_render_data->environment.is_valid()) {
-			RendererEnvironmentStorage *env_storage = RendererEnvironmentStorage::get_singleton();
-			RID env = p_render_data->environment;
-			rt_ubo.params[SceneShaderRaytracing::RT_PARAM_VIS_MODE] = (float)env_storage->environment_get_pathtracing_debug_mode(env);
-			rt_ubo.params[SceneShaderRaytracing::RT_PARAM_SAMPLE_COUNT] = (float)env_storage->environment_get_pathtracing_samples_per_pixel(env);
-			rt_ubo.params[SceneShaderRaytracing::RT_PARAM_MAX_BOUNCES] = (float)env_storage->environment_get_pathtracing_max_bounces(env);
-			rt_ubo.params[SceneShaderRaytracing::RT_PARAM_DENOISER] = (float)(int)env_storage->environment_get_pathtracing_denoiser(env);
-		}
-
-		// rt_params layout (see RaytracingParamIndex enum):
-		// [0] = VIS_MODE, [1] = SAMPLE_COUNT, [2] = MAX_BOUNCES,
-		// [3] = DLSS_RR_ENABLED, [14] = LIGHT_COUNT, [15] = FRAME_INDEX
-		rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FRAME_INDEX] = float(p_state->frame_counter++);
-
-		// Unjittered VP for motion vectors (matches raster convention).
-		{
-			Projection correction;
-			correction.set_depth_correction(true);
-
-			Projection prev_vp = (correction * p_render_data->scene_data->prev_cam_projection) * Projection(p_render_data->scene_data->prev_cam_transform.affine_inverse());
-			RendererRD::MaterialStorage::store_camera(prev_vp, rt_ubo.prev_vp_unjittered);
-
-			Projection curr_vp = (correction * p_render_data->scene_data->cam_projection) * Projection(p_render_data->scene_data->cam_transform.affine_inverse());
-			RendererRD::MaterialStorage::store_camera(curr_vp, rt_ubo.curr_vp_unjittered);
-		}
-
-		// --- Light gathering ---
-		uint32_t rt_light_count = 0;
-		RT_LightData rt_light_data[RT_LIGHTS_MAX] = {};
-
-		rt_light_count = gather_lights(p_render_data, rt_light_data, RT_LIGHTS_MAX);
-
-		rt_ubo.params[SceneShaderRaytracing::RT_PARAM_LIGHT_COUNT] = float(rt_light_count);
-
-		// Upload light buffer.
-		{
-			uint32_t buf_size = RT_LIGHTS_MAX * sizeof(RT_LightData);
-			if (!p_state->light_buffer.is_valid()) {
-				p_state->light_buffer = RD::get_singleton()->storage_buffer_create(buf_size);
-				RD::get_singleton()->set_resource_name(p_state->light_buffer, "RT Light Buffer");
-			}
-			RD::get_singleton()->buffer_update(p_state->light_buffer, 0, buf_size, rt_light_data);
-		}
-
-		if (!p_state->params_buffer.is_valid()) {
-			p_state->params_buffer = RD::get_singleton()->uniform_buffer_create(sizeof(rt_ubo));
-			RD::get_singleton()->set_resource_name(p_state->params_buffer, "RT Params Buffer");
-		}
-		RD::get_singleton()->buffer_update(p_state->params_buffer, 0, sizeof(rt_ubo), &rt_ubo);
-
-		RD::Uniform u;
-		u.binding = 6;
-		u.uniform_type = RD::UNIFORM_TYPE_UNIFORM_BUFFER;
-		u.append_id(p_state->params_buffer);
-		uniforms.push_back(u);
-	}
-
-	// Binding 7: Sky radiance octahedral map (for pathtracing sky sampling).
-	{
-		RendererRD::TextureStorage *texture_storage = RendererRD::TextureStorage::get_singleton();
-		const bool use_octmap_array = owner->is_using_radiance_octmap_array();
-		RID radiance_texture;
-
-		if (p_render_data && p_render_data->environment.is_valid()) {
-			RID sky_rid = owner->environment_get_sky(p_render_data->environment);
-			if (sky_rid.is_valid()) {
-				radiance_texture = use_octmap_array
-						? owner->sky.sky_get_radiance_texture_rd(sky_rid)
-						: owner->sky.sky_get_radiance_2d_texture_rd(sky_rid);
-			}
-		}
-
-		// Fall back to a default whose type matches the shader's declared binding.
-		if (!radiance_texture.is_valid()) {
-			radiance_texture = texture_storage->texture_rd_get_default(use_octmap_array
-							? RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_2D_ARRAY_BLACK
-							: RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_BLACK);
-		}
-
-		RD::Uniform u;
-		u.binding = 7;
-		u.uniform_type = RD::UNIFORM_TYPE_TEXTURE;
-		u.append_id(radiance_texture);
-		uniforms.push_back(u);
-	}
-
-	// Binding 8: Sampler for radiance texture (linear filtering with mipmaps and clamp).
-	{
-		RD::Uniform u;
-		u.binding = 8;
-		u.uniform_type = RD::UNIFORM_TYPE_SAMPLER;
-		u.append_id(RendererRD::MaterialStorage::get_singleton()->sampler_rd_get_default(
-				RSE::CANVAS_ITEM_TEXTURE_FILTER_LINEAR_WITH_MIPMAPS, RSE::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED));
-		uniforms.push_back(u);
-	}
-
-	// Bindings 9-12: DLSS Ray Reconstruction output buffers (only in DLSS RR shader variant).
-	bool dlss_rr_enabled = dlss_rr_has_buffers(rb);
-	if (dlss_rr_enabled) {
-		// Binding 9: DLSS RR Diffuse Albedo
-		{
-			RD::Uniform u;
-			u.binding = 9;
-			u.uniform_type = RD::UNIFORM_TYPE_IMAGE;
-			u.append_id(dlss_rr_get_diffuse_albedo(rb));
-			uniforms.push_back(u);
-		}
-
-		// Binding 10: DLSS RR Specular Albedo
-		{
-			RD::Uniform u;
-			u.binding = 10;
-			u.uniform_type = RD::UNIFORM_TYPE_IMAGE;
-			u.append_id(dlss_rr_get_specular_albedo(rb));
-			uniforms.push_back(u);
-		}
-
-		// Binding 11: DLSS RR Normal + Roughness
-		{
-			RD::Uniform u;
-			u.binding = 11;
-			u.uniform_type = RD::UNIFORM_TYPE_IMAGE;
-			u.append_id(dlss_rr_get_normal_roughness(rb));
-			uniforms.push_back(u);
-		}
-
-		// Binding 12: DLSS RR Specular Hit Distance
-		{
-			RD::Uniform u;
-			u.binding = 12;
-			u.uniform_type = RD::UNIFORM_TYPE_IMAGE;
-			u.append_id(dlss_rr_get_specular_hit_dist(rb));
-			uniforms.push_back(u);
-		}
-	}
-
-	// Binding 13: Light buffer (SSBO).
-	{
-		RD::Uniform u;
-		u.binding = 13;
-		u.uniform_type = RD::UNIFORM_TYPE_STORAGE_BUFFER;
-		if (p_state->light_buffer.is_valid()) {
-			u.append_id(p_state->light_buffer);
-		} else {
-			u.append_id(RendererRD::MeshStorage::get_singleton()->get_default_rd_storage_buffer());
-		}
-		uniforms.push_back(u);
-	}
-
-	// Binding 14: Global shader uniforms SSBO.
-	{
-		RD::Uniform u;
-		u.binding = 14;
-		u.uniform_type = RD::UNIFORM_TYPE_STORAGE_BUFFER;
-		RID buf = RendererRD::MaterialStorage::get_singleton()->global_shader_uniforms_get_storage_buffer();
-		if (buf.is_valid()) {
-			u.append_id(buf);
-		} else {
-			u.append_id(RendererRD::MeshStorage::get_singleton()->get_default_rd_storage_buffer());
-		}
-		uniforms.push_back(u);
-	}
-
-	// Binding 15: RT depth output (R32F storage image for writing depth from closest_hit/miss).
-	{
-		RD::Uniform u;
-		u.binding = 15;
-		u.uniform_type = RD::UNIFORM_TYPE_IMAGE;
-		u.append_id(rt_get_depth_texture(rb));
-		uniforms.push_back(u);
-	}
-
-	// Bindings 16-27: Material samplers (12 filter/repeat combinations for custom shaders).
-	RendererRD::MaterialStorage::get_singleton()->samplers_rd_get_default().append_uniforms(uniforms, 16);
-
-	// Binding 28: Velocity output (RG16F). Past the 16-27 sampler range.
-	{
-		rb->ensure_velocity();
-		RD::Uniform u;
-		u.binding = 28;
-		u.uniform_type = RD::UNIFORM_TYPE_IMAGE;
-		u.append_id(rb->get_velocity_buffer(false));
-		uniforms.push_back(u);
-	}
-
-	RID shader_rd = shader ? shader->get_pipeline_shader_rd(p_rt_flags) : RID();
-
-	RID result;
-	if (shader_rd.is_valid()) {
-		// Release the previous frame's scene uniform set now (before allocating
-		// this frame's). Disposal is deferred by RenderingDevice until the frame
-		// that used it has finished on the GPU, so this is safe and prevents the
-		// uniform_set_owner pool from leaking one RID per accumulated frame.
-		//
-		// The set references render-buffer resources, so RenderingDevice may have
-		// already auto-freed it via its dependency cascade (e.g. a texture/buffer
-		// it referenced was recreated). RID::is_valid() only checks for non-null,
-		// so we must query uniform_set_is_valid() to avoid a double free.
-		if (p_state->scene_uniform_set.is_valid() && RD::get_singleton()->uniform_set_is_valid(p_state->scene_uniform_set)) {
-			RD::get_singleton()->free_rid(p_state->scene_uniform_set);
-		}
-		p_state->scene_uniform_set = RID();
-
-		result = RD::get_singleton()->uniform_set_create(
-				uniforms,
-				shader_rd,
-				RenderForwardClustered::SCENE_UNIFORM_SET,
-				/*p_linear_pool=*/true);
-		p_state->scene_uniform_set = result;
-
-		// === SET 1: Bindless textures ===
-		if (bindless_block && bindless_block->is_initialized()) {
-			bindless_block->finalize(shader_rd, 1);
-			bindless_uniform_set = bindless_block->get_uniform_set();
-		}
-	}
-
-	return result;
-}
-
-// ---------------------------------------------------------------------------
 // Trace-time buffer dependencies
 // ---------------------------------------------------------------------------
 
@@ -3634,25 +3198,5 @@ void RenderRaytracing::register_raytracing_buffer_dependencies(RD::RaytracingLis
 		if (e->replicated_idx_buffer.is_valid()) {
 			rd->raytracing_list_add_buffer_dependency(p_list, e->replicated_idx_buffer, /*p_writable=*/false);
 		}
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Output copy
-// ---------------------------------------------------------------------------
-
-void RenderRaytracing::copy_output_texture(const RenderDataRD *p_render_data) {
-	Ref<RenderSceneBuffersRD> rb = p_render_data->render_buffers;
-	ERR_FAIL_COND(rb.is_null());
-
-	if (!rt_has_texture(rb.ptr())) {
-		return;
-	}
-
-	// Copy raytracing output to main color buffer
-	for (uint32_t v = 0; v < rb->get_view_count(); v++) {
-		RID src = rt_get_texture(rb.ptr());
-		RID dst = rb->get_internal_texture(v);
-		owner->copy_effects->copy_to_rect(src, dst, Rect2i(0, 0, rb->get_internal_size().x, rb->get_internal_size().y), false, false, false, false, false, true);
 	}
 }
