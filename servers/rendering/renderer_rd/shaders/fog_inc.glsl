@@ -43,11 +43,15 @@ vec4 fog_process(SceneData scene_data, vec3 vertex) {
 	}
 
 	if (abs(scene_data.fog_height_density) >= 0.0001) {
+#ifdef RT
+		mat4 inv_view_matrix = rt_decode_inv_view_matrix(scene_data);
+#else
 		mat4 inv_view_matrix = transpose(mat4(
 				scene_data.inv_view_matrix[0],
 				scene_data.inv_view_matrix[1],
 				scene_data.inv_view_matrix[2],
 				vec4(0.0, 0.0, 0.0, 1.0)));
+#endif
 
 		float y = (inv_view_matrix * vec4(vertex, 1.0)).y;
 		float y_dist = y - scene_data.fog_height;
