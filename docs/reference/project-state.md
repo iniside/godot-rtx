@@ -61,8 +61,12 @@ and API replacement landed in `ee7ae4e528`, with editor compile evidence and fre
 review PASS after descriptor-indexing fix `de61204e58`. Scene/light registry
 replacement landed in `afbe198fef`, with scoped clangd/diff checks. Fresh review
 required four shader/analytic-light fixes, landed in `1c31998c6f` with shader
-compile diagnostics and fresh round 2 review PASS. Step 4 surface/history
-replacement is active. Step 3 has no full renderer build or GPU validation yet.
+compile diagnostics and fresh round 2 review PASS. Surface/history replacement
+landed in `c52c951925` with C++/ABI/structural checks. Review requires previous
+depth, camera-cut and material-provenance fixes; `4f340213e8` implements them with
+clangd checks and fresh round 2 review pending. Step 5 ReSTIR DI passes are active.
+Steps 3–4 have no full renderer build or GPU
+validation yet.
 No RTXDI frame dispatch or visual proof exists yet.
 
 The [approved RTXDI replacement plan](../plans/2026-09-06-1854-rtxdi-renderer-plan.md)

@@ -22,7 +22,16 @@ and inclusion of SKY_ONLY directionals in scene direct lights. Scoped fix
 `1c31998c6f0ad703f39c879f2f1cbc9b83004f52` closes those findings; fresh round 2
 review returned PASS on 2026-09-06. No additional identity/lifetime defect was
 confirmed by either round.
-Step 4 surface/history implementation is active. Steps 4–7 have not landed.
+Step 4 landed in `c52c9519259323e4795c3359605858e27a6c70af`; first fresh review
+returned REJECT for missing previous-depth history, missing authoritative camera
+cut invalidation, and parameter-name-based standard-material classification that
+allows unsupported procedural emission. Scoped fix
+`4f340213e8946d5de5a50bf1758b17b646c2e55e` adds per-set depth snapshots,
+authoritative camera identity and generated-material provenance; fresh round 2
+review is pending. Seven focused C++ translation units passed clangd checks;
+scoped diff checks passed. No full build or GPU verification was performed.
+Step 5 ReSTIR DI pass implementation and temporal history wiring are active.
+Steps 5–7 have not landed.
 No RTXDI frame dispatch or rendered image is claimed.
 
 Step 1 evidence: pinned importer completed 159 NRD SPIR-V tasks; a temporary
@@ -59,6 +68,21 @@ for Vulkan 1.3, with bindings 13–16 each declared once. The shared sampling in
 now declares no descriptors. A GLSL-reserved local name found by the diagnostic
 was also corrected. Changed-line clangd reported zero errors; scoped diff checks
 passed. These are shader/source diagnostics, not full renderer or GPU proof.
+
+Step 4 evidence (2026-09-06): clangd parsed both changed C++ translation units
+with exit zero; static assertions lock the changed InstanceData offsets; shader
+conditional nesting and scoped staged/committed diff checks passed. This is not
+a full surface-shader compile or GPU verification. The commit adds the six-MRT
+surface variant, two-set viewport history and motion, and visible diagnostics for
+unsupported materials. It removes normal-view legacy opaque lighting/GI and
+blended drawing. Fog shadows and reflection capture remain for Step 6 closure.
+
+Commit metadata correction: Step 4 fix `4f340213e8` was executed by
+`core-implementer (gpt-5.6-sol)`. Its message accidentally contains literal `\n`
+sequences on one physical line, so Git does not parse the intended body/trailer.
+The original message still contains the truthful identity. History was preserved;
+this entry records attribution and the formatting defect without claiming it was
+rewritten or that code validation covers commit-message formatting.
 
 Intermediate builds/rendering may fail by explicit owner authorization. Final
 completion requires the plan's real-device rendering gate. Automated tests are
