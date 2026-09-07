@@ -21,7 +21,7 @@ Automated tests are not authorized. The full implementation is not complete.
 |---|---|---|
 | 1. Public settings and per-buffer ownership | Source review PASS | `8aa9a77747`; ordinary editor builds |
 | 2. Common RT coordinates and temporal basis | Final round 2 source PASS and proof PASS | `eecc668b45` + correction `28dbaa3dd2` |
-| 3. Shared native RT hit materials | Committed; fresh round 1 review running | `d3936e37b7`; proof-auditor spawn blocked by harness limit |
+| 3. Shared native RT hit materials | Correction committed; fresh final round 2 running | `d3936e37b7` + `faa1f8dcfe`; proof audit pending |
 | 4. Pinned DDGI import and moving cascades | Pending | Depends on step 3 |
 | 5. DDGI lighting and hybrid composition | Pending | Depends on step 4 |
 | 6. True camera-ray PT | Pending | Depends on step 5 |
@@ -106,10 +106,60 @@ and material-envelope messages remain recorded; no error-free image is claimed.
 ## Step 3 evidence awaiting review
 
 Frozen `d3936e37b7f8e3c900416da0a2e70ee40096fa4d`, baseline `28dbaa3dd2`:
-31 source/shader files, +1958/-791. Fresh `ddgi_step3_review_r1` is examining the
-exact commit and both cumulative ranges. A separate proof-auditor spawn hit the
+31 source/shader files, +1958/-791. Fresh `ddgi_step3_review_r1` returned REJECT
+after examining the exact commit and both cumulative ranges. A separate proof-auditor spawn hit the
 harness thread limit, including a retry after the writer completed. Neither
-review nor proof PASS is claimed.
+review nor proof PASS is claimed. Correction `faa1f8dcfe` is committed;
+fresh final `ddgi_step3_review_r2` is running. The post-correction proof-auditor
+spawn again hit the harness limit while that source review was active.
+
+Confirmed round 1 defects:
+
+1. `texture_storage.cpp:4384` seeds each RT decal snapshot with storage-global
+   generation, so an unrelated scenario's decal motion resets PT history even
+   in a target scenario with no decals.
+2. `rt_hit_context_inc.slang:319` retains a cross-reconstructed merged-MultiMesh
+   binormal after nonuniform scaling. Scale (2,1,1), tangent normalize(1,1,0)
+   yields the wrong bitangent direction versus raster/separate geometry.
+3. `shader_compiler.cpp:794` propagates only UV/UV2 basis selection, while
+   `rt_texture_lod` ignores coordinate expression scaling. `UV * 64` therefore
+   receives the same implicit mip as UV. The correction must propagate the
+   sampled expression footprint, including intermediate expressions, while
+   retaining explicit Grad/Lod operands.
+
+Corrective research, 2026-09-07: the [pinned Slang auto-diff guide](https://github.com/shader-slang/slang/blob/84792eb15/docs/user-guide/07-autodiff.md)
+documents forward differentiation, control-flow support and custom derivative
+functions. This lookup was not compiler/runtime proof. The final correction
+instead propagates central and two neighboring values through the existing
+ShaderCompiler lowering, including user functions, arrays and structs.
+
+### Corrective evidence
+
+Frozen `faa1f8dcfecc25a77ddd97381f7fd8d718ea4746`: nine files, +466/-152.
+`round1-final-handoff.json` and `round1-staged.patch` in the evidence root below
+record source identity, exact commands and artifacts. The author reports:
+
+- Snapshot identity uses admitted packed decals and relevant source/atlas
+  texture content, without storage-global decal generation.
+- Merged geometry retains an original vertex-buffer address in existing ABI
+  padding and registers the buffer in geometry dependencies; native hits use
+  original local TBN before instance transforms.
+- Implicit sampling uses propagated central/neighbor coordinates. Explicit
+  Grad/Lod operands remain intact; control flow uses the central evaluation.
+- Final ordinary/double/template receipts (`round1-editor-final-2`,
+  `round1-double-final-1`, `round1-template-final-1`) report exit 0 and the same
+  35 stable source hashes matching committed inputs.
+- `hit-shaders/{ordinary,double}-round1-final-2` records all eight native stage
+  compilations and validators passing after the any-hit signature correction.
+- `round1-coordinate-final-1` reports exit 0 and five pipeline/SBT creations
+  across source reload, VisualShader edit and restore; `round1-gallery-final-1`
+  reports exit 0, three programs and 15 geometry records. These final runs have
+  no ERROR lines in stderr.
+
+The parent checked successful build logs and the frozen commit. These results
+await the independent source verdict and proof audit. They do not establish
+native ray dispatch/readback, output mip selection, or GPU-observed TBN/history
+behavior. The following original-step evidence remains historical at `d3936e37b7`.
 
 The implementation adds native Slang material programs, pipeline-local SBTs,
 shared material packing/classification, geometry hit inputs, resident decal
