@@ -1,0 +1,7 @@
+Godot Engine v4.8.dev.custom_build.b01c5849a (2026-09-07 09:37:44 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Streamline - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+
+MIGRATED_GI_DEMO renderer=forward_plus driver=vulkan map_instances=1 path_tracing=false legacy_gi=false reflection_probe=false
+MIGRATED_CAPTURE path=G:/Projects/godot-rtx/docs/research/rtxdi-demo-migration-evidence/migrated-normal.png result=0 frame=576

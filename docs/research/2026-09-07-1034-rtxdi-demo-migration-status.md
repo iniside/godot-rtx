@@ -58,8 +58,43 @@ the intended emission-only material. The final initial blend-shape value of 0.65
 was restored after this inventory. [Resource readback](rtxdi-demo-migration-evidence/resource-inventory.txt)
 and [import output](rtxdi-demo-migration-evidence/import.txt) retain the evidence.
 
-Current Vulkan runtime and editor-viewport visual verification are **not complete**.
-The repaired map, a standalone resource-inspection script, and the unchanged
+Real-device visual closure for the requested migrated map, gallery and populated
+editor is complete on the ordinary current editor after `edffcf48db190ee1b44517d5ddabef2211480fa9`.
+Fresh independent hostile review and proof audit remain pending; a coordinator
+spawn attempt hit the harness agent limit, which is not a review verdict.
+
+The owner re-enabled the NVIDIA driver cache, then explicitly requested a normal
+launch. With no OBS environment overrides, audio overrides or engine/cache fixes,
+`test.tscn` reached its ready marker and saved the [map image](rtxdi-demo-migration-evidence/migrated-normal.png)
+at frame 576. A normal gallery run saved its [image](rtxdi-demo-migration-evidence/gallery-normal.png)
+at frame 590. Both processes exited normally. Their logs retain Vulkan 1.4.351,
+Forward+, Streamline, RTX 4090, 1280 x 720 and capture result 0:
+[map log](rtxdi-demo-migration-evidence/migrated-normal.txt),
+[gallery log](rtxdi-demo-migration-evidence/gallery-normal.txt).
+This sequence establishes recovered normal operation, not a controlled causal
+experiment identifying the original environmental stall.
+
+The same current editor opened `main.tscn` with a populated scene tree and
+rendered geometry, recorded in the [editor screenshot](rtxdi-demo-migration-evidence/editor-gallery.png).
+F5 from this editor launched the gallery. The visible deformer was removed with
+Delete at frame 4874. F12 saved a [continuing viewport](rtxdi-demo-migration-evidence/gallery-delete-viewport.png)
+at frame 7071, and Escape stopped the game at frame 8835. The
+[interactive log](rtxdi-demo-migration-evidence/gallery-delete.txt) and
+[before](rtxdi-demo-migration-evidence/gallery-before-delete.png)/[after](rtxdi-demo-migration-evidence/gallery-after-delete.png)
+window captures retain this scenario. There is no GPU allocator readback proving
+the precise release frame; the resource ownership/release contract is source-backed.
+
+The editor finalized the two SVG imports for 3D use with mipmaps and VRAM
+compression; those source import settings are retained. Its automatic change to
+the owner's project feature list was reverted from an exact prelaunch byte copy
+after the verification editor closed. The protected owner hash above was checked
+again. The [editor log](rtxdi-demo-migration-evidence/current-editor.txt) retains
+material diagnostics and a no-baked-cluster warning seen during editor rendering;
+the warning's specific editor surface was not attributed. The two standalone
+scene runs and interactive child log do not report that missing-cluster error.
+This is populated-editor proof, not warning-free editor-renderer proof.
+
+Earlier in the same task, the repaired map, a standalone resource-inspection script, and the unchanged
 previously working directional-registry project all stalled before their first
 script statement on the ordinary binary. Logs reached Vulkan 1.4.351, Forward+,
 Streamline, RTX 4090 and the existing inline-shader warning, but no scene-ready
@@ -73,9 +108,11 @@ not closed or manipulated. Headless resource inspection establishes resource
 closure only, not rendering correctness or clean runtime teardown.
 
 No build, formatter or automated tests were run or authored for this scene change.
-Actual populated-editor and rendered-map screenshots remain required before
-claiming visual closure. The owner-used double-precision editor predates the
-current RTXDI implementation and cannot establish current renderer behavior.
+The remaining shadow/energy/unsupported siblings have resource-load and topology
+readback here; their runtime captures were not repeated for this migration.
+Separate rendering-thread, template and other-backend axes were not rerun.
+The old double-precision editor retry was unsuccessful and contributes no visual
+proof; successful images use the ordinary current editor identified above.
 
 ## Private deforming-mesh lifetime correction
 
@@ -94,8 +131,9 @@ XML confirm duplication constructs a new Resource and copies storage properties;
 ArrayMesh bindings include blend-shape names and surfaces. `_get_surfaces` retains
 cluster data, `_set_surfaces` creates the new mesh RID, and the ArrayMesh
 destructor releases its RID. Git blame identifies the duplication implementation
-as upstream. This correction has static ownership evidence only; actual delayed
-GPU release remains within the pending runtime validation boundary.
+as upstream. The final interactive run exercised Delete and continued rendering
+for over 2,000 additional frames before capture. Exact GPU allocation retirement
+timing is not claimed by this visual evidence.
 
 The five temporary converter/single-import diagnostic files were removed with
 one exact, nonrecursive `Remove-Item -LiteralPath` after their paths and task
