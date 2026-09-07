@@ -60,7 +60,8 @@ Step 6 NRD/HDR began from that
 corrective commit in a separate core-implementer context (`gpt-6-astra`, high
 effort for GPU lifetime, pinned SPIR-V integration and frame composition), then
 paused with its unwired partial source preserved. It resumed after the shadow
-correction passed review. Step 7 real-device validation has not started.
+correction passed review and landed in `a661887676ce3c1e1f51ecb1a44bb9c2483627e7`.
+Fresh Stage 6 review is pending. Step 7 real-device validation has not started.
 The frame dispatch is wired in code; real-device execution and rendered output
 remain unverified.
 
@@ -189,16 +190,21 @@ by preserved incomplete Step 6 `nrd_effect.cpp` fields/types (`spir_v` and label
 `String` versus `Span<char>`), recorded in `%TEMP%/rtxdi-shadow-facing-build.log`.
 No real-device facing or rendering validation has run.
 
-Step 6 resume boundary: uncommitted `effects/nrd_effect.{h,cpp}` and
-`shaders/effects/rtxdi_frame.glsl`, with their two `SCsub` edits, are partial and
-not wired to Forward+. No dedicated Stage 6 validation or commit ran; the later
-shadow-correction full-build attempt reached these incomplete sources and failed
-as recorded above. No automated tests ran.
-Resume requires completing the adapter/shader interfaces and per-render-buffer
-ownership, normalizing analytic/emissive/environment radiance before NRD with
-exposure applied in composition, then closing reflection capture and old GI
-resources. Implementation resumed after the shadow fix's fresh review PASS.
-These unfinished files are not evidence of functioning NRD.
+Step 6 evidence, 2026-09-07 at `a661887676`: the RD adapter owns NRD RELAX
+instances, pools and dispatch resources per render buffer. Frame preparation,
+denoising and HDR composition are wired before sky/post. Analytic/emissive/sky
+inputs use unexposed radiance; composition applies exposure and material factors
+once. Retained fog consumes the exposure-independent sky bake with its per-view
+energy multiplier. Legacy main-view GI resources and active reflection/VoxelGI
+capture scheduling are removed. The provisional NRD compilation errors noted
+above are closed by this completed stage.
+
+The final Windows editor/console build passed in 33.44 seconds; log:
+`%TEMP%/rtxdi-step6-final-build.log`. Twenty-four DI/frame and sixteen retained
+fog shader variants compiled for Vulkan 1.3 under `%TEMP%/rtxdi-step6-final-glsl`.
+The exact patch is `%TEMP%/rtxdi-step6.patch`. These are source/compile results,
+not real-device dispatch or visual proof. Fresh Stage 6 review is pending; no
+automated tests ran.
 
 Evidence date: 2026-09-06 UTC. Frozen Step 4 final review target:
 `5075e8b3fc3b19213744d0e9ac9f3648ca710359`.
@@ -245,8 +251,9 @@ correction uses current AS and can exhibit transient bias. Outputs are separate
 RGBA16F diffuse/specular radiance and linear hit distance, demodulated with pinned
 NRD material factors and sanitized/clamped for FP16. The next stages are NRD/HDR
 composition and final editor/template/real-Vulkan visual validation. NRD/HDR
-implementation resumed after the separately authorized shadow fix passed review; final real-device
-validation has not started. No automated tests have been run.
+implementation landed in `a661887676` after the separately authorized shadow fix
+passed review. Final real-device validation has not started. No automated tests
+have been run.
 
 Intermediate builds/rendering may fail by explicit owner authorization. Final
 completion requires the plan's real-device rendering gate. Automated tests are

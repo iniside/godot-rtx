@@ -87,8 +87,9 @@ closed the original findings but rejected a remaining shadow-facing defect:
 ordinary single-sided casters act double-sided. The owner subsequently authorized
 "no to popraw te cienie"; bounded correction `29a810ad37` has shader and owned
 C++ object compile evidence and fresh bounded review PASS on 2026-09-07.
-The reported shadow defect is closed; NRD/HDR implementation resumed from its
-preserved, uncommitted partial source.
+The reported shadow defect is closed. NRD/HDR landed in `a661887676` with final
+editor/console compilation and 40 DI/frame/fog shader variant diagnostics passed;
+fresh Stage 6 review is pending.
 The status document records the exact correction and resume boundary.
 Dispatch is wired in code, but
 real-device DI execution, visual correctness and template build remain unverified.
