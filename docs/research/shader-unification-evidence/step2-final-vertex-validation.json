@@ -1,0 +1,15 @@
+{
+  "utc_start": "2026-09-07T13:15:58.053335+00:00",
+  "cwd": "G:\\Projects\\godot-rtx",
+  "argv": [
+    "C:\\VulkanSDK\\1.4.357.0\\Bin\\spirv-val.exe",
+    "--target-env",
+    "vulkan1.3",
+    "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step2-native-production.slang.api.spv"
+  ],
+  "input_sha256": "3bef3d0217ac6d45c497df7e875572688b96f6c260e04ca522d549270b733e4d",
+  "tool_sha256": "55b0bde93c20d427a95d6deb95181ab6621d9bb18e6f1519d30ceba8d3f1de17",
+  "exit_code": 0,
+  "stdout": "",
+  "stderr": ""
+}

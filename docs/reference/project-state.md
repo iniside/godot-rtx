@@ -72,7 +72,12 @@ compiler diagnostics passed with Slang; this is not full renderer/runtime proof.
 See the [research](../research/2026-09-07-1112-shader-unification-summary.md).
 The [implementation plan](../plans/2026-09-07-1126-shader-unification-plan.md)
 received fresh hostile review PASS and owner approval on 2026-09-07. It landed
-separately in `b2d04129cb`; implementation has started. Progress is tracked in the
+separately in `b2d04129cb`. Compiler integration passed source/proof review at
+`836f8c7e77`; spatial Slang migration passed final source review and bounded proof
+audits at `1a5faf5c60` on 2026-09-07. Editor/template compilation, native shader
+diagnostics and ordinary Vulkan rendering are recorded; complete exported-project,
+double-runtime and material/topology validation remain final-stage work. Shared
+shading/DI replacement is in progress. Evidence and limits are tracked in the
 [migration status](../research/2026-09-07-1126-shader-unification-status.md).
 
 Active work is tracked in the [RTXDI implementation status](../research/2026-09-06-1904-rtxdi-implementation-status.md).

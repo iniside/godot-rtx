@@ -12,8 +12,8 @@ Research and standalone compiler limitations are recorded in the
 | Step | State | Evidence |
 |---|---|---|
 | 1. Slang compiler, request, cache/export and distribution | Source review and proof audit PASS | `3a04df35e6`, fix `836f8c7e77`; [evidence](2026-09-07-1154-slang-compiler-step1-status.md), [proof supplement](2026-09-07-1219-slang-step1-proof-supplement-status.md) |
-| 2. Spatial frontend and surfaces | In progress | Separate core-implementer context; task baseline `836f8c7e77` |
-| 3. Shared shading and DI replacement | Pending step 2 | No implementation evidence |
+| 2. Spatial frontend and surfaces | Final source review and bounded proof audits PASS | `675d3cbe7f`, fix `1a5faf5c60`; [evidence](2026-09-07-1305-shader-unification-step2-summary.md), [fix](2026-09-07-1323-shader-unification-step2-round1.md); task baseline `836f8c7e77` |
+| 3. Shared shading and DI replacement | In progress | Released after step-2 PASS; task baseline `1a5faf5c60` |
 | 4. NRD/HDR and removal of PT dependency | Pending step 3 | No implementation evidence |
 | 5. Final validation and documentation | Pending implementation | No new renderer/runtime proof |
 
@@ -84,3 +84,70 @@ CLAS, ABI and nested ShaderRD creation exited zero; the intentional missing-DLL
 compile failure exited one; both SPIR-V validator runs exited zero. Production
 code remained unchanged. This proves compilation and Vulkan object creation,
 not dispatch, matrix math or migrated rendering. Step 2 is released to build.
+
+## Step 2 integration findings
+
+Parent source inspection confirmed that legacy color lighting is unreachable by
+the active scene draw. `RenderForwardClustered::_render_scene` fills and draws
+`PASS_MODE_RTXDI_SURFACE`, including editor debug-material selection;
+`_render_material` and `_render_uv2` use `PASS_MODE_DEPTH_MATERIAL`. History
+`a661887676` removed opaque/motion/alpha color draws and rejected reflection
+captures. Root clangd references, declarations/implementations and bounded text
+inspection identified remaining color registration/prewarm consumers. The step-2
+writers remove these together with the old shader body and prewarm the actual
+six-attachment surface instead. Depth/shadow/material paths remain in scope.
+
+The first real Vulkan launch exposed Slang's downstream optimizer eliminating
+unused resource parameters despite PreserveParameters. Pinned SDK source and
+same-source API diagnostics isolated O2 (3 descriptors) versus native O0 output
+(31 descriptors). The internal Slang request now selects native O0 output;
+Godot retains its existing final reflection/container and Vulkan performs final
+driver compilation. No extra optimizer or dummy shader reads were introduced.
+Pinned `Linkage::addTarget` also overwrites session FloatingPointMode from the
+TargetDesc field; precise mode is now supplied at that target field. A narrow
+vertex-position Invariant decoration closes the existing position contract.
+
+The parent visually compared `step2-gallery-o0.png` from the ordinary Vulkan
+editor with the retained baseline: visible geometry, materials and shadow/light
+arrangement remain. This is not pixel equality or a performance claim. Final
+step-2 proof/commit/review remains pending; the implementer retains detailed
+commands, binary provenance and final shader diagnostics.
+
+The proof auditor could not find a retained final vertex spirv-val invocation.
+The parent reran only that validator on the unchanged retained artifact on
+2026-09-07 13:15 UTC: Vulkan 1.3 validation exited zero with empty output.
+The [receipt](shader-unification-evidence/step2-final-vertex-validation.json)
+records exact argv, input/tool hashes, time and result. This supplements the
+frozen evidence; it does not claim an earlier unretained invocation was verified.
+
+Fresh source review round 1 returned REJECT with three P2 AST defects: unsigned
+native results for signed findMSB/findLSB/bitCount need their actual AST result
+types restored; roundEven must emit rint/RoundEven rather than round/Round; and
+textureQueryLod must evaluate texture/coordinate arguments once. The original
+implementer owns this named fix, followed by one fresh final round-2 review.
+
+Fix `1a5faf5c60` received fresh final round-2 source review PASS and a bounded
+proof audit PASS. All three reported defects are closed; actual AST-generated
+numeric outputs and final query SPIR-V cover their documented failing branches.
+The parent also visually inspected its
+[ordinary-editor gallery capture](shader-unification-evidence/step2-gallery.png)
+against the retained baseline: visible material/geometry/shadow arrangement
+remains. The source-matched fix build and capture provenance are indexed in the
+[fix report](2026-09-07-1323-shader-unification-step2-round1.md).
+
+The independent proof audit returned PASS for the retained bounded observations.
+It explicitly does not establish visible UBO hot-reload semantics (the rich probe
+writes VERTEX and triggers unsupported-material routing), AST-generated numeric
+matrix correctness, or final-source gallery equivalence. The numeric kernels
+are hand-authored, and gallery preceded the final AST rebuild. Supported visible
+uniform changes and nontrivial AST output remain step-5 checks. Diagnostic process
+exit alone is not a gate: the auditor inspected actual artifacts/results, because
+some temporary diagnostic helpers return normally even after failure. Dormant PT
+hit-group dump warnings remain distinct from spatial compilation diagnostics.
+
+Step-3 preparatory analysis also identified a direct DI shade dependency on the
+handwritten NRD packing helpers. The final thin pinned-SDK wrapper prerequisite
+moves into step 3 so native DI can compile; full NRD/HDR frame migration stays in
+step 4. This changes dependency order within the approved scope. Replaced GLSL
+helpers are removed in their replacement step, even if dormant PT/frame includes
+remain temporarily broken until step 4; no temporary duplicate math is introduced.
