@@ -89,10 +89,13 @@ ordinary single-sided casters act double-sided. The owner subsequently authorize
 C++ object compile evidence and fresh bounded review PASS on 2026-09-07.
 The reported shadow defect is closed. NRD/HDR landed in `a661887676` with final
 editor/console compilation and 40 DI/frame/fog shader variant diagnostics passed;
-fresh Stage 6 review is pending.
+fresh Stage 6 review requires sky-light exposure and PRE_OPAQUE guide-ordering
+corrections. They landed in `217396c25c` with editor and template builds passed;
+fresh final round 2 review returned PASS on 2026-09-07. Stage 7 manual demo and
+real Vulkan validation are active. Real rendering remains unverified.
 The status document records the exact correction and resume boundary.
 Dispatch is wired in code, but
-real-device DI execution, visual correctness and template build remain unverified.
+real-device DI execution and visual correctness remain unverified.
 
 The [approved RTXDI replacement plan](../plans/2026-09-06-1854-rtxdi-renderer-plan.md)
 received a fresh hostile plan-review PASS and owner approval on 2026-09-06 at

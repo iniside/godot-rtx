@@ -61,7 +61,13 @@ corrective commit in a separate core-implementer context (`gpt-6-astra`, high
 effort for GPU lifetime, pinned SPIR-V integration and frame composition), then
 paused with its unwired partial source preserved. It resumed after the shadow
 correction passed review and landed in `a661887676ce3c1e1f51ecb1a44bb9c2483627e7`.
-Fresh Stage 6 review is pending. Step 7 real-device validation has not started.
+Fresh Stage 6 round 1 review returned REJECT for sky-light exposure and
+PRE_OPAQUE guide ordering. Corrective commit `217396c25cc8a54804007c99e7445d35ac00da49`
+implements both fixes; fresh final round 2 review returned PASS on 2026-09-07.
+Editor and template compilation passed. Stage 7 manual demonstration and actual
+Vulkan validation are active in a separate core-implementer context (`gpt-6-astra`,
+high effort for GPU diagnosis and proof), from `217396c25c`. No rendering result
+has been confirmed yet.
 The frame dispatch is wired in code; real-device execution and rendered output
 remain unverified.
 
@@ -203,8 +209,41 @@ The final Windows editor/console build passed in 33.44 seconds; log:
 `%TEMP%/rtxdi-step6-final-build.log`. Twenty-four DI/frame and sixteen retained
 fog shader variants compiled for Vulkan 1.3 under `%TEMP%/rtxdi-step6-final-glsl`.
 The exact patch is `%TEMP%/rtxdi-step6.patch`. These are source/compile results,
-not real-device dispatch or visual proof. Fresh Stage 6 review is pending; no
-automated tests ran.
+not real-device dispatch or visual proof. No automated tests ran.
+
+Stage 6 round 1 review, 2026-09-07 at frozen `a661887676`: REJECT for two defects.
+`environment/sky.cpp:1089` still exposes directional energy before procedural/
+physical sky evaluation, so the nominally raw bake and HDR composition apply
+exposure twice. Correct the sky-light input authority, retaining one exposure at
+each visible-sky/fog/HDR output. `render_forward_clustered.cpp:2118` also invokes
+PRE_OPAQUE before surface/depth (`:2138`) and normal/roughness preparation
+(`effects/nrd_effect.cpp:206`), contrary to the retained compositor input contract.
+Prepare current surfaces/guides before that callback and keep lighting/HDR after.
+Both corrections landed in `217396c25c`: SkyRD directional inputs are raw, with
+sky-fog exposure retained at its own coefficient, and guide preparation is split
+from NRD processing so current surface/depth/guides precede PRE_OPAQUE without
+later overwriting callback guide changes. NRD packing, descriptors, lifecycle and
+old-path removal passed the other first-round source review attacks. Fresh final
+round 2 returned PASS against the corrective commit and cumulative
+`5a532d08b3..217396c25c`, confirming both corrections and the remaining Stage 6
+source/compile contract. This does not establish runtime correctness.
+
+Correction evidence: Windows editor/console build passed in 31.45 seconds;
+template_debug/console passed in 24.86 seconds. Logs:
+`%TEMP%/rtxdi-step6-correction-editor.log` and
+`%TEMP%/rtxdi-step6-correction-template.log`; exact patch:
+`%TEMP%/rtxdi-step6-correction.patch`. The correction changes no shader source or
+layout. Binaries were built from the corrected working source before its commit
+and report prior documentation HEAD `4.8.dev.custom_build.f8675d8ed`; this metadata
+is not the source target SHA. No GPU execution or automated tests ran.
+
+Initial Step 7 template evidence: the Windows Vulkan `template_debug` build with
+`accesskit=no d3d12=no -j16` passed in 302.18 seconds. Binary reports
+`4.8.dev.custom_build.a66188767`; SHA-256
+`8D8D6A3846C0F144B27671018F548EFE853CABF967DC166F664F482F668BCC48`.
+Log: `%TEMP%/rtxdi-step7-template-build.log`. This predates the pending Stage 6
+corrections and does not prove rendering. Local `nvidia-smi` on 2026-09-07 reports
+RTX 4090, driver 616.64 and 24564 MiB; no new renderer GPU execution has occurred.
 
 Evidence date: 2026-09-06 UTC. Frozen Step 4 final review target:
 `5075e8b3fc3b19213744d0e9ac9f3648ca710359`.
@@ -252,8 +291,9 @@ RGBA16F diffuse/specular radiance and linear hit distance, demodulated with pinn
 NRD material factors and sanitized/clamped for FP16. The next stages are NRD/HDR
 composition and final editor/template/real-Vulkan visual validation. NRD/HDR
 implementation landed in `a661887676` after the separately authorized shadow fix
-passed review. Final real-device validation has not started. No automated tests
-have been run.
+passed review. Its corrective commit `217396c25c` passed final round 2; final
+real-device validation is active but has no confirmed result yet. No automated
+tests have been run.
 
 Intermediate builds/rendering may fail by explicit owner authorization. Final
 completion requires the plan's real-device rendering gate. Automated tests are
