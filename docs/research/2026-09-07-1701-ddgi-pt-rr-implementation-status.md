@@ -21,7 +21,7 @@ Automated tests are not authorized. The full implementation is not complete.
 |---|---|---|
 | 1. Public settings and per-buffer ownership | Source review PASS | `8aa9a77747`; ordinary editor builds |
 | 2. Common RT coordinates and temporal basis | Final round 2 source PASS and proof PASS | `eecc668b45` + correction `28dbaa3dd2` |
-| 3. Shared native RT hit materials | Implementation running | Baseline `28dbaa3dd2`; context `ddgi_step3` |
+| 3. Shared native RT hit materials | Committed; fresh round 1 review running | `d3936e37b7`; proof-auditor spawn blocked by harness limit |
 | 4. Pinned DDGI import and moving cascades | Pending | Depends on step 3 |
 | 5. DDGI lighting and hybrid composition | Pending | Depends on step 4 |
 | 6. True camera-ray PT | Pending | Depends on step 5 |
@@ -103,13 +103,45 @@ standalone-container exit alone is insufficient: actual nonempty artifacts and
 separate validator receipts were checked. Existing re-spirv unsupported-operation
 and material-envelope messages remain recorded; no error-free image is claimed.
 
-## Active step and remaining boundaries
+## Step 3 evidence awaiting review
 
-Step 3 has a fresh core-implementer, Astra high selected for native Slang
-hit-material generation, shared shading/decal parity and pipeline/SBT lifetime.
-It owns the complete approved Step 3 source/build surface. Disjoint helpers may
-assist under that owner's integration; parent owns status and maintained facts.
-No automated tests or unrelated features are authorized.
+Frozen `d3936e37b7f8e3c900416da0a2e70ee40096fa4d`, baseline `28dbaa3dd2`:
+31 source/shader files, +1958/-791. Fresh `ddgi_step3_review_r1` is examining the
+exact commit and both cumulative ranges. A separate proof-auditor spawn hit the
+harness thread limit, including a retry after the writer completed. Neither
+review nor proof PASS is claimed.
+
+The implementation adds native Slang material programs, pipeline-local SBTs,
+shared material packing/classification, geometry hit inputs, resident decal
+snapshots and shared shader operations. The author reports explicit screen-input
+diagnostics, UV2 footprint selection, TBN parity and reload cleanup corrections.
+These remain subject to the independent source review.
+
+Evidence root: `C:/Users/lukas/AppData/Local/Temp/godot-ddgi-step3-20260907`.
+`final-handoff.json` identifies the frozen commit, artifact hashes and final
+receipts; `staged-provenance.json` maps the 31 committed files to build inputs.
+The following are recorded results, pending independent proof audit:
+
+| Evidence | Recorded result |
+|---|---|
+| `editor-final-3`, `double-final-2`, `template-final-2` | Exit 0; stable before/after source manifests and executable hashes |
+| `material-final-3` on RTX 4090 Vulkan | Exit 0; source/VisualShader reload recreates pipeline/SBT; no ERROR lines |
+| `gallery-final-1` on the same editor binary | Exit 0; positive creation record for 3 hit programs and 15 geometry records |
+| `hit-shaders/ordinary-closure-1` and `double-closure-final` | Author reports 8/8 native stage compilation/validation passes; exact final-source coverage needs audit |
+
+Early C++/link errors, reload duplicate-release errors, `editor-final-1`
+access-denied failure and stale `material-final-1` run remain archived.
+`template-final-1` compiled but its sources changed during the build; it is
+intermediate evidence. None replaces the final receipts above.
+
+Native stage diagnostics use simple callbacks. Actual generated-material Vulkan
+pipeline creation is recorded, but `trace_material_rays` awaits consumers in
+Steps 4/6: native hit payload readback and DDGI/PT image correctness are unproven.
+Arbitrary texture-coordinate expressions retain a basis approximation; explicit
+Grad/Lod operands are preserved according to the author. Detailed skin/TBN,
+array/default packing and decal-hit output lack separate runtime readback.
+
+## Remaining boundaries
 
 Compiler diagnostics and pipeline creation do not establish dispatched images,
 moving-origin history, translated scenes near 1e8, the MultiMesh transition on
