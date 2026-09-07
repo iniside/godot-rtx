@@ -37,6 +37,8 @@ func _ready() -> void:
 	environment = get_node("WorldEnvironment").environment
 	mover = get_node_or_null("Geometry/MovingCaster")
 	deformer = get_node_or_null("Geometry/DeformingCaster/Deformer")
+	if deformer != null:
+		deformer.mesh = deformer.mesh.duplicate() as ArrayMesh
 	hud = get_node("HUD/Label")
 	var light_group := get_node("Lights")
 	for child in light_group.get_children():
@@ -121,6 +123,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_DELETE:
 				if is_instance_valid(deformer):
 					deformer.queue_free()
+					deformer = null
 			KEY_U:
 				get_viewport().scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR2
 				get_viewport().scaling_3d_scale = 0.67 if get_viewport().scaling_3d_scale == 1.0 else 1.0

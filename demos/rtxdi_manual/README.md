@@ -35,7 +35,7 @@ The manual-case root nodes expose **Preset**, **Light Mode** and **Expanded Mult
 | R | Reverse and re-register the analytic light nodes. |
 | B | Toggle analytic-light shadows. |
 | O | Show/hide the off-screen caster in the gallery. |
-| Delete | Remove the deforming mesh. |
+| Delete | Remove the deforming node and release its private runtime mesh. |
 | F12 | Save a screenshot to the project's user-data directory; the Output log prints its path. |
 | Escape | Close the running scene. |
 
