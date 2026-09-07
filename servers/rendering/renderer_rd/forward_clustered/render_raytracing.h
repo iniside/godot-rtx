@@ -47,7 +47,6 @@ namespace RendererSceneRenderImplementation {
 
 class RenderForwardClustered;
 struct RenderRTXDIViewportResources;
-class SceneShaderRaytracing;
 
 // Must match GLSL GeometryData (std430, 128 bytes).
 struct alignas(16) RT_GeometryData {
@@ -296,8 +295,9 @@ struct RTDeformedGeometrySource {
 struct RTMaterialData {
 	alignas(16) RT_MaterialData data = {};
 	uint32_t global_buffer_index = UINT32_MAX;
-	uint32_t rt_sbt_offset = 0;
 	bool is_custom_shader = false;
+	bool uses_alpha_clip = false;
+	bool has_alpha_texture = false;
 	RID uniform_buffer; // Buffer pointer for mats > 512 bytes.
 	uint32_t uniform_pool_slot = UINT32_MAX; // Index into the material UBO pool, or UINT32_MAX (unused)
 	RID albedo_texture_rd;
@@ -388,6 +388,8 @@ struct RTMaterialCacheEntry {
 	uint32_t last_used_frame = 0;
 	uint16_t cached_counter = 0;
 	uint32_t cached_rid_version = 0;
+	uint64_t cached_shader_hash = 0;
+	uint64_t cached_shader_hash_b = 0;
 };
 
 /// Per-viewport raytracing state.
@@ -426,7 +428,6 @@ class RenderRaytracing {
 	friend class RenderForwardClustered;
 
 	RenderForwardClustered *owner = nullptr;
-	SceneShaderRaytracing *shader = nullptr;
 	BindlessBlock *bindless_block = nullptr;
 
 	// Caching (chunked sparse caches indexed by RID low bits / 256).
@@ -492,7 +493,6 @@ class RenderRaytracing {
 	LocalVector<Transform3D> blas_transforms;
 	LocalVector<uint32_t> instance_flags;
 	LocalVector<uint8_t> instance_masks; // Per-instance ray mask (0x00 = invisible to rays, 0xFF = normal)
-	LocalVector<uint32_t> sbt_offsets; // 0 = default material hit group
 	LocalVector<RTEmissiveSource> emissive_sources;
 
 	HashMap<RenderSceneBuffersRD *, RTViewportState *> viewport_states;
@@ -569,7 +569,7 @@ public:
 
 	void cleanup_caches();
 
-	RTViewportState *build_tlas(const RenderDataRD *p_render_data, uint32_t p_rt_flags);
+	RTViewportState *build_tlas(const RenderDataRD *p_render_data);
 	void free_viewport_state(RenderSceneBuffersRD *p_render_buffers);
 
 	void register_compute_buffer_dependencies(RD::ComputeListID p_list);

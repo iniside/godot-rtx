@@ -1,0 +1,75 @@
+COMMAND: bin/godot.windows.editor.x86_64.console.exe --path demos/rtxdi_manual res://main.tscn --rendering-method forward_plus --rendering-driver vulkan --max-fps 60 -- --still --delay=8 --capture=C:/Users/lukas/AppData/Local/Temp/godot-shader-unification-20260907/step4-gallery-final.png
+EXIT_CODE: 0
+Godot Engine v4.8.dev.custom_build.b3e19ba8e (2026-09-07 14:14:34 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Streamline - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeAccelerationStructureKHR is not supported yet.
+OpTypeAccelerationStructureKHR is not supported yet.
+OpTypeAccelerationStructureKHR is not supported yet.
+OpTypeAccelerationStructureKHR is not supported yet.
+
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+MANUAL_DEMO preset=gallery light=all binary={ "major": 4, "minor": 8, "patch": 0, "hex": 264192, "status": "dev", "build": "custom_build", "hash": "b3e19ba8e95ab4af7a8c7bbae7700e5464650480", "timestamp": 1788790474, "string": "4.8-dev (custom_build)" } renderer=forward_plus driver=vulkan size=(1280.0, 720.0)
+MANUAL_CAPTURE path=C:\Users\lukas\AppData\Local\Temp/godot-shader-unification-20260907/step4-gallery-final.png result=0 frame=476 gpu_ms=3.32800006866455
+MANUAL_MEMORY total=455148384.0 textures=358057984.0 buffers=84143630.0
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_common_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_pcl_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_reflex_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_g_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_d_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_nis_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_pcl_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_pcl_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.common.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_common_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.deepdvc.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.directsr.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.dlss.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.dlss_d.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_d_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.dlss_g.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_g_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.nis.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_nis_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.nvperf.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.pcl.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_pcl_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.reflex.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_reflex_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.

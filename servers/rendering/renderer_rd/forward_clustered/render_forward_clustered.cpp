@@ -1960,7 +1960,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		clear_color = p_default_bg_color.srgb_to_linear();
 	}
 
-	RTViewportState *rt_state = raytracing->build_tlas(p_render_data, 0);
+	RTViewportState *rt_state = raytracing->build_tlas(p_render_data);
 	ERR_FAIL_NULL(rt_state);
 	_pre_opaque_render(p_render_data);
 	SceneShaderForwardClustered::ShaderSpecialization base_specialization = scene_shader.default_specialization;

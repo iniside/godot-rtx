@@ -1,0 +1,93 @@
+{
+  "recorded_utc": "2026-09-07T14:28:05.565358+00:00",
+  "task_baseline": "38884029bf5654e0974ee6360e464185ea9b5c5c",
+  "build_git_head": "b3e19ba8e95ab4af7a8c7bbae7700e5464650480",
+  "scope": "STEP4 final ordinary editor build and real Vulkan gallery, not full STEP5 validation",
+  "build": {
+    "command": "scons platform=windows target=editor accesskit=no d3d12=no -j16",
+    "exit_code": 0,
+    "initial_seconds": 32.63,
+    "final_seconds": 29.23
+  },
+  "run": {
+    "command": "bin/godot.windows.editor.x86_64.console.exe --path demos/rtxdi_manual res://main.tscn --rendering-method forward_plus --rendering-driver vulkan --max-fps 60 -- --still --delay=8 --capture=C:/Users/lukas/AppData/Local/Temp/godot-shader-unification-20260907/step4-gallery-final.png",
+    "exit_code": 0,
+    "renderer": "forward_plus",
+    "driver": "vulkan",
+    "device": "NVIDIA GeForce RTX 4090",
+    "capture_frame": 476,
+    "size": [
+      1280,
+      720
+    ],
+    "automated_tests": false
+  },
+  "owned_sources_sha256": {
+    "servers/rendering/renderer_rd/effects/nrd_effect.cpp": "f2cb2a1a50b52eb0e3f942ac7dc6de62e25e4658582437f33224fd4a3e8d90a9",
+    "servers/rendering/renderer_rd/effects/nrd_effect.h": "d590096ca4b1f5de4a9f5db88f2f33d5068b8bef21fde999a9b868609d39ea1e",
+    "servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.cpp": "3a09ec93f31db071a2ad5109cd3447e160017aa2df8e4212aadd88ebcf7ba64d",
+    "servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h": "b1b7d415469921b2c43cb6538633d5b7d0b2b2b770abe82725127bdac3bbdd83",
+    "servers/rendering/renderer_rd/forward_clustered/render_raytracing.cpp": "bd5dddb9e6d4bb796d5aab7cce9027458a03e251ce3391999c604023670afebc",
+    "servers/rendering/renderer_rd/forward_clustered/render_raytracing.h": "73057225b153fc21c212e66b2bedd42e6aab2c756f6ee4817f4731f3a611365a",
+    "servers/rendering/renderer_rd/shaders/effects/SCsub": "ee84db284b98455ce8c294a247bb93a92867bf03830a917aebe65017c9df4768",
+    "servers/rendering/renderer_rd/shaders/effects/rtxdi_frame.slang": "7360f81955eb529885293a279518820553bd6cc46899b6df658ccde4faf69d08"
+  },
+  "deleted_sources": [
+    "servers/rendering/renderer_rd/forward_clustered/scene_shader_raytracing.cpp",
+    "servers/rendering/renderer_rd/forward_clustered/scene_shader_raytracing.h",
+    "servers/rendering/renderer_rd/shaders/effects/rtxdi_frame.glsl",
+    "servers/rendering/renderer_rd/shaders/raytracing/raytracing_closest_hit_common_inc.glsl",
+    "servers/rendering/renderer_rd/shaders/raytracing/raytracing_common_inc.glsl",
+    "servers/rendering/renderer_rd/shaders/raytracing/raytracing_custom_fragment_inc.glsl",
+    "servers/rendering/renderer_rd/shaders/raytracing/raytracing_custom_globals_inc.glsl",
+    "servers/rendering/renderer_rd/shaders/raytracing/raytracing_inc.glsl",
+    "servers/rendering/renderer_rd/shaders/raytracing/raytracing_lights_inc.glsl",
+    "servers/rendering/renderer_rd/shaders/raytracing/raytracing_material_eval_inc.glsl",
+    "servers/rendering/renderer_rd/shaders/raytracing/raytracing_samplers_inc.glsl",
+    "servers/rendering/renderer_rd/shaders/raytracing/scene_raytracing_raygen.glsl"
+  ],
+  "retained_inputs_sha256": {
+    "demos/rtxdi_manual/main.gd": "7da1057aeda5204b063986ffac9b01b239d5fbc728e78811a1311ab728c89fd7",
+    "demos/rtxdi_manual/main.tscn": "4209a1474ef309bde2c163987693e6f2dcc6d21ade68dff93a24f31f35e6a3ab",
+    "demos/rtxdi_manual/migrated/camera.gd": "9cb679077e6588a49cb8c7daa6bdf919710758567d8511b5972ca21bb2e5b0e2",
+    "demos/rtxdi_manual/migrated/test.gd": "cb6359073e36a3eee7cd8d14974609a03536d7208c06d6735967d6a2749c0969",
+    "demos/rtxdi_manual/project.godot": "41cc7b1055d440b3267640675bd79942fd2ef4fa19aae378592755b3e9fbd582",
+    "glsl_builders.py": "06c23cf7a475585eb981c8dd9d5260a7fb2b3088135b8c35f0a2731b52da0e6b",
+    "servers/rendering/renderer_rd/forward_clustered/scene_shader_forward_clustered.cpp": "d4cb3c521169ec646c040127ecb63987ea70861fc81404aa95eb5b07c62e7406",
+    "servers/rendering/renderer_rd/forward_clustered/scene_shader_forward_clustered.h": "5c3730474a8131d8912ef44dc9b65fb373c5e29680bd4ad85d263f6bd6d322cb",
+    "servers/rendering/renderer_rd/shaders/decal_data_inc.slang": "4d2475b72662c6591c2bc589979d31dd6b033cc9814595eafaff3071d0acca46",
+    "servers/rendering/renderer_rd/shaders/effects/SCsub": "ee84db284b98455ce8c294a247bb93a92867bf03830a917aebe65017c9df4768",
+    "servers/rendering/renderer_rd/shaders/forward_clustered/scene_forward_clustered.slang": "97b3d41353cd7d323edf345e68750f1853705e7198082d0a44a9f6e02a356adf",
+    "servers/rendering/renderer_rd/shaders/forward_clustered/scene_forward_clustered_inc.slang": "550d9751d316f65922e1d9f9d1cc5489048f99401f38a3d800b6d32fa18094df",
+    "servers/rendering/renderer_rd/shaders/oct_inc.slang": "0d3cfa025c4be12269370323637dd28d46cbf44cd93899f80e391fe322df56e8",
+    "servers/rendering/renderer_rd/shaders/raytracing/geometry_data_inc.slang": "6cc661f1f7843c4dfe307da0ea40764bc456cfdf4afc59dfb15ba959ebadfad4",
+    "servers/rendering/renderer_rd/shaders/raytracing/geometry_decode_inc.slang": "69405d490237a8da78ef425dfbdf5425a665df79430ca50e45b6501865e880cd",
+    "servers/rendering/renderer_rd/shaders/raytracing/light_data_inc.slang": "21b4a814f8e6e7a9da0d14456afa3c993df4e2fe074aa1472e9bbdd50359f3a0",
+    "servers/rendering/renderer_rd/shaders/raytracing/light_sampling_inc.slang": "4a1e77d9bc92c6aa2ddb9478af387d56962aa3c2b6ae93eac9c48d2f1ac0c306",
+    "servers/rendering/renderer_rd/shaders/raytracing/rtxdi_application_bridge_inc.slang": "653fada5221fa83682564fba3a7ea1f5ce97ac7c90f12c0955c8f485f6915bcd",
+    "servers/rendering/renderer_rd/shaders/raytracing/rtxdi_di.slang": "fab6a25b15fd993483e04e78234003e4817534582a81d67931f1bfcf5ab19efa",
+    "servers/rendering/renderer_rd/shaders/raytracing/rtxdi_nrd_inc.slang": "b81fe32c2523643013bac4ffcf47e11d1dfcd4f43b538c5df609db517bc64291",
+    "servers/rendering/renderer_rd/shaders/raytracing/surface_brdf_inc.slang": "cdfe3b063e41d1b1657ed4d45ee5c14335a1ff9feccab9fe92057badd34e9273",
+    "servers/rendering/renderer_rd/shaders/raytracing/surface_shading_inc.slang": "88692d76f6cfec426789ef7b4222eee170e22d7fc3b6368e0a3b1367c8c7fc5a",
+    "servers/rendering/renderer_rd/shaders/scene_data_inc.slang": "874cda1e9e6d84a636e7cf8845a5136c4832f73b6f60ba6a613b9e3eeb3d99bb",
+    "servers/rendering/renderer_rd/shaders/scene_forward_aa_inc.slang": "d939d67fbd87744faadac3fcf2c5780ce7f3042634d5194b9ad1a19efefb4167",
+    "servers/rendering/renderer_rd/shaders/surface_data_inc.slang": "c9d2bc0f1be2bf9ba2ea54573e82bd4161e6644faeb7ab3d4e503011736dad8a",
+    "servers/rendering/renderer_rd/storage_rd/material_storage.cpp": "c147db389a7dcfb9cc68a80e6b4f28e1766a6c5ef9041ed9f7c9b23b538ea157",
+    "servers/rendering/renderer_rd/storage_rd/material_storage.h": "714d73911134ffe1bdeabd3a0303f5fefdb4f0cf47f52e76a842e1843d4bd9db",
+    "thirdparty/nrd/Shaders/NRD.hlsli": "c57fd8074750423462bd608a2b7807f3145e7977db0d71a46fac5cd049a87afd",
+    "thirdparty/nrd/Shaders/NRDConfig.hlsli": "ba024772a8f05b4eed94498993089cc1ae85f07aa75ab7805af6bdec4fe3f300"
+  },
+  "binaries_sha256": {
+    "bin/godot.windows.editor.x86_64.exe": "1cc6ae4ed290c37f425ba014129f9ee05996d149852b19c7d288caa3d89114ec",
+    "bin/godot.windows.editor.x86_64.console.exe": "b9f4810960d5bcffe4158f83a6bbdc79567ac2db449b63b727b41ef6569649a1",
+    "bin/slang-compiler.2026.13.1.x86_64.dll": "6cd4e6bee3ee8a1f8349f77c838ac711a3d217465771b114f461075b77b71b40"
+  },
+  "generated_headers_sha256": {
+    "servers/rendering/renderer_rd/shaders/effects/rtxdi_frame.slang.gen.h": "b8a77c53e1280144e9b613e191edc14f122d9e97c94028ad17232ad611a42956"
+  },
+  "artifacts_sha256": {
+    "step4-editor-build-output.txt": "516b4bc6f6df0a4ee4edd3963296e3d06471fd6913eb751569655dc64c8e47c2",
+    "step4-gallery-output.txt": "b1ece9791754e249b067fcb3cce3023340fac0b5c66bde6b21e2c42ed8ca11cd",
+    "step4-gallery.png": "985f81c16973cdb2876d435df8074bcd5e71786db47643b4cadf8a2176b903a3"
+  }
+}

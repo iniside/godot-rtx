@@ -157,20 +157,22 @@ NRDEffect::Context *NRDEffect::create_context(const Size2i &p_size) {
 bool NRDEffect::_process_frame(Context *p_context, const Frame &p_frame, bool p_compose) {
 	const uint32_t pass = p_compose ? 1 : 0;
 	RID shader = frame_shader.version_get_shader(shader_version, pass);
+	ERR_FAIL_COND_V(shader.is_null() || frame_pipelines[pass].is_null(), false);
 	LocalVector<RD::Uniform> uniforms;
 	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 0, p_frame.scene_data));
 	for (uint32_t i = 0; i < 6; i++) {
-		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 1 + i, Vector<RID>({ samplers[0], p_frame.surface[i] })));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 1 + i, p_frame.surface[i]));
 	}
-	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 7, Vector<RID>({ samplers[0], p_frame.depth })));
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 7, p_frame.depth));
 	if (p_compose) {
-		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 8, Vector<RID>({ samplers[0], p_context->diffuse })));
-		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 9, Vector<RID>({ samplers[0], p_context->specular })));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 8, p_context->diffuse));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 9, p_context->specular));
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 10, p_frame.color));
-		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 11, Vector<RID>({ samplers[1], p_frame.fog })));
-		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 12, Vector<RID>({ samplers[1], p_frame.radiance })));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 11, p_frame.fog));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 12, p_frame.radiance));
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 13, p_frame.directional_lights));
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 14, p_frame.separate_specular.is_valid() ? p_frame.separate_specular : p_context->normal_roughness));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_SAMPLER, 15, samplers[1]));
 	} else {
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 8, p_context->normal_roughness));
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 9, p_context->view_depth));
@@ -328,7 +330,10 @@ NRDEffect::NRDEffect(bool p_radiance_array, uint32_t p_roughness_layers) {
 #ifdef REAL_T_IS_DOUBLE
 	defines += "#define USE_DOUBLE_PRECISION\n";
 #endif
-	frame_shader.initialize(Vector<String>({ "#define MODE_PREPARE\n", "#define MODE_COMPOSE\n" }), defines);
+	Vector<ShaderRD::VariantDefine> modes;
+	modes.push_back(ShaderRD::VariantDefine(0, "#define MODE_PREPARE\n", true));
+	modes.push_back(ShaderRD::VariantDefine(0, "#define MODE_COMPOSE\n", true));
+	frame_shader.initialize(modes, defines, Vector<RD::PipelineImmutableSampler>(), Vector<uint64_t>(), false, false);
 	shader_version = frame_shader.version_create();
 	for (uint32_t i = 0; i < 2; i++) {
 		frame_pipelines[i] = RD::get_singleton()->compute_pipeline_create(frame_shader.version_get_shader(shader_version, i));

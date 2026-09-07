@@ -33,7 +33,6 @@
 #include "core/math/math_funcs.h"
 #include "servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h"
 #include "servers/rendering/renderer_rd/forward_clustered/render_rtxdi.h"
-#include "servers/rendering/renderer_rd/forward_clustered/scene_shader_raytracing.h"
 #include "servers/rendering/renderer_rd/storage_rd/light_storage.h"
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
 #include "servers/rendering/renderer_rd/storage_rd/mesh_storage.h"
@@ -49,17 +48,6 @@ using namespace RendererSceneRenderImplementation;
 void RenderRaytracing::initialize(RenderForwardClustered *p_owner) {
 	owner = p_owner;
 	bindless_block = memnew(BindlessBlock);
-	shader = SceneShaderRaytracing::get_singleton();
-	String rt_defines;
-	rt_defines += "\n#define RT 1\n";
-	rt_defines += "\n#define MAX_ROUGHNESS_LOD " + itos(owner->get_roughness_layers() - 1) + ".0\n";
-#ifdef REAL_T_IS_DOUBLE
-	rt_defines += "\n#define USE_DOUBLE_PRECISION \n";
-#endif
-	if (owner->is_using_radiance_octmap_array()) {
-		rt_defines += "\n#define USE_RADIANCE_OCTMAP_ARRAY \n";
-	}
-	shader->init(rt_defines);
 
 	// Initialize merged MultiMesh BLAS compute shader.
 	Vector<String> merge_modes;
@@ -89,10 +77,6 @@ RenderRaytracing::~RenderRaytracing() {
 	if (bindless_block) {
 		memdelete(bindless_block);
 		bindless_block = nullptr;
-	}
-	if (shader) {
-		memdelete(shader);
-		shader = nullptr;
 	}
 	mm_merge_shader.shader.version_free(mm_merge_shader.version);
 }
@@ -467,7 +451,6 @@ void RenderRaytracing::prepare_frame() {
 	blas_transforms.clear();
 	instance_flags.clear();
 	instance_masks.clear();
-	sbt_offsets.clear();
 	geometry_data.clear();
 	material_data.clear();
 	motion_indices.clear();
@@ -563,9 +546,6 @@ void RenderRaytracing::prepare_frame() {
 			merged_mm_pool.free(live[i]);
 		}
 	}
-
-	// Finish async HG compiles so live_ready_mask matches this frame (sync path fills at build_tlas end).
-	SceneShaderRaytracing::get_singleton()->drain_completed_compiles();
 
 	// Reset per-frame metrics
 	cache_hits = 0;
@@ -1673,27 +1653,20 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 	uint32_t mat_idx = get_rid_index(p_material_rid);
 	uint32_t mat_version = get_rid_version(p_material_rid);
 	RTMaterialCacheEntry *entry = get_material_cache_entry(mat_idx);
+	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
+	const uint64_t shader_hash = material_storage->material_get_shader_code_rt_hash(p_material_rid);
+	const uint64_t shader_hash_b = material_storage->material_get_shader_code_rt_hash_b(p_material_rid);
 
 	uint32_t current_frame = RSG::rasterizer->get_frame_number();
-	bool needs_refresh = !entry->ptr ||
+	const bool needs_refresh = !entry->ptr ||
 			entry->cached_rid_version != mat_version ||
-			entry->cached_counter != p_material_invalidation_counter;
+			entry->cached_counter != p_material_invalidation_counter ||
+			entry->cached_shader_hash != shader_hash ||
+			entry->cached_shader_hash_b != shader_hash_b;
 
 	if (!needs_refresh) {
 		entry->last_used_frame = current_frame;
-		if (entry->ptr->is_custom_shader) {
-			uint32_t shader_id = RendererRD::MaterialStorage::get_singleton()->material_get_shader_id(p_material_rid);
-			uint32_t old_sbt = entry->ptr->rt_sbt_offset;
-			uint32_t new_sbt = SceneShaderRaytracing::get_singleton()->register_custom_shader(shader_id, p_material_rid);
-			entry->ptr->rt_sbt_offset = new_sbt;
-			// HG slot change invalidates cached UBO layout / BDA.
-			if (old_sbt != new_sbt) {
-				needs_refresh = true;
-			}
-		}
-		if (!needs_refresh) {
-			return entry->ptr;
-		}
+		return entry->ptr;
 	}
 
 	// Cache miss - need to rebuild material
@@ -1729,8 +1702,9 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 	mat.normal_map_depth = 1.0f;
 	mat.uniform_address = 0;
 
-	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
 	RendererRD::TextureStorage *texture_storage = RendererRD::TextureStorage::get_singleton();
+	mat_data->uses_alpha_clip = false;
+	mat_data->has_alpha_texture = false;
 
 	mat.coverage_flags = 0;
 	mat.coverage_sampler = 0;
@@ -1822,32 +1796,68 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 		mat.albedo_color[1] = c.g;
 		mat.albedo_color[2] = c.b;
 		mat.albedo_color[3] = c.a;
-		mat_data->rt_sbt_offset = 0;
 		mat_data->is_custom_shader = false;
 	} else {
 		mat_data->is_custom_shader = true;
-		uint32_t shader_id = material_storage->material_get_shader_id(p_material_rid);
-		mat_data->rt_sbt_offset = SceneShaderRaytracing::get_singleton()->register_custom_shader(shader_id, p_material_rid);
-
-		const SceneShaderRaytracing::CustomShaderEntry *cse =
-				SceneShaderRaytracing::get_singleton()->get_custom_shader_entry(mat_data->rt_sbt_offset);
-		if (cse && cse->uniform_total_size > 0) {
+		if (raster_material && raster_material->shader_data && raster_material->shader_data->version.is_valid() && !raster_material->shader_data->code.is_empty()) {
+			const SceneShaderForwardClustered::ShaderData *shader_data = raster_material->shader_data;
+			const auto &uniforms = shader_data->rt ? shader_data->rt->uniforms : shader_data->uniforms;
+			const auto &uniform_offsets = shader_data->rt ? shader_data->rt->uniform_offsets : shader_data->ubo_offsets;
+			const auto &texture_uniforms = shader_data->rt ? shader_data->rt->texture_uniforms : shader_data->texture_uniforms;
+			mat_data->uses_alpha_clip = shader_data->rt ? shader_data->rt->uses_alpha_clip : shader_data->uses_alpha_clip;
+			uint32_t uniform_total_size = 0;
+			for (const KeyValue<StringName, ShaderLanguage::ShaderNode::Uniform> &kv : uniforms) {
+				const ShaderLanguage::ShaderNode::Uniform &uniform = kv.value;
+				if (ShaderLanguage::is_sampler_type(uniform.type) || uniform.order < 0 || uniform.order >= uniform_offsets.size()) {
+					continue;
+				}
+				uint32_t size = ShaderLanguage::get_datatype_size(uniform.type);
+				if (uniform.scope == ShaderLanguage::ShaderNode::Uniform::SCOPE_GLOBAL) {
+					size = sizeof(uint32_t);
+				} else if (uniform.array_size > 0) {
+					size = ((size + 15u) & ~15u) * uniform.array_size;
+				}
+				uniform_total_size = MAX(uniform_total_size, uniform_offsets[uniform.order] + size);
+			}
+			Vector<uint32_t> texture_offsets;
+			texture_offsets.resize(texture_uniforms.size());
+			uint32_t alpha_texture_buffer_offset = UINT32_MAX;
+			for (int ti = 0; ti < texture_uniforms.size(); ti++) {
+				const ShaderCompiler::GeneratedCode::Texture &texture = texture_uniforms[ti];
+				if (texture.name.is_empty()) {
+					continue;
+				}
+				uniform_total_size = (uniform_total_size + 3u) & ~3u;
+				texture_offsets.write[ti] = uniform_total_size;
+				if (texture.hint == ShaderLanguage::ShaderNode::Uniform::HINT_ALPHA) {
+					if (alpha_texture_buffer_offset != UINT32_MAX) {
+						WARN_PRINT(vformat("Custom RT shader has multiple hint_alpha textures; '%s' will be ignored. Only one hint_alpha texture is supported for ray query alpha testing.", texture.name));
+					} else {
+						alpha_texture_buffer_offset = uniform_total_size;
+						mat_data->has_alpha_texture = true;
+					}
+				}
+				uniform_total_size += sizeof(uint32_t);
+			}
+			uniform_total_size = (uniform_total_size + 15u) & ~15u;
 			Vector<uint8_t> ubo_data;
-			ubo_data.resize(cse->uniform_total_size);
-			memset(ubo_data.ptrw(), 0, cse->uniform_total_size);
+			ubo_data.resize(uniform_total_size);
+			if (uniform_total_size > 0) {
+				memset(ubo_data.ptrw(), 0, uniform_total_size);
+			}
 
-			for (const KeyValue<StringName, ShaderLanguage::ShaderNode::Uniform> &kv : cse->uniforms) {
+			for (const KeyValue<StringName, ShaderLanguage::ShaderNode::Uniform> &kv : uniforms) {
 				const ShaderLanguage::ShaderNode::Uniform &u = kv.value;
 				if (ShaderLanguage::is_sampler_type(u.type)) {
 					continue;
 				}
-				if (u.order < 0 || u.order >= (int)cse->uniform_offsets.size()) {
+				if (u.order < 0 || u.order >= (int)uniform_offsets.size()) {
 					continue;
 				}
 
-				uint32_t offset = cse->uniform_offsets[u.order];
-				uint32_t size = ShaderLanguage::get_datatype_size(u.type);
-				if (offset + size > cse->uniform_total_size) {
+				uint32_t offset = uniform_offsets[u.order];
+				uint32_t size = u.scope == ShaderLanguage::ShaderNode::Uniform::SCOPE_GLOBAL ? sizeof(uint32_t) : ShaderLanguage::get_datatype_size(u.type);
+				if (offset + size > uniform_total_size) {
 					continue;
 				}
 
@@ -1864,11 +1874,14 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 			}
 
 			RendererRD::TextureStorage *ts = RendererRD::TextureStorage::get_singleton();
-			for (int ti = 0; ti < cse->texture_uniforms.size(); ti++) {
-				const SceneShaderRaytracing::TextureUniformInfo &tui = cse->texture_uniforms[ti];
+			for (int ti = 0; ti < texture_uniforms.size(); ti++) {
+				const ShaderCompiler::GeneratedCode::Texture &tui = texture_uniforms[ti];
+				if (tui.name.is_empty()) {
+					continue;
+				}
 				uint32_t bindless_idx = 0;
 
-				if (tui.is_global) {
+				if (tui.global) {
 					RID tex_rid = material_storage->global_shader_uniform_get_texture(tui.name);
 					if (tex_rid.is_valid()) {
 						RID rd_tex = ts->texture_get_rd_texture(tex_rid, tui.use_color);
@@ -1914,66 +1927,54 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 					}
 				}
 
-				if (tui.buffer_offset + 4 <= cse->uniform_total_size) {
-					memcpy(ubo_data.ptrw() + tui.buffer_offset, &bindless_idx, 4);
+				if (texture_offsets[ti] + 4 <= uniform_total_size) {
+					memcpy(ubo_data.ptrw() + texture_offsets[ti], &bindless_idx, 4);
 				}
 			}
 
-			// If the shader declared hint_alpha, mirror that bindless index into
-			// mat.albedo_texture_idx so ray_query_alpha_test() can sample it cheaply.
-			if (cse->alpha_texture_buffer_offset != UINT32_MAX &&
-					cse->alpha_texture_buffer_offset + 4 <= cse->uniform_total_size) {
+			if (alpha_texture_buffer_offset != UINT32_MAX &&
+					alpha_texture_buffer_offset + 4 <= uniform_total_size) {
 				uint32_t alpha_idx = 0;
-				memcpy(&alpha_idx, ubo_data.ptr() + cse->alpha_texture_buffer_offset, 4);
+				memcpy(&alpha_idx, ubo_data.ptr() + alpha_texture_buffer_offset, 4);
 				mat.albedo_texture_idx = alpha_idx;
 			}
 
-			// Try the suballoc pool first. Common materials (UBO <= slot size)
-			// just buffer_update an existing slot - O(1), no driver allocation,
-			// no per-frame storage_buffer_create cost.
-			bool used_pool = false;
-			if (cse->uniform_total_size <= MAT_UBO_POOL_SLOT_SIZE) {
-				if (mat_data->uniform_pool_slot == UINT32_MAX) {
+			if (uniform_total_size > 0) {
+				if (uniform_total_size <= MAT_UBO_POOL_SLOT_SIZE && mat_data->uniform_pool_slot == UINT32_MAX) {
 					mat_data->uniform_pool_slot = mat_ubo_pool_allocate();
 				}
-				if (mat_data->uniform_pool_slot != UINT32_MAX) {
-					// Transitioning from a dedicated buffer back into the pool.
+				if (uniform_total_size <= MAT_UBO_POOL_SLOT_SIZE && mat_data->uniform_pool_slot != UINT32_MAX) {
+					mat_ubo_pool_update(mat_data->uniform_pool_slot, ubo_data.ptr(), uniform_total_size);
+					mat.uniform_address = mat_ubo_pool_get_address(mat_data->uniform_pool_slot);
 					if (mat_data->uniform_buffer.is_valid()) {
 						RD::get_singleton()->free_rid(mat_data->uniform_buffer);
 						mat_data->uniform_buffer = RID();
 					}
-					mat_ubo_pool_update(mat_data->uniform_pool_slot, ubo_data.ptr(), cse->uniform_total_size);
-					mat.uniform_address = mat_ubo_pool_get_address(mat_data->uniform_pool_slot);
-					used_pool = true;
+				} else {
+					RID buffer = RD::get_singleton()->storage_buffer_create(uniform_total_size, ubo_data, 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
+					ERR_FAIL_COND_V(buffer.is_null(), &s_default_mat);
+					if (mat_data->uniform_buffer.is_valid()) {
+						RD::get_singleton()->free_rid(mat_data->uniform_buffer);
+					}
+					mat_data->uniform_buffer = buffer;
+					RD::get_singleton()->set_resource_name(buffer, "RT Material UBO");
+					mat.uniform_address = RD::get_singleton()->buffer_get_device_address(buffer);
+					if (mat_data->uniform_pool_slot != UINT32_MAX) {
+						mat_ubo_pool_release(mat_data->uniform_pool_slot);
+						mat_data->uniform_pool_slot = UINT32_MAX;
+					}
 				}
 			}
-
-			if (!used_pool) {
-				// Oversized or pool exhausted: dedicated per-material buffer.
-				// This is the slow path: a per-material storage_buffer_create on
-				// every rebuild. Warn once so it's visible in the log; the fix is
-				// either to shrink the material's uniform footprint below
-				// MAT_UBO_POOL_SLOT_SIZE or to grow the pool slot/capacity.
-				const char *reason = (cse->uniform_total_size > MAT_UBO_POOL_SLOT_SIZE)
-						? "uniform size exceeds slot"
-						: "pool exhausted";
-				WARN_PRINT_ONCE(vformat(
-						"RT Material UBO falling back to dedicated buffer (%s): "
-						"sbt_offset=%u, uniform_total_size=%u, slot_size=%u.",
-						String(reason), mat_data->rt_sbt_offset,
-						cse->uniform_total_size, MAT_UBO_POOL_SLOT_SIZE));
-
-				if (mat_data->uniform_pool_slot != UINT32_MAX) {
-					mat_ubo_pool_release(mat_data->uniform_pool_slot);
-					mat_data->uniform_pool_slot = UINT32_MAX;
-				}
-				if (mat_data->uniform_buffer.is_valid()) {
-					RD::get_singleton()->free_rid(mat_data->uniform_buffer);
-				}
-				mat_data->uniform_buffer = RD::get_singleton()->storage_buffer_create(cse->uniform_total_size, ubo_data, 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
-				RD::get_singleton()->set_resource_name(mat_data->uniform_buffer, String("RT Material UBO [sbt=") + itos(mat_data->rt_sbt_offset) + "]");
-				mat.uniform_address = RD::get_singleton()->buffer_get_device_address(mat_data->uniform_buffer);
-			}
+		}
+	}
+	if (mat.uniform_address == 0) {
+		if (mat_data->uniform_buffer.is_valid()) {
+			RD::get_singleton()->free_rid(mat_data->uniform_buffer);
+			mat_data->uniform_buffer = RID();
+		}
+		if (mat_data->uniform_pool_slot != UINT32_MAX) {
+			mat_ubo_pool_release(mat_data->uniform_pool_slot);
+			mat_data->uniform_pool_slot = UINT32_MAX;
 		}
 	}
 
@@ -2035,6 +2036,8 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 	// Update cache entry
 	entry->cached_counter = p_material_invalidation_counter;
 	entry->cached_rid_version = mat_version;
+	entry->cached_shader_hash = shader_hash;
+	entry->cached_shader_hash_b = shader_hash_b;
 	entry->last_used_frame = current_frame;
 
 	return mat_data;
@@ -2082,8 +2085,7 @@ void RenderRaytracing::build_acceleration_structures(RTViewportState *p_state, c
 		inst.blas = blass[i];
 		inst.flags = BitField<RD::AccelerationStructureInstanceFlagBits>(instance_flags[i]);
 		inst.mask = (i < instance_masks.size()) ? instance_masks[i] : 0xFF;
-		uint32_t sbt_off = (i < sbt_offsets.size()) ? sbt_offsets[i] : 0;
-		inst.hit_sbt_range = RD::HitShaderBindingTableRange((1ULL << 32) | uint64_t(sbt_off));
+		inst.hit_sbt_range = RD::HitShaderBindingTableRange(1ULL << 32);
 	}
 
 	RD::get_singleton()->tlas_build(p_state->tlas, instances);
@@ -2524,7 +2526,7 @@ _FORCE_INLINE_ static uint32_t _rt_indices_to_primitives(RSE::PrimitiveType p_pr
 	return (p_indices - subtractor[p_primitive]) / divisor[p_primitive];
 }
 
-RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data, uint32_t p_rt_flags) {
+RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data) {
 	if (!p_render_data || !p_render_data->rt_instances) {
 		return nullptr;
 	}
@@ -2535,10 +2537,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 	}
 
 	prepare_frame();
-
-	// Builds bundle if needed; live_ready_mask drives TLAS inclusion below.
-	SceneShaderRaytracing *rt_shader_singleton = SceneShaderRaytracing::get_singleton();
-	rt_shader_singleton->ensure_pipeline_bundle(p_rt_flags);
 
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
 	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
@@ -2630,26 +2628,15 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 				? inst->transform
 				: inst->prev_transform;
 
-		// Handle procedural RT instances (intersection shaders).
 		if (inst->rt_procedural) {
-			SceneShaderRaytracing *rt_shader = SceneShaderRaytracing::get_singleton();
 			RTProceduralState *ps = inst->rt_procedural;
 
-			// Intersection code comes from ShaderMaterial on material_override.
 			if (!inst->data || !inst->data->material_override.is_valid()) {
 				continue;
 			}
 			RID proc_material_rid = inst->data->material_override;
-			uint32_t shader_id = material_storage->material_get_shader_id(proc_material_rid);
-			if (shader_id == 0) {
-				continue;
-			}
-
-			uint32_t hg_index = rt_shader->register_procedural_shader(shader_id, proc_material_rid);
-			if (hg_index == 0) {
-				continue;
-			}
-			if (!rt_shader->is_hg_ready_in_bundle(hg_index, p_rt_flags)) {
+			const SceneShaderForwardClustered::MaterialData *proc_material = static_cast<SceneShaderForwardClustered::MaterialData *>(material_storage->material_get_data(proc_material_rid, RendererRD::MaterialStorage::SHADER_TYPE_3D));
+			if (!proc_material || !proc_material->shader_data || proc_material->shader_data->version.is_null() || proc_material->shader_data->code.is_empty()) {
 				continue;
 			}
 
@@ -2669,7 +2656,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 			if (ps->blas.is_valid()) {
 				blass.push_back(ps->blas);
 				blas_transforms.push_back(instance_transform);
-				sbt_offsets.push_back(hg_index);
 
 				RT_GeometryData geom = {};
 				geom.flags = RT_GEOM_FLAG_PROCEDURAL;
@@ -2746,12 +2732,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 				uint16_t material_counter = material_storage->material_get_rt_invalidation_counter(material_rid);
 				RTMaterialData *mat_data = process_material(material_rid, material_counter);
 
-				if (mat_data->rt_sbt_offset > 0 &&
-						!rt_shader_singleton->is_hg_ready_in_bundle(mat_data->rt_sbt_offset, p_rt_flags)) {
-					mm_surf = mm_surf->next;
-					continue;
-				}
-
 				uint32_t inst_flags = 0;
 				if (mm_surf->shader) {
 					switch (mm_surf->shader->cull_mode) {
@@ -2769,10 +2749,8 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 				} else {
 					inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FLIP_FACING_BIT;
 				}
-				if (mat_data->rt_sbt_offset > 0) {
-					const SceneShaderRaytracing::CustomShaderEntry *cse =
-							rt_shader_singleton->get_custom_shader_entry(mat_data->rt_sbt_offset);
-					if (!cse || (!cse->uses_alpha_clip && cse->alpha_texture_buffer_offset == UINT32_MAX)) {
+				if (mat_data->is_custom_shader) {
+					if (!mat_data->uses_alpha_clip && !mat_data->has_alpha_texture) {
 						inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_FORCE_OPAQUE_BIT;
 					}
 				} else {
@@ -2846,7 +2824,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 				continue;
 			}
 
-			// Resolve material before TLAS so we can skip surfaces whose HG is not live yet (override > surface > mesh).
 			RID material_rid;
 			if (surf->owner->data->material_override.is_valid()) {
 				material_rid = surf->owner->data->material_override;
@@ -2862,12 +2839,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 
 			uint16_t material_counter = material_storage->material_get_rt_invalidation_counter(material_rid);
 			RTMaterialData *mat_data = process_material(material_rid, material_counter);
-
-			if (mat_data->rt_sbt_offset > 0 &&
-					!rt_shader_singleton->is_hg_ready_in_bundle(mat_data->rt_sbt_offset, p_rt_flags)) {
-				surf = surf->next;
-				continue;
-			}
 
 			Transform3D final_transform;
 			if (instance_static && surf->cached_final_transform_valid) {
@@ -2915,7 +2886,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 			}
 #endif
 
-			sbt_offsets.push_back(mat_data->rt_sbt_offset);
 			material_data.push_back(mat_data->data);
 
 			// Determine per-instance TLAS flags from material properties.
@@ -2937,11 +2907,8 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 				inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FLIP_FACING_BIT;
 			}
 
-			if (mat_data->rt_sbt_offset > 0) {
-				// Custom shader: enable any-hit if it uses alpha clip or has a hint_albedo texture.
-				const SceneShaderRaytracing::CustomShaderEntry *cse =
-						rt_shader_singleton->get_custom_shader_entry(mat_data->rt_sbt_offset);
-				if (!cse || (!cse->uses_alpha_clip && cse->alpha_texture_buffer_offset == UINT32_MAX)) {
+			if (mat_data->is_custom_shader) {
+				if (!mat_data->uses_alpha_clip && !mat_data->has_alpha_texture) {
 					inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_FORCE_OPAQUE_BIT;
 				}
 			} else {
@@ -2981,7 +2948,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 			geometry_data.push_back(instance_geometry(pending.mm_surf->owner, merged_sd.geometry, pending.mm_surf));
 			register_emissive_source(pending.mm_surf->owner, pending.mm_rid, pending.surface_index, pending.surface_counter,
 					geometry_index, 0, merged_sd.geometry.primitive_count, pending.instance_transform, pending.mat_data);
-			sbt_offsets.push_back(pending.mat_data->rt_sbt_offset);
 			material_data.push_back(pending.mat_data->data);
 			motion_indices.push_back(-1);
 			instance_flags.push_back(pending.inst_flags);
@@ -3044,7 +3010,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 				}
 				register_emissive_source(pending.mm_surf->owner, pending.mm_rid, pending.surface_index, pending.surface_counter,
 						geometry_index, mi * surf_data->geometry.primitive_count, surf_data->geometry.primitive_count, final_transform, pending.mat_data);
-				sbt_offsets.push_back(pending.mat_data->rt_sbt_offset);
 				material_data.push_back(pending.mat_data->data);
 
 				if (pending.transform_moved) {
@@ -3094,8 +3059,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 		p_render_data->render_info->info[RSE::VIEWPORT_RENDER_INFO_TYPE_VISIBLE][RSE::VIEWPORT_RENDER_INFO_RT_TRIANGLES_REFIT] += rt_triangles_refit;
 	}
 #endif
-
-	SceneShaderRaytracing::get_singleton()->finalize_custom_shaders();
 
 	RD::get_singleton()->compute_list_end();
 

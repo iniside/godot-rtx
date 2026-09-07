@@ -77,11 +77,9 @@ namespace RendererSceneRenderImplementation {
 
 class RenderRTXDI;
 
-class SceneShaderRaytracing;
 
 class RenderForwardClustered : public RendererSceneRenderRD {
 	friend SceneShaderForwardClustered;
-	friend SceneShaderRaytracing;
 	friend class RenderRaytracing;
 
 protected:

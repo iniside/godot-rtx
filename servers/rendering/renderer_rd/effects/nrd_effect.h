@@ -32,7 +32,7 @@
 
 #include "core/math/projection.h"
 #include "core/math/transform_3d.h"
-#include "servers/rendering/renderer_rd/shaders/effects/rtxdi_frame.glsl.gen.h"
+#include "servers/rendering/renderer_rd/shaders/effects/rtxdi_frame.slang.gen.h"
 
 namespace nrd {
 struct Instance;
