@@ -63,6 +63,18 @@ bound, not proof that the features are absent elsewhere or under other names.
 
 ## Known Gaps
 
+Shader unification research, 2026-09-07 at `a89cd8a3b0`, recommends Slang direct
+SPIR-V for the spatial/surface/DI/NRD-HDR core while retaining public gdshader and
+distinct canvas/UI/effect consumers. The mapped scope includes material codegen,
+ShaderRD cache/export identity, common shading, and removing old PT readiness
+gates that still control live TLAS geometry. Selected CLAS/RTXDI/NRD/DDGI shader
+compiler diagnostics passed with Slang; this is not full renderer/runtime proof.
+See the [research](../research/2026-09-07-1112-shader-unification-summary.md).
+The [implementation plan](../plans/2026-09-07-1126-shader-unification-plan.md)
+received fresh hostile review PASS and owner approval on 2026-09-07. It landed
+separately in `b2d04129cb`; implementation has started. Progress is tracked in the
+[migration status](../research/2026-09-07-1126-shader-unification-status.md).
+
 Active work is tracked in the [RTXDI implementation status](../research/2026-09-06-1904-rtxdi-implementation-status.md).
 Approval/plan commit: `e02ea8c87d`. Dependency integration landed in `89b35e1d1c`
 with shader/host compile evidence and a fresh hostile review PASS. RT ownership
