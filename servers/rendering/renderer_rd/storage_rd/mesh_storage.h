@@ -581,7 +581,10 @@ public:
 		return s->cluster_records;
 	}
 
-	/// Get the attribute buffer RID for raytracing device address access.
+	_FORCE_INLINE_ RID mesh_surface_get_skin_buffer(void *p_surface) {
+		return reinterpret_cast<Mesh::Surface *>(p_surface)->skin_buffer;
+	}
+
 	_FORCE_INLINE_ RID mesh_surface_get_attribute_buffer(void *p_surface) {
 		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
 		return s->attribute_buffer;

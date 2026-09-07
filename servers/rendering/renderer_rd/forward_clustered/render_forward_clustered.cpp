@@ -3768,29 +3768,7 @@ void RenderForwardClustered::_geometry_instance_add_surface_with_material(Geomet
 
 	sdcache->flags = flags;
 	sdcache->rt_pass_flags = rt_pass_flags;
-	sdcache->rtxdi_material_flags = GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_VALID;
-	const bool unsupported_alpha = p_material->shader_data->uses_alpha_pass();
-	const bool rt_classification_mismatch = p_material->shader_data->uses_alpha_pass() != p_material->shader_data->rt_uses_alpha_pass() || p_material->shader_data->cull_mode != p_material->shader_data->rt_cull_mode();
-	const bool procedural_coverage = (p_material->shader_data->uses_alpha_clip || p_material->shader_data->uses_discard) && !p_material->shader_data->generated_standard_material;
-	const bool procedural_emission = p_material->shader_data->uses_emission && !p_material->shader_data->generated_standard_material;
-	if (p_material->shader_data->rtxdi_surface_unsupported || p_material->shader_data->rt != nullptr || unsupported_alpha || rt_classification_mismatch || procedural_emission || procedural_coverage) {
-		sdcache->rtxdi_material_flags |= GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_UNSUPPORTED;
-	}
-	if (p_material->shader_data->uses_alpha_clip) {
-		sdcache->rtxdi_material_flags |= GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_ALPHA_TESTED;
-	}
-	if (p_material->shader_data->cull_mode == RSE::CULL_MODE_DISABLED) {
-		sdcache->rtxdi_material_flags |= GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_DOUBLE_SIDED;
-	}
-	if (p_material->shader_data->uses_emission) {
-		sdcache->rtxdi_material_flags |= GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_EMISSIVE;
-	}
-	if (p_material->shader_data->uses_normal_map) {
-		sdcache->rtxdi_material_flags |= GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_NORMAL_MAP;
-	}
-	if (p_material->shader_data->uses_vertex || p_material->shader_data->uses_position || p_material->shader_data->writes_modelview_or_projection || p_material->shader_data->uses_world_coordinates) {
-		sdcache->rtxdi_material_flags |= GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_DEFORMED;
-	}
+	sdcache->rtxdi_material_flags = p_material->shader_data->get_surface_material_flags();
 	if ((sdcache->rtxdi_material_flags & GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_UNSUPPORTED) && !p_material->rtxdi_diagnostic_reported) {
 		WARN_PRINT(vformat("Forward Clustered RTXDI surface: material using shader %s cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.", p_material->shader_data->path.is_empty() ? String("<inline>") : p_material->shader_data->path));
 		p_material->rtxdi_diagnostic_reported = true;
@@ -4736,7 +4714,6 @@ RenderForwardClustered::RenderForwardClustered() {
 #ifdef METAL_MFXTEMPORAL_ENABLED
 	mfx_temporal_effect = memnew(RendererRD::MFXTemporalEffect);
 #endif
-
 }
 
 RenderForwardClustered::~RenderForwardClustered() {

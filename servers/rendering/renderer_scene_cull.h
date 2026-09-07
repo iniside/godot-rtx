@@ -657,7 +657,6 @@ public:
 		}
 	};
 
-
 	struct InstanceParticlesCollisionData : public InstanceBaseData {
 		RID instance;
 		uint32_t cull_mask = 0xFFFFFFFF;
@@ -859,10 +858,9 @@ public:
 		PagedArray<RID> mesh_instances;
 		PagedArray<RID> fog_volumes;
 
-		// RT-extra: instances/lights inside the camera AABB but outside the view frustum.
-		// Used for the ray tracing TLAS and light gathering only (not rasterized).
 		PagedArray<RenderGeometryInstance *> rt_geometry_instances;
 		PagedArray<RID> rt_light_instances;
+		PagedArray<RID> rt_decals;
 
 		struct DirectionalShadow {
 			PagedArray<RenderGeometryInstance *> cascade_geometry_instances[RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES];
@@ -883,6 +881,7 @@ public:
 			fog_volumes.clear();
 			rt_geometry_instances.clear();
 			rt_light_instances.clear();
+			rt_decals.clear();
 			for (int i = 0; i < RendererSceneRender::MAX_DIRECTIONAL_LIGHTS; i++) {
 				for (int j = 0; j < RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES; j++) {
 					directional_shadows[i].cascade_geometry_instances[j].clear();
@@ -910,6 +909,7 @@ public:
 			fog_volumes.reset();
 			rt_geometry_instances.reset();
 			rt_light_instances.reset();
+			rt_decals.reset();
 			for (int i = 0; i < RendererSceneRender::MAX_DIRECTIONAL_LIGHTS; i++) {
 				for (int j = 0; j < RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES; j++) {
 					directional_shadows[i].cascade_geometry_instances[j].reset();
@@ -937,6 +937,7 @@ public:
 			fog_volumes.merge_unordered(p_cull_result.fog_volumes);
 			rt_geometry_instances.merge_unordered(p_cull_result.rt_geometry_instances);
 			rt_light_instances.merge_unordered(p_cull_result.rt_light_instances);
+			rt_decals.merge_unordered(p_cull_result.rt_decals);
 
 			for (int i = 0; i < RendererSceneRender::MAX_DIRECTIONAL_LIGHTS; i++) {
 				for (int j = 0; j < RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES; j++) {
@@ -965,6 +966,7 @@ public:
 			fog_volumes.set_page_pool(p_rid_pool);
 			rt_geometry_instances.set_page_pool(p_geometry_instance_pool);
 			rt_light_instances.set_page_pool(p_rid_pool);
+			rt_decals.set_page_pool(p_rid_pool);
 			for (int i = 0; i < RendererSceneRender::MAX_DIRECTIONAL_LIGHTS; i++) {
 				for (int j = 0; j < RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES; j++) {
 					directional_shadows[i].cascade_geometry_instances[j].set_page_pool(p_geometry_instance_pool);
@@ -1135,7 +1137,6 @@ public:
 	void _scene_cull(CullData &cull_data, InstanceCullResult &cull_result, uint64_t p_from, uint64_t p_to);
 	static void _scene_particles_set_view_axis(RID p_particles, const Vector3 &p_axis, const Vector3 &p_up_axis);
 	_FORCE_INLINE_ bool _visibility_parent_check(const CullData &p_cull_data, const InstanceData &p_instance_data);
-
 
 	void _render_scene(RID p_camera, const RendererSceneRender::CameraData *p_camera_data, const Ref<RenderSceneBuffers> &p_render_buffers, RID p_environment, RID p_force_camera_attributes, RID p_compositor, uint32_t p_visible_layers, RID p_scenario, RID p_viewport, RID p_shadow_atlas, RID p_reflection_probe, int p_reflection_probe_pass, float p_screen_mesh_lod_threshold, float p_window_output_max_value, bool p_using_shadows = true, RenderingServerTypes::RenderInfo *r_render_info = nullptr);
 	void render_empty_scene(const Ref<RenderSceneBuffers> &p_render_buffers, RID p_scenario, RID p_shadow_atlas, float p_window_output_max_value);

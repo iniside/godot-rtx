@@ -2,6 +2,7 @@
 #define GEOMETRY_DECODE_INC_SLANG
 
 #include "geometry_data_inc.slang"
+#include "../oct_inc.slang"
 
 struct GeometryHitInput {
 	GeometryData geometry;
@@ -92,6 +93,22 @@ bool geometry_triangle_indices(GeometryData geometry, uint primitive, out uint3 
 	return all(indices < geometry.vertex_count);
 }
 
+void geometry_fetch_bones(GeometryData geometry, uint vertex, out uint4 bones, out float4 weights) {
+	bones = uint4(0u);
+	weights = float4(0.0);
+	if (geometry.skin_address == 0) {
+		return;
+	}
+	if (geometry.multimesh_address != 0) {
+		vertex %= geometry.source_vertex_count;
+	}
+	uint64_t address = geometry.skin_address + uint64_t(vertex) * geometry.skin_stride;
+	uint2 packed_bones = *((uint2*)address);
+	uint2 packed_weights = *((uint2*)(address + geometry.skin_weight_offset));
+	bones = uint4(packed_bones.x & 65535u, packed_bones.x >> 16u, packed_bones.y & 65535u, packed_bones.y >> 16u);
+	weights = float4(packed_weights.x & 65535u, packed_weights.x >> 16u, packed_weights.y & 65535u, packed_weights.y >> 16u) / 65535.0;
+}
+
 float3 geometry_fetch_position(GeometryData geometry, uint vertex) {
 	if (geometry.vertex_address == 0 || vertex >= geometry.vertex_count) {
 		return float3(0.0);
@@ -136,12 +153,42 @@ float2 geometry_fetch_uv(GeometryData geometry, uint3 indices, float3 bary) {
 			_geometry_fetch_vertex_uv(geometry, indices.z) * bary.z;
 }
 
+uint geometry_instance_index(GeometryData geometry, uint vertex) {
+	return geometry.source_vertex_count > 0u ? vertex / geometry.source_vertex_count : geometry.instance_index;
+}
+
+float4x4 geometry_instance_transform(GeometryData geometry, uint vertex) {
+	if (geometry.multimesh_address == 0) {
+		return float4x4(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0);
+	}
+	float* data = (float*)(geometry.multimesh_address + uint64_t(geometry.multimesh_offset + geometry_instance_index(geometry, vertex)) * geometry.multimesh_stride * 4u);
+	return float4x4(float4(data[0], data[1], data[2], data[3]), float4(data[4], data[5], data[6], data[7]), float4(data[8], data[9], data[10], data[11]), float4(0.0, 0.0, 0.0, 1.0));
+}
+
+float4 geometry_instance_custom(GeometryData geometry, uint vertex) {
+	if (geometry.multimesh_address == 0 || (geometry.multimesh_flags & 2u) == 0u) {
+		return geometry.instance_custom;
+	}
+	uint offset = (geometry.multimesh_offset + geometry_instance_index(geometry, vertex)) * geometry.multimesh_stride + 12u + ((geometry.multimesh_flags & 1u) != 0u ? 4u : 0u);
+	float* data = (float*)(geometry.multimesh_address + uint64_t(offset) * 4u);
+	return float4(data[0], data[1], data[2], data[3]);
+}
+
+float4 geometry_instance_color(GeometryData geometry, uint vertex) {
+	if (geometry.multimesh_address == 0 || (geometry.multimesh_flags & 1u) == 0u) {
+		return geometry.instance_color;
+	}
+	uint offset = (geometry.multimesh_offset + geometry_instance_index(geometry, vertex)) * geometry.multimesh_stride + 12u;
+	float* data = (float*)(geometry.multimesh_address + uint64_t(offset) * 4u);
+	return float4(data[0], data[1], data[2], data[3]);
+}
+
 float4 geometry_fetch_color(GeometryData geometry, uint3 indices, float3 bary) {
 	if (any(indices >= geometry.vertex_count) || geometry.attribute_address == 0 ||
 			geometry.color_byte_offset == OFFSET_NONE || geometry.attribute_stride < 4u ||
 			geometry.color_byte_offset > geometry.attribute_stride - 4u ||
 			((geometry.attribute_stride | geometry.color_byte_offset) & 3u) != 0u) {
-		return float4(1.0);
+		return geometry_instance_color(geometry, indices.x);
 	}
 	float4 color = float4(0.0);
 	for (uint i = 0u; i < 3u; i++) {
@@ -150,7 +197,74 @@ float4 geometry_fetch_color(GeometryData geometry, uint3 indices, float3 bary) {
 		color += float4(packed_color & 0xFFu, (packed_color >> 8u) & 0xFFu,
 				(packed_color >> 16u) & 0xFFu, packed_color >> 24u) * (bary[i] / 255.0);
 	}
-	return color;
+	return color * geometry_instance_color(geometry, indices.x);
+}
+
+float2 geometry_fetch_uv2(GeometryData geometry, uint3 indices, float3 bary) {
+	geometry.uv_byte_offset = geometry.uv2_byte_offset;
+	geometry.uv_scale_packed = geometry.uv2_scale_packed;
+	return geometry_fetch_uv(geometry, indices, bary);
+}
+
+float4 geometry_fetch_custom(GeometryData geometry, uint vertex, uint channel) {
+	uint offset = geometry.custom_byte_offsets[channel];
+	if (geometry.attribute_address == 0 || offset == OFFSET_NONE || vertex >= geometry.vertex_count) {
+		return float4(0.0);
+	}
+	uint format = (geometry.custom_formats >> (channel * 3u)) & 7u;
+	uint* source = (uint*)(geometry.attribute_address + uint64_t(vertex) * geometry.attribute_stride + offset);
+	if (format < 2u) {
+		uint packed = source[0];
+		if (format == 0u) {
+			return float4(packed & 255u, (packed >> 8u) & 255u, (packed >> 16u) & 255u, packed >> 24u) / 255.0;
+		}
+		return max(float4(int(packed << 24u) >> 24, int(packed << 16u) >> 24, int(packed << 8u) >> 24, int(packed) >> 24) / 127.0, -1.0);
+	}
+	if (format < 4u) {
+		float4 value = float4(f16tof32(source[0] & 65535u), f16tof32(source[0] >> 16u), 0.0, 1.0);
+		if (format == 3u) {
+			value.zw = float2(f16tof32(source[1] & 65535u), f16tof32(source[1] >> 16u));
+		}
+		return value;
+	}
+	float4 value = float4(asfloat(source[0]), 0.0, 0.0, 1.0);
+	for (uint component = 1u; component <= format - 4u; component++) {
+		value[component] = asfloat(source[component]);
+	}
+	return value;
+}
+
+void geometry_fetch_tbn(GeometryData geometry, uint vertex, out float3 normal, out float3 tangent, out float3 binormal) {
+	normal = float3(0.0, 0.0, 1.0);
+	tangent = float3(1.0, 0.0, 0.0);
+	binormal = float3(0.0, 1.0, 0.0);
+	if (geometry.normal_byte_offset == OFFSET_NONE || geometry.vertex_address == 0 || vertex >= geometry.vertex_count) {
+		return;
+	}
+	uint packed = *((uint*)(geometry.vertex_address + geometry.normal_byte_offset + uint64_t(vertex) * geometry.normal_stride));
+	normal = oct_to_vec3(float2(packed & 65535u, packed >> 16u) / 32767.5 - 1.0);
+	if ((geometry.flags & FLAG_COMPRESSED) != 0u) {
+		float angle = float(*((uint*)(geometry.vertex_address + uint64_t(vertex) * 8u + 4u)) >> 16u) / 65535.0;
+		float handedness = angle > 0.5 ? 1.0 : -1.0;
+		angle = abs(angle * 2.0 - 1.0) * 3.141592653589793;
+		float c = cos(angle);
+		float s = sin(angle);
+		float3 axis = normal;
+		float3 a = (1.0 - c) * axis;
+		float3 b = s * axis;
+		tangent = a.xxx * axis + float3(c, -b.z, b.y);
+		binormal = (a.yyy * axis + float3(b.z, c, -b.x)) * handedness;
+		normal = a.zzz * axis + float3(-b.y, b.x, c);
+	} else if (geometry.tangent_byte_offset != OFFSET_NONE) {
+		uint packed_tangent = *((uint*)(geometry.vertex_address + geometry.tangent_byte_offset + uint64_t(vertex) * geometry.tangent_stride + 4u));
+		float2 encoded = float2(packed_tangent & 65535u, packed_tangent >> 16u) / 32767.5 - 1.0;
+		tangent = oct_to_vec3(float2(encoded.x, abs(encoded.y) * 2.0 - 1.0));
+		binormal = normalize(cross(normal, tangent)) * sign(encoded.y);
+	} else {
+		float3 axis = abs(normal.z) < 0.999 ? float3(0.0, 0.0, 1.0) : float3(0.0, 1.0, 0.0);
+		tangent = normalize(cross(axis, normal));
+		binormal = cross(normal, tangent);
+	}
 }
 
 GeometryData geometry_previous_positions(GeometryData geometry) {

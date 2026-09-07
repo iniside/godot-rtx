@@ -169,6 +169,15 @@ void RenderRaytracing::_free_viewport_state_internal(RTViewportState *p_state) {
 	if (!p_state) {
 		return;
 	}
+	if (RD::get_singleton()->raytracing_pipeline_is_valid(p_state->material_pipeline)) {
+		RD::get_singleton()->free_rid(p_state->material_sbt);
+		RD::get_singleton()->free_rid(p_state->material_pipeline);
+	}
+	for (RID resource : { p_state->material_frame_buffer, p_state->decal_buffer }) {
+		if (resource.is_valid()) {
+			RD::get_singleton()->free_rid(resource);
+		}
+	}
 	if (p_state->tlas.is_valid()) {
 		RD::get_singleton()->free_rid(p_state->tlas);
 	}
@@ -517,6 +526,7 @@ void RenderRaytracing::prepare_frame() {
 	instance_masks.clear();
 	geometry_data.clear();
 	material_data.clear();
+	geometry_material_programs.clear();
 	motion_indices.clear();
 	motion_transforms.clear();
 	emissive_sources.clear();
@@ -859,6 +869,9 @@ static void _fill_surface_geometry_data(
 	geom.position_scale[0] = 1.0f;
 	geom.position_scale[1] = 1.0f;
 	geom.position_scale[2] = 1.0f;
+	for (float &component : geom.instance_color) {
+		component = 1.0f;
+	}
 
 	RID vertex_buffer = mesh_storage->mesh_surface_get_vertex_buffer(p_mesh_surface);
 	RID attribute_buffer = mesh_storage->mesh_surface_get_attribute_buffer(p_mesh_surface);
@@ -937,6 +950,7 @@ static void _fill_surface_geometry_data(
 	// Attribute buffer layout
 	uint32_t attrib_offset = 0;
 	geom.uv_byte_offset = RT_OFFSET_NONE;
+	geom.uv2_byte_offset = RT_OFFSET_NONE;
 	geom.color_byte_offset = RT_OFFSET_NONE;
 
 	if (surface_format & RSE::ARRAY_FORMAT_COLOR) {
@@ -948,21 +962,32 @@ static void _fill_surface_geometry_data(
 		attrib_offset += compressed ? sizeof(uint16_t) * 2 : sizeof(float) * 2;
 	}
 	if (surface_format & RSE::ARRAY_FORMAT_TEX_UV2) {
+		geom.uv2_byte_offset = attrib_offset;
 		attrib_offset += compressed ? sizeof(uint16_t) * 2 : sizeof(float) * 2;
 	}
 	for (int ci = 0; ci < RSE::ARRAY_CUSTOM_COUNT; ci++) {
+		geom.custom_byte_offsets[ci] = RT_OFFSET_NONE;
 		const uint32_t fmt_shift[RSE::ARRAY_CUSTOM_COUNT] = { RSE::ARRAY_FORMAT_CUSTOM0_SHIFT, RSE::ARRAY_FORMAT_CUSTOM1_SHIFT, RSE::ARRAY_FORMAT_CUSTOM2_SHIFT, RSE::ARRAY_FORMAT_CUSTOM3_SHIFT };
 		if (surface_format & (1ULL << (RSE::ARRAY_CUSTOM0 + ci))) {
 			uint32_t fmt = (surface_format >> fmt_shift[ci]) & RSE::ARRAY_FORMAT_CUSTOM_MASK;
+			geom.custom_byte_offsets[ci] = attrib_offset;
+			geom.custom_formats |= fmt << (ci * 3);
 			const uint32_t fmtsize[RSE::ARRAY_CUSTOM_MAX] = { 4, 4, 4, 8, 4, 8, 12, 16 };
 			attrib_offset += fmtsize[fmt];
 		}
 	}
 	geom.attribute_stride = attrib_offset;
+	RID skin_buffer = mesh_storage->mesh_surface_get_skin_buffer(p_mesh_surface);
+	if (skin_buffer.is_valid()) {
+		geom.skin_address = RD::get_singleton()->buffer_get_device_address(skin_buffer);
+		geom.skin_weight_offset = (surface_format & RSE::ARRAY_FLAG_USE_8_BONE_WEIGHTS) ? 16u : 8u;
+		geom.skin_stride = geom.skin_weight_offset * 2u;
+	}
 
 	// UV scale (fp16 packed, matches GLSL unpackHalf2x16)
 	Vector4 uv_scale = mesh_storage->mesh_surface_get_uv_scale(p_mesh_surface);
 	geom.uv_scale_packed = (uint32_t(Math::make_half_float(uv_scale.y)) << 16) | Math::make_half_float(uv_scale.x);
+	geom.uv2_scale_packed = (uint32_t(Math::make_half_float(uv_scale.w)) << 16) | Math::make_half_float(uv_scale.z);
 
 	// Index format (no device address — caller fills those in)
 	if (index_buffer.is_valid() && index_count > 0) {
@@ -1359,268 +1384,6 @@ void RenderRaytracing::_populate_surface_blas(
 	r_dirty_blas_list.push_back(r_surf_data->blas);
 }
 
-// ---------------------------------------------------------------------------
-// Uniform packing (file-local helpers)
-// ---------------------------------------------------------------------------
-
-static float _def_real(const ShaderLanguage::ShaderNode::Uniform &u, int idx) {
-	return (int)u.default_value.size() > idx ? u.default_value[idx].real : 0.0f;
-}
-
-static int32_t _def_sint(const ShaderLanguage::ShaderNode::Uniform &u, int idx) {
-	return (int)u.default_value.size() > idx ? u.default_value[idx].sint : 0;
-}
-
-static uint32_t _def_uint(const ShaderLanguage::ShaderNode::Uniform &u, int idx) {
-	return (int)u.default_value.size() > idx ? u.default_value[idx].uint : 0u;
-}
-
-static uint32_t _def_bool(const ShaderLanguage::ShaderNode::Uniform &u, int idx) {
-	return (int)u.default_value.size() > idx ? (uint32_t)u.default_value[idx].boolean : 0u;
-}
-
-static void pack_uniform(const ShaderLanguage::ShaderNode::Uniform &u, const Variant &val, uint8_t *dst) {
-	using SL = ShaderLanguage;
-
-	switch (u.type) {
-		case SL::TYPE_FLOAT: {
-			float v = val.get_type() == Variant::FLOAT ? (float)(double)val : _def_real(u, 0);
-			memcpy(dst, &v, 4);
-		} break;
-		case SL::TYPE_INT: {
-			int32_t v = val.get_type() == Variant::INT ? (int32_t)(int64_t)val : _def_sint(u, 0);
-			memcpy(dst, &v, 4);
-		} break;
-		case SL::TYPE_UINT: {
-			uint32_t v = val.get_type() == Variant::INT ? (uint32_t)(int64_t)val : _def_uint(u, 0);
-			memcpy(dst, &v, 4);
-		} break;
-		case SL::TYPE_BOOL: {
-			uint32_t v = val.get_type() == Variant::BOOL ? (uint32_t)(bool)val : _def_bool(u, 0);
-			memcpy(dst, &v, 4);
-		} break;
-		case SL::TYPE_VEC2: {
-			float fv[2];
-			if (val.get_type() == Variant::VECTOR2) {
-				Vector2 v = val;
-				fv[0] = (float)v.x;
-				fv[1] = (float)v.y;
-			} else {
-				fv[0] = _def_real(u, 0);
-				fv[1] = _def_real(u, 1);
-			}
-			memcpy(dst, fv, 8);
-		} break;
-		case SL::TYPE_VEC3: {
-			float fv[3] = {};
-			if (val.get_type() == Variant::VECTOR3) {
-				Vector3 v = val;
-				fv[0] = (float)v.x;
-				fv[1] = (float)v.y;
-				fv[2] = (float)v.z;
-			} else if (val.get_type() == Variant::COLOR) {
-				Color c = val;
-				if (u.hint == SL::ShaderNode::Uniform::HINT_SOURCE_COLOR) {
-					c = c.srgb_to_linear();
-				}
-				fv[0] = c.r;
-				fv[1] = c.g;
-				fv[2] = c.b;
-			} else {
-				fv[0] = _def_real(u, 0);
-				fv[1] = _def_real(u, 1);
-				fv[2] = _def_real(u, 2);
-			}
-			memcpy(dst, fv, 12);
-		} break;
-		case SL::TYPE_VEC4: {
-			float fv[4] = {};
-			if (val.get_type() == Variant::COLOR) {
-				Color c = val;
-				if (u.hint == SL::ShaderNode::Uniform::HINT_SOURCE_COLOR) {
-					c = c.srgb_to_linear();
-				}
-				fv[0] = c.r;
-				fv[1] = c.g;
-				fv[2] = c.b;
-				fv[3] = c.a;
-			} else if (val.get_type() == Variant::VECTOR4) {
-				Vector4 v = val;
-				fv[0] = (float)v.x;
-				fv[1] = (float)v.y;
-				fv[2] = (float)v.z;
-				fv[3] = (float)v.w;
-			} else {
-				for (int i = 0; i < 4; i++) {
-					fv[i] = _def_real(u, i);
-				}
-			}
-			memcpy(dst, fv, 16);
-		} break;
-		case SL::TYPE_IVEC2: {
-			int32_t iv[2];
-			if (val.get_type() == Variant::VECTOR2I) {
-				Vector2i v = val;
-				iv[0] = v.x;
-				iv[1] = v.y;
-			} else {
-				iv[0] = _def_sint(u, 0);
-				iv[1] = _def_sint(u, 1);
-			}
-			memcpy(dst, iv, 8);
-		} break;
-		case SL::TYPE_IVEC3: {
-			int32_t iv[3] = {};
-			if (val.get_type() == Variant::VECTOR3I) {
-				Vector3i v = val;
-				iv[0] = v.x;
-				iv[1] = v.y;
-				iv[2] = v.z;
-			} else {
-				for (int i = 0; i < 3; i++) {
-					iv[i] = _def_sint(u, i);
-				}
-			}
-			memcpy(dst, iv, 12);
-		} break;
-		case SL::TYPE_IVEC4: {
-			int32_t iv[4] = {};
-			if (val.get_type() == Variant::VECTOR4I) {
-				Vector4i v = val;
-				iv[0] = v.x;
-				iv[1] = v.y;
-				iv[2] = v.z;
-				iv[3] = v.w;
-			} else {
-				for (int i = 0; i < 4; i++) {
-					iv[i] = _def_sint(u, i);
-				}
-			}
-			memcpy(dst, iv, 16);
-		} break;
-		case SL::TYPE_UVEC2: {
-			uint32_t uv[2];
-			if (val.get_type() == Variant::VECTOR2I) {
-				Vector2i v = val;
-				uv[0] = (uint32_t)v.x;
-				uv[1] = (uint32_t)v.y;
-			} else {
-				uv[0] = _def_uint(u, 0);
-				uv[1] = _def_uint(u, 1);
-			}
-			memcpy(dst, uv, 8);
-		} break;
-		case SL::TYPE_UVEC3: {
-			uint32_t uv[3] = {};
-			if (val.get_type() == Variant::VECTOR3I) {
-				Vector3i v = val;
-				uv[0] = (uint32_t)v.x;
-				uv[1] = (uint32_t)v.y;
-				uv[2] = (uint32_t)v.z;
-			} else {
-				for (int i = 0; i < 3; i++) {
-					uv[i] = _def_uint(u, i);
-				}
-			}
-			memcpy(dst, uv, 12);
-		} break;
-		case SL::TYPE_UVEC4: {
-			uint32_t uv[4] = {};
-			if (val.get_type() == Variant::VECTOR4I) {
-				Vector4i v = val;
-				uv[0] = (uint32_t)v.x;
-				uv[1] = (uint32_t)v.y;
-				uv[2] = (uint32_t)v.z;
-				uv[3] = (uint32_t)v.w;
-			} else {
-				for (int i = 0; i < 4; i++) {
-					uv[i] = _def_uint(u, i);
-				}
-			}
-			memcpy(dst, uv, 16);
-		} break;
-		case SL::TYPE_BVEC2: {
-			uint32_t bv[2] = { _def_bool(u, 0), _def_bool(u, 1) };
-			memcpy(dst, bv, 8);
-		} break;
-		case SL::TYPE_BVEC3: {
-			uint32_t bv[3] = { _def_bool(u, 0), _def_bool(u, 1), _def_bool(u, 2) };
-			memcpy(dst, bv, 12);
-		} break;
-		case SL::TYPE_BVEC4: {
-			uint32_t bv[4] = { _def_bool(u, 0), _def_bool(u, 1), _def_bool(u, 2), _def_bool(u, 3) };
-			memcpy(dst, bv, 16);
-		} break;
-		case SL::TYPE_MAT2: {
-			// std140: mat2 = 2 column vec2s, each padded to vec4 (2x16 = 32 bytes).
-			float m[8] = {};
-			if (val.get_type() == Variant::TRANSFORM2D) {
-				Transform2D t = val;
-				m[0] = (float)t[0].x;
-				m[1] = (float)t[0].y;
-				m[4] = (float)t[1].x;
-				m[5] = (float)t[1].y;
-			} else {
-				for (int i = 0; i < 4; i++) {
-					m[(i / 2) * 4 + (i % 2)] = _def_real(u, i);
-				}
-			}
-			memcpy(dst, m, 32);
-		} break;
-		case SL::TYPE_MAT3: {
-			// std140: mat3 = 3 column vec3s, each padded to vec4 (3x16 = 48 bytes).
-			float m[12] = {};
-			if (val.get_type() == Variant::BASIS) {
-				Basis b = val;
-				for (int col = 0; col < 3; col++) {
-					Vector3 c = b.get_column(col);
-					m[col * 4 + 0] = (float)c.x;
-					m[col * 4 + 1] = (float)c.y;
-					m[col * 4 + 2] = (float)c.z;
-				}
-			} else {
-				for (int i = 0; i < 9; i++) {
-					m[(i / 3) * 4 + (i % 3)] = _def_real(u, i);
-				}
-			}
-			memcpy(dst, m, 48);
-		} break;
-		case SL::TYPE_MAT4: {
-			// std140: mat4 = 4 column vec4s (4x16 = 64 bytes).
-			float m[16] = {};
-			if (val.get_type() == Variant::PROJECTION) {
-				Projection p = val;
-				for (int col = 0; col < 4; col++) {
-					m[col * 4 + 0] = (float)p.columns[col].x;
-					m[col * 4 + 1] = (float)p.columns[col].y;
-					m[col * 4 + 2] = (float)p.columns[col].z;
-					m[col * 4 + 3] = (float)p.columns[col].w;
-				}
-			} else if (val.get_type() == Variant::TRANSFORM3D) {
-				Transform3D t = val;
-				Projection p(t);
-				for (int col = 0; col < 4; col++) {
-					m[col * 4 + 0] = (float)p.columns[col].x;
-					m[col * 4 + 1] = (float)p.columns[col].y;
-					m[col * 4 + 2] = (float)p.columns[col].z;
-					m[col * 4 + 3] = (float)p.columns[col].w;
-				}
-			} else {
-				for (int i = 0; i < 16; i++) {
-					m[i] = _def_real(u, i);
-				}
-			}
-			memcpy(dst, m, 64);
-		} break;
-		default:
-			break;
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Procedural geometry processing
-// ---------------------------------------------------------------------------
-
 void RenderRaytracing::update_procedural_blas(RTProceduralState *p_state, LocalVector<RID> &r_dirty_blas_list) {
 	// Pack AABB data into a byte buffer.
 	Vector<uint8_t> aabb_bytes;
@@ -1686,10 +1449,6 @@ void RenderRaytracing::update_procedural_blas(RTProceduralState *p_state, LocalV
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Material processing
-// ---------------------------------------------------------------------------
-
 RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t p_material_invalidation_counter) {
 	// Static default material for invalid/null materials
 	static RTMaterialData s_default_mat;
@@ -1714,7 +1473,7 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 	}
 
 	if (!p_material_rid.is_valid()) {
-		return &s_default_mat;
+		p_material_rid = owner->scene_shader.default_material;
 	}
 
 	// Cache lookup
@@ -1736,6 +1495,9 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 
 	if (!needs_refresh) {
 		entry->last_used_frame = current_frame;
+		if (entry->ptr->uniform_buffer.is_valid()) {
+			geometry_buffer_dependencies.insert(entry->ptr->uniform_buffer);
+		}
 		return entry->ptr;
 	}
 
@@ -1780,7 +1542,7 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 	mat.coverage_sampler = 0;
 	mat.alpha_scissor_threshold = 0.5f;
 	mat.alpha_hash_scale = 1.0f;
-	const SceneShaderForwardClustered::MaterialData *raster_material = static_cast<SceneShaderForwardClustered::MaterialData *>(material_storage->material_get_data(p_material_rid, RendererRD::MaterialStorage::SHADER_TYPE_3D));
+	SceneShaderForwardClustered::MaterialData *raster_material = static_cast<SceneShaderForwardClustered::MaterialData *>(material_storage->material_get_data(p_material_rid, RendererRD::MaterialStorage::SHADER_TYPE_3D));
 	if (raster_material && raster_material->shader_data && raster_material->shader_data->generated_standard_material) {
 		for (const ShaderCompiler::GeneratedCode::Texture &texture : raster_material->shader_data->texture_uniforms) {
 			if (texture.name == SNAME("texture_albedo")) {
@@ -1869,170 +1631,81 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 		mat_data->is_custom_shader = false;
 	} else {
 		mat_data->is_custom_shader = true;
-		if (raster_material && raster_material->shader_data && raster_material->shader_data->version.is_valid() && !raster_material->shader_data->code.is_empty()) {
-			const SceneShaderForwardClustered::ShaderData *shader_data = raster_material->shader_data;
-			const auto &uniforms = shader_data->rt ? shader_data->rt->uniforms : shader_data->uniforms;
-			const auto &uniform_offsets = shader_data->rt ? shader_data->rt->uniform_offsets : shader_data->ubo_offsets;
-			const auto &texture_uniforms = shader_data->rt ? shader_data->rt->texture_uniforms : shader_data->texture_uniforms;
-			mat_data->uses_alpha_clip = shader_data->rt ? shader_data->rt->uses_alpha_clip : shader_data->uses_alpha_clip;
-			uint32_t uniform_total_size = 0;
-			for (const KeyValue<StringName, ShaderLanguage::ShaderNode::Uniform> &kv : uniforms) {
-				const ShaderLanguage::ShaderNode::Uniform &uniform = kv.value;
-				if (ShaderLanguage::is_sampler_type(uniform.type) || uniform.order < 0 || uniform.order >= uniform_offsets.size()) {
-					continue;
-				}
-				uint32_t size = ShaderLanguage::get_datatype_size(uniform.type);
-				if (uniform.scope == ShaderLanguage::ShaderNode::Uniform::SCOPE_GLOBAL) {
-					size = sizeof(uint32_t);
-				} else if (uniform.array_size > 0) {
-					size = ((size + 15u) & ~15u) * uniform.array_size;
-				}
-				uniform_total_size = MAX(uniform_total_size, uniform_offsets[uniform.order] + size);
+	}
+	if (raster_material && raster_material->shader_data) {
+		const SceneShaderForwardClustered::ShaderData *shader_data = raster_material->shader_data;
+		mat_data->hit_shader = shader_data->get_hit_shader();
+		mat_data->uses_alpha_clip = shader_data->rt ? shader_data->rt->uses_alpha_clip : shader_data->uses_alpha_clip;
+		const ShaderCompiler::GeneratedCode &generated = shader_data->hit_code;
+		const uint32_t uniform_total_size = (generated.rt_uniform_total_size + 15u) & ~15u;
+		Vector<uint8_t> ubo_data;
+		ubo_data.resize(uniform_total_size);
+		if (uniform_total_size > 0) {
+			memset(ubo_data.ptrw(), 0, uniform_total_size);
+		}
+		for (const KeyValue<StringName, ShaderLanguage::ShaderNode::Uniform> &uniform : shader_data->hit_uniforms) {
+			const ShaderLanguage::ShaderNode::Uniform &u = uniform.value;
+			if (u.is_texture() || u.scope == ShaderLanguage::ShaderNode::Uniform::SCOPE_INSTANCE) {
+				continue;
 			}
-			Vector<uint32_t> texture_offsets;
-			texture_offsets.resize(texture_uniforms.size());
-			uint32_t alpha_texture_buffer_offset = UINT32_MAX;
-			for (int ti = 0; ti < texture_uniforms.size(); ti++) {
-				const ShaderCompiler::GeneratedCode::Texture &texture = texture_uniforms[ti];
-				if (texture.name.is_empty()) {
-					continue;
-				}
-				uniform_total_size = (uniform_total_size + 3u) & ~3u;
-				texture_offsets.write[ti] = uniform_total_size;
-				if (texture.hint == ShaderLanguage::ShaderNode::Uniform::HINT_ALPHA) {
-					if (alpha_texture_buffer_offset != UINT32_MAX) {
-						WARN_PRINT(vformat("Custom RT shader has multiple hint_alpha textures; '%s' will be ignored. Only one hint_alpha texture is supported for ray query alpha testing.", texture.name));
-					} else {
-						alpha_texture_buffer_offset = uniform_total_size;
-						mat_data->has_alpha_texture = true;
-					}
-				}
-				uniform_total_size += sizeof(uint32_t);
+			ERR_CONTINUE(u.order < 0 || u.order >= generated.uniform_offsets.size());
+			uint8_t *destination = ubo_data.ptrw() + generated.uniform_offsets[u.order];
+			if (u.scope == ShaderLanguage::ShaderNode::Uniform::SCOPE_GLOBAL) {
+				uint32_t index = MAX(material_storage->global_shader_uniform_get_buffer_index(uniform.key), 0);
+				memcpy(destination, &index, sizeof(index));
+			} else {
+				RendererRD::MaterialStorage::pack_uniform(u, material_storage->material_get_param(p_material_rid, uniform.key), destination);
 			}
-			uniform_total_size = (uniform_total_size + 15u) & ~15u;
-			Vector<uint8_t> ubo_data;
-			ubo_data.resize(uniform_total_size);
-			if (uniform_total_size > 0) {
-				memset(ubo_data.ptrw(), 0, uniform_total_size);
+		}
+		for (const ShaderCompiler::GeneratedCode::Texture &texture : generated.texture_uniforms) {
+			Variant value = texture.global ? Variant(material_storage->global_shader_uniform_get_texture(texture.name)) : material_storage->material_get_param(p_material_rid, texture.name);
+			Array array;
+			if (value.get_type() == Variant::ARRAY) {
+				array = value;
 			}
-
-			for (const KeyValue<StringName, ShaderLanguage::ShaderNode::Uniform> &kv : uniforms) {
-				const ShaderLanguage::ShaderNode::Uniform &u = kv.value;
-				if (ShaderLanguage::is_sampler_type(u.type)) {
-					continue;
+			for (int element = 0; element < MAX(texture.array_size, 1); element++) {
+				Variant selected = texture.array_size > 0 ? (element < array.size() ? array[element] : Variant()) : value;
+				RID texture_rid;
+				if (selected.get_type() == Variant::RID || selected.get_type() == Variant::OBJECT) {
+					texture_rid = selected;
 				}
-				if (u.order < 0 || u.order >= (int)uniform_offsets.size()) {
-					continue;
+				if (texture_rid.is_null()) {
+					const HashMap<int, RID> *defaults = shader_data->default_texture_params.getptr(texture.name);
+					if (defaults && defaults->has(element)) {
+						texture_rid = (*defaults)[element];
+					}
 				}
-
-				uint32_t offset = uniform_offsets[u.order];
-				uint32_t size = u.scope == ShaderLanguage::ShaderNode::Uniform::SCOPE_GLOBAL ? sizeof(uint32_t) : ShaderLanguage::get_datatype_size(u.type);
-				if (offset + size > uniform_total_size) {
-					continue;
+				RID rd_texture = texture_rid.is_valid() ? texture_storage->texture_get_rd_texture(texture_rid, texture.use_color) : RID();
+				if (rd_texture.is_null()) {
+					rd_texture = raster_material->get_default_texture_id(texture.type, texture.hint);
 				}
-
-				uint8_t *dst = ubo_data.ptrw() + offset;
-
-				if (u.scope == ShaderLanguage::ShaderNode::Uniform::SCOPE_GLOBAL) {
-					int32_t idx = material_storage->global_shader_uniform_get_buffer_index(kv.key);
-					uint32_t uidx = (idx >= 0) ? (uint32_t)idx : 0;
-					memcpy(dst, &uidx, sizeof(uint32_t));
-				} else {
-					Variant val = material_storage->material_get_param(p_material_rid, kv.key);
-					pack_uniform(u, val, dst);
-				}
+				uint32_t index = bindless_block->add_texture(rd_texture);
+				memcpy(ubo_data.ptrw() + texture.rt_offset + element * sizeof(index), &index, sizeof(index));
 			}
-
-			RendererRD::TextureStorage *ts = RendererRD::TextureStorage::get_singleton();
-			for (int ti = 0; ti < texture_uniforms.size(); ti++) {
-				const ShaderCompiler::GeneratedCode::Texture &tui = texture_uniforms[ti];
-				if (tui.name.is_empty()) {
-					continue;
-				}
-				uint32_t bindless_idx = 0;
-
-				if (tui.global) {
-					RID tex_rid = material_storage->global_shader_uniform_get_texture(tui.name);
-					if (tex_rid.is_valid()) {
-						RID rd_tex = ts->texture_get_rd_texture(tex_rid, tui.use_color);
-						if (rd_tex.is_valid()) {
-							bindless_idx = bindless_block->add_texture(rd_tex);
-						}
-					}
-				} else {
-					Variant tex_var = material_storage->material_get_param(p_material_rid, tui.name);
-					if (tex_var.get_type() == Variant::OBJECT || tex_var.get_type() == Variant::RID) {
-						RID tex_rid = tex_var;
-						if (tex_rid.is_valid()) {
-							RID rd_tex = ts->texture_get_rd_texture(tex_rid, tui.use_color);
-							if (rd_tex.is_valid()) {
-								bindless_idx = bindless_block->add_texture(rd_tex);
-							}
-						}
-					}
-				}
-
-				if (bindless_idx == 0 && tui.hint != ShaderLanguage::ShaderNode::Uniform::HINT_NONE) {
-					using Hint = ShaderLanguage::ShaderNode::Uniform::Hint;
-					RID default_tex;
-					switch (tui.hint) {
-						case Hint::HINT_DEFAULT_BLACK:
-							default_tex = ts->texture_rd_get_default(RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_BLACK);
-							break;
-						case Hint::HINT_DEFAULT_TRANSPARENT:
-							default_tex = ts->texture_rd_get_default(RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_TRANSPARENT);
-							break;
-						case Hint::HINT_NORMAL:
-							default_tex = ts->texture_rd_get_default(RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_NORMAL);
-							break;
-						case Hint::HINT_ANISOTROPY:
-							default_tex = ts->texture_rd_get_default(RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_ANISO);
-							break;
-						default:
-							default_tex = ts->texture_rd_get_default(RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_WHITE);
-							break;
-					}
-					if (default_tex.is_valid()) {
-						bindless_idx = bindless_block->add_texture(default_tex);
-					}
-				}
-
-				if (texture_offsets[ti] + 4 <= uniform_total_size) {
-					memcpy(ubo_data.ptrw() + texture_offsets[ti], &bindless_idx, 4);
-				}
+		}
+		if (uniform_total_size > 0) {
+			if (uniform_total_size <= MAT_UBO_POOL_SLOT_SIZE && mat_data->uniform_pool_slot == UINT32_MAX) {
+				mat_data->uniform_pool_slot = mat_ubo_pool_allocate();
 			}
-
-			if (alpha_texture_buffer_offset != UINT32_MAX &&
-					alpha_texture_buffer_offset + 4 <= uniform_total_size) {
-				uint32_t alpha_idx = 0;
-				memcpy(&alpha_idx, ubo_data.ptr() + alpha_texture_buffer_offset, 4);
-				mat.albedo_texture_idx = alpha_idx;
-			}
-
-			if (uniform_total_size > 0) {
-				if (uniform_total_size <= MAT_UBO_POOL_SLOT_SIZE && mat_data->uniform_pool_slot == UINT32_MAX) {
-					mat_data->uniform_pool_slot = mat_ubo_pool_allocate();
+			if (uniform_total_size <= MAT_UBO_POOL_SLOT_SIZE && mat_data->uniform_pool_slot != UINT32_MAX) {
+				mat_ubo_pool_update(mat_data->uniform_pool_slot, ubo_data.ptr(), uniform_total_size);
+				mat.uniform_address = mat_ubo_pool_get_address(mat_data->uniform_pool_slot);
+				if (mat_data->uniform_buffer.is_valid()) {
+					RD::get_singleton()->free_rid(mat_data->uniform_buffer);
+					mat_data->uniform_buffer = RID();
 				}
-				if (uniform_total_size <= MAT_UBO_POOL_SLOT_SIZE && mat_data->uniform_pool_slot != UINT32_MAX) {
-					mat_ubo_pool_update(mat_data->uniform_pool_slot, ubo_data.ptr(), uniform_total_size);
-					mat.uniform_address = mat_ubo_pool_get_address(mat_data->uniform_pool_slot);
-					if (mat_data->uniform_buffer.is_valid()) {
-						RD::get_singleton()->free_rid(mat_data->uniform_buffer);
-						mat_data->uniform_buffer = RID();
-					}
-				} else {
-					RID buffer = RD::get_singleton()->storage_buffer_create(uniform_total_size, ubo_data, 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
-					ERR_FAIL_COND_V(buffer.is_null(), &s_default_mat);
-					if (mat_data->uniform_buffer.is_valid()) {
-						RD::get_singleton()->free_rid(mat_data->uniform_buffer);
-					}
-					mat_data->uniform_buffer = buffer;
-					RD::get_singleton()->set_resource_name(buffer, "RT Material UBO");
-					mat.uniform_address = RD::get_singleton()->buffer_get_device_address(buffer);
-					if (mat_data->uniform_pool_slot != UINT32_MAX) {
-						mat_ubo_pool_release(mat_data->uniform_pool_slot);
-						mat_data->uniform_pool_slot = UINT32_MAX;
-					}
+			} else {
+				RID buffer = RD::get_singleton()->storage_buffer_create(uniform_total_size, ubo_data, 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
+				ERR_FAIL_COND_V(buffer.is_null(), &s_default_mat);
+				if (mat_data->uniform_buffer.is_valid()) {
+					RD::get_singleton()->free_rid(mat_data->uniform_buffer);
+				}
+				mat_data->uniform_buffer = buffer;
+				RD::get_singleton()->set_resource_name(buffer, "RT Material UBO");
+				mat.uniform_address = RD::get_singleton()->buffer_get_device_address(buffer);
+				if (mat_data->uniform_pool_slot != UINT32_MAX) {
+					mat_ubo_pool_release(mat_data->uniform_pool_slot);
+					mat_data->uniform_pool_slot = UINT32_MAX;
 				}
 			}
 		}
@@ -2111,6 +1784,9 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 	entry->cached_content_generation = content_generation;
 	entry->last_used_frame = current_frame;
 
+	if (mat_data->uniform_buffer.is_valid()) {
+		geometry_buffer_dependencies.insert(mat_data->uniform_buffer);
+	}
 	return mat_data;
 }
 
@@ -2157,7 +1833,7 @@ void RenderRaytracing::build_acceleration_structures(RTViewportState *p_state, c
 		inst.blas = blass[i];
 		inst.flags = BitField<RD::AccelerationStructureInstanceFlagBits>(instance_flags[i]);
 		inst.mask = (i < instance_masks.size()) ? instance_masks[i] : 0xFF;
-		inst.hit_sbt_range = RD::HitShaderBindingTableRange(1ULL << 32);
+		inst.hit_sbt_range = RD::HitShaderBindingTableRange((1ULL << 32) | i);
 	}
 
 	RD::get_singleton()->tlas_build(p_state->tlas, instances);
@@ -2575,6 +2251,16 @@ bool RenderRaytracing::_build_merged_mm_blas(
 	geom.prev_vertex_buffer_address_lo = uint32_t(previous_address);
 	geom.prev_vertex_buffer_address_hi = uint32_t(previous_address >> 32);
 	geom.vertex_count = p_mm_count * vertex_count;
+	geom.multimesh_address = rd->buffer_get_device_address(p_mm_gpu_buffer);
+	geom.multimesh_stride = mesh_storage->multimesh_get_stride(p_mm_rid);
+	geom.multimesh_offset = mesh_storage->multimesh_get_current_instance_offset(p_mm_rid);
+	geom.source_vertex_count = vertex_count;
+	geom.multimesh_flags = uint32_t(mesh_storage->multimesh_uses_colors(p_mm_rid)) | (uint32_t(mesh_storage->multimesh_uses_custom_data(p_mm_rid)) << 1);
+	geometry_buffer_dependencies.insert(p_mm_gpu_buffer);
+	RID skin_buffer = mesh_storage->mesh_surface_get_skin_buffer(p_mesh_surface);
+	if (skin_buffer.is_valid()) {
+		geometry_buffer_dependencies.insert(skin_buffer);
+	}
 	geom.position_stride = 12; // float3, uncompressed
 	geom.flags &= ~RT_GEOM_FLAG_COMPRESSED;
 
@@ -2674,8 +2360,8 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 	LocalVector<PendingMMSurface> pending_mm_surfaces;
 
 	auto register_emissive_source = [&](const RenderForwardClustered::GeometryInstanceForwardClustered *p_instance,
-			RID p_resource, uint32_t p_surface_index, uint32_t p_surface_counter, uint32_t p_geometry_index,
-			uint32_t p_key_primitive_offset, uint32_t p_primitive_count, const Transform3D &p_transform, RTMaterialData *p_material) {
+											RID p_resource, uint32_t p_surface_index, uint32_t p_surface_counter, uint32_t p_geometry_index,
+											uint32_t p_key_primitive_offset, uint32_t p_primitive_count, const Transform3D &p_transform, RTMaterialData *p_material) {
 		if (!p_instance || !p_instance->rt_visible_receiver || !p_material || p_material->is_custom_shader || p_primitive_count == 0) {
 			return;
 		}
@@ -2701,6 +2387,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 	auto instance_geometry = [](const RenderForwardClustered::GeometryInstanceForwardClustered *p_instance, const RT_GeometryData &p_geometry, const RenderForwardClustered::GeometryInstanceSurfaceDataCache *p_surface) {
 		RT_GeometryData geometry = p_geometry;
 		geometry.instance_layer_mask = p_instance->layer_mask;
+		geometry.instance_uniforms_offset = p_instance->shader_uniforms_offset;
 		if (p_instance->rt_casts_shadows) {
 			geometry.flags |= RT_GEOM_FLAG_CASTS_SHADOWS;
 		}
@@ -2792,6 +2479,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 				hash_scene(material_storage->material_get_rt_content_generation(proc_material_rid, inst->shader_uniforms_offset));
 				RTMaterialData *proc_mat_data = process_material(proc_material_rid, proc_mat_counter);
 				material_data.push_back(proc_mat_data->data);
+				geometry_material_programs.push_back(proc_mat_data->hit_shader);
 
 				// Procedural instances disable triangle culling and are opaque.
 				uint32_t inst_flags = RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT |
@@ -2985,7 +2673,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			blass.push_back(surf_data->blas);
 			const uint32_t geometry_index = geometry_data.size();
 			geometry_data.push_back(instance_geometry(inst, surf_data->geometry, surf));
-			for (RID buffer : { mesh_storage->mesh_surface_get_vertex_buffer(mesh_surface), mesh_storage->mesh_surface_get_attribute_buffer(mesh_surface), mesh_storage->mesh_surface_get_index_buffer(mesh_surface, 0), surf_data->cluster_remap_buffer }) {
+			for (RID buffer : { mesh_storage->mesh_surface_get_vertex_buffer(mesh_surface), mesh_storage->mesh_surface_get_attribute_buffer(mesh_surface), mesh_storage->mesh_surface_get_skin_buffer(mesh_surface), mesh_storage->mesh_surface_get_index_buffer(mesh_surface, 0), surf_data->cluster_remap_buffer }) {
 				if (buffer.is_valid()) {
 					geometry_buffer_dependencies.insert(buffer);
 				}
@@ -3020,6 +2708,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 #endif
 
 			material_data.push_back(mat_data->data);
+			geometry_material_programs.push_back(mat_data->hit_shader);
 
 			// Determine per-instance TLAS flags from material properties.
 			uint32_t inst_flags = 0;
@@ -3082,6 +2771,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			register_emissive_source(pending.mm_surf->owner, pending.mm_rid, pending.surface_index, pending.surface_counter,
 					geometry_index, 0, merged_sd.geometry.primitive_count, pending.instance_transform, pending.mat_data);
 			material_data.push_back(pending.mat_data->data);
+			geometry_material_programs.push_back(pending.mat_data->hit_shader);
 			if (pending.transform_moved) {
 				Transform3D previous_to_rt = pending.prev_instance_transform;
 				previous_to_rt.origin -= state->rt_origin;
@@ -3145,8 +2835,17 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 				blass.push_back(surf_data->blas);
 				blas_transforms.push_back(final_transform);
 				const uint32_t geometry_index = geometry_data.size();
-				geometry_data.push_back(instance_geometry(pending.mm_surf->owner, surf_data->geometry, pending.mm_surf));
-				for (RID buffer : { mesh_storage->mesh_surface_get_vertex_buffer(pending.mesh_surface), mesh_storage->mesh_surface_get_attribute_buffer(pending.mesh_surface), mesh_storage->mesh_surface_get_index_buffer(pending.mesh_surface, 0), surf_data->cluster_remap_buffer }) {
+				RT_GeometryData instance_data = instance_geometry(pending.mm_surf->owner, surf_data->geometry, pending.mm_surf);
+				instance_data.instance_index = mi;
+				const bool has_color = mesh_storage->multimesh_uses_colors(pending.mm_rid);
+				if (has_color) {
+					memcpy(instance_data.instance_color, d + 12, sizeof(instance_data.instance_color));
+				}
+				if (mesh_storage->multimesh_uses_custom_data(pending.mm_rid)) {
+					memcpy(instance_data.instance_custom, d + 12 + (has_color ? 4 : 0), sizeof(instance_data.instance_custom));
+				}
+				geometry_data.push_back(instance_data);
+				for (RID buffer : { mesh_storage->mesh_surface_get_vertex_buffer(pending.mesh_surface), mesh_storage->mesh_surface_get_attribute_buffer(pending.mesh_surface), mesh_storage->mesh_surface_get_skin_buffer(pending.mesh_surface), mesh_storage->mesh_surface_get_index_buffer(pending.mesh_surface, 0), surf_data->cluster_remap_buffer }) {
 					if (buffer.is_valid()) {
 						geometry_buffer_dependencies.insert(buffer);
 					}
@@ -3154,6 +2853,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 				register_emissive_source(pending.mm_surf->owner, pending.mm_rid, pending.surface_index, pending.surface_counter,
 						geometry_index, mi * surf_data->geometry.primitive_count, surf_data->geometry.primitive_count, final_transform, pending.mat_data);
 				material_data.push_back(pending.mat_data->data);
+				geometry_material_programs.push_back(pending.mat_data->hit_shader);
 
 				if (pending.transform_moved || mm_prev_offset != mm_cur_offset) {
 					const float *previous_data = mm_data + (mm_prev_offset + mi) * mm_stride;
@@ -3214,8 +2914,29 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 
 	RD::get_singleton()->compute_list_end();
 
+	ERR_FAIL_COND_V(!update_material_pipeline(state), nullptr);
 	build_acceleration_structures(state, dirty_blas_list, dirty_blas_update_list);
 	finalize_buffers(state);
+	state->decal_count = 0;
+	state->decal_generation = 0;
+	if (p_render_data->rt_decals && p_render_data->decals) {
+		RendererRD::TextureStorage::RTDecalSnapshot snapshot = RendererRD::TextureStorage::get_singleton()->build_rt_decal_snapshot(*p_render_data->rt_decals, *p_render_data->decals, p_render_data->scene_data->cam_transform, state->rt_origin);
+		state->decal_count = snapshot.count;
+		state->decal_generation = snapshot.generation;
+		hash_scene(snapshot.generation);
+		uint32_t size = MAX(uint32_t(snapshot.data.size()), 16u);
+		if (size > state->decal_buffer_capacity) {
+			if (state->decal_buffer.is_valid()) {
+				RD::get_singleton()->free_rid(state->decal_buffer);
+			}
+			state->decal_buffer = RD::get_singleton()->storage_buffer_create(size);
+			state->decal_buffer_capacity = state->decal_buffer.is_valid() ? size : 0;
+			ERR_FAIL_COND_V(state->decal_buffer.is_null(), nullptr);
+		}
+		if (!snapshot.data.is_empty()) {
+			RD::get_singleton()->buffer_update(state->decal_buffer, 0, snapshot.data.size(), snapshot.data.ptr());
+		}
+	}
 	build_light_registry(state, p_render_data, scene_signature);
 	hash_scene(blass.size());
 	for (RID blas : blass) {
@@ -3571,7 +3292,6 @@ void RenderRaytracing::register_compute_buffer_dependencies(RD::ComputeListID p_
 		rd->compute_list_add_buffer_dependency(p_list, buffer);
 	}
 
-
 	if (mat_ubo_pool_buffer.is_valid()) {
 		rd->compute_list_add_buffer_dependency(p_list, mat_ubo_pool_buffer);
 	}
@@ -3607,4 +3327,188 @@ void RenderRaytracing::register_compute_buffer_dependencies(RD::ComputeListID p_
 			rd->compute_list_add_buffer_dependency(p_list, e->replicated_idx_buffer);
 		}
 	}
+}
+
+bool RenderRaytracing::create_material_pipeline(const RTViewportState *p_state, Span<RD::PipelineShader> p_raygen_shaders, Span<RD::PipelineShader> p_miss_shaders, uint32_t p_recursion_depth, RID &r_pipeline, RID &r_sbt) const {
+	ERR_FAIL_NULL_V(p_state, false);
+	ERR_FAIL_COND_V(r_pipeline.is_valid() || r_sbt.is_valid(), false);
+	Vector<RD::HitGroup> groups;
+	for (RID shader : p_state->hit_programs) {
+		ERR_FAIL_COND_V(shader.is_null(), false);
+		RD::HitGroup group;
+		group.closest_hit_shader.shader = shader;
+		group.any_hit_shader.shader = shader;
+		groups.push_back(group);
+	}
+	RD *rd = RD::get_singleton();
+	RID pipeline = rd->raytracing_pipeline_create(p_raygen_shaders, p_miss_shaders, groups, p_recursion_depth);
+	ERR_FAIL_COND_V(pipeline.is_null(), false);
+	const uint32_t count = MAX(p_state->geometry_hit_groups.size(), 1);
+	RID sbt = rd->hit_sbt_create(pipeline, count);
+	if (sbt.is_null()) {
+		rd->free_rid(pipeline);
+		return false;
+	}
+	RD::HitShaderBindingTableRange range = rd->hit_sbt_range_alloc(sbt, count);
+	Vector<uint32_t> indices = p_state->geometry_hit_groups;
+	if (indices.is_empty()) {
+		indices.push_back(0);
+	}
+	if (uint32_t(range) != 0 || rd->hit_sbt_range_update(sbt, range, 0, indices) != OK) {
+		rd->free_rid(sbt);
+		rd->free_rid(pipeline);
+		return false;
+	}
+	r_pipeline = pipeline;
+	r_sbt = sbt;
+	print_verbose(vformat("Native RT material pipeline created: %d hit programs, %d geometry records, pipeline %d, SBT %d.", groups.size(), count, pipeline.get_id(), sbt.get_id()));
+	return true;
+}
+
+bool RenderRaytracing::update_material_pipeline(RTViewportState *p_state) {
+	Vector<RID> programs;
+	Vector<uint32_t> indices;
+	HashMap<RID, uint32_t> program_indices;
+	for (RID shader : geometry_material_programs) {
+		ERR_FAIL_COND_V_MSG(shader.is_null(), false, "The RT scene has no valid native material hit program.");
+		if (!program_indices.has(shader)) {
+			program_indices[shader] = programs.size();
+			programs.push_back(shader);
+		}
+		indices.push_back(program_indices[shader]);
+	}
+	RID default_program = owner->scene_shader.default_material_shader_ptr->get_hit_shader();
+	ERR_FAIL_COND_V(default_program.is_null(), false);
+	if (programs.is_empty()) {
+		programs.push_back(default_program);
+	}
+	RD *rd = RD::get_singleton();
+	if (p_state->hit_programs == programs && p_state->geometry_hit_groups == indices && rd->raytracing_pipeline_is_valid(p_state->material_pipeline)) {
+		return true;
+	}
+	p_state->hit_programs = programs;
+	p_state->geometry_hit_groups = indices;
+	if (rd->raytracing_pipeline_is_valid(p_state->material_pipeline)) {
+		rd->free_rid(p_state->material_sbt);
+		rd->free_rid(p_state->material_pipeline);
+	}
+	p_state->material_sbt = RID();
+	p_state->material_pipeline = RID();
+	RD::PipelineShader entry;
+	entry.shader = default_program;
+	return create_material_pipeline(p_state, { &entry, 1 }, { &entry, 1 }, 1, p_state->material_pipeline, p_state->material_sbt);
+}
+
+void RenderRaytracing::register_raytracing_buffer_dependencies(RD::RaytracingListID p_list) {
+	RD *rd = RD::get_singleton();
+	for (RID buffer : geometry_buffer_dependencies) {
+		rd->raytracing_list_add_buffer_dependency(p_list, buffer);
+	}
+	if (mat_ubo_pool_buffer.is_valid()) {
+		rd->raytracing_list_add_buffer_dependency(p_list, mat_ubo_pool_buffer);
+	}
+	for (RID handle : deformed_active_this_frame) {
+		RTDeformedCacheEntry *entry = deformed_pool.get_or_null(handle);
+		if (!entry) {
+			continue;
+		}
+		for (RID buffer : { entry->owned_vb_full, entry->prev_pos_vb }) {
+			if (buffer.is_valid()) {
+				rd->raytracing_list_add_buffer_dependency(p_list, buffer);
+			}
+		}
+	}
+	for (RID handle : merged_mm_active_this_frame) {
+		RTMergedMMEntry *entry = merged_mm_pool.get_or_null(handle);
+		if (!entry) {
+			continue;
+		}
+		for (RID buffer : { entry->previous_position_buffer, entry->merged_vtx_buffer, entry->merged_attr_buffer, entry->replicated_idx_buffer }) {
+			if (buffer.is_valid()) {
+				rd->raytracing_list_add_buffer_dependency(p_list, buffer);
+			}
+		}
+	}
+}
+
+bool RenderRaytracing::trace_material_rays(RTViewportState *p_state, RID p_scene_data_buffer, RID p_ray_buffer, RID p_result_buffer, uint32_t p_ray_count) {
+	ERR_FAIL_NULL_V(p_state, false);
+	RD *rd = RD::get_singleton();
+	ERR_FAIL_COND_V(!rd->raytracing_pipeline_is_valid(p_state->material_pipeline) || !p_state->material_sbt.is_valid(), false);
+	ERR_FAIL_COND_V(!p_scene_data_buffer.is_valid() || !p_ray_buffer.is_valid() || !p_result_buffer.is_valid(), false);
+	if (p_ray_count == 0) {
+		return true;
+	}
+	struct alignas(16) MaterialFrame {
+		float origin[4] = {};
+		uint32_t counts[4] = {};
+	} frame;
+	for (uint32_t axis = 0; axis < 3; axis++) {
+		frame.origin[axis] = p_state->rt_origin[axis];
+	}
+	frame.counts[0] = p_state->geometry_hit_groups.size();
+	frame.counts[1] = p_state->decal_count;
+	frame.counts[2] = p_ray_count;
+	frame.counts[3] = owner->decals_get_filter();
+	if (p_state->material_frame_buffer.is_null()) {
+		p_state->material_frame_buffer = rd->uniform_buffer_create(sizeof(frame));
+	}
+	ERR_FAIL_COND_V(p_state->material_frame_buffer.is_null(), false);
+	rd->buffer_update(p_state->material_frame_buffer, 0, sizeof(frame), &frame);
+	if (p_state->decal_buffer.is_null()) {
+		p_state->decal_buffer = rd->storage_buffer_create(16);
+		p_state->decal_buffer_capacity = 16;
+	}
+	RendererRD::MaterialStorage *materials = RendererRD::MaterialStorage::get_singleton();
+	RendererRD::TextureStorage *textures = RendererRD::TextureStorage::get_singleton();
+	Vector<RD::Uniform> uniforms;
+	auto append = [&](RD::UniformType p_type, uint32_t p_binding, RID p_resource) {
+		RD::Uniform uniform;
+		uniform.uniform_type = p_type;
+		uniform.binding = p_binding;
+		uniform.append_id(p_resource);
+		uniforms.push_back(uniform);
+	};
+	append(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 0, p_scene_data_buffer);
+	append(RD::UNIFORM_TYPE_STORAGE_BUFFER, 1, materials->global_shader_uniforms_get_storage_buffer());
+	append(RD::UNIFORM_TYPE_STORAGE_BUFFER, 2, p_state->geometry_buffer);
+	append(RD::UNIFORM_TYPE_STORAGE_BUFFER, 3, p_state->material_buffer);
+	append(RD::UNIFORM_TYPE_ACCELERATION_STRUCTURE, 4, p_state->tlas);
+	append(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 5, p_state->material_frame_buffer);
+	append(RD::UNIFORM_TYPE_STORAGE_BUFFER, 6, p_state->decal_buffer);
+	append(RD::UNIFORM_TYPE_TEXTURE, 7, textures->decal_atlas_get_texture());
+	append(RD::UNIFORM_TYPE_TEXTURE, 8, textures->decal_atlas_get_texture_srgb());
+	const RSE::CanvasItemTextureFilter filters[] = {
+		RSE::CANVAS_ITEM_TEXTURE_FILTER_NEAREST,
+		RSE::CANVAS_ITEM_TEXTURE_FILTER_LINEAR,
+		RSE::CANVAS_ITEM_TEXTURE_FILTER_NEAREST_WITH_MIPMAPS,
+		RSE::CANVAS_ITEM_TEXTURE_FILTER_LINEAR_WITH_MIPMAPS,
+		RSE::CANVAS_ITEM_TEXTURE_FILTER_NEAREST_WITH_MIPMAPS_ANISOTROPIC,
+		RSE::CANVAS_ITEM_TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC,
+	};
+	for (uint32_t repeat = 0; repeat < 2; repeat++) {
+		for (uint32_t filter = 0; filter < 6; filter++) {
+			append(RD::UNIFORM_TYPE_SAMPLER, 9 + repeat * 6 + filter, materials->sampler_rd_get_default(filters[filter], repeat ? RSE::CANVAS_ITEM_TEXTURE_REPEAT_ENABLED : RSE::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED));
+		}
+	}
+	append(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 21, p_state->frame_constants_buffer);
+	append(RD::UNIFORM_TYPE_STORAGE_BUFFER, 22, p_ray_buffer);
+	append(RD::UNIFORM_TYPE_STORAGE_BUFFER, 23, p_result_buffer);
+	RID shader = owner->scene_shader.default_material_shader_ptr->get_hit_shader();
+	RID uniform_set = rd->uniform_set_create(uniforms, shader, 0, true);
+	ERR_FAIL_COND_V(uniform_set.is_null(), false);
+	RID bindless_set = get_bindless_uniform_set(shader);
+	if (bindless_set.is_null()) {
+		rd->free_rid(uniform_set);
+		return false;
+	}
+	RD::RaytracingListID list = rd->raytracing_list_begin();
+	rd->raytracing_list_bind_raytracing_pipeline(list, p_state->material_pipeline);
+	rd->raytracing_list_bind_uniform_set(list, uniform_set, 0);
+	rd->raytracing_list_bind_uniform_set(list, bindless_set, 1);
+	register_raytracing_buffer_dependencies(list);
+	rd->raytracing_list_trace_rays(list, 0, p_state->material_sbt, p_ray_count, 1, 1);
+	rd->raytracing_list_end();
+	rd->free_rid(uniform_set);
+	return true;
 }

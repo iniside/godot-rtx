@@ -321,6 +321,7 @@ Error RendererCompositorRD::is_viable() {
 	ERR_FAIL_COND_V_MSG(OS::get_singleton()->get_current_rendering_method() != "forward_plus", ERR_UNAVAILABLE, "The RTXDI renderer requires the Forward+ rendering method.");
 	ERR_FAIL_COND_V_MSG(OS::get_singleton()->get_current_rendering_driver_name() != "vulkan", ERR_UNAVAILABLE, "The RTXDI renderer requires the Vulkan rendering driver.");
 	ERR_FAIL_COND_V_MSG(!rd->has_feature(RD::SUPPORTS_RAY_QUERY), ERR_UNAVAILABLE, "The RTXDI renderer requires ray query support.");
+	ERR_FAIL_COND_V_MSG(!rd->has_feature(RD::SUPPORTS_RAYTRACING_PIPELINE), ERR_UNAVAILABLE, "The ray tracing renderer requires native ray tracing pipeline support.");
 	ERR_FAIL_COND_V_MSG(!rd->has_feature(RD::SUPPORTS_BUFFER_DEVICE_ADDRESS), ERR_UNAVAILABLE, "The RTXDI renderer requires buffer device address support.");
 	ERR_FAIL_COND_V_MSG(!rd->has_feature(RD::SUPPORTS_BINDLESS_TEXTURE_ARRAYS), ERR_UNAVAILABLE, "The RTXDI renderer requires shader sampled-image array non-uniform indexing, partially bound descriptors, variable descriptor counts, and runtime descriptor arrays.");
 	ERR_FAIL_COND_V_MSG(!rd->clas_is_supported(), ERR_UNAVAILABLE, "The RTXDI renderer requires cluster acceleration structure support.");

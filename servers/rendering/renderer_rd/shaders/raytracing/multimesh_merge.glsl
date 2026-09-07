@@ -145,7 +145,7 @@ void main() {
 			uint n_packed = src_u.v[tbn_src];
 
 			vec2 n_oct = vec2(float(n_packed & 0xFFFFu), float(n_packed >> 16u)) / 65535.0 * 2.0 - 1.0;
-			vec3 rn = normalize(rot * oct_to_vec3(n_oct));
+			vec3 rn = normalize(transpose(inverse(rot)) * oct_to_vec3(n_oct));
 			vec2 rn_oct = vec3_to_oct(rn);
 			uint rn_packed = uint(rn_oct.x * 32767.5 + 32767.5) | (uint(rn_oct.y * 32767.5 + 32767.5) << 16u);
 
@@ -156,11 +156,11 @@ void main() {
 				// Tangent encodes the bitangent sign in sign(t_raw.y); preserve it.
 				uint t_packed = src_u.v[tbn_src + 1u];
 				vec2 t_raw = vec2(float(t_packed & 0xFFFFu), float(t_packed >> 16u)) / 65535.0 * 2.0 - 1.0;
-				float bitan_sign = sign(t_raw.y);
+				float bitan_sign = sign(t_raw.y) * sign(determinant(rot));
 				vec2 t_oct = vec2(t_raw.x, abs(t_raw.y) * 2.0 - 1.0);
 				vec3 rt = normalize(rot * oct_to_vec3(t_oct));
 				vec2 rt_oct = vec3_to_oct(rt);
-				float t_raw_y = (abs(rt_oct.y) * 0.5 + 0.5) * bitan_sign;
+				float t_raw_y = (rt_oct.y * 0.5 + 0.5) * bitan_sign;
 				uint rt_packed = uint(rt_oct.x * 32767.5 + 32767.5) | (uint(t_raw_y * 32767.5 + 32767.5) << 16u);
 				dst_vtx.v[tbn_dst + 1u] = rt_packed;
 			}

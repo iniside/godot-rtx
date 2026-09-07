@@ -38,10 +38,89 @@
 
 using namespace RendererSceneRenderImplementation;
 
+uint32_t SceneShaderForwardClustered::ShaderData::get_surface_material_flags() const {
+	uint32_t flags = RenderForwardClustered::GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_VALID;
+	const bool unsupported_alpha = uses_alpha_pass();
+	const bool rt_classification_mismatch = uses_alpha_pass() != rt_uses_alpha_pass() || cull_mode != rt_cull_mode();
+	const bool procedural_coverage = (uses_alpha_clip || uses_discard) && !generated_standard_material;
+	const bool procedural_emission = uses_emission && !generated_standard_material;
+	if (!hit_code.rt_unsupported_reason.is_empty() || rtxdi_surface_unsupported || rt != nullptr || unsupported_alpha || rt_classification_mismatch || procedural_emission || procedural_coverage) {
+		flags |= RenderForwardClustered::GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_UNSUPPORTED;
+	}
+	if (uses_alpha_clip) {
+		flags |= RenderForwardClustered::GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_ALPHA_TESTED;
+	}
+	if (cull_mode == RSE::CULL_MODE_DISABLED) {
+		flags |= RenderForwardClustered::GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_DOUBLE_SIDED;
+	}
+	if (uses_emission) {
+		flags |= RenderForwardClustered::GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_EMISSIVE;
+	}
+	if (uses_normal_map) {
+		flags |= RenderForwardClustered::GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_NORMAL_MAP;
+	}
+	if (uses_vertex || uses_position || writes_modelview_or_projection || uses_world_coordinates) {
+		flags |= RenderForwardClustered::GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_DEFORMED;
+	}
+	return flags;
+}
+
+void SceneShaderForwardClustered::ShaderData::_compile_hit_code(const String &p_code) {
+	SceneShaderForwardClustered *owner = SceneShaderForwardClustered::singleton;
+	if (hit_version.is_valid()) {
+		owner->hit_shader.version_free(hit_version);
+		hit_version = RID();
+	}
+	hit_code = ShaderCompiler::GeneratedCode();
+	hit_uniforms.clear();
+	if (p_code.is_empty()) {
+		return;
+	}
+	ShaderCompiler::IdentifierActions actions;
+	actions.entry_point_stages["vertex"] = ShaderCompiler::STAGE_VERTEX;
+	actions.entry_point_stages["fragment"] = ShaderCompiler::STAGE_FRAGMENT;
+	actions.entry_point_stages["light"] = ShaderCompiler::STAGE_FRAGMENT;
+	actions.uniforms = &hit_uniforms;
+	Error error;
+	{
+		MutexLock lock(SceneShaderForwardClustered::singleton_mutex);
+		error = owner->hit_compiler.compile(RSE::SHADER_SPATIAL, p_code, &actions, path, hit_code);
+	}
+	ERR_FAIL_COND_MSG(error != OK, "Native ray tracing material frontend compilation failed.");
+	const uint32_t surface_flags = get_surface_material_flags();
+	const bool unsupported = (surface_flags & RenderForwardClustered::GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_UNSUPPORTED) != 0;
+	if (!hit_code.rt_unsupported_reason.is_empty()) {
+		WARN_PRINT(vformat("Native ray tracing material %s: %s", path, hit_code.rt_unsupported_reason));
+	}
+	HashMap<String, String> sections;
+	String callbacks = "void rt_load_material_uniforms() {\n" + (unsupported ? String() : hit_code.code["rt_uniform_init"]) + "}\n";
+	callbacks += "void rt_material_vertex() {\n" + (unsupported ? String() : hit_code.code["vertex"]) + "}\n";
+	callbacks += "void rt_material_fragment() {\n" + (unsupported ? String() : hit_code.code["fragment"]) + "}\n";
+	callbacks += "void rt_material_interpolate_vertices(GeometryHitInput hit, GeometryTriangle triangle, float3 bary) {\n";
+	callbacks += unsupported ? String() : hit_code.code["rt_varyings_init"];
+	callbacks += "RTVertexInterpolants sums = (RTVertexInterpolants)0;\nfor (uint rt_vertex_index = 0u; rt_vertex_index < 3u; rt_vertex_index++) {\nfloat rt_vertex_weight = bary[rt_vertex_index];\nrt_initialize_vertex(hit, triangle, rt_vertex_index);\nrt_material_vertex();\nrt_accumulate_vertex(sums, rt_vertex_weight);\n";
+	callbacks += unsupported ? String() : hit_code.code["rt_varyings_accumulate"];
+	callbacks += "}\nrt_restore_vertex(sums);\n";
+	callbacks += unsupported ? String() : hit_code.code["rt_varyings_restore"];
+	callbacks += "}\n";
+	sections["rt_material_callbacks"] = callbacks;
+	Vector<String> defines = unsupported ? Vector<String>() : hit_code.defines;
+	defines.push_back("#define RT_SURFACE_FLAGS " + uitos(surface_flags) + "u\n");
+	defines.push_back("#define RT_CULL_MODE " + itos(rt_cull_mode()) + "\n");
+	String globals = unsupported ? String() : hit_code.stage_globals[ShaderCompiler::STAGE_FRAGMENT];
+	hit_version = owner->hit_shader.version_create(false);
+	owner->hit_shader.version_set_raytracing_code(hit_version, sections, unsupported ? String() : hit_code.uniforms, String(), globals, globals, String(), String(), defines);
+}
+
+RID SceneShaderForwardClustered::ShaderData::get_hit_shader() const {
+	return hit_version.is_valid() ? SceneShaderForwardClustered::singleton->hit_shader.version_get_shader(hit_version, 0) : RID();
+}
+
 void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 	//compile
 
 	code = p_code;
+	_compile_hit_code(String());
 	ubo_size = 0;
 	uniforms.clear();
 	_clear_vertex_input_mask_cache();
@@ -279,6 +358,7 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 	}
 
 	uses_blend_alpha = blend_mode_uses_blend_alpha(BlendMode(blend_mode));
+	_compile_hit_code(code);
 }
 
 void SceneShaderForwardClustered::ShaderData::set_code_rt(const String &p_code_rt) {
@@ -288,6 +368,7 @@ void SceneShaderForwardClustered::ShaderData::set_code_rt(const String &p_code_r
 			memdelete(rt);
 			rt = nullptr;
 		}
+		_compile_hit_code(code);
 		return;
 	}
 
@@ -396,6 +477,7 @@ void SceneShaderForwardClustered::ShaderData::set_code_rt(const String &p_code_r
 	rt->uses_screen_texture = rt_gen_code.uses_screen_texture;
 	rt->uses_depth_texture = rt_gen_code.uses_depth_texture;
 	rt->uses_normal_texture = rt_gen_code.uses_normal_roughness_texture;
+	_compile_hit_code(p_code_rt);
 }
 
 bool SceneShaderForwardClustered::ShaderData::is_animated() const {
@@ -623,6 +705,9 @@ SceneShaderForwardClustered::ShaderData::ShaderData() :
 }
 
 SceneShaderForwardClustered::ShaderData::~ShaderData() {
+	if (hit_version.is_valid()) {
+		SceneShaderForwardClustered::singleton->hit_shader.version_free(hit_version);
+	}
 	pipeline_hash_map.clear_pipelines();
 
 	if (version.is_valid()) {
@@ -716,7 +801,6 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_ADVANCED, base_define + "\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_SDF\n", false)); // SHADER_VERSION_DEPTH_PASS_WITH_SDF
 			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_BASE, base_define + "\n#define MODE_RTXDI_SURFACE\n#define MOTION_VECTORS\n#define NORMAL_USED\n", true)); // SHADER_VERSION_RTXDI_SURFACE
 		}
-
 
 		Vector<uint64_t> dynamic_buffers;
 		dynamic_buffers.push_back(ShaderRD::DynamicBuffer::encode(RenderForwardClustered::RENDER_PASS_UNIFORM_SET, 2));
@@ -945,6 +1029,12 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 		actions.check_multiview_samplers = true;
 
 		compiler.initialize(actions);
+		actions.ray_hit_context = true;
+		actions.suppress_varying_io = true;
+		actions.check_multiview_samplers = false;
+		actions.instance_uniform_index_variable = "rt_instance_uniforms_offset";
+		hit_compiler.initialize(actions);
+		hit_shader.initialize({ "" }, p_defines);
 	}
 
 	{

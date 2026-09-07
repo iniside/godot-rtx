@@ -738,6 +738,43 @@ bool MaterialStorage::ShaderData::blend_mode_uses_blend_alpha(BlendMode p_mode) 
 ///////////////////////////////////////////////////////////////////////////
 // MaterialStorage::MaterialData
 
+void MaterialStorage::pack_uniform(const ShaderLanguage::ShaderNode::Uniform &p_uniform, const Variant &p_value, uint8_t *p_destination) {
+	using SL = ShaderLanguage;
+	if (p_value.get_type() != Variant::NIL) {
+		_fill_std140_variant_ubo_value(p_uniform.type, p_uniform.array_size, p_value, p_destination, p_uniform.hint != SL::ShaderNode::Uniform::HINT_COLOR_CONVERSION_DISABLED);
+		return;
+	}
+	uint32_t size = SL::get_datatype_size(p_uniform.type);
+	uint32_t stride = p_uniform.array_size > 0 ? ((size + 15u) & ~15u) : size;
+	uint32_t count = MAX(p_uniform.array_size, 1);
+	if (!p_uniform.default_value.is_empty()) {
+		uint32_t components = p_uniform.default_value.size() / count;
+		for (uint32_t element = 0; element < count; element++) {
+			Vector<SL::Scalar> values;
+			values.resize(components);
+			for (uint32_t component = 0; component < components; component++) {
+				values.write[component] = p_uniform.default_value[element * components + component];
+			}
+			_fill_std140_ubo_value(p_uniform.type, values, p_destination + element * stride, p_uniform.hint == SL::ShaderNode::Uniform::HINT_SOURCE_COLOR);
+		}
+		return;
+	}
+	for (uint32_t element = 0; element < count; element++) {
+		uint8_t *destination = p_destination + element * stride;
+		if (p_uniform.type == SL::TYPE_MAT2) {
+			_fill_std140_variant_ubo_value(p_uniform.type, 0, Transform2D(), destination, false);
+		} else if (p_uniform.type == SL::TYPE_MAT3) {
+			_fill_std140_variant_ubo_value(p_uniform.type, 0, Basis(), destination, false);
+		} else if (p_uniform.type == SL::TYPE_MAT4) {
+			_fill_std140_variant_ubo_value(p_uniform.type, 0, Projection(), destination, false);
+		} else if ((p_uniform.type == SL::TYPE_VEC3 || p_uniform.type == SL::TYPE_VEC4) && (p_uniform.hint == SL::ShaderNode::Uniform::HINT_SOURCE_COLOR || p_uniform.hint == SL::ShaderNode::Uniform::HINT_COLOR_CONVERSION_DISABLED)) {
+			_fill_std140_variant_ubo_value(p_uniform.type, 0, Color(0, 0, 0, 1), destination, false);
+		} else {
+			_fill_std140_ubo_empty(p_uniform.type, 0, destination);
+		}
+	}
+}
+
 void MaterialStorage::MaterialData::update_uniform_buffer(const HashMap<StringName, ShaderLanguage::ShaderNode::Uniform> &p_uniforms, const uint32_t *p_uniform_offsets, const HashMap<StringName, Variant> &p_parameters, uint8_t *p_buffer, uint32_t p_buffer_size, bool p_use_linear_color) {
 	MaterialStorage *material_storage = MaterialStorage::get_singleton();
 	bool uses_global_buffer = false;

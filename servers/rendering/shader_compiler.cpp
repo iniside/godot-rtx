@@ -43,13 +43,38 @@ static String _mktab(int p_level) {
 String ShaderCompiler::_typestr(SL::DataType p_type) const {
 	if (actions.target == TARGET_SLANG) {
 		static const char *types[] = {
-			"void", "bool", "bool2", "bool3", "bool4",
-			"int", "int2", "int3", "int4", "uint", "uint2", "uint3", "uint4",
-			"float", "float2", "float3", "float4", "float2x2", "float3x3", "float4x4",
-			"Texture2D<float4>", "Texture2D<int4>", "Texture2D<uint4>",
-			"Texture2DArray<float4>", "Texture2DArray<int4>", "Texture2DArray<uint4>",
-			"Texture3D<float4>", "Texture3D<int4>", "Texture3D<uint4>",
-			"TextureCube<float4>", "TextureCubeArray<float4>", "Texture2D<float4>",
+			"void",
+			"bool",
+			"bool2",
+			"bool3",
+			"bool4",
+			"int",
+			"int2",
+			"int3",
+			"int4",
+			"uint",
+			"uint2",
+			"uint3",
+			"uint4",
+			"float",
+			"float2",
+			"float3",
+			"float4",
+			"float2x2",
+			"float3x3",
+			"float4x4",
+			"Texture2D<float4>",
+			"Texture2D<int4>",
+			"Texture2D<uint4>",
+			"Texture2DArray<float4>",
+			"Texture2DArray<int4>",
+			"Texture2DArray<uint4>",
+			"Texture3D<float4>",
+			"Texture3D<int4>",
+			"Texture3D<uint4>",
+			"TextureCube<float4>",
+			"TextureCubeArray<float4>",
+			"Texture2D<float4>",
 		};
 		ERR_FAIL_INDEX_V(p_type, int(sizeof(types) / sizeof(types[0])), String());
 		return types[p_type];
@@ -492,6 +517,24 @@ String ShaderCompiler::_global_uniform(const String &p_buffer, const String &p_i
 	}
 }
 
+String ShaderCompiler::_rt_uniform_load(SL::DataType p_type, const String &p_offset) const {
+	const bool matrix = p_type >= SL::TYPE_MAT2 && p_type <= SL::TYPE_MAT4;
+	const int rows = matrix ? p_type - SL::TYPE_MAT2 + 2 : 1;
+	const int columns = matrix ? rows : (p_type - SL::TYPE_BOOL) % 4 + 1;
+	const String scalar_type = p_type >= SL::TYPE_FLOAT ? "float" : p_type >= SL::TYPE_INT && p_type <= SL::TYPE_IVEC4 ? "int"
+																													   : "uint";
+	String value = _typestr(p_type) + "(";
+	for (int row = 0; row < rows; row++) {
+		for (int column = 0; column < columns; column++) {
+			if (row != 0 || column != 0) {
+				value += ", ";
+			}
+			value += "*((" + scalar_type + "*)(rt_material_address + (" + p_offset + ") + " + itos(row * 16 + column * 4) + "u))";
+		}
+	}
+	return value + ")";
+}
+
 String ShaderCompiler::_slang_inverse(SL::DataType p_type) {
 	String result_type = _typestr(p_type);
 	int size = p_type - SL::TYPE_MAT2 + 2;
@@ -511,7 +554,6 @@ String ShaderCompiler::_slang_inverse(SL::DataType p_type) {
 		}
 	}
 	return _slang_helper(result_type, "godot_inverse", { result_type }, body + "return result / determinant(a0);");
-
 }
 
 String ShaderCompiler::_slang_helper(const String &p_return_type, const String &p_name, const Vector<String> &p_argument_types, const String &p_body) {
@@ -528,6 +570,51 @@ String ShaderCompiler::_slang_helper(const String &p_return_type, const String &
 		slang_helpers += signature + " { " + p_body + " }\n";
 	}
 	return p_name;
+}
+
+static uint32_t _rt_texture_uv_basis(const SL::Node *p_node) {
+	if (p_node == nullptr) {
+		return 0;
+	}
+	switch (p_node->type) {
+		case SL::Node::NODE_TYPE_VARIABLE: {
+			const SL::VariableNode *variable = static_cast<const SL::VariableNode *>(p_node);
+			return !variable->is_local ? (variable->name == "UV" ? 1u : variable->name == "UV2" ? 2u
+																								: 0u)
+									   : 0u;
+		}
+		case SL::Node::NODE_TYPE_OPERATOR: {
+			uint32_t basis = 0;
+			for (const SL::Node *argument : static_cast<const SL::OperatorNode *>(p_node)->arguments) {
+				basis |= _rt_texture_uv_basis(argument);
+			}
+			return basis;
+		}
+		case SL::Node::NODE_TYPE_MEMBER: {
+			const SL::MemberNode *member = static_cast<const SL::MemberNode *>(p_node);
+			return _rt_texture_uv_basis(member->owner) | _rt_texture_uv_basis(member->index_expression) | _rt_texture_uv_basis(member->call_expression);
+		}
+		case SL::Node::NODE_TYPE_ARRAY: {
+			const SL::ArrayNode *array = static_cast<const SL::ArrayNode *>(p_node);
+			uint32_t basis = !array->is_local ? (array->name == "UV" ? 1u : array->name == "UV2" ? 2u
+																								 : 0u)
+											  : 0u;
+			return basis | _rt_texture_uv_basis(array->index_expression) | _rt_texture_uv_basis(array->call_expression);
+		}
+		case SL::Node::NODE_TYPE_ARRAY_CONSTRUCT: {
+			uint32_t basis = 0;
+			for (const SL::Node *element : static_cast<const SL::ArrayConstructNode *>(p_node)->initializer) {
+				basis |= _rt_texture_uv_basis(element);
+			}
+			return basis;
+		}
+		default:
+			return 0;
+	}
+}
+
+static bool _rt_screen_builtin(const StringName &p_name) {
+	return p_name == "FRAGCOORD" || p_name == "SCREEN_UV" || p_name == "POINT_COORD" || p_name == "DEPTH";
 }
 
 String ShaderCompiler::_dump_slang_call(const SL::OperatorNode *p_node, int p_level, GeneratedCode &r_gen_code, IdentifierActions &p_actions, const DefaultIdentifierActions &p_default_actions, bool p_assigning) {
@@ -558,6 +645,12 @@ String ShaderCompiler::_dump_slang_call(const SL::OperatorNode *p_node, int p_le
 		types.push_back(p_node->arguments[i]->get_datatype() == SL::TYPE_STRUCT ? String() : _typestr(p_node->arguments[i]->get_datatype()));
 	}
 	String result_type = p_node->get_datatype() == SL::TYPE_STRUCT ? String() : _typestr(p_node->get_datatype());
+	if (p_default_actions.ray_hit_context && builtin && (name.begins_with("dFdx") || name.begins_with("dFdy") || name.begins_with("fwidth") || name == "textureGather")) {
+		if (r_gen_code.rt_unsupported_reason.is_empty()) {
+			r_gen_code.rt_unsupported_reason = name + " requires a screen quad footprint and is unsupported in ray-hit materials; use textureLod or textureGrad with explicit operands.";
+		}
+		return result_type + "(0)";
+	}
 	if (p_node->op == SL::OP_CONSTRUCT) {
 		name = result_type;
 		bool matrix = p_node->get_datatype() >= SL::TYPE_MAT2 && p_node->get_datatype() <= SL::TYPE_MAT4;
@@ -652,6 +745,13 @@ String ShaderCompiler::_dump_slang_call(const SL::OperatorNode *p_node, int p_le
 			name = _slang_helper(result_type, "godot_" + name + (multiview ? "_multiview" : ""), types, body);
 			expression = name + "(" + String(", ").join(arguments) + ")";
 		} else if (name == "textureQueryLod") {
+			if (p_default_actions.ray_hit_context) {
+				uint32_t basis = _rt_texture_uv_basis(p_node->arguments[2]);
+				types.push_back("uint");
+				arguments.push_back(uitos(basis == 0 ? 3u : basis) + "u");
+				String helper = _slang_helper(result_type, "godot_rt_texture_query_lod", types, "float lod = rt_texture_lod(a0, a1, a2); return float2(lod, lod);");
+				return helper + "(" + String(", ").join(arguments) + ")";
+			}
 			String coordinate = "a1";
 			if (multiview) {
 				types.write[0] = "GodotMultiviewTexture";
@@ -675,7 +775,9 @@ String ShaderCompiler::_dump_slang_call(const SL::OperatorNode *p_node, int p_le
 					expression = i == 3 ? gather : "(" + component + " == " + itos(i) + " ? " + gather + " : " + expression + ")";
 				}
 			} else {
-				method = name == "textureGrad" ? "SampleGrad" : name == "textureLod" ? "SampleLevel" : arguments.size() > 2 ? "SampleBias" : "Sample";
+				method = name == "textureGrad" ? "SampleGrad" : name == "textureLod" ? "SampleLevel"
+						: arguments.size() > 2										 ? "SampleBias"
+																					 : "Sample";
 				if (method == "Sample" || method == "SampleBias") {
 					Vector<String> helper_types = types;
 					Vector<String> helper_arguments = arguments;
@@ -687,11 +789,20 @@ String ShaderCompiler::_dump_slang_call(const SL::OperatorNode *p_node, int p_le
 						helper_arguments.write[2] = sample_coordinate;
 						coordinate = "multiview_uv(a2)";
 					}
-					String body = "\n#ifdef GODOT_VERTEX_STAGE\nreturn a0.SampleLevel(a1, " + coordinate + ", 0.0);\n#else\nreturn a0." + method + "(a1, " + coordinate;
-					if (method == "SampleBias") {
-						body += ", a3";
+					String body;
+					if (p_default_actions.ray_hit_context) {
+						uint32_t basis = _rt_texture_uv_basis(p_node->arguments[2]);
+						String basis_argument = "a" + itos(helper_types.size());
+						helper_types.push_back("uint");
+						helper_arguments.push_back(uitos(basis == 0 ? 3u : basis) + "u");
+						body = "return a0.SampleLevel(a1, " + coordinate + ", rt_texture_lod(a0, " + coordinate + ", " + basis_argument + ")" + (method == "SampleBias" ? " + a3" : "") + ");";
+					} else {
+						body = "\n#ifdef GODOT_VERTEX_STAGE\nreturn a0.SampleLevel(a1, " + coordinate + ", 0.0);\n#else\nreturn a0." + method + "(a1, " + coordinate;
+						if (method == "SampleBias") {
+							body += ", a3";
+						}
+						body += ");\n#endif\n";
 					}
-					body += ");\n#endif\n";
 					name = _slang_helper(result_type, "godot_" + method + (multiview ? "_multiview" : ""), helper_types, body);
 					expression = name + "(" + String(", ").join(helper_arguments) + ")";
 				} else {
@@ -940,9 +1051,9 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 
 				if (SL::is_sampler_type(uniform.type)) {
 					// Texture layouts are different for OpenGL GLSL and Vulkan GLSL
-					if (actions.target == TARGET_SLANG) {
+					if (actions.target == TARGET_SLANG && !p_default_actions.ray_hit_context) {
 						ucode = "[[vk::binding(" + itos(actions.base_texture_binding_index + uniform.texture_binding) + ", " + itos(actions.texture_layout_set) + ")]] ";
-					} else if (!RS::get_singleton()->is_low_end()) {
+					} else if (actions.target == TARGET_GLSL && !RS::get_singleton()->is_low_end()) {
 						ucode = "layout(set = " + itos(actions.texture_layout_set) + ", binding = " + itos(actions.base_texture_binding_index + uniform.texture_binding) + ") ";
 					}
 					if (actions.target == TARGET_GLSL) {
@@ -971,8 +1082,10 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 				}
 				ucode += ";\n";
 				if (SL::is_sampler_type(uniform.type)) {
-					for (int j = 0; j < STAGE_MAX; j++) {
-						r_gen_code.stage_globals[j] += ucode;
+					if (!p_default_actions.ray_hit_context) {
+						for (int j = 0; j < STAGE_MAX; j++) {
+							r_gen_code.stage_globals[j] += ucode;
+						}
 					}
 
 					GeneratedCode::Texture texture;
@@ -1018,7 +1131,6 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 				p_actions.uniforms->insert(uniform_name, uniform);
 			}
 
-
 			// add up
 			int offset = 0;
 			for (int i = 0; i < uniform_sizes.size(); i++) {
@@ -1029,7 +1141,7 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 				}
 
 				r_gen_code.uniform_offsets.push_back(offset);
-				if (actions.target == TARGET_SLANG) {
+				if (actions.target == TARGET_SLANG && !p_default_actions.ray_hit_context) {
 					r_gen_code.uniforms += "[[vk::offset(" + itos(offset) + ")]] ";
 				}
 				r_gen_code.uniforms += uniform_defines[i];
@@ -1041,6 +1153,50 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 
 			if (r_gen_code.uniform_total_size % 16 != 0) { //UBO sizes must be multiples of 16
 				r_gen_code.uniform_total_size += 16 - (r_gen_code.uniform_total_size % 16);
+			}
+
+			if (p_default_actions.ray_hit_context) {
+				String &init = r_gen_code.code["rt_uniform_init"];
+				for (const StringName &uniform_name : uniform_names) {
+					const SL::ShaderNode::Uniform &uniform = pnode->uniforms[uniform_name];
+					if (uniform.scope == SL::ShaderNode::Uniform::SCOPE_INSTANCE || SL::is_sampler_type(uniform.type)) {
+						continue;
+					}
+					const uint32_t uniform_offset = r_gen_code.uniform_offsets[uniform.order];
+					const bool global = uniform.scope == SL::ShaderNode::Uniform::SCOPE_GLOBAL;
+					const SL::DataType type = global ? SL::TYPE_UINT : uniform.type;
+					String destination = p_default_actions.base_uniform_string + _mkid(uniform_name);
+					String load_offset = itos(uniform_offset) + "u";
+					if (uniform.array_size > 0 && !global) {
+						const uint32_t stride = uniform_sizes[uniform.order] / uniform.array_size;
+						init += "for (uint godot_rt_uniform_index = 0; godot_rt_uniform_index < " + itos(uniform.array_size) + "u; godot_rt_uniform_index++) {\n";
+						destination += "[godot_rt_uniform_index]";
+						load_offset += " + uint64_t(godot_rt_uniform_index) * " + itos(stride) + "u";
+					}
+					init += destination + " = " + _rt_uniform_load(type, load_offset) + ";\n";
+					if (uniform.array_size > 0 && !global) {
+						init += "}\n";
+					}
+				}
+
+				r_gen_code.rt_uniform_total_size = r_gen_code.uniform_total_size;
+				HashMap<String, String> texture_heaps;
+				String declarations;
+				for (int i = 0; i < r_gen_code.texture_uniforms.size(); i++) {
+					GeneratedCode::Texture &texture = r_gen_code.texture_uniforms.write[i];
+					texture.rt_offset = r_gen_code.rt_uniform_total_size;
+					r_gen_code.rt_uniform_total_size += sizeof(uint32_t) * MAX(1, texture.array_size);
+					String type = _typestr(texture.type);
+					if (!texture_heaps.has(type)) {
+						String heap_name = "godot_rt_textures" + itos(texture.type);
+						texture_heaps[type] = heap_name;
+						declarations += "[[vk::binding(0, 1)]] " + type + " " + heap_name + "[];\n";
+					}
+					declarations += type + " godot_rt_" + _mkid(texture.name) + "(uint index) { return " + texture_heaps[type] + "[NonUniformResourceIndex(*((uint*)(rt_material_address + " + itos(texture.rt_offset) + "u + uint64_t(index) * 4u)))]; }\n";
+				}
+				for (int i = 0; i < STAGE_MAX; i++) {
+					r_gen_code.stage_globals[i] += declarations;
+				}
 			}
 
 			uint32_t index = p_default_actions.base_varying_index;
@@ -1084,6 +1240,27 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 					r_gen_code.stage_globals[STAGE_FRAGMENT] += "static " + declaration;
 					r_gen_code.code["varyings_vertex"] += "stage_output." + name_str + " = " + name_str + ";\n";
 					r_gen_code.code["varyings_fragment"] += name_str + " = stage_input." + name_str + ";\n";
+				} else if (p_default_actions.suppress_varying_io && p_default_actions.ray_hit_context) {
+					String suffix = varying.array_size > 0 ? "[" + itos(varying.array_size) + "]" : "";
+					r_gen_code.stage_globals[STAGE_FRAGMENT] += "static " + type_str + " " + name_str + suffix + ";\n";
+					if (varying.stage != SL::ShaderNode::Varying::STAGE_FRAGMENT) {
+						String accumulator = "godot_rt_varying_" + name_str;
+						r_gen_code.code["rt_varyings_init"] += type_str + " " + accumulator + suffix + ";\n";
+						for (int element = 0; element < MAX(1, varying.array_size); element++) {
+							String element_suffix = varying.array_size > 0 ? "[" + itos(element) + "]" : "";
+							String value = name_str + element_suffix;
+							String sum = accumulator + element_suffix;
+							String zero = "(" + _typestr(varying.type) + ")0";
+							r_gen_code.code["rt_varyings_init"] += sum + " = " + zero + ";\n" + value + " = " + zero + ";\n";
+							if (varying.interpolation == SL::INTERPOLATION_FLAT) {
+								r_gen_code.code["rt_varyings_accumulate"] += "if (rt_vertex_index == 0u) { " + sum + " = " + value + "; }\n";
+							} else {
+								r_gen_code.code["rt_varyings_accumulate"] += sum + " += " + value + " * rt_vertex_weight;\n";
+							}
+							r_gen_code.code["rt_varyings_accumulate"] += value + " = " + zero + ";\n";
+							r_gen_code.code["rt_varyings_restore"] += value + " = " + sum + ";\n";
+						}
+					}
 				} else if (p_default_actions.suppress_varying_io) {
 					// No vertex stage (e.g. RT shaders): emit zero-initialized
 					// globals instead of in/out IO declarations.
@@ -1286,8 +1463,11 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 		case SL::Node::NODE_TYPE_VARIABLE: {
 			SL::VariableNode *vnode = (SL::VariableNode *)p_node;
 			bool use_fragment_varying = false;
+			if (p_default_actions.ray_hit_context && !vnode->is_local && _rt_screen_builtin(vnode->name) && r_gen_code.rt_unsupported_reason.is_empty()) {
+				r_gen_code.rt_unsupported_reason = String(vnode->name) + " is screen-dependent and is unsupported in ray-hit materials.";
+			}
 
-			if (!vnode->is_local && !(p_actions.entry_point_stages.has(current_func_name) && p_actions.entry_point_stages[current_func_name] == STAGE_VERTEX)) {
+			if (!p_default_actions.ray_hit_context && !vnode->is_local && !(p_actions.entry_point_stages.has(current_func_name) && p_actions.entry_point_stages[current_func_name] == STAGE_VERTEX)) {
 				if (p_assigning) {
 					if (shader->varyings.has(vnode->name)) {
 						use_fragment_varying = true;
@@ -1355,7 +1535,7 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 						} else if (u.hint == ShaderLanguage::ShaderNode::Uniform::HINT_BLIT_SOURCE3) {
 							name = "source3";
 						} else {
-							name = _mkid(vnode->name); //texture, use as is
+							name = p_default_actions.ray_hit_context ? "godot_rt_" + _mkid(vnode->name) + "(0u)" : _mkid(vnode->name);
 						}
 
 						code = name;
@@ -1416,8 +1596,13 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 		case SL::Node::NODE_TYPE_ARRAY: {
 			SL::ArrayNode *anode = (SL::ArrayNode *)p_node;
 			bool use_fragment_varying = false;
+			bool rt_texture_indexed = false;
+			bool rt_texture_length = false;
+			if (p_default_actions.ray_hit_context && !anode->is_local && _rt_screen_builtin(anode->name) && r_gen_code.rt_unsupported_reason.is_empty()) {
+				r_gen_code.rt_unsupported_reason = String(anode->name) + " is screen-dependent and is unsupported in ray-hit materials.";
+			}
 
-			if (!anode->is_local && !(p_actions.entry_point_stages.has(current_func_name) && p_actions.entry_point_stages[current_func_name] == STAGE_VERTEX)) {
+			if (!p_default_actions.ray_hit_context && !anode->is_local && !(p_actions.entry_point_stages.has(current_func_name) && p_actions.entry_point_stages[current_func_name] == STAGE_VERTEX)) {
 				if (anode->assign_expression != nullptr && shader->varyings.has(anode->name)) {
 					use_fragment_varying = true;
 				} else {
@@ -1467,7 +1652,24 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 					//its a uniform!
 					const ShaderLanguage::ShaderNode::Uniform &u = shader->uniforms[anode->name];
 					if (u.is_texture()) {
-						code = _mkid(anode->name); //texture, use as is
+						if (p_default_actions.ray_hit_context && anode->index_expression != nullptr) {
+							code = "godot_rt_" + _mkid(anode->name) + "(" + _dump_node_code(anode->index_expression, p_level, r_gen_code, p_actions, p_default_actions, false) + ")";
+							rt_texture_indexed = true;
+						} else if (p_default_actions.ray_hit_context && anode->call_expression != nullptr) {
+							code = itos(u.array_size);
+							rt_texture_length = true;
+						} else if (p_default_actions.ray_hit_context) {
+							code = _typestr(u.type) + "[" + itos(u.array_size) + "](";
+							for (int i = 0; i < u.array_size; i++) {
+								if (i > 0) {
+									code += ", ";
+								}
+								code += "godot_rt_" + _mkid(anode->name) + "(" + itos(i) + "u)";
+							}
+							code += ")";
+						} else {
+							code = _mkid(anode->name);
+						}
 					} else {
 						//a scalar or vector
 						if (u.scope == ShaderLanguage::ShaderNode::Uniform::SCOPE_GLOBAL) {
@@ -1491,10 +1693,10 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 				}
 			}
 
-			if (anode->call_expression != nullptr) {
+			if (anode->call_expression != nullptr && !rt_texture_length) {
 				code += ".";
 				code += _dump_node_code(anode->call_expression, p_level, r_gen_code, p_actions, p_default_actions, p_assigning, false);
-			} else if (anode->index_expression != nullptr) {
+			} else if (anode->index_expression != nullptr && !rt_texture_indexed) {
 				code += "[";
 				code += _dump_node_code(anode->index_expression, p_level, r_gen_code, p_actions, p_default_actions, p_assigning);
 				code += "]";
@@ -1556,7 +1758,9 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 					if (matrix) {
 						String body = "return ";
 						for (int i = 0; i < type - SL::TYPE_MAT2 + 2; i++) {
-							if (i) { body += " && "; }
+							if (i) {
+								body += " && ";
+							}
 							body += "all(a0[" + itos(i) + "] == a1[" + itos(i) + "])";
 						}
 						String helper = _slang_helper("bool", "godot_matrix_equal", { _typestr(type), _typestr(type) }, body + ";");
@@ -1933,7 +2137,22 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 					used_flag_pointers.insert("DISCARD");
 				}
 
-				code = "discard;";
+				if (p_default_actions.ray_hit_context) {
+					if (current_func_name != "fragment" && r_gen_code.rt_unsupported_reason.is_empty()) {
+						r_gen_code.rt_unsupported_reason = "discard in a helper function is unsupported in ray-hit materials.";
+					}
+					String return_value;
+					if (function && function->return_type != SL::TYPE_VOID) {
+						String type = function->return_type == SL::TYPE_STRUCT ? _mkid(function->return_struct_name) : _typestr(function->return_type);
+						if (function->return_array_size > 0) {
+							type += "[" + itos(function->return_array_size) + "]";
+						}
+						return_value = " (" + type + ")0";
+					}
+					code = "{ rt_material_discarded = true; return" + return_value + "; }";
+				} else {
+					code = "discard;";
+				}
 			} else if (cfnode->flow_op == SL::FLOW_OP_CONTINUE) {
 				code = "continue;";
 			} else if (cfnode->flow_op == SL::FLOW_OP_BREAK) {
@@ -2065,6 +2284,10 @@ Error ShaderCompiler::compile(RSE::ShaderMode p_mode, const String &p_code, Iden
 
 	r_gen_code.defines.clear();
 	r_gen_code.code.clear();
+	r_gen_code.uniforms = String();
+	r_gen_code.uniform_offsets.clear();
+	r_gen_code.rt_uniform_total_size = 0;
+	r_gen_code.rt_unsupported_reason = String();
 	for (int i = 0; i < STAGE_MAX; i++) {
 		r_gen_code.stage_globals[i] = String();
 	}

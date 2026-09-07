@@ -320,7 +320,7 @@ void vertex_shader(float3 vertex_input,
 		model_matrix = read_model_matrix;
 #endif
 #endif
-		model_normal_matrix = mul((float3x3)matrix, model_normal_matrix);
+		model_normal_matrix = mul(transpose(godot_inverse((float3x3)matrix)), model_normal_matrix);
 	}
 
 	float3 vertex = vertex_input;
@@ -439,8 +439,8 @@ void vertex_shader(float3 vertex_input,
 
 #ifdef TANGENT_USED
 
-	binormal = mul(binormal, modelview_normal);
-	tangent = mul(tangent, modelview_normal);
+	binormal = mul(binormal, (float3x3)modelview);
+	tangent = mul(tangent, (float3x3)modelview);
 #endif
 #endif
 
@@ -891,6 +891,7 @@ static float fragment_depth;
 static bool front_facing_builtin;
 static float2 raster_point_coord;
 #include "scene_forward_clustered_inc.slang"
+#include "../scene_decal_inc.slang"
 
 static float3 vertex_interp;
 
@@ -1386,72 +1387,9 @@ void fragment_shader(in SceneData scene_data) {
 
 				uint decal_index = 32 * i + bit;
 
-				if (!bool(decals[decal_index].mask & instances[instance_index].layer_mask)) {
-					continue;
-				}
-
-				float3 uv_local = (mul(float4(vertex, 1.0), decals[decal_index].xform)).xyz;
-				if (any(uv_local < float3(0.0, -1.0, 0.0)) || any(uv_local > float3(1.0))) {
-					continue;
-				}
-
-				float fade = pow(1.0 - (uv_local.y > 0.0 ? uv_local.y : -uv_local.y), uv_local.y > 0.0 ? decals[decal_index].upper_fade : decals[decal_index].lower_fade);
-
-				if (decals[decal_index].normal_fade > 0.0) {
-					fade *= smoothstep(decals[decal_index].normal_fade, 1.0, dot(geo_normal, decals[decal_index].normal) * 0.5 + 0.5);
-				}
-
-				float2 ddx = (mul(float4(vertex_ddx, 0.0), decals[decal_index].xform)).xz;
-				float2 ddy = (mul(float4(vertex_ddy, 0.0), decals[decal_index].xform)).xz;
-
-				if (any(decals[decal_index].albedo_rect != float4(0.0))) {
-
-					float4 decal_albedo;
-					if (sc_decal_use_mipmaps()) {
-						decal_albedo = decal_atlas_srgb.SampleGrad(decal_sampler, uv_local.xz * decals[decal_index].albedo_rect.zw + decals[decal_index].albedo_rect.xy, ddx * decals[decal_index].albedo_rect.zw, ddy * decals[decal_index].albedo_rect.zw);
-					} else {
-						decal_albedo = decal_atlas_srgb.SampleLevel(decal_sampler, uv_local.xz * decals[decal_index].albedo_rect.zw + decals[decal_index].albedo_rect.xy, 0.0);
-					}
-					decal_albedo *= decals[decal_index].modulate;
-					decal_albedo.a *= fade;
-					albedo = lerp(albedo, decal_albedo.rgb, decal_albedo.a * decals[decal_index].albedo_mix);
-
-					if (any(decals[decal_index].normal_rect != float4(0.0))) {
-						float3 decal_normal;
-						if (sc_decal_use_mipmaps()) {
-							decal_normal = decal_atlas.SampleGrad(decal_sampler, uv_local.xz * decals[decal_index].normal_rect.zw + decals[decal_index].normal_rect.xy, ddx * decals[decal_index].normal_rect.zw, ddy * decals[decal_index].normal_rect.zw).xyz;
-						} else {
-							decal_normal = decal_atlas.SampleLevel(decal_sampler, uv_local.xz * decals[decal_index].normal_rect.zw + decals[decal_index].normal_rect.xy, 0.0).xyz;
-						}
-						decal_normal.xy = decal_normal.xy * float2(2.0, -2.0) - float2(1.0, -1.0);
-						decal_normal.z = sqrt(max(0.0, 1.0 - dot(decal_normal.xy, decal_normal.xy)));
-
-						decal_normal = (mul(decal_normal.xzy, decals[decal_index].normal_xform)).xyz;
-
-						normal = normalize(lerp(normal, decal_normal, decal_albedo.a));
-					}
-
-					if (any(decals[decal_index].orm_rect != float4(0.0))) {
-						float3 decal_orm;
-						if (sc_decal_use_mipmaps()) {
-							decal_orm = decal_atlas.SampleGrad(decal_sampler, uv_local.xz * decals[decal_index].orm_rect.zw + decals[decal_index].orm_rect.xy, ddx * decals[decal_index].orm_rect.zw, ddy * decals[decal_index].orm_rect.zw).xyz;
-						} else {
-							decal_orm = decal_atlas.SampleLevel(decal_sampler, uv_local.xz * decals[decal_index].orm_rect.zw + decals[decal_index].orm_rect.xy, 0.0).xyz;
-						}
-						ao = lerp(ao, decal_orm.r, decal_albedo.a);
-						roughness = lerp(roughness, decal_orm.g, decal_albedo.a);
-						metallic = lerp(metallic, decal_orm.b, decal_albedo.a);
-					}
-				}
-
-				if (any(decals[decal_index].emission_rect != float4(0.0))) {
-
-					if (sc_decal_use_mipmaps()) {
-						emission += decal_atlas_srgb.SampleGrad(decal_sampler, uv_local.xz * decals[decal_index].emission_rect.zw + decals[decal_index].emission_rect.xy, ddx * decals[decal_index].emission_rect.zw, ddy * decals[decal_index].emission_rect.zw).xyz * decals[decal_index].modulate.rgb * decals[decal_index].emission_energy * fade;
-					} else {
-						emission += decal_atlas_srgb.SampleLevel(decal_sampler, uv_local.xz * decals[decal_index].emission_rect.zw + decals[decal_index].emission_rect.xy, 0.0).xyz * decals[decal_index].modulate.rgb * decals[decal_index].emission_energy * fade;
-					}
-				}
+				scene_apply_decal(decals[decal_index], decal_atlas, decal_atlas_srgb, decal_sampler,
+						sc_decal_use_mipmaps(), instances[instance_index].layer_mask, vertex, geo_normal, vertex_ddx, vertex_ddy,
+						albedo, normal, ao, roughness, metallic, emission);
 			}
 		}
 	}

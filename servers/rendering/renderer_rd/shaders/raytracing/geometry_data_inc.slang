@@ -39,7 +39,23 @@ struct GeometryData {
 	float3 position_offset;
 	uint instance_layer_mask;
 	float3 position_scale;
-	float _pad1;
+	uint uv2_byte_offset;
+	uint uv2_scale_packed;
+	uint custom_byte_offsets[4];
+	uint custom_formats;
+	uint instance_uniforms_offset;
+	uint instance_index;
+	float4 instance_custom;
+	float4 instance_color;
+	uint64_t multimesh_address;
+	uint multimesh_stride;
+	uint multimesh_offset;
+	uint source_vertex_count;
+	uint multimesh_flags;
+	uint2 _padding;
+	uint64_t skin_address;
+	uint skin_stride;
+	uint skin_weight_offset;
 };
 
 struct InstanceMotionData {

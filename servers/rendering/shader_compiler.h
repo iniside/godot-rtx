@@ -77,12 +77,15 @@ public:
 			ShaderLanguage::TextureRepeat repeat = ShaderLanguage::TextureRepeat::REPEAT_DEFAULT;
 			bool global = false;
 			int array_size = 0;
+			uint32_t rt_offset = 0;
 		};
 
 		Vector<Texture> texture_uniforms;
 
 		Vector<uint32_t> uniform_offsets;
 		uint32_t uniform_total_size = 0;
+		uint32_t rt_uniform_total_size = 0;
+		String rt_unsupported_reason;
 		String uniforms;
 		String stage_globals[STAGE_MAX];
 
@@ -112,6 +115,7 @@ public:
 		String instance_uniform_index_variable;
 		uint32_t base_varying_index = 0;
 		bool suppress_varying_io = false;
+		bool ray_hit_context = false;
 		bool apply_luminance_multiplier = false;
 		bool check_multiview_samplers = false;
 	};
@@ -126,6 +130,7 @@ private:
 	String _prestr(ShaderLanguage::DataPrecision p_precision, bool p_force_highp = false) const;
 	String _constant_text(ShaderLanguage::DataType p_type, const Vector<ShaderLanguage::Scalar> &p_values) const;
 	String _global_uniform(const String &p_buffer, const String &p_index, ShaderLanguage::DataType p_type) const;
+	String _rt_uniform_load(ShaderLanguage::DataType p_type, const String &p_offset) const;
 	String _dump_slang_call(const ShaderLanguage::OperatorNode *p_node, int p_level, GeneratedCode &r_gen_code, IdentifierActions &p_actions, const DefaultIdentifierActions &p_default_actions, bool p_assigning);
 
 	String _get_sampler_name(ShaderLanguage::TextureFilter p_filter, ShaderLanguage::TextureRepeat p_repeat);

@@ -341,6 +341,7 @@ public:
 	bool free(RID p_rid);
 
 	/* Helpers */
+	static void pack_uniform(const ShaderLanguage::ShaderNode::Uniform &p_uniform, const Variant &p_value, uint8_t *p_destination);
 
 	static _FORCE_INLINE_ void store_transform(const Transform3D &p_mtx, float *p_array) {
 		p_array[0] = p_mtx.basis.rows[0][0];

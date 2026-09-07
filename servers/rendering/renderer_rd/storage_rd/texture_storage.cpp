@@ -3694,6 +3694,7 @@ RID TextureStorage::decal_allocate() {
 }
 
 void TextureStorage::decal_initialize(RID p_decal) {
+	decal_generation++;
 	decal_owner.initialize_rid(p_decal, Decal());
 }
 
@@ -3705,12 +3706,17 @@ void TextureStorage::decal_free(RID p_rid) {
 		}
 	}
 	decal->dependency.deleted_notify(p_rid);
+	decal_generation++;
 	decal_owner.free(p_rid);
 }
 
 void TextureStorage::decal_set_size(RID p_decal, const Vector3 &p_size) {
 	Decal *decal = decal_owner.get_or_null(p_decal);
 	ERR_FAIL_NULL(decal);
+	if (decal->size == p_size) {
+		return;
+	}
+	decal_generation++;
 	decal->size = p_size;
 	decal->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_AABB);
 }
@@ -3730,6 +3736,7 @@ void TextureStorage::decal_set_texture(RID p_decal, RSE::DecalTexture p_type, RI
 		texture_remove_from_decal_atlas(decal->textures[p_type]);
 	}
 
+	decal_generation++;
 	decal->textures[p_type] = p_texture;
 
 	if (decal->textures[p_type].is_valid()) {
@@ -3742,24 +3749,40 @@ void TextureStorage::decal_set_texture(RID p_decal, RSE::DecalTexture p_type, RI
 void TextureStorage::decal_set_emission_energy(RID p_decal, float p_energy) {
 	Decal *decal = decal_owner.get_or_null(p_decal);
 	ERR_FAIL_NULL(decal);
+	if (decal->emission_energy == p_energy) {
+		return;
+	}
+	decal_generation++;
 	decal->emission_energy = p_energy;
 }
 
 void TextureStorage::decal_set_albedo_mix(RID p_decal, float p_mix) {
 	Decal *decal = decal_owner.get_or_null(p_decal);
 	ERR_FAIL_NULL(decal);
+	if (decal->albedo_mix == p_mix) {
+		return;
+	}
+	decal_generation++;
 	decal->albedo_mix = p_mix;
 }
 
 void TextureStorage::decal_set_modulate(RID p_decal, const Color &p_modulate) {
 	Decal *decal = decal_owner.get_or_null(p_decal);
 	ERR_FAIL_NULL(decal);
+	if (decal->modulate == p_modulate) {
+		return;
+	}
+	decal_generation++;
 	decal->modulate = p_modulate;
 }
 
 void TextureStorage::decal_set_cull_mask(RID p_decal, uint32_t p_layers) {
 	Decal *decal = decal_owner.get_or_null(p_decal);
 	ERR_FAIL_NULL(decal);
+	if (decal->cull_mask == p_layers) {
+		return;
+	}
+	decal_generation++;
 	decal->cull_mask = p_layers;
 	decal->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_CULL_MASK);
 }
@@ -3767,6 +3790,10 @@ void TextureStorage::decal_set_cull_mask(RID p_decal, uint32_t p_layers) {
 void TextureStorage::decal_set_distance_fade(RID p_decal, bool p_enabled, float p_begin, float p_length) {
 	Decal *decal = decal_owner.get_or_null(p_decal);
 	ERR_FAIL_NULL(decal);
+	if (decal->distance_fade == p_enabled && decal->distance_fade_begin == p_begin && decal->distance_fade_length == p_length) {
+		return;
+	}
+	decal_generation++;
 	decal->distance_fade = p_enabled;
 	decal->distance_fade_begin = p_begin;
 	decal->distance_fade_length = p_length;
@@ -3775,6 +3802,10 @@ void TextureStorage::decal_set_distance_fade(RID p_decal, bool p_enabled, float 
 void TextureStorage::decal_set_fade(RID p_decal, float p_above, float p_below) {
 	Decal *decal = decal_owner.get_or_null(p_decal);
 	ERR_FAIL_NULL(decal);
+	if (decal->upper_fade == p_above && decal->lower_fade == p_below) {
+		return;
+	}
+	decal_generation++;
 	decal->upper_fade = p_above;
 	decal->lower_fade = p_below;
 }
@@ -3782,6 +3813,10 @@ void TextureStorage::decal_set_fade(RID p_decal, float p_above, float p_below) {
 void TextureStorage::decal_set_normal_fade(RID p_decal, float p_fade) {
 	Decal *decal = decal_owner.get_or_null(p_decal);
 	ERR_FAIL_NULL(decal);
+	if (decal->normal_fade == p_fade) {
+		return;
+	}
+	decal_generation++;
 	decal->normal_fade = p_fade;
 }
 
@@ -3789,12 +3824,14 @@ void TextureStorage::decal_atlas_mark_dirty_on_texture(RID p_texture) {
 	if (decal_atlas.textures.has(p_texture)) {
 		//belongs to decal atlas..
 
-		decal_atlas.dirty = true; //mark it dirty since it was most likely modified
+		decal_generation++;
+		decal_atlas.dirty = true;
 	}
 }
 
 void TextureStorage::decal_atlas_remove_texture(RID p_texture) {
 	if (decal_atlas.textures.has(p_texture)) {
+		decal_generation++;
 		decal_atlas.textures.erase(p_texture);
 		//there is not much a point of making it dirty, just let it be.
 	}
@@ -3829,6 +3866,7 @@ void TextureStorage::update_decal_atlas() {
 		return; //nothing to do
 	}
 
+	decal_generation++;
 	decal_atlas.dirty = false;
 
 	if (decal_atlas.texture.is_valid()) {
@@ -4023,6 +4061,7 @@ void TextureStorage::texture_add_to_decal_atlas(RID p_texture, bool p_panorama_t
 		t.users = 1;
 		t.panorama_to_dp_users = p_panorama_to_dp ? 1 : 0;
 		decal_atlas.textures[p_texture] = t;
+		decal_generation++;
 		decal_atlas.dirty = true;
 	} else {
 		DecalAtlas::Texture *t = decal_atlas.textures.getptr(p_texture);
@@ -4042,6 +4081,7 @@ void TextureStorage::texture_remove_from_decal_atlas(RID p_texture, bool p_panor
 		t->panorama_to_dp_users--;
 	}
 	if (t->users == 0) {
+		decal_generation++;
 		decal_atlas.textures.erase(p_texture);
 		//do not mark it dirty, there is no need to since it remains working
 	}
@@ -4053,24 +4093,34 @@ RID TextureStorage::decal_instance_create(RID p_decal) {
 	DecalInstance di;
 	di.decal = p_decal;
 	di.forward_id = ForwardIDStorage::get_singleton()->allocate_forward_id(FORWARD_ID_TYPE_DECAL);
+	decal_generation++;
 	return decal_instance_owner.make_rid(di);
 }
 
 void TextureStorage::decal_instance_free(RID p_decal_instance) {
 	DecalInstance *di = decal_instance_owner.get_or_null(p_decal_instance);
 	ForwardIDStorage::get_singleton()->free_forward_id(FORWARD_ID_TYPE_DECAL, di->forward_id);
+	decal_generation++;
 	decal_instance_owner.free(p_decal_instance);
 }
 
 void TextureStorage::decal_instance_set_transform(RID p_decal_instance, const Transform3D &p_transform) {
 	DecalInstance *di = decal_instance_owner.get_or_null(p_decal_instance);
 	ERR_FAIL_NULL(di);
+	if (di->transform == p_transform) {
+		return;
+	}
+	decal_generation++;
 	di->transform = p_transform;
 }
 
 void TextureStorage::decal_instance_set_sorting_offset(RID p_decal_instance, float p_sorting_offset) {
 	DecalInstance *di = decal_instance_owner.get_or_null(p_decal_instance);
 	ERR_FAIL_NULL(di);
+	if (di->sorting_offset == p_sorting_offset) {
+		return;
+	}
+	decal_generation++;
 	di->sorting_offset = p_sorting_offset;
 }
 
@@ -4101,181 +4151,238 @@ void TextureStorage::set_max_decals(const uint32_t p_max_decals) {
 	decal_buffer = RD::get_singleton()->storage_buffer_create(decal_buffer_size);
 }
 
-void TextureStorage::update_decal_buffer(const PagedArray<RID> &p_decals, const Transform3D &p_camera_xform) {
-	ForwardIDStorage *forward_id_storage = ForwardIDStorage::get_singleton();
+bool TextureStorage::_get_decal_sort(RID p_instance, const Transform3D &p_camera_xform, DecalInstanceSort &r_sort) const {
+	DecalInstance *instance = decal_instance_owner.get_or_null(p_instance);
+	if (!instance) {
+		return false;
+	}
+	Decal *decal = decal_owner.get_or_null(instance->decal);
+	if (!decal) {
+		return false;
+	}
+	const real_t distance = p_camera_xform.origin.distance_to(instance->transform.origin);
+	if (decal->distance_fade && distance > decal->distance_fade_begin && distance > decal->distance_fade_begin + decal->distance_fade_length) {
+		return false;
+	}
+	r_sort.decal_instance = instance;
+	r_sort.decal = decal;
+	r_sort.depth = distance - instance->sorting_offset;
+	return true;
+}
 
+bool TextureStorage::_pack_decal(const DecalInstanceSort &p_sort, const Transform3D &p_frame, DecalData &r_data) {
+	r_data = {};
+	DecalInstance *decal_instance = p_sort.decal_instance;
+	Decal *decal = p_sort.decal;
 	Transform3D uv_xform;
 	uv_xform.basis.scale(Vector3(2.0, 1.0, 2.0));
 	uv_xform.origin = Vector3(-1.0, 0.0, -1.0);
+	float fade = 1.0;
 
-	uint32_t decals_size = p_decals.size();
+	if (decal->distance_fade) {
+		const real_t distance = p_sort.depth + decal_instance->sorting_offset;
+		const float fade_begin = decal->distance_fade_begin;
+		const float fade_length = decal->distance_fade_length;
 
+		if (distance > fade_begin) {
+			fade = Math::smoothstep(0.0f, 1.0f, 1.0f - float(distance - fade_begin) / fade_length);
+		}
+	}
+
+	Vector3 decal_extents = decal->size / 2;
+
+	Transform3D scale_xform;
+	scale_xform.basis.scale(decal_extents);
+
+	Transform3D xform = decal_instance->transform;
+
+	xform.origin -= p_frame.origin;
+	Transform3D camera_inverse_xform(p_frame.basis.inverse());
+
+	Transform3D to_decal_xform = (camera_inverse_xform * xform * scale_xform * uv_xform).affine_inverse();
+	MaterialStorage::store_transform(to_decal_xform, r_data.xform);
+
+	Vector3 normal = xform.basis.get_column(Vector3::AXIS_Y).normalized();
+	normal = camera_inverse_xform.basis.xform(normal);
+
+	r_data.normal[0] = normal.x;
+	r_data.normal[1] = normal.y;
+	r_data.normal[2] = normal.z;
+	r_data.normal_fade = decal->normal_fade;
+
+	RID albedo_tex = decal->textures[RSE::DECAL_TEXTURE_ALBEDO];
+	RID emission_tex = decal->textures[RSE::DECAL_TEXTURE_EMISSION];
+	if (albedo_tex.is_valid()) {
+		Rect2 rect = decal_atlas_get_texture_rect(albedo_tex);
+		r_data.albedo_rect[0] = rect.position.x;
+		r_data.albedo_rect[1] = rect.position.y;
+		r_data.albedo_rect[2] = rect.size.x;
+		r_data.albedo_rect[3] = rect.size.y;
+	} else {
+		if (!emission_tex.is_valid()) {
+			return false;
+		}
+		r_data.albedo_rect[0] = 0;
+		r_data.albedo_rect[1] = 0;
+		r_data.albedo_rect[2] = 0;
+		r_data.albedo_rect[3] = 0;
+	}
+
+	RID normal_tex = decal->textures[RSE::DECAL_TEXTURE_NORMAL];
+
+	if (normal_tex.is_valid()) {
+		Rect2 rect = decal_atlas_get_texture_rect(normal_tex);
+		r_data.normal_rect[0] = rect.position.x;
+		r_data.normal_rect[1] = rect.position.y;
+		r_data.normal_rect[2] = rect.size.x;
+		r_data.normal_rect[3] = rect.size.y;
+
+		Basis normal_xform = camera_inverse_xform.basis * xform.basis.orthonormalized();
+		MaterialStorage::store_basis_3x4(normal_xform, r_data.normal_xform);
+	} else {
+		r_data.normal_rect[0] = 0;
+		r_data.normal_rect[1] = 0;
+		r_data.normal_rect[2] = 0;
+		r_data.normal_rect[3] = 0;
+	}
+
+	RID orm_tex = decal->textures[RSE::DECAL_TEXTURE_ORM];
+	if (orm_tex.is_valid()) {
+		Rect2 rect = decal_atlas_get_texture_rect(orm_tex);
+		r_data.orm_rect[0] = rect.position.x;
+		r_data.orm_rect[1] = rect.position.y;
+		r_data.orm_rect[2] = rect.size.x;
+		r_data.orm_rect[3] = rect.size.y;
+	} else {
+		r_data.orm_rect[0] = 0;
+		r_data.orm_rect[1] = 0;
+		r_data.orm_rect[2] = 0;
+		r_data.orm_rect[3] = 0;
+	}
+
+	if (emission_tex.is_valid()) {
+		Rect2 rect = decal_atlas_get_texture_rect(emission_tex);
+		r_data.emission_rect[0] = rect.position.x;
+		r_data.emission_rect[1] = rect.position.y;
+		r_data.emission_rect[2] = rect.size.x;
+		r_data.emission_rect[3] = rect.size.y;
+	} else {
+		r_data.emission_rect[0] = 0;
+		r_data.emission_rect[1] = 0;
+		r_data.emission_rect[2] = 0;
+		r_data.emission_rect[3] = 0;
+	}
+
+	Color modulate = decal->modulate.srgb_to_linear();
+	r_data.modulate[0] = modulate.r;
+	r_data.modulate[1] = modulate.g;
+	r_data.modulate[2] = modulate.b;
+	r_data.modulate[3] = modulate.a * fade;
+	r_data.emission_energy = decal->emission_energy * fade;
+	r_data.albedo_mix = decal->albedo_mix;
+	r_data.mask = decal->cull_mask;
+	r_data.upper_fade = decal->upper_fade;
+	r_data.lower_fade = decal->lower_fade;
+	return true;
+}
+
+void TextureStorage::update_decal_buffer(const PagedArray<RID> &p_decals, const Transform3D &p_camera_xform) {
+	ForwardIDStorage *forward_id_storage = ForwardIDStorage::get_singleton();
 	decal_count = 0;
-
-	for (uint32_t i = 0; i < decals_size; i++) {
-		if (decal_count == max_decals) {
-			break;
+	for (uint32_t i = 0; i < p_decals.size() && decal_count < max_decals; i++) {
+		if (_get_decal_sort(p_decals[i], p_camera_xform, decal_sort[decal_count])) {
+			decal_count++;
 		}
-
-		DecalInstance *decal_instance = decal_instance_owner.get_or_null(p_decals[i]);
-		if (!decal_instance) {
-			continue;
-		}
-		Decal *decal = decal_owner.get_or_null(decal_instance->decal);
-
-		Transform3D xform = decal_instance->transform;
-
-		real_t distance = p_camera_xform.origin.distance_to(xform.origin);
-
-		if (decal->distance_fade) {
-			float fade_begin = decal->distance_fade_begin;
-			float fade_length = decal->distance_fade_length;
-
-			if (distance > fade_begin) {
-				if (distance > fade_begin + fade_length) {
-					continue; // do not use this decal, its invisible
-				}
-			}
-		}
-
-		decal_sort[decal_count].decal_instance = decal_instance;
-		decal_sort[decal_count].decal = decal;
-		decal_sort[decal_count].depth = distance - decal_instance->sorting_offset;
-		decal_count++;
 	}
-
 	if (decal_count > 0) {
-		SortArray<DecalInstanceSort> sort_array;
-		sort_array.sort(decal_sort, decal_count);
+		SortArray<DecalInstanceSort>().sort(decal_sort, decal_count);
 	}
 
-	bool using_forward_ids = forward_id_storage->uses_forward_ids();
+	const bool using_forward_ids = forward_id_storage->uses_forward_ids();
 	for (uint32_t i = 0; i < decal_count; i++) {
 		DecalInstance *decal_instance = decal_sort[i].decal_instance;
-		Decal *decal = decal_sort[i].decal;
-
 		if (using_forward_ids) {
 			forward_id_storage->map_forward_id(FORWARD_ID_TYPE_DECAL, decal_instance->forward_id, i, RSG::rasterizer->get_frame_number());
 		}
-
-		decal_instance->cull_mask = decal->cull_mask;
-
-		float fade = 1.0;
-
-		if (decal->distance_fade) {
-			const real_t distance = decal_sort[i].depth + decal_instance->sorting_offset;
-			const float fade_begin = decal->distance_fade_begin;
-			const float fade_length = decal->distance_fade_length;
-
-			if (distance > fade_begin) {
-				// Use `smoothstep()` to make opacity changes more gradual and less noticeable to the player.
-				fade = Math::smoothstep(0.0f, 1.0f, 1.0f - float(distance - fade_begin) / fade_length);
-			}
+		decal_instance->cull_mask = decal_sort[i].decal->cull_mask;
+		if (_pack_decal(decal_sort[i], p_camera_xform, decals[i])) {
+			RendererSceneRenderRD::get_singleton()->setup_added_decal(decal_instance->transform, decal_sort[i].decal->size / 2);
 		}
-
-		DecalData &dd = decals[i];
-
-		Vector3 decal_extents = decal->size / 2;
-
-		Transform3D scale_xform;
-		scale_xform.basis.scale(decal_extents);
-
-		Transform3D xform = decal_instance->transform;
-
-		Transform3D camera_inverse_xform = p_camera_xform.affine_inverse();
-
-		Transform3D to_decal_xform = (camera_inverse_xform * xform * scale_xform * uv_xform).affine_inverse();
-		MaterialStorage::store_transform(to_decal_xform, dd.xform);
-
-		Vector3 normal = xform.basis.get_column(Vector3::AXIS_Y).normalized();
-		normal = camera_inverse_xform.basis.xform(normal); //camera is normalized, so fine
-
-		dd.normal[0] = normal.x;
-		dd.normal[1] = normal.y;
-		dd.normal[2] = normal.z;
-		dd.normal_fade = decal->normal_fade;
-
-		RID albedo_tex = decal->textures[RSE::DECAL_TEXTURE_ALBEDO];
-		RID emission_tex = decal->textures[RSE::DECAL_TEXTURE_EMISSION];
-		if (albedo_tex.is_valid()) {
-			Rect2 rect = decal_atlas_get_texture_rect(albedo_tex);
-			dd.albedo_rect[0] = rect.position.x;
-			dd.albedo_rect[1] = rect.position.y;
-			dd.albedo_rect[2] = rect.size.x;
-			dd.albedo_rect[3] = rect.size.y;
-		} else {
-			if (!emission_tex.is_valid()) {
-				continue; //no albedo, no emission, no decal.
-			}
-			dd.albedo_rect[0] = 0;
-			dd.albedo_rect[1] = 0;
-			dd.albedo_rect[2] = 0;
-			dd.albedo_rect[3] = 0;
-		}
-
-		RID normal_tex = decal->textures[RSE::DECAL_TEXTURE_NORMAL];
-
-		if (normal_tex.is_valid()) {
-			Rect2 rect = decal_atlas_get_texture_rect(normal_tex);
-			dd.normal_rect[0] = rect.position.x;
-			dd.normal_rect[1] = rect.position.y;
-			dd.normal_rect[2] = rect.size.x;
-			dd.normal_rect[3] = rect.size.y;
-
-			Basis normal_xform = camera_inverse_xform.basis * xform.basis.orthonormalized();
-			MaterialStorage::store_basis_3x4(normal_xform, dd.normal_xform);
-		} else {
-			dd.normal_rect[0] = 0;
-			dd.normal_rect[1] = 0;
-			dd.normal_rect[2] = 0;
-			dd.normal_rect[3] = 0;
-		}
-
-		RID orm_tex = decal->textures[RSE::DECAL_TEXTURE_ORM];
-		if (orm_tex.is_valid()) {
-			Rect2 rect = decal_atlas_get_texture_rect(orm_tex);
-			dd.orm_rect[0] = rect.position.x;
-			dd.orm_rect[1] = rect.position.y;
-			dd.orm_rect[2] = rect.size.x;
-			dd.orm_rect[3] = rect.size.y;
-		} else {
-			dd.orm_rect[0] = 0;
-			dd.orm_rect[1] = 0;
-			dd.orm_rect[2] = 0;
-			dd.orm_rect[3] = 0;
-		}
-
-		if (emission_tex.is_valid()) {
-			Rect2 rect = decal_atlas_get_texture_rect(emission_tex);
-			dd.emission_rect[0] = rect.position.x;
-			dd.emission_rect[1] = rect.position.y;
-			dd.emission_rect[2] = rect.size.x;
-			dd.emission_rect[3] = rect.size.y;
-		} else {
-			dd.emission_rect[0] = 0;
-			dd.emission_rect[1] = 0;
-			dd.emission_rect[2] = 0;
-			dd.emission_rect[3] = 0;
-		}
-
-		Color modulate = decal->modulate.srgb_to_linear();
-		dd.modulate[0] = modulate.r;
-		dd.modulate[1] = modulate.g;
-		dd.modulate[2] = modulate.b;
-		dd.modulate[3] = modulate.a * fade;
-		dd.emission_energy = decal->emission_energy * fade;
-		dd.albedo_mix = decal->albedo_mix;
-		dd.mask = decal->cull_mask;
-		dd.upper_fade = decal->upper_fade;
-		dd.lower_fade = decal->lower_fade;
-
-		// hook for subclass to do further processing.
-		RendererSceneRenderRD::get_singleton()->setup_added_decal(xform, decal_extents);
 	}
-
 	if (decal_count > 0) {
 		RD::get_singleton()->buffer_update(decal_buffer, 0, sizeof(DecalData) * decal_count, decals);
 	}
+}
+
+TextureStorage::RTDecalSnapshot TextureStorage::build_rt_decal_snapshot(const PagedArray<RID> &p_resident_decals, const PagedArray<RID> &p_camera_decals, const Transform3D &p_camera_xform, const Vector3 &p_rt_origin) {
+	LocalVector<DecalInstanceSort> camera_decals;
+	HashSet<RID> camera_instances;
+	for (uint32_t i = 0; i < p_camera_decals.size(); i++) {
+		camera_instances.insert(p_camera_decals[i]);
+		DecalInstanceSort entry;
+		if (camera_decals.size() < max_decals && _get_decal_sort(p_camera_decals[i], p_camera_xform, entry)) {
+			camera_decals.push_back(entry);
+		}
+	}
+	if (!camera_decals.is_empty()) {
+		SortArray<DecalInstanceSort>().sort(camera_decals.ptr(), camera_decals.size());
+	}
+	LocalVector<DecalInstanceSort> offscreen_decals;
+	for (uint32_t i = 0; i < p_resident_decals.size() && camera_decals.size() + offscreen_decals.size() < max_decals; i++) {
+		if (camera_instances.has(p_resident_decals[i])) {
+			continue;
+		}
+		DecalInstanceSort entry;
+		if (_get_decal_sort(p_resident_decals[i], p_camera_xform, entry)) {
+			offscreen_decals.push_back(entry);
+		}
+	}
+	if (!offscreen_decals.is_empty()) {
+		SortArray<DecalInstanceSort>().sort(offscreen_decals.ptr(), offscreen_decals.size());
+	}
+
+	struct OrderedDecal {
+		DecalInstanceSort decal;
+		uint32_t block;
+		uint32_t index;
+		bool operator<(const OrderedDecal &p_other) const {
+			if (block != p_other.block) {
+				return block < p_other.block;
+			}
+			if (decal.depth != p_other.decal.depth) {
+				return decal.depth > p_other.decal.depth;
+			}
+			return index > p_other.index;
+		}
+	};
+	LocalVector<OrderedDecal> ordered;
+	for (uint32_t i = 0; i < camera_decals.size(); i++) {
+		ordered.push_back({ camera_decals[i], i / 32, i });
+	}
+	uint32_t camera_index = 0;
+	for (uint32_t i = 0; i < offscreen_decals.size(); i++) {
+		while (camera_index < camera_decals.size() && camera_decals[camera_index].depth <= offscreen_decals[i].depth) {
+			camera_index++;
+		}
+		const uint32_t block = camera_decals.is_empty() ? i / 32 : camera_index / 32;
+		ordered.push_back({ offscreen_decals[i], block, camera_decals.size() + i });
+	}
+	if (!ordered.is_empty()) {
+		SortArray<OrderedDecal>().sort(ordered.ptr(), ordered.size());
+	}
+
+	RTDecalSnapshot snapshot;
+	snapshot.count = ordered.size();
+	snapshot.data.resize(snapshot.count * sizeof(DecalData));
+	Transform3D frame;
+	frame.origin = p_rt_origin;
+	for (uint32_t i = 0; i < snapshot.count; i++) {
+		DecalData data;
+		_pack_decal(ordered[i].decal, frame, data);
+		memcpy(snapshot.data.ptrw() + i * sizeof(DecalData), &data, sizeof(DecalData));
+	}
+	snapshot.generation = hash_djb2_one_64(hash_djb2_buffer(snapshot.data.ptr(), snapshot.data.size()), decal_generation);
+	return snapshot;
 }
 
 /* RENDER TARGET API */

@@ -50,7 +50,6 @@ namespace RendererSceneRenderImplementation {
 class RenderForwardClustered;
 struct RenderRTXDIViewportResources;
 
-// Must match GLSL GeometryData (std430, 128 bytes).
 struct alignas(16) RT_GeometryData {
 	uint64_t vertex_buffer_address;
 	uint64_t attribute_buffer_address;
@@ -78,9 +77,25 @@ struct alignas(16) RT_GeometryData {
 	float position_offset[3];
 	uint32_t instance_layer_mask;
 	float position_scale[3];
-	float _pad1;
+	uint32_t uv2_byte_offset;
+	uint32_t uv2_scale_packed;
+	uint32_t custom_byte_offsets[4];
+	uint32_t custom_formats;
+	uint32_t instance_uniforms_offset;
+	uint32_t instance_index;
+	float instance_custom[4];
+	float instance_color[4];
+	uint64_t multimesh_address;
+	uint32_t multimesh_stride;
+	uint32_t multimesh_offset;
+	uint32_t source_vertex_count;
+	uint32_t multimesh_flags;
+	uint32_t _padding[2];
+	uint64_t skin_address;
+	uint32_t skin_stride;
+	uint32_t skin_weight_offset;
 };
-static_assert(sizeof(RT_GeometryData) == 128, "RT_GeometryData must be 128 bytes for std430");
+static_assert(sizeof(RT_GeometryData) == 240, "RT_GeometryData must be 240 bytes for std430");
 
 /// Per-instance motion data for velocity computation (matches GLSL InstanceMotionData, 48 bytes).
 struct RT_InstanceMotionData {
@@ -296,6 +311,7 @@ struct RTDeformedGeometrySource {
 };
 
 struct RTMaterialData {
+	RID hit_shader;
 	alignas(16) RT_MaterialData data = {};
 	uint32_t global_buffer_index = UINT32_MAX;
 	bool is_custom_shader = false;
@@ -446,13 +462,21 @@ struct RTViewportState {
 	uint32_t motion_index_buffer_capacity = 0;
 	RID motion_transform_buffer;
 	uint32_t motion_transform_buffer_capacity = 0;
+	Vector<RID> hit_programs;
+	Vector<uint32_t> geometry_hit_groups;
+	RID material_pipeline;
+	RID material_sbt;
+	RID material_frame_buffer;
+	RID decal_buffer;
+	uint32_t decal_buffer_capacity = 0;
+	uint32_t decal_count = 0;
+	uint64_t decal_generation = 0;
 
 	RTLightSnapshot light_snapshots[2];
 	uint32_t current_light_snapshot = 0;
 	bool light_history_valid = false;
 	RID environment_texture;
 	RenderRTXDIViewportResources *rtxdi_di = nullptr;
-
 };
 
 class RenderRaytracing {
@@ -518,6 +542,7 @@ class RenderRaytracing {
 	HashSet<RID> geometry_buffer_dependencies;
 	LocalVector<RT_GeometryData> geometry_data;
 	LocalVector<RT_MaterialData> material_data;
+	LocalVector<RID> geometry_material_programs;
 	LocalVector<int32_t> motion_indices; ///< Per-instance: index into motion_transforms[], or -1.
 	LocalVector<RT_InstanceMotionData> motion_transforms; ///< Compact: only moving instances.
 	LocalVector<RID> blass;
@@ -592,6 +617,7 @@ class RenderRaytracing {
 	void update_procedural_blas(RTProceduralState *p_state, LocalVector<RID> &r_dirty_blas_list);
 	void build_acceleration_structures(RTViewportState *p_state, const LocalVector<RID> &p_dirty_blas_list, const LocalVector<RID> &p_dirty_blas_update_list);
 	void finalize_buffers(RTViewportState *p_state);
+	bool update_material_pipeline(RTViewportState *p_state);
 	void build_light_registry(RTViewportState *p_state, const RenderDataRD *p_render_data, uint64_t &r_scene_signature);
 	void prepare_frame();
 
@@ -605,6 +631,9 @@ public:
 	void free_viewport_state(RenderSceneBuffersRD *p_render_buffers);
 
 	void register_compute_buffer_dependencies(RD::ComputeListID p_list);
+	void register_raytracing_buffer_dependencies(RD::RaytracingListID p_list);
+	bool create_material_pipeline(const RTViewportState *p_state, Span<RD::PipelineShader> p_raygen_shaders, Span<RD::PipelineShader> p_miss_shaders, uint32_t p_recursion_depth, RID &r_pipeline, RID &r_sbt) const;
+	bool trace_material_rays(RTViewportState *p_state, RID p_scene_data_buffer, RID p_ray_buffer, RID p_result_buffer, uint32_t p_ray_count);
 
 	RID get_bindless_uniform_set(RID p_shader) const {
 		bindless_block->finalize(p_shader, 1);

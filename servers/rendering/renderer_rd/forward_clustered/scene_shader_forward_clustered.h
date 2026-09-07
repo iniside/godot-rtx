@@ -32,6 +32,7 @@
 
 #include "servers/rendering/renderer_rd/pipeline_hash_map_rd.h"
 #include "servers/rendering/renderer_rd/shaders/forward_clustered/scene_forward_clustered.slang.gen.h"
+#include "servers/rendering/renderer_rd/shaders/raytracing/rt_material_hit.slang.gen.h"
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
 #include "servers/rendering/rendering_server_types.h"
 
@@ -66,7 +67,6 @@ public:
 		constexpr static uint16_t SHADER_VERSION_COUNT = 10;
 	};
 
-
 	enum PipelineVersion {
 		PIPELINE_VERSION_DEPTH_PASS,
 		PIPELINE_VERSION_DEPTH_PASS_DP,
@@ -80,7 +80,6 @@ public:
 		PIPELINE_VERSION_RTXDI_SURFACE,
 		PIPELINE_VERSION_MAX
 	};
-
 
 	struct ShaderSpecialization {
 		union {
@@ -297,6 +296,12 @@ public:
 			bool uses_normal_texture = false;
 		};
 		RTClassification *rt = nullptr;
+		RID hit_version;
+		ShaderCompiler::GeneratedCode hit_code;
+		HashMap<StringName, ShaderLanguage::ShaderNode::Uniform> hit_uniforms;
+		void _compile_hit_code(const String &p_code);
+		RID get_hit_shader() const;
+		uint32_t get_surface_material_flags() const;
 
 		_FORCE_INLINE_ bool uses_alpha_pass() const {
 			bool has_read_screen_alpha = uses_screen_texture || uses_depth_texture || uses_normal_texture;
@@ -406,6 +411,8 @@ public:
 
 	SceneForwardClusteredShaderRD shader;
 	ShaderCompiler compiler;
+	ShaderCompiler hit_compiler;
+	RtMaterialHitShaderRD hit_shader;
 	bool emulate_point_size = false;
 
 	RID default_shader;

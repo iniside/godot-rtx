@@ -395,6 +395,10 @@ private:
 	DecalData *decals = nullptr;
 	DecalInstanceSort *decal_sort = nullptr;
 	RID decal_buffer;
+	uint64_t decal_generation = 1;
+
+	bool _get_decal_sort(RID p_instance, const Transform3D &p_camera_xform, DecalInstanceSort &r_sort) const;
+	bool _pack_decal(const DecalInstanceSort &p_sort, const Transform3D &p_frame, DecalData &r_data);
 
 	/* RENDER TARGET API */
 
@@ -843,6 +847,13 @@ public:
 	void set_max_decals(const uint32_t p_max_decals);
 	RID get_decal_buffer() { return decal_buffer; }
 	void update_decal_buffer(const PagedArray<RID> &p_decals, const Transform3D &p_camera_xform);
+
+	struct RTDecalSnapshot {
+		Vector<uint8_t> data;
+		uint32_t count = 0;
+		uint64_t generation = 0;
+	};
+	RTDecalSnapshot build_rt_decal_snapshot(const PagedArray<RID> &p_resident_decals, const PagedArray<RID> &p_camera_decals, const Transform3D &p_camera_xform, const Vector3 &p_rt_origin);
 
 	/* RENDER TARGET API */
 
