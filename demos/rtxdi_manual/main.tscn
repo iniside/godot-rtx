@@ -1,6 +1,262 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3]
 
 [ext_resource type="Script" path="res://main.gd" id="1"]
+[ext_resource type="PackedScene" path="res://geometry_parts/cube.tscn" id="2_lquwl"]
+[ext_resource type="PackedScene" path="res://geometry_parts/sphere.tscn" id="3_7mycd"]
+[ext_resource type="PackedScene" path="res://geometry_parts/plane.tscn" id="4_272bh"]
+[ext_resource type="PackedScene" path="res://geometry_parts/deformer.tscn" id="5_5vw27"]
+[ext_resource type="Texture2D" path="res://textures/masked_checker.svg" id="6_masked"]
+[ext_resource type="Texture2D" path="res://textures/emission_checker.svg" id="7_emission"]
 
-[node name="RTXDIManual" type="Node3D"]
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_kek77"]
+sky_top_color = Color(0.12, 0.2, 0.4, 1)
+sky_horizon_color = Color(0.4, 0.45, 0.5, 1)
+ground_bottom_color = Color(0.03, 0.03, 0.03, 1)
+ground_horizon_color = Color(0.4, 0.45, 0.5, 1)
+
+[sub_resource type="Sky" id="Sky_4c57u"]
+sky_material = SubResource("ProceduralSkyMaterial_kek77")
+
+[sub_resource type="Environment" id="Environment_efxa6"]
+background_mode = 2
+background_energy_multiplier = 0.3
+sky = SubResource("Sky_4c57u")
+tonemap_mode = 3
+volumetric_fog_density = 0.025
+
+[sub_resource type="StandardMaterial3D" id="Material_floor"]
+albedo_color = Color(0.55, 0.55, 0.55, 1)
+roughness = 0.65
+
+[sub_resource type="StandardMaterial3D" id="Material_wall"]
+albedo_color = Color(0.35, 0.4, 0.48, 1)
+roughness = 0.65
+
+[sub_resource type="StandardMaterial3D" id="Material_d0"]
+albedo_color = Color(0.65, 0.7, 0.75, 1)
+roughness = 0.12
+
+[sub_resource type="StandardMaterial3D" id="Material_d1"]
+albedo_color = Color(0.65, 0.7, 0.75, 1)
+roughness = 0.37
+
+[sub_resource type="StandardMaterial3D" id="Material_d2"]
+albedo_color = Color(0.65, 0.7, 0.75, 1)
+roughness = 0.62
+
+[sub_resource type="StandardMaterial3D" id="Material_d3"]
+albedo_color = Color(0.65, 0.7, 0.75, 1)
+roughness = 0.87
+
+[sub_resource type="StandardMaterial3D" id="Material_m0"]
+albedo_color = Color(0.7, 0.38, 0.12, 1)
+metallic = 1.0
+roughness = 0.12
+
+[sub_resource type="StandardMaterial3D" id="Material_m1"]
+albedo_color = Color(0.7, 0.38, 0.12, 1)
+metallic = 1.0
+roughness = 0.37
+
+[sub_resource type="StandardMaterial3D" id="Material_m2"]
+albedo_color = Color(0.7, 0.38, 0.12, 1)
+metallic = 1.0
+roughness = 0.62
+
+[sub_resource type="StandardMaterial3D" id="Material_m3"]
+albedo_color = Color(0.7, 0.38, 0.12, 1)
+metallic = 1.0
+roughness = 0.87
+
+[sub_resource type="StandardMaterial3D" id="Material_masked"]
+transparency = 2
+cull_mode = 2
+albedo_texture = ExtResource("6_masked")
+roughness = 0.65
+alpha_scissor_threshold = 0.5
+
+[sub_resource type="StandardMaterial3D" id="Material_emission"]
+albedo_color = Color(0, 0, 0, 1)
+roughness = 0.65
+emission_enabled = true
+emission = Color(1, 1, 1, 1)
+emission_energy_multiplier = 5.0
+emission_operator = 1
+emission_texture = ExtResource("7_emission")
+
+[sub_resource type="StandardMaterial3D" id="Material_mover"]
+albedo_color = Color(0.15, 0.65, 0.3, 1)
+roughness = 0.65
+
+[sub_resource type="StandardMaterial3D" id="Material_deformer"]
+albedo_color = Color(0.6, 0.15, 0.5, 1)
+roughness = 0.3
+
+[sub_resource type="StandardMaterial3D" id="Material_offscreen"]
+albedo_color = Color(0.3, 0.3, 0.3, 1)
+roughness = 0.65
+
+[node name="RTXDIManual" type="Node3D" unique_id=892346259]
 script = ExtResource("1")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=500838384]
+environment = SubResource("Environment_efxa6")
+
+[node name="HUD" type="CanvasLayer" parent="." unique_id=1507878279]
+
+[node name="Label" type="Label" parent="HUD" unique_id=2063466100]
+offset_left = 18.0
+offset_top = 14.0
+offset_right = 18.0
+offset_bottom = 14.0
+theme_override_font_sizes/font_size = 18
+
+[node name="Geometry" type="Node3D" parent="." unique_id=1423912105]
+
+[node name="Floor" parent="Geometry" unique_id=1625177510 instance=ExtResource("2_lquwl")]
+transform = Transform3D(22, 0, 0, 0, 0.3, 0, 0, 0, 18, 0, -0.15, 0)
+
+[node name="Cube" parent="Geometry/Floor" index="0"]
+material_override = SubResource("Material_floor")
+
+[node name="BackWall" parent="Geometry" unique_id=1077353278 instance=ExtResource("2_lquwl")]
+transform = Transform3D(22, 0, 0, 0, 6, 0, 0, 0, 0.3, 0, 3, -7)
+
+[node name="Cube" parent="Geometry/BackWall" index="0"]
+material_override = SubResource("Material_wall")
+
+[node name="PBR_0_0" parent="Geometry" unique_id=1892181824 instance=ExtResource("3_7mycd")]
+transform = Transform3D(0.75, 0, 0, 0, 0.75, 0, 0, 0, 0.75, -4.5, 0.9, -3)
+
+[node name="Sphere" parent="Geometry/PBR_0_0" index="2"]
+material_override = SubResource("Material_d0")
+
+[node name="PBR_0_1" parent="Geometry" unique_id=122140078 instance=ExtResource("3_7mycd")]
+transform = Transform3D(0.75, 0, 0, 0, 0.75, 0, 0, 0, 0.75, -1.5, 0.9, -3)
+
+[node name="Sphere" parent="Geometry/PBR_0_1" index="2"]
+material_override = SubResource("Material_d1")
+
+[node name="PBR_0_2" parent="Geometry" unique_id=1749638493 instance=ExtResource("3_7mycd")]
+transform = Transform3D(0.75, 0, 0, 0, 0.75, 0, 0, 0, 0.75, 1.5, 0.9, -3)
+
+[node name="Sphere" parent="Geometry/PBR_0_2" index="2"]
+material_override = SubResource("Material_d2")
+
+[node name="PBR_0_3" parent="Geometry" unique_id=224903322 instance=ExtResource("3_7mycd")]
+transform = Transform3D(0.75, 0, 0, 0, 0.75, 0, 0, 0, 0.75, 4.5, 0.9, -3)
+
+[node name="Sphere" parent="Geometry/PBR_0_3" index="2"]
+material_override = SubResource("Material_d3")
+
+[node name="PBR_1_0" parent="Geometry" unique_id=1261359375 instance=ExtResource("3_7mycd")]
+transform = Transform3D(0.75, 0, 0, 0, 0.75, 0, 0, 0, 0.75, -4.5, 0.9, 0)
+
+[node name="Sphere" parent="Geometry/PBR_1_0" index="2"]
+material_override = SubResource("Material_m0")
+
+[node name="PBR_1_1" parent="Geometry" unique_id=669904106 instance=ExtResource("3_7mycd")]
+transform = Transform3D(0.75, 0, 0, 0, 0.75, 0, 0, 0, 0.75, -1.5, 0.9, 0)
+
+[node name="Sphere" parent="Geometry/PBR_1_1" index="2"]
+material_override = SubResource("Material_m1")
+
+[node name="PBR_1_2" parent="Geometry" unique_id=1535364608 instance=ExtResource("3_7mycd")]
+transform = Transform3D(0.75, 0, 0, 0, 0.75, 0, 0, 0, 0.75, 1.5, 0.9, 0)
+
+[node name="Sphere" parent="Geometry/PBR_1_2" index="2"]
+material_override = SubResource("Material_m2")
+
+[node name="PBR_1_3" parent="Geometry" unique_id=1115762724 instance=ExtResource("3_7mycd")]
+transform = Transform3D(0.75, 0, 0, 0, 0.75, 0, 0, 0, 0.75, 4.5, 0.9, 0)
+
+[node name="Sphere" parent="Geometry/PBR_1_3" index="2"]
+material_override = SubResource("Material_m3")
+
+[node name="MaskedPanel" parent="Geometry" unique_id=721377085 instance=ExtResource("4_272bh")]
+transform = Transform3D(2.5, 0, 0, 0, 0.42261824, -2.2657695, 0, 0.9063078, 1.0565456, -7, 2.5, 0)
+
+[node name="Plane" parent="Geometry/MaskedPanel" index="1"]
+material_override = SubResource("Material_masked")
+
+[node name="TexturedEmitter" parent="Geometry" unique_id=1901025611 instance=ExtResource("4_272bh")]
+transform = Transform3D(2.2657695, -0.36599818, -0.5282728, 0, 0.49999997, -2.1650636, 1.0565457, 0.7848856, 1.1328846, 7, 2.5, 0)
+
+[node name="Plane" parent="Geometry/TexturedEmitter" index="1"]
+material_override = SubResource("Material_emission")
+
+[node name="MovingCaster" parent="Geometry" unique_id=1561259037 instance=ExtResource("2_lquwl")]
+transform = Transform3D(0.8, 0, 0, 0, 1.5, 0, 0, 0, 0.8, 0, 2.5, 2.5)
+
+[node name="Cube" parent="Geometry/MovingCaster" index="0"]
+material_override = SubResource("Material_mover")
+
+[node name="DeformingCaster" parent="Geometry" unique_id=1268912508 instance=ExtResource("5_5vw27")]
+transform = Transform3D(0.6, 0, 0, 0, 0.6, 0, 0, 0, 0.6, 3, 2.3, 3.5)
+
+[node name="Deformer" parent="Geometry/DeformingCaster" index="3"]
+material_override = SubResource("Material_deformer")
+blend_shapes/Stretch = 0.65
+
+[node name="OffscreenCaster" parent="Geometry" unique_id=509165483 instance=ExtResource("2_lquwl")]
+transform = Transform3D(2, 0, 0, 0, 1, 0, 0, 0, 2, 0, 12, 1)
+
+[node name="Cube" parent="Geometry/OffscreenCaster" index="0"]
+material_override = SubResource("Material_offscreen")
+
+[node name="Lights" type="Node3D" parent="." unique_id=1793329510]
+
+[node name="Directional" type="DirectionalLight3D" parent="Lights" unique_id=179128728]
+transform = Transform3D(0.9063078, 0.34618863, -0.24240391, 0, 0.57357645, 0.81915206, 0.4226183, -0.74240386, 0.5198368, 0, 0, 0)
+light_color = Color(1, 0.95, 0.85, 1)
+light_energy = 0.8
+shadow_enabled = true
+
+[node name="Point" type="OmniLight3D" parent="Lights" unique_id=1600203963]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 4, 1)
+light_color = Color(1, 0.3, 0.15, 1)
+light_energy = 6.0
+shadow_enabled = true
+omni_range = 20.0
+
+[node name="Spot" type="SpotLight3D" parent="Lights" unique_id=1337588282]
+transform = Transform3D(0.7071068, -0.53916395, 0.45749566, 0, 0.6469966, 0.7624929, -0.7071068, -0.53916395, 0.45749566, 4, 5, 3)
+light_color = Color(0.2, 0.45, 1, 1)
+light_energy = 9.0
+shadow_enabled = true
+spot_range = 22.0
+spot_angle = 40.0
+
+[node name="Area" type="AreaLight3D" parent="Lights" unique_id=912561397]
+transform = Transform3D(-1, 6.826571e-08, -5.4612578e-08, 0, 0.62469506, 0.78086877, 8.742278e-08, 0.78086877, -0.62469506, 0, 5, -4)
+light_color = Color(0.5, 1, 0.7, 1)
+light_energy = 12.0
+shadow_enabled = true
+area_range = 18.0
+area_size = Vector2(3, 2)
+
+[node name="Cameras" type="Node3D" parent="." unique_id=281199075]
+
+[node name="Camera" type="Camera3D" parent="Cameras" unique_id=1306284178]
+transform = Transform3D(0.8209052, -0.19196123, 0.5378341, 0, 0.9418098, 0.33614632, -0.5710645, -0.27594426, 0.77313656, 8, 6, 11)
+current = true
+far = 100.0
+
+[node name="AlternateCamera" type="Camera3D" parent="Cameras" unique_id=34650374]
+transform = Transform3D(0.7071068, 0.19245009, -0.68041384, 0, 0.9622505, 0.27216554, 0.7071068, -0.19245009, 0.68041384, -10, 5, 9)
+
+[editable path="Geometry/Floor"]
+[editable path="Geometry/BackWall"]
+[editable path="Geometry/PBR_0_0"]
+[editable path="Geometry/PBR_0_1"]
+[editable path="Geometry/PBR_0_2"]
+[editable path="Geometry/PBR_0_3"]
+[editable path="Geometry/PBR_1_0"]
+[editable path="Geometry/PBR_1_1"]
+[editable path="Geometry/PBR_1_2"]
+[editable path="Geometry/PBR_1_3"]
+[editable path="Geometry/MaskedPanel"]
+[editable path="Geometry/TexturedEmitter"]
+[editable path="Geometry/MovingCaster"]
+[editable path="Geometry/DeformingCaster"]
+[editable path="Geometry/OffscreenCaster"]

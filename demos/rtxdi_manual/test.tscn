@@ -1,0 +1,136 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://migrated/zdm2.glb" id="1_map"]
+[ext_resource type="PackedScene" path="res://migrated/cube.glb" id="2_cube"]
+[ext_resource type="PackedScene" path="res://geometry_parts/cube.tscn" id="5_g14j6"]
+[ext_resource type="Script" path="res://migrated/test.gd" id="5_test"]
+[ext_resource type="Script" path="res://migrated/camera.gd" id="6_camera"]
+[ext_resource type="PackedScene" path="res://geometry_parts/sphere.tscn" id="6_vbegm"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_migrated"]
+
+[sub_resource type="Sky" id="Sky_migrated"]
+sky_material = SubResource("ProceduralSkyMaterial_migrated")
+
+[sub_resource type="Environment" id="Environment_migrated"]
+background_mode = 2
+sky = SubResource("Sky_migrated")
+tonemap_mode = 4
+volumetric_fog_density = 0.025
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_emission"]
+emission_enabled = true
+emission = Color(1, 1, 0, 1)
+emission_energy_multiplier = 2.0
+
+[sub_resource type="StandardMaterial3D" id="Material_camera_sphere"]
+albedo_color = Color(0.811765, 1, 0.764706, 1)
+metallic = 1.0
+roughness = 0.0
+
+[node name="RTXDIMigratedGI" type="Node3D"]
+script = ExtResource("5_test")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_migrated")
+
+[node name="Geometry" type="Node3D" parent="."]
+
+[node name="Zdm2" parent="Geometry" instance=ExtResource("1_map")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2)
+
+[node name="GlowingBox" parent="Geometry" instance=ExtResource("2_cube")]
+transform = Transform3D(1.4, 0, 0, 0, 1, 0, 0, 0, 0.25, -0.681709, -0.108265, 25.4051)
+
+[node name="Cube" parent="Geometry/GlowingBox" index="0"]
+surface_material_override/0 = SubResource("StandardMaterial3D_emission")
+
+[node name="Lights" type="Node3D" parent="."]
+
+[node name="Sun" type="DirectionalLight3D" parent="Lights"]
+transform = Transform3D(0.889832, -0.251497, 0.380722, 0, 0.834387, 0.551179, -0.456289, -0.490456, 0.742464, 4.47302, 6.47568, 8.72305)
+shadow_enabled = true
+shadow_bias = 0.04
+shadow_blur = 2.0
+directional_shadow_blend_splits = true
+directional_shadow_fade_start = 1.0
+directional_shadow_max_distance = 75.0
+
+[node name="GrateOmniLight" type="OmniLight3D" parent="Lights"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 11.9461, -1.33084, -5.52646)
+light_color = Color(1, 0.905882, 0.470588, 1)
+shadow_enabled = true
+shadow_bias = 0.03
+shadow_blur = 2.0
+omni_range = 10.0
+omni_attenuation = 2.0
+
+[node name="GarageOmniLight" type="OmniLight3D" parent="Lights"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 21.6053, -1.96042, -13.798)
+light_color = Color(0.984314, 0.552941, 1, 1)
+light_energy = 15.0
+shadow_enabled = true
+shadow_bias = 0.03
+shadow_blur = 2.0
+omni_range = 10.0
+omni_attenuation = 2.0
+
+[node name="CornerSpotLight" type="SpotLight3D" parent="Lights"]
+transform = Transform3D(0.909405, -0.0463933, 0.413316, -0.290385, -0.782269, 0.551118, 0.297756, -0.62121, -0.724872, -14.0594, -1.81824, 12.3035)
+light_color = Color(1, 0, 0, 1)
+light_energy = 14.77
+spot_range = 15.0
+spot_attenuation = 2.0
+spot_angle_attenuation = 0.5
+
+[node name="Cameras" type="Node3D" parent="."]
+
+[node name="Camera" type="Camera3D" parent="Cameras"]
+transform = Transform3D(-0.99752325, -0.0071959156, 0.069968455, -8.943681e-09, 0.99475306, 0.1023054, -0.07033751, 0.10205201, -0.9922893, 11.7976, 1.49898, 9.54247)
+current = true
+script = ExtResource("6_camera")
+
+[node name="Box" parent="Cameras/Camera" instance=ExtResource("5_g14j6")]
+transform = Transform3D(0.999999, -5.12227e-09, 9.68575e-08, 2.79397e-09, 0.999999, 8.9407e-08, 7.45058e-09, -1.11759e-07, 0.999999, -1.4, -0.999998, -3.99998)
+
+[node name="ReflectiveSphere" parent="Cameras/Camera" instance=ExtResource("6_vbegm")]
+transform = Transform3D(-0.997523, -8.41886e-09, -0.0703376, -0.00719589, 0.994753, 0.102052, 0.0699685, 0.102305, -0.992289, 0.16733, -1.22931, -3.81225)
+
+[node name="Cube" parent="Cameras/Camera/Box" index="0"]
+layers = 2
+gi_mode = 0
+
+[node name="Sphere" parent="Cameras/Camera/ReflectiveSphere" index="2"]
+layers = 2
+gi_mode = 0
+material_override = SubResource("Material_camera_sphere")
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="State" type="Label" parent="HUD"]
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 760.0
+offset_bottom = 96.0
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+text = "RTXDI + NRD migrated GI scene"
+
+[node name="FPS" type="Label" parent="HUD"]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -164.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = 42.0
+grow_horizontal = 0
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+text = "60 FPS (16.67 mspf)"
+
+[editable path="Geometry/Zdm2"]
+[editable path="Geometry/GlowingBox"]
+
+[editable path="Cameras/Camera/Box"]
+[editable path="Cameras/Camera/ReflectiveSphere"]
