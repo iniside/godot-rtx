@@ -1,0 +1,118 @@
+STEP2 ROUND1 evidence,2026-09-07 UTC
+Source baseline675d3cbe7f27c5337b84f84d4c8c9b9681e015bf
+Editor command: scons platform=windows target=editor accesskit=no d3d12=no -j16
+TEMP diagnostic: python step2-round1-build.py compile; python step2-round1-build.py link
+Run: STEP2_MATRIX_DIR=<TEMP directory> step2-round1-diagnostic.exe --path G:/Projects/godot-rtx/demos/rtxdi_manual --rendering-driver vulkan --rendering-method forward_plus --audio-driver Dummy
+Diagnostic process exit0
+No automated tests or assertions.
+
+--- step2-round1-editor-build.log ---
+Generating core\version_hash.gen.cpp ...
+Compiling core\version_hash.gen.cpp ...
+Linking Static Library bin\obj\core\core.windows.editor.x86_64.lib ...
+Linking Static Library bin\obj\servers\servers.windows.editor.x86_64.lib ...
+Linking Program bin\godot.windows.editor.x86_64.exe ...
+Linking Program bin\godot.windows.editor.x86_64.console.exe ...
+scons: done building targets.
+INFO: Time elapsed: 00:00:35.22
+
+--- step2-round1-validation.log ---
+step2-round1-numeric.glsl spirv-val exit 0
+
+step2-round1-numeric.slang spirv-val exit 0
+
+step2-round1-query spirv-val exit 0
+
+--- step2-round1-run.log ---
+Godot Engine v4.8.dev.custom_build.675d3cbe7 (2026-09-07 13:09:50 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+ROUND1 frontend 0 error 0 uniform bytes 32
+MATRIX stages 1
+MATRIX SPIRV 2752 container 680
+MATRIX readback 80 input bytes 32
+ROUND1 numeric 0 row 0 -1.000000000 -1.000000000 -1.000000000 -0.000000000
+ROUND1 numeric 0 row 1 0.000000000 2.000000000 2.000000000 0.000000000
+ROUND1 numeric 0 row 2 -1.000000000 0.000000000 -1.000000000 0.000000000
+ROUND1 numeric 0 row 3 -1.000000000 3.000000000 0.000000000 0.000000000
+ROUND1 numeric 0 row 4 -1.000000000 31.000000000 1.000000000 0.000000000
+ROUND1 frontend 1 error 0 uniform bytes 32
+MATRIX stages 1
+MATRIX SPIRV 2012 container 664
+MATRIX readback 80 input bytes 32
+ROUND1 numeric 1 row 0 -1.000000000 -1.000000000 -1.000000000 -0.000000000
+ROUND1 numeric 1 row 1 0.000000000 2.000000000 2.000000000 0.000000000
+ROUND1 numeric 1 row 2 -1.000000000 0.000000000 -1.000000000 0.000000000
+ROUND1 numeric 1 row 3 -1.000000000 3.000000000 0.000000000 0.000000000
+ROUND1 numeric 1 row 4 -1.000000000 31.000000000 1.000000000 0.000000000
+ROUND1 frontend 1 error 0 uniform bytes 0
+ROUND1 query stages 1
+
+--- step2-round1-gallery.log ---
+Godot Engine v4.8.dev.custom_build.675d3cbe7 (2026-09-07 13:09:50 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Streamline - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+MANUAL_DEMO preset=gallery light=all binary={ "major": 4, "minor": 8, "patch": 0, "hex": 264192, "status": "dev", "build": "custom_build", "hash": "675d3cbe7f27c5337b84f84d4c8c9b9681e015bf", "timestamp": 1788786590, "string": "4.8-dev (custom_build)" } renderer=forward_plus driver=vulkan size=(1280.0, 720.0)
+MANUAL_CAPTURE path=C:\Users\lukas\AppData\Local\Temp\godot-shader-unification-20260907/step2-round1-gallery.png result=0 frame=211 gpu_ms=1.56099998950958
+MANUAL_MEMORY total=455279712.0 textures=358057984.0 buffers=84274798.0
+
+--- selected actual generated step2-round1-numeric.slang.spvasm ---
+         %20 = OpExtInst %uint %21 FindSMsb %18
+         %22 = OpBitcast %int %20
+         %23 = OpConvertSToF %float %22
+         %25 = OpExtInst %uint %21 FindILsb %24
+         %26 = OpBitcast %int %25
+         %27 = OpConvertSToF %float %26
+         %29 = OpBitCount %uint %28
+         %30 = OpBitcast %int %29
+         %32 = OpConvertSToF %float %31
+         %40 = OpExtInst %v3float %21 RoundEven %39
+         %43 = OpExtInst %float %21 RoundEven %42
+         %49 = OpExtInst %v3uint %21 FindSMsb %46
+         %50 = OpBitcast %v3int %49
+         %51 = OpConvertSToF %v3float %50
+         %55 = OpExtInst %v3uint %21 FindILsb %53
+         %56 = OpBitcast %v3int %55
+         %57 = OpConvertSToF %v3float %56
+         %61 = OpBitCount %v3uint %59
+         %62 = OpBitcast %v3int %61
+         %65 = OpConvertSToF %v3float %63
+
+--- selected actual generated step2-round1-query.spvasm ---
+         %22 = OpFunctionCall %int %m_next_index %m_ticks
+         %33 = OpFunctionCall %v2float %m_next_uv %m_ticks
+         %47 = OpFunctionCall %v2float %godot_texture_query_lod %22 %33 %46
+  %m_ticks_0 = OpFunctionParameter %_ptr_Function_int
+  %m_ticks_1 = OpFunctionParameter %_ptr_Function_int
+         %50 = OpFunctionParameter %int
+         %51 = OpFunctionParameter %v2float
+         %52 = OpFunctionParameter %8
+         %59 = OpImageQueryLod %v2float %58 %51
+         %63 = OpImageQueryLod %v2float %62 %51
+
+--- selected actual generated step2-round1-numeric.slang ---
+		albedo=float3(float(int(firstbithigh(data.m_signed_input))), float(int(firstbitlow(data.m_signed_input))), float((int(countbits(data.m_signed_input)) - 1)));
+		emission=rint(data.m_ties.xyz);
+		roughness=rint(data.m_ties.w);
+		normal=float3(int3(firstbithigh(int3(data.m_signed_input, 1, -1))));
+		tangent=float3(int3(firstbitlow(int3(data.m_signed_input, 8, -1))));
+		binormal=float3((int3(countbits(int3(data.m_signed_input, -1, 3))) - int3(1,1,1)));
+
+--- selected actual generated step2-round1-query.slang ---
+float2 godot_texture_query_lod(Texture2D<float4> a0, float2 a1, SamplerState a2) { return float2(a0.CalculateLevelOfDetail(a2, a1), a0.CalculateLevelOfDetailUnclamped(a2, a1)); }
+		float2 m_lod=godot_texture_query_lod(m_sample_maps[m_next_index(m_ticks)], m_next_uv(m_ticks), SAMPLER_LINEAR_CLAMP);
+SHA256 step2-round1-numeric.gdshader d5691717dcfefeff09e016afc272b3e3b42a8f6fa846e95fe9cf31030adaa995
+SHA256 step2-round1-numeric.glsl 42ce3b928c70ddda3421679f390b42d9a98fd0e53b6c4e6447b3b72225cdbf11
+SHA256 step2-round1-numeric.slang 92d38e608b5ba787b3fd9f6cd80b3c128bc8e8d6648d341744e1bba701ee4dd1
+SHA256 step2-round1-query.gdshader 289c401a7e2566b2c93bc178799a520c6a59bd3c642004e8a14e74512d9e975a
+SHA256 step2-round1-query.slang 6fcfdf21246db3fc1549ece41e94951b9b674feb4b1a5d33345c6055ea150155
+SHA256 step2-round1-query.api.spv bab93610b93642fee1ad1a067b556e61e3158f83de9c5460b7454537e5eb10dc
+SHA256 step2-round1-numeric.glsl.api.spv 40dfd590ad725184c71dcb8fd5aaf0b3c406b3ef64b1e18b18c72bacc404ac3c
+SHA256 step2-round1-numeric.slang.api.spv 742119f66087e98e99488c1741be282641d9a22fbfd0f8a7e6169bb515856d14
+SHA256 step2-round1-numeric.glsl.readback.bin 402d846201927dcdf77aeb8fe659cfdb2e0f58526fbedd5adeefdbcb9369e60b
+SHA256 step2-round1-numeric.slang.readback.bin 402d846201927dcdf77aeb8fe659cfdb2e0f58526fbedd5adeefdbcb9369e60b
+SHA256 step2-round1-diagnostic.exe 547a1a981e43471c0f75135c1e6b45cd795ba8a873847085e2ec9891f59d8fc6
+SHA256 step2-round1-compile-command.txt 1033f5f1a9166b8d82d57f990b84dfdee4455c84943e931e5f1fa8201cc77a32
+SHA256 step2-round1-link.rsp 604a116d2421199a767ea00ab58988ff0b9d17ece1bb9cb8df4cfdd1b72b7df9
+SHA256 step2-round1-gallery.png 1efbfa55cfb54e207dfa85c280cebd5ca0538a714cdc4948f4fcbb8f626d15eb
+Final editor SHA256 f76e25d3af4008588206295d34c6d93cee18e1779d4856d961a3cd262fb84030
+Source patch SHA256 4e71dfad5584a1ebf6bcdd219cdd8516f2968dd9daba82446c80b709e507e1e0
+The diagnostic and gallery use this exact source patch over the frozen baseline. Embedded Git label is675d3cbe7f, not a post-commit rebuilt binary.

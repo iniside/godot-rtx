@@ -652,7 +652,16 @@ String ShaderCompiler::_dump_slang_call(const SL::OperatorNode *p_node, int p_le
 			name = _slang_helper(result_type, "godot_" + name + (multiview ? "_multiview" : ""), types, body);
 			expression = name + "(" + String(", ").join(arguments) + ")";
 		} else if (name == "textureQueryLod") {
-			expression = "float2(" + arguments[0] + ".CalculateLevelOfDetail(" + sampler + ", " + arguments[1] + "), " + arguments[0] + ".CalculateLevelOfDetailUnclamped(" + sampler + ", " + arguments[1] + "))";
+			String coordinate = "a1";
+			if (multiview) {
+				types.write[0] = "GodotMultiviewTexture";
+				arguments.write[1] = sample_coordinate;
+				coordinate = "multiview_uv(a1)";
+			}
+			types.push_back("SamplerState");
+			arguments.push_back(sampler);
+			String helper = _slang_helper(result_type, "godot_texture_query_lod" + String(multiview ? "_multiview" : ""), types, "return float2(a0.CalculateLevelOfDetail(a2, " + coordinate + "), a0.CalculateLevelOfDetailUnclamped(a2, " + coordinate + "));");
+			expression = helper + "(" + String(", ").join(arguments) + ")";
 		} else if (name == "texelFetch") {
 			int size = texture_node->get_datatype() >= SL::TYPE_SAMPLER2DARRAY && texture_node->get_datatype() <= SL::TYPE_USAMPLER3D ? 4 : 3;
 			expression = arguments[0] + ".Load(" + (multiview ? "godot_multiview_load_coord" : "int" + itos(size)) + "(" + arguments[1] + ", " + arguments[2] + "))";
@@ -765,10 +774,13 @@ String ShaderCompiler::_dump_slang_call(const SL::OperatorNode *p_node, int p_le
 			return "(!" + arguments[0] + ")";
 		} else {
 			static const char *from[] = { "fract", "inversesqrt", "roundEven", "floatBitsToInt", "floatBitsToUint", "intBitsToFloat", "uintBitsToFloat", "dFdx", "dFdy", "dFdxCoarse", "dFdyCoarse", "dFdxFine", "dFdyFine", "bitfieldReverse", "bitCount", "findLSB", "findMSB" };
-			static const char *to[] = { "frac", "rsqrt", "round", "asint", "asuint", "asfloat", "asfloat", "ddx", "ddy", "ddx_coarse", "ddy_coarse", "ddx_fine", "ddy_fine", "reversebits", "countbits", "firstbitlow", "firstbithigh" };
+			static const char *to[] = { "frac", "rsqrt", "rint", "asint", "asuint", "asfloat", "asfloat", "ddx", "ddy", "ddx_coarse", "ddy_coarse", "ddx_fine", "ddy_fine", "reversebits", "countbits", "firstbitlow", "firstbithigh" };
 			for (uint32_t i = 0; i < sizeof(from) / sizeof(from[0]); i++) {
 				if (name == from[i]) {
 					name = to[i];
+					if (callee->name == "bitCount" || callee->name == "findLSB" || callee->name == "findMSB") {
+						return result_type + "(" + name + "(" + String(", ").join(arguments) + "))";
+					}
 					break;
 				}
 			}
