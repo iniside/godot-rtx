@@ -11,7 +11,7 @@ Research and standalone compiler limitations are recorded in the
 
 | Step | State | Evidence |
 |---|---|---|
-| 1. Slang compiler, request, cache/export and distribution | In progress | Separate core-implementer context; task baseline `b2d04129cb` |
+| 1. Slang compiler, request, cache/export and distribution | Implemented; fresh review and proof audit in progress | `3a04df35e6`; [evidence](2026-09-07-1154-slang-compiler-step1-status.md) |
 | 2. Spatial frontend and surfaces | Pending step 1 | No implementation evidence |
 | 3. Shared shading and DI replacement | Pending step 2 | No implementation evidence |
 | 4. NRD/HDR and removal of PT dependency | Pending step 3 | No implementation evidence |
@@ -41,6 +41,26 @@ pre-existing editor, not a new build of the plan commit. These references establ
 observed before-migration behavior, not new source-to-binary provenance. Existing
 magenta unsupported-material and OpTypeForwardPointer diagnostics are retained.
 
-Local PNGs and full logs: `%TEMP%/godot-shader-unification-rendering/baseline-*`.
+Retained PNGs/logs: [gallery](shader-unification-evidence/baseline-gallery.png),
+[shadows](shader-unification-evidence/baseline-shadows.png),
+[energy](shader-unification-evidence/baseline-energy.png), with the same-name
+`.log` files and `baseline-binary.txt` in that directory. Original local files:
+`%TEMP%/godot-shader-unification-rendering/baseline-*`.
 The project includes the owner's pre-existing `project.godot` changes, preserved
 as part of this comparison configuration. No performance improvement is inferred.
+
+## Step 1 ordinary-editor rendering
+
+The parent launched the ordinary rebuilt editor after `3a04df35e6` with the same
+gallery capture arguments (without `--gpu-profile`). The actual executable hash
+`566EB6333395F1F5E2D13AEC3ACCD8743177B7A5C3B56D7AFBF37BD401D2EB47` matches the
+implementer's final-build record. Vulkan/RTX 4090 rendered the
+[gallery](shader-unification-evidence/step1-gallery.png); the
+[log](shader-unification-evidence/step1-gallery.log) records capture success at
+frame 931 and the process exited zero. The image was visually compared with the
+baseline: scene geometry, light distribution and visible shadow arrangement remain.
+Existing unsupported-material/OpTypeForwardPointer diagnostics are unchanged.
+
+This checks the retained renderer after compiler infrastructure changes. It does
+not exercise migrated Slang material shaders, which do not exist until later steps.
+No deterministic pixel equality or performance regression claim is made.

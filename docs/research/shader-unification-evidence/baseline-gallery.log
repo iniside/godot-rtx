@@ -1,0 +1,129 @@
+Godot Engine v4.8.dev.custom_build.b01c5849a (2026-09-07 09:37:44 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Streamline - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+
+MANUAL_DEMO preset=gallery light=all binary={ "major": 4, "minor": 8, "patch": 0, "hex": 264192, "status": "dev", "build": "custom_build", "hash": "b01c5849a8d10397be3e977347b0a49f45c90db5", "timestamp": 1788773864, "string": "4.8-dev (custom_build)" } renderer=forward_plus driver=vulkan size=(1280.0, 720.0)
+GPU PROFILE (total 0.849ms):
+	-TLAS Build: 0.04954841444569ms
+	-Render Directional/SpotLight Shadows: 0.01240322570647ms
+	-Update Volumetric Fog: 0.01016935129319ms
+	-RTXDI Surface: 0.02997578920857ms
+	-RTXDI Guides: 0.01905644709064ms
+	-RTXDI Direct Lighting: 0.4185644272835ms
+	-NRD RELAX and HDR Composition: 0.28040329102547ms
+	-Render Sky: 0.02473385680106ms
+	-Tonemap: 0.01889516269007ms
+	-Render CanvasItems: 0.01214516547418ms
+GPU PROFILE (total 1.306ms):
+	-TLAS Build: 0.04976033770348ms
+	-Setup Shadows: 0.01051239435338ms
+	-Render Directional/SpotLight Shadows: 0.01187603729816ms
+	-Update Volumetric Fog: 0.0101404899408ms
+	-RTXDI Surface: 0.03000824707599ms
+	-RTXDI Guides: 0.01931404870404ms
+	-RTXDI Direct Lighting: 0.4031653601276ms
+	-NRD RELAX and HDR Composition: 0.27723132677315ms
+	-Render Sky: 0.01984296554376ms
+	-Tonemap: 0.03467767888849ms
+	-Render CanvasItems: 0.01997521692071ms
+GPU PROFILE (total 1.31ms):
+	-TLAS Build: 0.0708594913325ms
+	-Setup Shadows: 0.01620660833091ms
+	-Render Directional/SpotLight Shadows: 0.01547107125117ms
+	-Pack 3D Cluster Elements: 0.01130578439098ms
+	-Update Volumetric Fog: 0.01377686685767ms
+	-RTXDI Surface: 0.0433305669422ms
+	-RTXDI Guides: 0.02102478673635ms
+	-RTXDI Direct Lighting: 0.60315698040418ms
+	-NRD RELAX and HDR Composition: 0.44745443675144ms
+	-Render Sky: 0.01223967292092ms
+	-Tonemap: 0.02017353782969ms
+	-Render CanvasItems: 0.01150413584118ms
+GPU PROFILE (total 1.444ms):
+	-TLAS Build: 0.08252897341389ms
+	-Setup Shadows: 0.01929752097642ms
+	-Render Directional/SpotLight Shadows: 0.01742148596393ms
+	-Pack 3D Cluster Elements: 0.0131074505404ms
+	-Update Volumetric Fog: 0.01568594648818ms
+	-RTXDI Surface: 0.05118181291691ms
+	-RTXDI Guides: 0.02182644654897ms
+	-RTXDI Direct Lighting: 0.78383453621352ms
+	-NRD RELAX and HDR Composition: 0.47988428163134ms
+	-Render Sky: 0.01278513325147ms
+	-Tonemap: 0.01139669477447ms
+	-Render CanvasItems: 0.0117272719864ms
+GPU PROFILE (total 1.539ms):
+	-TLAS Build: 0.08736362142011ms
+	-Setup Shadows: 0.02058678028012ms
+	-Render Directional/SpotLight Shadows: 0.01813223933385ms
+	-Pack 3D Cluster Elements: 0.01378514155869ms
+	-Update Volumetric Fog: 0.01658677069609ms
+	-RTXDI Surface: 0.05548766033709ms
+	-RTXDI Guides: 0.02147933471301ms
+	-RTXDI Direct Lighting: 0.88608260982293ms
+	-NRD RELAX and HDR Composition: 0.52710768013946ms
+	-Render Sky: 0.01375207723665ms
+	-Tonemap: 0.01171074425879ms
+	-Render CanvasItems: 0.01222313140049ms
+GPU PROFILE (total 1.622ms):
+	-TLAS Build: 0.09208266991229ms
+	-Setup Shadows: 0.02190909306865ms
+	-Render Directional/SpotLight Shadows: 0.01924794173438ms
+	-Pack 3D Cluster Elements: 0.01488429652758ms
+	-Update Volumetric Fog: 0.01734710330806ms
+	-RTXDI Surface: 0.05972722345147ms
+	-RTXDI Guides: 0.02185123222919ms
+	-RTXDI Direct Lighting: 0.94845423422569ms
+	-NRD RELAX and HDR Composition: 0.57166075903522ms
+	-Render Sky: 0.01452893067983ms
+	-Tonemap: 0.01231404868039ms
+	-Render CanvasItems: 0.0126198274045ms
+GPU PROFILE (total 1.74ms):
+	-TLAS Build: 0.09711576099238ms
+	-Setup Shadows: 0.02343801624519ms
+	-Render Directional/SpotLight Shadows: 0.02003305214496ms
+	-Render 3D Cluster Elements: 0.01021487259668ms
+	-Pack 3D Cluster Elements: 0.015702475201ms
+	-Update Volumetric Fog: 0.01831405418963ms
+	-RTXDI Surface: 0.06390084116912ms
+	-RTXDI Guides: 0.02199173367713ms
+	-RTXDI Direct Lighting: 0.90091768375113ms
+	-NRD RELAX and HDR Composition: 0.6010993768361ms
+	-Render Sky: 0.03537189073799ms
+	-Tonemap: 0.01321488865151ms
+	-Render CanvasItems: 0.01886776656159ms
+MANUAL_CAPTURE path=C:/Users/lukas/AppData/Local/Temp/godot-shader-unification-rendering/baseline-gallery.png result=0 frame=949 gpu_ms=1.78799998760223
+MANUAL_MEMORY total=455279712.0 textures=358057984.0 buffers=84274798.0
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_common_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_pcl_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_reflex_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_g_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_d_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_nis_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_pcl_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_pcl_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.common.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_common_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.deepdvc.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.directsr.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.dlss.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.dlss_d.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_d_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.dlss_g.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_g_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.nis.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_nis_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.nvperf.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.pcl.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_pcl_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.reflex.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_reflex_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.

@@ -1,0 +1,4 @@
+
+Algorithm : SHA256
+Hash      : 55967155821B21DFF843D2FEFA663B84160405167714EAE7C98764D43EA795A2
+Path      : G:\Projects\godot-rtx\bin\godot.windows.editor.x86_64.exe
