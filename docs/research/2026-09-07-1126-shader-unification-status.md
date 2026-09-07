@@ -14,8 +14,8 @@ Research and standalone compiler limitations are recorded in the
 | 1. Slang compiler, request, cache/export and distribution | Source review and proof audit PASS | `3a04df35e6`, fix `836f8c7e77`; [evidence](2026-09-07-1154-slang-compiler-step1-status.md), [proof supplement](2026-09-07-1219-slang-step1-proof-supplement-status.md) |
 | 2. Spatial frontend and surfaces | Final source review and bounded proof audits PASS | `675d3cbe7f`, fix `1a5faf5c60`; [evidence](2026-09-07-1305-shader-unification-step2-summary.md), [fix](2026-09-07-1323-shader-unification-step2-round1.md); task baseline `836f8c7e77` |
 | 3. Shared shading and DI replacement | Fresh source review and bounded proof audit PASS | `38884029bf`; [evidence](2026-09-07-1400-shader-unification-step3-status.md); task baseline `1a5faf5c60` |
-| 4. NRD/HDR and removal of PT dependency | In progress | Released after step-3 PASS; task baseline `38884029bf` |
-| 5. Final validation and documentation | Pending implementation | No new renderer/runtime proof |
+| 4. NRD/HDR and removal of PT dependency | Fresh source review and bounded proof audit PASS | `99c67e1f78`; [evidence](2026-09-07-1425-shader-unification-step4-status.md); task baseline `38884029bf` |
+| 5. Final validation and documentation | In progress | Released after step-4 PASS; task baseline `99c67e1f78` |
 
 The selected step-1 implementer is `core-implementer (gpt-6-astra)`, high effort,
 because compiler ABI, concurrency, shader cache/export and RD integration cross
@@ -185,3 +185,36 @@ fourteen emitted nested SDK layouts and the sixteen shader/pipeline pairs. It
 does not treat the diagnostic wrapper as a reusable automatic gate or the new
 SCons check as historical generation evidence. Step 4 is released at baseline
 `38884029bf`; its writer owns NRD/HDR, material extraction and dormant PT removal.
+
+## Step 4 complete renderer integration
+
+Commit `99c67e1f78` replaces the NRD/HDR frame shader and removes the dormant PT
+compiler, bundles, workers, readiness gates and exclusive shader closure. Material
+upload now consumes existing spatial metadata and compares source hashes alongside
+the existing parameter invalidation counter. The final ordinary editor build
+passed, and the real Vulkan/RTX 4090 gallery captured frame 476 with exit zero.
+
+The parent inspected the final retained
+[gallery](shader-unification-evidence/step4-gallery.png), SHA-256
+`985f81c16973cdb2876d435df8074bcd5e71786db47643b4cadf8a2176b903a3`, against the
+retained before-migration image: geometry, material, emission and shadow arrangement
+remain visible. This is bounded real rendering through the integrated native spatial,
+DI and NRD/HDR path; it is not pixel equivalence or performance evidence. The
+[report](2026-09-07-1425-shader-unification-step4-status.md) records final source and
+binary provenance, remaining diagnostics and unverified axes. Fresh source review
+and independent proof audit precede step 5.
+
+Fresh round-1 source review returned PASS for the exact commit and cumulative
+`38884029bf..99c67e1f78`, covering taxonomy classes 2–9. It checked upload allocation
+failure/retry and release, shader source invalidation, shared frontend metadata,
+NRD bindings/packing/order, TLAS classification and count-one range, complete old
+PT removal and build consumers. No concrete defect was found. The independent
+proof audit returned PASS after verifying source/binary/artifact hashes, raw logs,
+the production dispatch path and final image against the baseline. The existing
+capture helper exits normally even when saving fails; the actual successful save,
+verified PNG and visual inspection establish this observation, not exit zero alone.
+
+Step 5 is released at `99c67e1f78`. Remaining required proof includes template and
+export/bake/runtime distribution, a separate double-precision build/run, visible
+supported material and include hot reload, nontrivial AST-generated matrix output,
+and the stated interactive/material/topology axes. No automated tests are authorized.
