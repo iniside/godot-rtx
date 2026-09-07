@@ -13,8 +13,8 @@ Research and standalone compiler limitations are recorded in the
 |---|---|---|
 | 1. Slang compiler, request, cache/export and distribution | Source review and proof audit PASS | `3a04df35e6`, fix `836f8c7e77`; [evidence](2026-09-07-1154-slang-compiler-step1-status.md), [proof supplement](2026-09-07-1219-slang-step1-proof-supplement-status.md) |
 | 2. Spatial frontend and surfaces | Final source review and bounded proof audits PASS | `675d3cbe7f`, fix `1a5faf5c60`; [evidence](2026-09-07-1305-shader-unification-step2-summary.md), [fix](2026-09-07-1323-shader-unification-step2-round1.md); task baseline `836f8c7e77` |
-| 3. Shared shading and DI replacement | In progress | Released after step-2 PASS; task baseline `1a5faf5c60` |
-| 4. NRD/HDR and removal of PT dependency | Pending step 3 | No implementation evidence |
+| 3. Shared shading and DI replacement | Fresh source review and bounded proof audit PASS | `38884029bf`; [evidence](2026-09-07-1400-shader-unification-step3-status.md); task baseline `1a5faf5c60` |
+| 4. NRD/HDR and removal of PT dependency | In progress | Released after step-3 PASS; task baseline `38884029bf` |
 | 5. Final validation and documentation | Pending implementation | No new renderer/runtime proof |
 
 The selected step-1 implementer is `core-implementer (gpt-6-astra)`, high effort,
@@ -110,8 +110,8 @@ vertex-position Invariant decoration closes the existing position contract.
 The parent visually compared `step2-gallery-o0.png` from the ordinary Vulkan
 editor with the retained baseline: visible geometry, materials and shadow/light
 arrangement remain. This is not pixel equality or a performance claim. Final
-step-2 proof/commit/review remains pending; the implementer retains detailed
-commands, binary provenance and final shader diagnostics.
+step-2 source and proof results are recorded below with binary provenance and
+the final shader diagnostics.
 
 The proof auditor could not find a retained final vertex spirv-val invocation.
 The parent reran only that validator on the unchanged retained artifact on
@@ -151,3 +151,37 @@ moves into step 3 so native DI can compile; full NRD/HDR frame migration stays i
 step 4. This changes dependency order within the approved scope. Replaced GLSL
 helpers are removed in their replacement step, even if dormant PT/frame includes
 remain temporarily broken until step 4; no temporary duplicate math is introduced.
+
+## Step 3 native DI integration
+
+Commit `38884029bf` replaces DI and its shared shading/geometry closure with native
+Slang. All sixteen mode, radiance-layout and precision permutations pass SPIR-V
+validation and create shader/compute-pipeline RIDs on Vulkan/RTX 4090 through the
+generated ShaderRD source and existing compiler/container path. The changed host
+translation unit compiled separately; SCons generated the native include closure.
+The diagnostic links retained step-2 engine objects with the new generated shader
+under a distinct C++ class name. This is neither a full current-source engine build
+nor DI dispatch or final image validation. Exact artifacts and boundaries are in
+the [step report](2026-09-07-1400-shader-unification-step3-status.md).
+
+Fresh round-1 source review returned PASS for the exact commit and cumulative
+`1a5faf5c60..38884029bf`, covering taxonomy classes 2–9. It checked the common
+BRDF/geometry/coverage/light contracts, matrix conventions, descriptor ownership,
+SDK boundary and removal of the replaced authorities. No concrete defect was found.
+
+The proof audit independently matched source, binary, generated-header and SPIR-V
+hashes and checked actual results. The temporary launch wrapper does not propagate
+the child exit code, and the diagnostic does not fail on an empty separately built
+container. These are not automated gates; observed nonempty outputs and valid RIDs
+are inspected directly. The original SCons command is recorded without retained
+execution output. A new parent invocation on 2026-09-07 14:11 UTC exited zero and
+reported the identical generated header up to date; the
+[receipt](shader-unification-evidence/step3-parent-embedding-receipt.json) and
+[output](shader-unification-evidence/step3-parent-embedding-output.txt) prove that
+bounded observation, not a fresh generation or the historical invocation.
+
+The independent audit returned PASS for the bounded observations, including all
+fourteen emitted nested SDK layouts and the sixteen shader/pipeline pairs. It
+does not treat the diagnostic wrapper as a reusable automatic gate or the new
+SCons check as historical generation evidence. Step 4 is released at baseline
+`38884029bf`; its writer owns NRD/HDR, material extraction and dormant PT removal.

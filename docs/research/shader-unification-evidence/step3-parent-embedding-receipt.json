@@ -1,0 +1,9 @@
+{
+  "time_utc": "2026-09-07T14:11:02.3263081Z",
+  "command": "scons platform=windows target=editor accesskit=no d3d12=no servers/rendering/renderer_rd/shaders/raytracing/rtxdi_di.slang.gen.h -j16",
+  "exit_code": 0,
+  "source_commit": "38884029bf5654e0974ee6360e464185ea9b5c5c",
+  "generated_header_sha256": "202A80817FA9490D612C666057DA5BC3B4910F585F030AE857DFDB3622DDFE9C",
+  "output_sha256": "E68B7D0CF2E83AF6E99D35DFBD5D879136ABDED1E03B214BF3DAF88AC616D136",
+  "boundary": "Supplemental invocation; existing generated header may be up-to-date, not proof of original generation invocation."
+}

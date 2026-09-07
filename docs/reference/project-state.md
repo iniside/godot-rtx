@@ -77,7 +77,9 @@ separately in `b2d04129cb`. Compiler integration passed source/proof review at
 audits at `1a5faf5c60` on 2026-09-07. Editor/template compilation, native shader
 diagnostics and ordinary Vulkan rendering are recorded; complete exported-project,
 double-runtime and material/topology validation remain final-stage work. Shared
-shading/DI replacement is in progress. Evidence and limits are tracked in the
+shading/DI replacement passed source review and bounded proof audit at
+`38884029bf`: sixteen native variants create Vulkan compute pipelines, with no DI
+dispatch claim. NRD/HDR and dormant PT removal are in progress. Evidence is in the
 [migration status](../research/2026-09-07-1126-shader-unification-status.md).
 
 Active work is tracked in the [RTXDI implementation status](../research/2026-09-06-1904-rtxdi-implementation-status.md).

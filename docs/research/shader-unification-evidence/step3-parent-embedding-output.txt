@@ -1,0 +1,13 @@
+scons: Reading SConscript files ...
+Using Visual Studio 14.5 with Windows SDK 10.0.26100.0.
+Building for platform "windows", architecture "x86_64", target "editor".
+WARNING: The ANGLE rendering driver requires dependencies to be installed.
+You can install them by running `python misc\scripts\install_angle.py`.
+See the documentation for more information:
+	https://docs.godotengine.org/en/latest/engine_details/development/compiling/compiling_for_windows.html
+Alternatively, disable this driver by compiling with `angle=no` explicitly.
+scons: done reading SConscript files.
+scons: Building targets ...
+scons: `servers\rendering\renderer_rd\shaders\raytracing\rtxdi_di.slang.gen.h' is up to date.
+scons: done building targets.
+INFO: Time elapsed: 00:00:00.08
