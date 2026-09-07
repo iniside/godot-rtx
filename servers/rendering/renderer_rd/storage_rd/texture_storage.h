@@ -296,6 +296,7 @@ private:
 			int panorama_to_dp_users;
 			int users;
 			Rect2 uv_rect;
+			uint64_t content_generation = 0;
 		};
 
 		struct SortItem {
@@ -395,7 +396,6 @@ private:
 	DecalData *decals = nullptr;
 	DecalInstanceSort *decal_sort = nullptr;
 	RID decal_buffer;
-	uint64_t decal_generation = 1;
 
 	bool _get_decal_sort(RID p_instance, const Transform3D &p_camera_xform, DecalInstanceSort &r_sort) const;
 	bool _pack_decal(const DecalInstanceSort &p_sort, const Transform3D &p_frame, DecalData &r_data);

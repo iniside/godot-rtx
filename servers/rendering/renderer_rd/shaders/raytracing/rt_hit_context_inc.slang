@@ -162,13 +162,6 @@ static float3 rt_bary_dx;
 static float3 rt_bary_dy;
 static float3 rt_position_dx;
 static float3 rt_position_dy;
-static float2 rt_uv_dx;
-static float2 rt_uv_dy;
-static float2 rt_uv2_dx;
-static float2 rt_uv2_dy;
-static uint rt_vertex_ordinal;
-static float2 rt_vertex_uv[3];
-static float2 rt_vertex_uv2[3];
 static float rt_cone_radius;
 
 struct RTVertexInterpolants {
@@ -183,6 +176,24 @@ struct RTVertexInterpolants {
 	float4 custom2;
 	float4 custom3;
 };
+
+static RTVertexInterpolants rt_interpolants_dx;
+static RTVertexInterpolants rt_interpolants_dy;
+static float rt_hit_distance;
+
+struct RTValue<T> {
+	T value;
+	T x;
+	T y;
+};
+
+RTValue<T> rt_value<T>(T value) {
+	RTValue<T> result;
+	result.value = value;
+	result.x = value;
+	result.y = value;
+	return result;
+}
 
 void rt_load_material_uniforms();
 void rt_material_vertex();
@@ -219,85 +230,105 @@ void rt_ray_footprint(GeometryHitInput hit, GeometryTriangle triangle, float3 ra
 	uv_dy = triangle.uv0 * rt_bary_dy.x + triangle.uv1 * rt_bary_dy.y + triangle.uv2 * rt_bary_dy.z;
 }
 
-float rt_texture_lod_2d(float2 dimensions, uint basis) {
-	float2 dx = rt_uv_dx * dimensions;
-	float2 dy = rt_uv_dy * dimensions;
-	float2 dx2 = rt_uv2_dx * dimensions;
-	float2 dy2 = rt_uv2_dy * dimensions;
-	float footprint = basis == 2u ? 0.0 : max(dot(dx, dx), dot(dy, dy));
-	if (basis != 1u) {
-		footprint = max(footprint, max(dot(dx2, dx2), dot(dy2, dy2)));
-	}
-	return max(0.0, 0.5 * log2(max(footprint, 1e-12)));
+float rt_texture_footprint(float3 dimensions, float3 dx, float3 dy) {
+	dx *= dimensions;
+	dy *= dimensions;
+	return max(0.0, 0.5 * log2(max(max(dot(dx, dx), dot(dy, dy)), 1e-12)));
 }
-float rt_texture_lod(Texture2D<float4> texture_value, float2 coordinate, uint basis) {
+
+float2 rt_cube_coordinate(float3 coordinate, uint face) {
+	float3 projected = face == 0u ? coordinate.zyx : face == 1u ? coordinate.xzy : coordinate.xyz;
+	return projected.xy / max(abs(projected.z), 1e-12) * 0.5;
+}
+
+float rt_texture_lod(Texture2D<float4> texture_value, float2 coordinate, float2 dx, float2 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, levels);
-	return min(rt_texture_lod_2d(float2(width, height), basis), float(max(levels, 1u) - 1u));
+	float lod = rt_texture_footprint(float3(width, height, 1u), float3(dx.xy, 0.0), float3(dy.xy, 0.0));
+	return min(lod, float(max(levels, 1u) - 1u));
 }
 
-float rt_texture_lod(Texture2D<int4> texture_value, float2 coordinate, uint basis) {
+float rt_texture_lod(Texture2D<int4> texture_value, float2 coordinate, float2 dx, float2 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, levels);
-	return min(rt_texture_lod_2d(float2(width, height), basis), float(max(levels, 1u) - 1u));
+	float lod = rt_texture_footprint(float3(width, height, 1u), float3(dx.xy, 0.0), float3(dy.xy, 0.0));
+	return min(lod, float(max(levels, 1u) - 1u));
 }
 
-float rt_texture_lod(Texture2D<uint4> texture_value, float2 coordinate, uint basis) {
+float rt_texture_lod(Texture2D<uint4> texture_value, float2 coordinate, float2 dx, float2 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, levels);
-	return min(rt_texture_lod_2d(float2(width, height), basis), float(max(levels, 1u) - 1u));
+	float lod = rt_texture_footprint(float3(width, height, 1u), float3(dx.xy, 0.0), float3(dy.xy, 0.0));
+	return min(lod, float(max(levels, 1u) - 1u));
 }
 
-float rt_texture_lod(Texture2DArray<float4> texture_value, float3 coordinate, uint basis) {
+float rt_texture_lod(Texture2DArray<float4> texture_value, float3 coordinate, float3 dx, float3 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, depth, levels);
-	return min(rt_texture_lod_2d(float2(width, height), basis), float(max(levels, 1u) - 1u));
+	float lod = rt_texture_footprint(float3(width, height, 1u), float3(dx.xy, 0.0), float3(dy.xy, 0.0));
+	return min(lod, float(max(levels, 1u) - 1u));
 }
 
-float rt_texture_lod(Texture2DArray<int4> texture_value, float3 coordinate, uint basis) {
+float rt_texture_lod(Texture2DArray<int4> texture_value, float3 coordinate, float3 dx, float3 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, depth, levels);
-	return min(rt_texture_lod_2d(float2(width, height), basis), float(max(levels, 1u) - 1u));
+	float lod = rt_texture_footprint(float3(width, height, 1u), float3(dx.xy, 0.0), float3(dy.xy, 0.0));
+	return min(lod, float(max(levels, 1u) - 1u));
 }
 
-float rt_texture_lod(Texture2DArray<uint4> texture_value, float3 coordinate, uint basis) {
+float rt_texture_lod(Texture2DArray<uint4> texture_value, float3 coordinate, float3 dx, float3 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, depth, levels);
-	return min(rt_texture_lod_2d(float2(width, height), basis), float(max(levels, 1u) - 1u));
+	float lod = rt_texture_footprint(float3(width, height, 1u), float3(dx.xy, 0.0), float3(dy.xy, 0.0));
+	return min(lod, float(max(levels, 1u) - 1u));
 }
 
-float rt_texture_lod(Texture3D<float4> texture_value, float3 coordinate, uint basis) {
+float rt_texture_lod(Texture3D<float4> texture_value, float3 coordinate, float3 dx, float3 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, depth, levels);
-	return clamp(log2(max(rt_cone_radius * float(max(width, max(height, depth))), 1e-6)), 0.0, float(max(levels, 1u) - 1u));
+	float lod = rt_texture_footprint(float3(width, height, depth), dx, dy);
+	return min(lod, float(max(levels, 1u) - 1u));
 }
 
-float rt_texture_lod(Texture3D<int4> texture_value, float3 coordinate, uint basis) {
+float rt_texture_lod(Texture3D<int4> texture_value, float3 coordinate, float3 dx, float3 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, depth, levels);
-	return clamp(log2(max(rt_cone_radius * float(max(width, max(height, depth))), 1e-6)), 0.0, float(max(levels, 1u) - 1u));
+	float lod = rt_texture_footprint(float3(width, height, depth), dx, dy);
+	return min(lod, float(max(levels, 1u) - 1u));
 }
 
-float rt_texture_lod(Texture3D<uint4> texture_value, float3 coordinate, uint basis) {
+float rt_texture_lod(Texture3D<uint4> texture_value, float3 coordinate, float3 dx, float3 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, depth, levels);
-	return clamp(log2(max(rt_cone_radius * float(max(width, max(height, depth))), 1e-6)), 0.0, float(max(levels, 1u) - 1u));
+	float lod = rt_texture_footprint(float3(width, height, depth), dx, dy);
+	return min(lod, float(max(levels, 1u) - 1u));
 }
 
-float rt_texture_lod(TextureCube<float4> texture_value, float3 coordinate, uint basis) {
+float rt_texture_lod(TextureCube<float4> texture_value, float3 coordinate, float3 dx, float3 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, levels);
-	return clamp(log2(max(rt_cone_radius * float(width) / max(length(coordinate.xyz), 1e-6), 1e-6)), 0.0, float(max(levels, 1u) - 1u));
+	float3 direction = abs(coordinate.xyz);
+	uint face = direction.x >= direction.y && direction.x >= direction.z ? 0u : direction.y >= direction.z ? 1u : 2u;
+	float2 center = rt_cube_coordinate(coordinate.xyz, face);
+	float2 gradient_x = rt_cube_coordinate(coordinate.xyz + dx.xyz, face) - center;
+	float2 gradient_y = rt_cube_coordinate(coordinate.xyz + dy.xyz, face) - center;
+	float lod = rt_texture_footprint(float3(width, height, 1u), float3(gradient_x, 0.0), float3(gradient_y, 0.0));
+	return min(lod, float(max(levels, 1u) - 1u));
 }
 
-float rt_texture_lod(TextureCubeArray<float4> texture_value, float4 coordinate, uint basis) {
+float rt_texture_lod(TextureCubeArray<float4> texture_value, float4 coordinate, float4 dx, float4 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, depth, levels);
-	return clamp(log2(max(rt_cone_radius * float(width) / max(length(coordinate.xyz), 1e-6), 1e-6)), 0.0, float(max(levels, 1u) - 1u));
+	float3 direction = abs(coordinate.xyz);
+	uint face = direction.x >= direction.y && direction.x >= direction.z ? 0u : direction.y >= direction.z ? 1u : 2u;
+	float2 center = rt_cube_coordinate(coordinate.xyz, face);
+	float2 gradient_x = rt_cube_coordinate(coordinate.xyz + dx.xyz, face) - center;
+	float2 gradient_y = rt_cube_coordinate(coordinate.xyz + dy.xyz, face) - center;
+	float lod = rt_texture_footprint(float3(width, height, 1u), float3(gradient_x, 0.0), float3(gradient_y, 0.0));
+	return min(lod, float(max(levels, 1u) - 1u));
 }
 
 void rt_initialize_vertex(GeometryHitInput hit, GeometryTriangle triangle, uint index) {
-	rt_vertex_ordinal = index;
 	VERTEX_INDEX = triangle.indices[index];
 	geometry_fetch_bones(hit.geometry, VERTEX_INDEX, bone_attrib, weight_attrib);
 	vertex = geometry_fetch_position(hit.geometry, VERTEX_INDEX);
@@ -311,13 +342,18 @@ void rt_initialize_vertex(GeometryHitInput hit, GeometryTriangle triangle, uint 
 	custom2_attrib = geometry_fetch_custom(hit.geometry, VERTEX_INDEX, 2u);
 	custom3_attrib = geometry_fetch_custom(hit.geometry, VERTEX_INDEX, 3u);
 	if (hit.geometry.multimesh_address != 0) {
-		float4x4 instance_transform = geometry_instance_transform(hit.geometry, VERTEX_INDEX);
-		float4x4 inverse_instance_transform = geometry_inverse(instance_transform);
-		vertex = mul(inverse_instance_transform, float4(vertex, 1.0)).xyz;
-		normal_highp = normalize(mul(transpose((float3x3)instance_transform), normal_highp));
-		tangent = normalize(mul((float3x3)inverse_instance_transform, tangent));
-		binormal = normalize(mul((float3x3)inverse_instance_transform, binormal));
-		VERTEX_INDEX %= hit.geometry.source_vertex_count;
+		GeometryData source_geometry = hit.geometry;
+		source_geometry.vertex_address = hit.geometry.source_vertex_address;
+		source_geometry.vertex_count = hit.geometry.source_vertex_count;
+		if (source_geometry.normal_byte_offset != OFFSET_NONE) {
+			source_geometry.normal_byte_offset = source_geometry.vertex_count * source_geometry.position_stride;
+		}
+		if (source_geometry.tangent_byte_offset != OFFSET_NONE) {
+			source_geometry.tangent_byte_offset = source_geometry.normal_byte_offset;
+		}
+		VERTEX_INDEX %= source_geometry.vertex_count;
+		vertex = geometry_fetch_position(source_geometry, VERTEX_INDEX);
+		geometry_fetch_tbn(source_geometry, VERTEX_INDEX, normal_highp, tangent, binormal);
 	}
 	roughness_highp = 1.0;
 	point_size = 1.0;
@@ -331,8 +367,6 @@ void rt_initialize_vertex(GeometryHitInput hit, GeometryTriangle triangle, uint 
 }
 
 void rt_accumulate_vertex(inout RTVertexInterpolants sums, float weight) {
-	rt_vertex_uv[rt_vertex_ordinal] = uv_interp;
-	rt_vertex_uv2[rt_vertex_ordinal] = uv2_interp;
 	sums.uv += uv_interp * weight;
 	sums.uv2 += uv2_interp * weight;
 	sums.color += color_interp * weight;
@@ -366,10 +400,6 @@ void rt_restore_vertex(RTVertexInterpolants sums) {
 	normal_highp = sums.normal;
 	tangent = sums.tangent;
 	binormal = sums.binormal;
-	rt_uv_dx = rt_vertex_uv[0] * rt_bary_dx.x + rt_vertex_uv[1] * rt_bary_dx.y + rt_vertex_uv[2] * rt_bary_dx.z;
-	rt_uv_dy = rt_vertex_uv[0] * rt_bary_dy.x + rt_vertex_uv[1] * rt_bary_dy.y + rt_vertex_uv[2] * rt_bary_dy.z;
-	rt_uv2_dx = rt_vertex_uv2[0] * rt_bary_dx.x + rt_vertex_uv2[1] * rt_bary_dx.y + rt_vertex_uv2[2] * rt_bary_dx.z;
-	rt_uv2_dy = rt_vertex_uv2[0] * rt_bary_dy.x + rt_vertex_uv2[1] * rt_bary_dy.y + rt_vertex_uv2[2] * rt_bary_dy.z;
 }
 
 void rt_apply_decals(uint mask, float3 point, float3 geometry_normal, inout float3 normal) {
@@ -399,6 +429,7 @@ void rt_apply_decals(uint mask, float3 point, float3 geometry_normal, inout floa
 }
 
 SurfaceData rt_evaluate_material(GeometryHitInput hit, GeometryTriangle triangle, float3 ray_direction, float hit_t, bool native_front, float cone_width, float cone_spread) {
+	rt_hit_distance = hit_t;
 	scene_data = scene_data_block.data;
 	rt_view_to_world = rt_camera_to_rt(rt_frame, false);
 	rt_world_to_view = geometry_inverse(rt_view_to_world);
@@ -430,8 +461,6 @@ SurfaceData rt_evaluate_material(GeometryHitInput hit, GeometryTriangle triangle
 	float3 object_position, object_dx, object_dy;
 	float2 uv, uv_dx, uv_dy;
 	rt_ray_footprint(hit, triangle, ray_direction, rt_cone_radius, object_position, object_dx, object_dy, uv, uv_dx, uv_dy);
-	rt_uv_dx = uv_dx;
-	rt_uv_dy = uv_dy;
 	rt_load_material_uniforms();
 	float3 bary = float3(1.0 - hit.barycentrics.x - hit.barycentrics.y, hit.barycentrics);
 	rt_material_interpolate_vertices(hit, triangle, bary);
@@ -442,6 +471,8 @@ SurfaceData rt_evaluate_material(GeometryHitInput hit, GeometryTriangle triangle
 #ifdef DO_SIDE_CHECK
 	if (!front_facing_builtin) {
 		normal_highp = -normal_highp;
+		rt_interpolants_dx.normal = -rt_interpolants_dx.normal;
+		rt_interpolants_dy.normal = -rt_interpolants_dy.normal;
 	}
 #endif
 	albedo_highp = float3(1.0);

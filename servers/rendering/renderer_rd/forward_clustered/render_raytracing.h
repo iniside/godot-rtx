@@ -90,7 +90,7 @@ struct alignas(16) RT_GeometryData {
 	uint32_t multimesh_offset;
 	uint32_t source_vertex_count;
 	uint32_t multimesh_flags;
-	uint32_t _padding[2];
+	uint64_t source_vertex_address;
 	uint64_t skin_address;
 	uint32_t skin_stride;
 	uint32_t skin_weight_offset;

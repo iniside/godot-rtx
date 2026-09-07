@@ -94,11 +94,13 @@ void SceneShaderForwardClustered::ShaderData::_compile_hit_code(const String &p_
 	}
 	HashMap<String, String> sections;
 	String callbacks = "void rt_load_material_uniforms() {\n" + (unsupported ? String() : hit_code.code["rt_uniform_init"]) + "}\n";
-	callbacks += "void rt_material_vertex() {\n" + (unsupported ? String() : hit_code.code["vertex"]) + "}\n";
-	callbacks += "void rt_material_fragment() {\n" + (unsupported ? String() : hit_code.code["fragment"]) + "}\n";
+	callbacks += "void rt_material_vertex_program() {\n" + (unsupported ? String() : hit_code.code["vertex"]) + "}\n";
+	callbacks += "void rt_material_fragment_program() {\n" + (unsupported ? String() : hit_code.code["fragment"]) + "}\n";
+	callbacks += "void rt_material_vertex() {\n" + (unsupported ? String() : hit_code.code["rt_vertex_enter"]) + "rt_material_vertex_program();\n" + (unsupported ? String() : hit_code.code["rt_values_leave"]) + "}\n";
+	callbacks += "void rt_material_fragment() {\n" + (unsupported ? String() : hit_code.code["rt_fragment_enter"]) + "rt_material_fragment_program();\n" + (unsupported ? String() : hit_code.code["rt_values_leave"]) + "}\n";
 	callbacks += "void rt_material_interpolate_vertices(GeometryHitInput hit, GeometryTriangle triangle, float3 bary) {\n";
 	callbacks += unsupported ? String() : hit_code.code["rt_varyings_init"];
-	callbacks += "RTVertexInterpolants sums = (RTVertexInterpolants)0;\nfor (uint rt_vertex_index = 0u; rt_vertex_index < 3u; rt_vertex_index++) {\nfloat rt_vertex_weight = bary[rt_vertex_index];\nrt_initialize_vertex(hit, triangle, rt_vertex_index);\nrt_material_vertex();\nrt_accumulate_vertex(sums, rt_vertex_weight);\n";
+	callbacks += "RTVertexInterpolants sums = (RTVertexInterpolants)0;\nrt_interpolants_dx = (RTVertexInterpolants)0;\nrt_interpolants_dy = (RTVertexInterpolants)0;\nfor (uint rt_vertex_index = 0u; rt_vertex_index < 3u; rt_vertex_index++) {\nfloat rt_vertex_weight = bary[rt_vertex_index];\nrt_initialize_vertex(hit, triangle, rt_vertex_index);\nrt_material_vertex();\nrt_accumulate_vertex(sums, rt_vertex_weight);\nrt_accumulate_vertex(rt_interpolants_dx, rt_bary_dx[rt_vertex_index]);\nrt_accumulate_vertex(rt_interpolants_dy, rt_bary_dy[rt_vertex_index]);\n";
 	callbacks += unsupported ? String() : hit_code.code["rt_varyings_accumulate"];
 	callbacks += "}\nrt_restore_vertex(sums);\n";
 	callbacks += unsupported ? String() : hit_code.code["rt_varyings_restore"];

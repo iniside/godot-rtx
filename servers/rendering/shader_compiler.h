@@ -124,6 +124,23 @@ private:
 	ShaderLanguage parser;
 	HashSet<String> slang_helper_signatures;
 	String slang_helpers;
+	struct RTExpressionInput {
+		const ShaderLanguage::Node *node = nullptr;
+		String type;
+		String value;
+		bool writable = false;
+		bool array_base = false;
+	};
+	bool rt_native_expression = false;
+	HashMap<const ShaderLanguage::Node *, String> rt_expression_overrides;
+	HashMap<const ShaderLanguage::Node *, String> rt_array_overrides;
+	HashMap<String, String> rt_builtin_types;
+	HashMap<String, String> rt_builtin_values;
+	HashSet<String> rt_written_builtins;
+	String rt_texture_coordinates[3];
+	String _rt_type(ShaderLanguage::DataType p_type, const String &p_struct = String(), int p_array_size = 0) const;
+	String _rt_expression(const ShaderLanguage::Node *p_node, int p_level, GeneratedCode &r_gen_code, IdentifierActions &p_actions, const DefaultIdentifierActions &p_default_actions, bool p_assigning);
+	void _rt_bind_expression_input(const ShaderLanguage::Node *p_node, bool p_writable, Vector<RTExpressionInput> &r_inputs, int p_level, GeneratedCode &r_gen_code, IdentifierActions &p_actions, const DefaultIdentifierActions &p_default_actions);
 	String _slang_inverse(ShaderLanguage::DataType p_type);
 	String _slang_helper(const String &p_return_type, const String &p_name, const Vector<String> &p_argument_types, const String &p_body);
 	String _typestr(ShaderLanguage::DataType p_type) const;

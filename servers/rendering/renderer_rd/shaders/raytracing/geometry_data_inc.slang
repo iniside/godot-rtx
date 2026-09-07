@@ -52,7 +52,7 @@ struct GeometryData {
 	uint multimesh_offset;
 	uint source_vertex_count;
 	uint multimesh_flags;
-	uint2 _padding;
+	uint64_t source_vertex_address;
 	uint64_t skin_address;
 	uint skin_stride;
 	uint skin_weight_offset;

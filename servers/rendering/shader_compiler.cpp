@@ -394,6 +394,9 @@ void ShaderCompiler::_dump_function_deps(const SL::ShaderNode *p_node, const Str
 			header += "]";
 		}
 
+		if (actions.ray_hit_context) {
+			header = _rt_type(fnode->return_type, fnode->return_struct_name, fnode->return_array_size);
+		}
 		header += " ";
 		header += _mkid(fnode->rname);
 		header += "(";
@@ -401,6 +404,11 @@ void ShaderCompiler::_dump_function_deps(const SL::ShaderNode *p_node, const Str
 		for (int i = 0; i < fnode->arguments.size(); i++) {
 			if (i > 0) {
 				header += ", ";
+			}
+			if (actions.ray_hit_context) {
+				const SL::FunctionNode::Argument &argument = fnode->arguments[i];
+				header += _qualstr(argument.qualifier) + _rt_type(argument.type, argument.struct_name, argument.array_size) + " " + _mkid(argument.name);
+				continue;
 			}
 			header += _constr(fnode->arguments[i].is_const);
 			if (fnode->arguments[i].type == SL::TYPE_STRUCT) {
@@ -572,47 +580,6 @@ String ShaderCompiler::_slang_helper(const String &p_return_type, const String &
 	return p_name;
 }
 
-static uint32_t _rt_texture_uv_basis(const SL::Node *p_node) {
-	if (p_node == nullptr) {
-		return 0;
-	}
-	switch (p_node->type) {
-		case SL::Node::NODE_TYPE_VARIABLE: {
-			const SL::VariableNode *variable = static_cast<const SL::VariableNode *>(p_node);
-			return !variable->is_local ? (variable->name == "UV" ? 1u : variable->name == "UV2" ? 2u
-																								: 0u)
-									   : 0u;
-		}
-		case SL::Node::NODE_TYPE_OPERATOR: {
-			uint32_t basis = 0;
-			for (const SL::Node *argument : static_cast<const SL::OperatorNode *>(p_node)->arguments) {
-				basis |= _rt_texture_uv_basis(argument);
-			}
-			return basis;
-		}
-		case SL::Node::NODE_TYPE_MEMBER: {
-			const SL::MemberNode *member = static_cast<const SL::MemberNode *>(p_node);
-			return _rt_texture_uv_basis(member->owner) | _rt_texture_uv_basis(member->index_expression) | _rt_texture_uv_basis(member->call_expression);
-		}
-		case SL::Node::NODE_TYPE_ARRAY: {
-			const SL::ArrayNode *array = static_cast<const SL::ArrayNode *>(p_node);
-			uint32_t basis = !array->is_local ? (array->name == "UV" ? 1u : array->name == "UV2" ? 2u
-																								 : 0u)
-											  : 0u;
-			return basis | _rt_texture_uv_basis(array->index_expression) | _rt_texture_uv_basis(array->call_expression);
-		}
-		case SL::Node::NODE_TYPE_ARRAY_CONSTRUCT: {
-			uint32_t basis = 0;
-			for (const SL::Node *element : static_cast<const SL::ArrayConstructNode *>(p_node)->initializer) {
-				basis |= _rt_texture_uv_basis(element);
-			}
-			return basis;
-		}
-		default:
-			return 0;
-	}
-}
-
 static bool _rt_screen_builtin(const StringName &p_name) {
 	return p_name == "FRAGCOORD" || p_name == "SCREEN_UV" || p_name == "POINT_COORD" || p_name == "DEPTH";
 }
@@ -711,12 +678,16 @@ String ShaderCompiler::_dump_slang_call(const SL::OperatorNode *p_node, int p_le
 		bool normal = hint == SL::ShaderNode::Uniform::HINT_NORMAL_ROUGHNESS_TEXTURE;
 		bool multiview = actions.check_multiview_samplers && (screen || normal || hint == SL::ShaderNode::Uniform::HINT_DEPTH_TEXTURE);
 		bool dimensions = name == "textureSize" || name == "textureQueryLevels";
+		String footprint_coordinates[3] = { rt_texture_coordinates[0], rt_texture_coordinates[1], rt_texture_coordinates[2] };
 		if (name.begins_with("textureProj")) {
 			int size = p_node->arguments[2]->get_datatype() - SL::TYPE_FLOAT + 1;
 			int coordinate_size = texture_node->get_datatype() == SL::TYPE_SAMPLER3D ? 3 : 2;
 			String coordinate_type = "float" + itos(coordinate_size);
 			String project = _slang_helper(coordinate_type, "godot_project_coordinate", { types[1] }, "return a0." + String("xyz").substr(0, coordinate_size) + " / a0." + String("xyzw").substr(size - 1, 1) + ";");
 			arguments.write[1] = project + "(" + arguments[1] + ")";
+			for (String &coordinate : footprint_coordinates) {
+				coordinate = project + "(" + coordinate + ")";
+			}
 			types.write[1] = coordinate_type;
 			name = name.replace_first("Proj", "");
 		}
@@ -746,10 +717,11 @@ String ShaderCompiler::_dump_slang_call(const SL::OperatorNode *p_node, int p_le
 			expression = name + "(" + String(", ").join(arguments) + ")";
 		} else if (name == "textureQueryLod") {
 			if (p_default_actions.ray_hit_context) {
-				uint32_t basis = _rt_texture_uv_basis(p_node->arguments[2]);
-				types.push_back("uint");
-				arguments.push_back(uitos(basis == 0 ? 3u : basis) + "u");
-				String helper = _slang_helper(result_type, "godot_rt_texture_query_lod", types, "float lod = rt_texture_lod(a0, a1, a2); return float2(lod, lod);");
+				types.push_back(types[1]);
+				types.push_back(types[1]);
+				arguments.push_back("(" + footprint_coordinates[1] + " - " + footprint_coordinates[0] + ")");
+				arguments.push_back("(" + footprint_coordinates[2] + " - " + footprint_coordinates[0] + ")");
+				String helper = _slang_helper(result_type, "godot_rt_texture_query_lod", types, "float lod = rt_texture_lod(a0, a1, a2, a3); return float2(lod, lod);");
 				return helper + "(" + String(", ").join(arguments) + ")";
 			}
 			String coordinate = "a1";
@@ -791,11 +763,13 @@ String ShaderCompiler::_dump_slang_call(const SL::OperatorNode *p_node, int p_le
 					}
 					String body;
 					if (p_default_actions.ray_hit_context) {
-						uint32_t basis = _rt_texture_uv_basis(p_node->arguments[2]);
-						String basis_argument = "a" + itos(helper_types.size());
-						helper_types.push_back("uint");
-						helper_arguments.push_back(uitos(basis == 0 ? 3u : basis) + "u");
-						body = "return a0.SampleLevel(a1, " + coordinate + ", rt_texture_lod(a0, " + coordinate + ", " + basis_argument + ")" + (method == "SampleBias" ? " + a3" : "") + ");";
+						String dx_argument = "a" + itos(helper_types.size());
+						String dy_argument = "a" + itos(helper_types.size() + 1);
+						helper_types.push_back(types[1]);
+						helper_types.push_back(types[1]);
+						helper_arguments.push_back("(" + footprint_coordinates[1] + " - " + footprint_coordinates[0] + ")");
+						helper_arguments.push_back("(" + footprint_coordinates[2] + " - " + footprint_coordinates[0] + ")");
+						body = "return a0.SampleLevel(a1, " + coordinate + ", rt_texture_lod(a0, " + coordinate + ", " + dx_argument + ", " + dy_argument + ")" + (method == "SampleBias" ? " + a3" : "") + ");";
 					} else {
 						body = "\n#ifdef GODOT_VERTEX_STAGE\nreturn a0.SampleLevel(a1, " + coordinate + ", 0.0);\n#else\nreturn a0." + method + "(a1, " + coordinate;
 						if (method == "SampleBias") {
@@ -911,7 +885,227 @@ String ShaderCompiler::_dump_slang_call(const SL::OperatorNode *p_node, int p_le
 	return name + "(" + String(", ").join(arguments) + ")";
 }
 
+String ShaderCompiler::_rt_type(SL::DataType p_type, const String &p_struct, int p_array_size) const {
+	String type = p_type == SL::TYPE_STRUCT ? _mkid(p_struct) : _typestr(p_type);
+	if (p_array_size > 0) {
+		type += "[" + itos(p_array_size) + "]";
+	}
+	return p_type == SL::TYPE_VOID ? type : "RTValue<" + type + ">";
+}
+
+void ShaderCompiler::_rt_bind_expression_input(const SL::Node *p_node, bool p_writable, Vector<RTExpressionInput> &r_inputs, int p_level, GeneratedCode &r_gen_code, IdentifierActions &p_actions, const DefaultIdentifierActions &p_default_actions) {
+	if (p_writable && p_node->type == SL::Node::NODE_TYPE_MEMBER) {
+		const SL::MemberNode *member = static_cast<const SL::MemberNode *>(p_node);
+		_rt_bind_expression_input(member->owner, true, r_inputs, p_level, r_gen_code, p_actions, p_default_actions);
+		if (member->index_expression) {
+			_rt_bind_expression_input(member->index_expression, false, r_inputs, p_level, r_gen_code, p_actions, p_default_actions);
+		}
+		return;
+	}
+	if (p_writable && p_node->type == SL::Node::NODE_TYPE_OPERATOR && static_cast<const SL::OperatorNode *>(p_node)->op == SL::OP_INDEX) {
+		const SL::OperatorNode *op = static_cast<const SL::OperatorNode *>(p_node);
+		_rt_bind_expression_input(op->arguments[0], true, r_inputs, p_level, r_gen_code, p_actions, p_default_actions);
+		_rt_bind_expression_input(op->arguments[1], false, r_inputs, p_level, r_gen_code, p_actions, p_default_actions);
+		return;
+	}
+	RTExpressionInput input;
+	input.node = p_node;
+	input.writable = p_writable;
+	input.type = _rt_type(p_node->get_datatype(), p_node->get_datatype_name(), p_node->get_array_size());
+	if (p_node->type == SL::Node::NODE_TYPE_ARRAY && p_writable) {
+		const SL::ArrayNode *array = static_cast<const SL::ArrayNode *>(p_node);
+		SL::ArrayNode base = *array;
+		base.index_expression = nullptr;
+		base.call_expression = nullptr;
+		base.assign_expression = nullptr;
+		input.array_base = true;
+		input.type = _rt_type(base.datatype_cache, base.struct_name, base.array_size);
+		input.value = _rt_expression(&base, p_level, r_gen_code, p_actions, p_default_actions, p_writable);
+		r_inputs.push_back(input);
+		if (array->index_expression) {
+			_rt_bind_expression_input(array->index_expression, false, r_inputs, p_level, r_gen_code, p_actions, p_default_actions);
+		}
+		return;
+	}
+	input.value = _rt_expression(p_node, p_level, r_gen_code, p_actions, p_default_actions, p_writable);
+	r_inputs.push_back(input);
+}
+
+String ShaderCompiler::_rt_expression(const SL::Node *p_node, int p_level, GeneratedCode &r_gen_code, IdentifierActions &p_actions, const DefaultIdentifierActions &p_default_actions, bool p_assigning) {
+	const SL::DataType datatype = p_node->get_datatype();
+	String result_type = _rt_type(datatype, p_node->get_datatype_name(), p_node->get_array_size());
+	if (p_node->type == SL::Node::NODE_TYPE_VARIABLE || p_node->type == SL::Node::NODE_TYPE_CONSTANT || (p_node->type == SL::Node::NODE_TYPE_ARRAY && !static_cast<const SL::ArrayNode *>(p_node)->index_expression && !static_cast<const SL::ArrayNode *>(p_node)->call_expression && !static_cast<const SL::ArrayNode *>(p_node)->assign_expression)) {
+		rt_native_expression = true;
+		String native = _dump_node_code(p_node, p_level, r_gen_code, p_actions, p_default_actions, p_assigning);
+		rt_native_expression = false;
+		StringName name;
+		bool local = false;
+		if (p_node->type == SL::Node::NODE_TYPE_VARIABLE) {
+			const SL::VariableNode *variable = static_cast<const SL::VariableNode *>(p_node);
+			name = variable->name;
+			local = variable->is_local;
+		} else if (p_node->type == SL::Node::NODE_TYPE_ARRAY) {
+			const SL::ArrayNode *array = static_cast<const SL::ArrayNode *>(p_node);
+			name = array->name;
+			local = array->is_local;
+		}
+		if (function) {
+			for (const SL::FunctionNode::Argument &argument : function->arguments) {
+				local |= argument.name == name;
+			}
+		}
+		if (local || shader->varyings.has(name)) {
+			return native;
+		}
+		if (p_default_actions.renames.has(name)) {
+			String identifier = "godot_rt_value_" + String(name);
+			rt_builtin_types[identifier] = result_type;
+			rt_builtin_values[identifier] = native;
+			if (p_assigning) {
+				rt_written_builtins.insert(identifier);
+			}
+			return identifier;
+		}
+		return "rt_value<" + (datatype == SL::TYPE_STRUCT ? _mkid(p_node->get_datatype_name()) : _typestr(datatype)) + (p_node->get_array_size() > 0 ? "[" + itos(p_node->get_array_size()) + "]" : String()) + ">(" + native + ")";
+	}
+	Vector<RTExpressionInput> inputs;
+	const SL::FunctionNode *user_function = nullptr;
+	if (p_node->type == SL::Node::NODE_TYPE_OPERATOR) {
+		const SL::OperatorNode *op = static_cast<const SL::OperatorNode *>(p_node);
+		if (op->op == SL::OP_EMPTY) {
+			return String();
+		}
+		if (op->op == SL::OP_SELECT_IF || op->op == SL::OP_AND || op->op == SL::OP_OR) {
+			String condition = _rt_expression(op->arguments[0], p_level, r_gen_code, p_actions, p_default_actions, false);
+			String selected = _rt_expression(op->arguments[1], p_level, r_gen_code, p_actions, p_default_actions, false);
+			String alternative = op->op == SL::OP_SELECT_IF ? _rt_expression(op->arguments[2], p_level, r_gen_code, p_actions, p_default_actions, false) : "rt_value(" + String(op->op == SL::OP_OR ? "true" : "false") + ")";
+			return "((" + condition + ").value ? " + (op->op == SL::OP_OR ? alternative : selected) + " : " + (op->op == SL::OP_OR ? selected : alternative) + ")";
+		}
+		const bool call = op->op == SL::OP_CALL || op->op == SL::OP_CONSTRUCT || op->op == SL::OP_STRUCT;
+		StringName name;
+		if (call) {
+			name = static_cast<const SL::VariableNode *>(op->arguments[0])->name;
+			if (op->op == SL::OP_CALL && !internal_functions.has(name)) {
+				for (const SL::ShaderNode::Function &candidate : shader->vfunctions) {
+					if (candidate.name == name) {
+						user_function = candidate.function;
+						break;
+					}
+				}
+			}
+		}
+		for (int i = call ? 1 : 0; i < op->arguments.size(); i++) {
+			bool writable = !call && i == 0 && ((op->op >= SL::OP_ASSIGN && op->op <= SL::OP_ASSIGN_BIT_XOR) || op->op == SL::OP_INCREMENT || op->op == SL::OP_DECREMENT || op->op == SL::OP_POST_INCREMENT || op->op == SL::OP_POST_DECREMENT);
+			if (call) {
+				writable = user_function ? user_function->arguments[i - 1].qualifier != SL::ARGUMENT_QUALIFIER_IN : SL::is_builtin_func_out_parameter(name, i - 1);
+			}
+			_rt_bind_expression_input(op->arguments[i], writable, inputs, p_level, r_gen_code, p_actions, p_default_actions);
+		}
+	} else if (p_node->type == SL::Node::NODE_TYPE_MEMBER) {
+		const SL::MemberNode *member = static_cast<const SL::MemberNode *>(p_node);
+		_rt_bind_expression_input(member->owner, member->assign_expression != nullptr, inputs, p_level, r_gen_code, p_actions, p_default_actions);
+		if (member->index_expression) {
+			_rt_bind_expression_input(member->index_expression, false, inputs, p_level, r_gen_code, p_actions, p_default_actions);
+		}
+		if (member->assign_expression) {
+			_rt_bind_expression_input(member->assign_expression, false, inputs, p_level, r_gen_code, p_actions, p_default_actions);
+		}
+	} else if (p_node->type == SL::Node::NODE_TYPE_ARRAY) {
+		const SL::ArrayNode *array = static_cast<const SL::ArrayNode *>(p_node);
+		_rt_bind_expression_input(p_node, true, inputs, p_level, r_gen_code, p_actions, p_default_actions);
+		inputs.write[0].writable = array->assign_expression != nullptr;
+		if (array->assign_expression) {
+			_rt_bind_expression_input(array->assign_expression, false, inputs, p_level, r_gen_code, p_actions, p_default_actions);
+		}
+	} else if (p_node->type == SL::Node::NODE_TYPE_ARRAY_CONSTRUCT) {
+		for (const SL::Node *element : static_cast<const SL::ArrayConstructNode *>(p_node)->initializer) {
+			_rt_bind_expression_input(element, false, inputs, p_level, r_gen_code, p_actions, p_default_actions);
+		}
+	}
+	Vector<String> types;
+	Vector<String> arguments;
+	for (const RTExpressionInput &input : inputs) {
+		types.push_back((input.writable ? "inout " : "") + input.type);
+		arguments.push_back(input.value);
+	}
+	String body = datatype == SL::TYPE_VOID ? String() : result_type + " result;\n";
+	const char *lanes[] = { "value", "x", "y" };
+	String lane_expressions[3];
+	for (int lane = 0; lane < 3; lane++) {
+		for (int i = 0; i < inputs.size(); i++) {
+			String value = "a" + itos(i) + ("." + String(lanes[lane]));
+			if (inputs[i].array_base) {
+				rt_array_overrides[inputs[i].node] = value;
+			} else {
+				rt_expression_overrides[inputs[i].node] = value;
+			}
+		}
+		if (p_node->type == SL::Node::NODE_TYPE_OPERATOR) {
+			const SL::OperatorNode *op = static_cast<const SL::OperatorNode *>(p_node);
+			if (op->op == SL::OP_CALL && texture_functions.has(static_cast<const SL::VariableNode *>(op->arguments[0])->name) && inputs.size() > 1) {
+				for (int direction = 0; direction < 3; direction++) {
+					rt_texture_coordinates[direction] = "a1." + String(lanes[direction]);
+				}
+			}
+		}
+		rt_native_expression = true;
+		lane_expressions[lane] = _dump_node_code(p_node, p_level, r_gen_code, p_actions, p_default_actions, p_assigning);
+		rt_native_expression = false;
+		rt_expression_overrides.clear();
+		rt_array_overrides.clear();
+	}
+	if (user_function) {
+		const SL::OperatorNode *op = static_cast<const SL::OperatorNode *>(p_node);
+		Vector<String> call_arguments;
+		String writeback;
+		for (int argument = 1; argument < op->arguments.size(); argument++) {
+			const SL::Node *node = op->arguments[argument];
+			String temporary = "p" + itos(argument);
+			body += _rt_type(node->get_datatype(), node->get_datatype_name(), node->get_array_size()) + " " + temporary + ";\n";
+			for (int lane = 0; lane < 3; lane++) {
+				for (int i = 0; i < inputs.size(); i++) {
+					String value = "a" + itos(i) + ("." + String(lanes[lane]));
+					if (inputs[i].array_base) {
+						rt_array_overrides[inputs[i].node] = value;
+					} else {
+						rt_expression_overrides[inputs[i].node] = value;
+					}
+				}
+				rt_native_expression = true;
+				String value = _dump_node_code(node, p_level, r_gen_code, p_actions, p_default_actions, false);
+				rt_native_expression = false;
+				String target = temporary + ("." + String(lanes[lane]));
+				if (user_function->arguments[argument - 1].qualifier != SL::ARGUMENT_QUALIFIER_OUT) {
+					body += target + " = " + value + ";\n";
+				}
+				if (user_function->arguments[argument - 1].qualifier != SL::ARGUMENT_QUALIFIER_IN) {
+					writeback += value + " = " + target + ";\n";
+				}
+				rt_expression_overrides.clear();
+				rt_array_overrides.clear();
+			}
+			call_arguments.push_back(temporary);
+		}
+		body += (datatype == SL::TYPE_VOID ? String() : "result = ") + _mkid(user_function->rname) + "(" + String(", ").join(call_arguments) + ");\n" + writeback;
+	} else {
+		for (int lane = 0; lane < 3; lane++) {
+			body += (datatype == SL::TYPE_VOID ? String() : "result." + String(lanes[lane]) + " = ") + lane_expressions[lane] + ";\n";
+		}
+	}
+	if (datatype != SL::TYPE_VOID) {
+		body += "return result;";
+	}
+	String helper = _slang_helper(result_type, "godot_rt_expression_" + uitos(body.hash64()), types, body);
+	return helper + "(" + String(", ").join(arguments) + ")";
+}
+
 String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, GeneratedCode &r_gen_code, IdentifierActions &p_actions, const DefaultIdentifierActions &p_default_actions, bool p_assigning, bool p_use_scope) {
+	if (rt_expression_overrides.has(p_node)) {
+		return rt_expression_overrides[p_node];
+	}
+	if (p_default_actions.ray_hit_context && function && !rt_native_expression && (p_node->type == SL::Node::NODE_TYPE_VARIABLE || p_node->type == SL::Node::NODE_TYPE_CONSTANT || p_node->type == SL::Node::NODE_TYPE_OPERATOR || p_node->type == SL::Node::NODE_TYPE_MEMBER || p_node->type == SL::Node::NODE_TYPE_ARRAY || p_node->type == SL::Node::NODE_TYPE_ARRAY_CONSTRUCT)) {
+		return _rt_expression(p_node, p_level, r_gen_code, p_actions, p_default_actions, p_assigning);
+	}
 	String code;
 
 	switch (p_node->type) {
@@ -1241,25 +1435,24 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 					r_gen_code.code["varyings_vertex"] += "stage_output." + name_str + " = " + name_str + ";\n";
 					r_gen_code.code["varyings_fragment"] += name_str + " = stage_input." + name_str + ";\n";
 				} else if (p_default_actions.suppress_varying_io && p_default_actions.ray_hit_context) {
-					String suffix = varying.array_size > 0 ? "[" + itos(varying.array_size) + "]" : "";
-					r_gen_code.stage_globals[STAGE_FRAGMENT] += "static " + type_str + " " + name_str + suffix + ";\n";
+					String type = _rt_type(varying.type, String(), varying.array_size);
+					r_gen_code.stage_globals[STAGE_FRAGMENT] += "static " + type + " " + name_str + ";\n";
 					if (varying.stage != SL::ShaderNode::Varying::STAGE_FRAGMENT) {
 						String accumulator = "godot_rt_varying_" + name_str;
-						r_gen_code.code["rt_varyings_init"] += type_str + " " + accumulator + suffix + ";\n";
-						for (int element = 0; element < MAX(1, varying.array_size); element++) {
-							String element_suffix = varying.array_size > 0 ? "[" + itos(element) + "]" : "";
-							String value = name_str + element_suffix;
-							String sum = accumulator + element_suffix;
-							String zero = "(" + _typestr(varying.type) + ")0";
-							r_gen_code.code["rt_varyings_init"] += sum + " = " + zero + ";\n" + value + " = " + zero + ";\n";
-							if (varying.interpolation == SL::INTERPOLATION_FLAT) {
-								r_gen_code.code["rt_varyings_accumulate"] += "if (rt_vertex_index == 0u) { " + sum + " = " + value + "; }\n";
-							} else {
-								r_gen_code.code["rt_varyings_accumulate"] += sum + " += " + value + " * rt_vertex_weight;\n";
+						r_gen_code.code["rt_varyings_init"] += type + " " + accumulator + " = (" + type + ")0;\n" + name_str + " = (" + type + ")0;\n";
+						if (varying.interpolation == SL::INTERPOLATION_FLAT) {
+							r_gen_code.code["rt_varyings_accumulate"] += "if (rt_vertex_index == 0u) { " + accumulator + " = " + name_str + "; }\n";
+						} else {
+							for (int element = 0; element < MAX(1, varying.array_size); element++) {
+								String suffix = varying.array_size > 0 ? "[" + itos(element) + "]" : "";
+								String value = name_str + ".value" + suffix;
+								r_gen_code.code["rt_varyings_accumulate"] += accumulator + ".value" + suffix + " += " + value + " * rt_vertex_weight;\n";
+								r_gen_code.code["rt_varyings_accumulate"] += accumulator + ".x" + suffix + " += " + value + " * (rt_vertex_weight + rt_bary_dx[rt_vertex_index]);\n";
+								r_gen_code.code["rt_varyings_accumulate"] += accumulator + ".y" + suffix + " += " + value + " * (rt_vertex_weight + rt_bary_dy[rt_vertex_index]);\n";
 							}
-							r_gen_code.code["rt_varyings_accumulate"] += value + " = " + zero + ";\n";
-							r_gen_code.code["rt_varyings_restore"] += value + " = " + sum + ";\n";
 						}
+						r_gen_code.code["rt_varyings_accumulate"] += name_str + " = (" + type + ")0;\n";
+						r_gen_code.code["rt_varyings_restore"] += name_str + " = " + accumulator + ";\n";
 					}
 				} else if (p_default_actions.suppress_varying_io) {
 					// No vertex stage (e.g. RT shaders): emit zero-initialized
@@ -1387,6 +1580,9 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 			int i = 0;
 			for (List<ShaderLanguage::Node *>::ConstIterator itr = bnode->statements.begin(); itr != bnode->statements.end(); ++itr, ++i) {
 				String scode = _dump_node_code(*itr, p_level, r_gen_code, p_actions, p_default_actions, p_assigning);
+				if (p_default_actions.ray_hit_context && bnode->block_type == SL::BlockNode::BLOCK_TYPE_FOR_CONDITION) {
+					scode = "(" + scode + ").value";
+				}
 
 				if ((*itr)->type == SL::Node::NODE_TYPE_CONTROL_FLOW || bnode->single_statement) {
 					code += scode; //use directly
@@ -1404,6 +1600,30 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 		} break;
 		case SL::Node::NODE_TYPE_VARIABLE_DECLARATION: {
 			SL::VariableDeclarationNode *vdnode = (SL::VariableDeclarationNode *)p_node;
+			if (p_default_actions.ray_hit_context && !rt_native_expression) {
+				String declarations;
+				String previous_type;
+				for (const SL::VariableDeclarationNode::Declaration &declaration : vdnode->declarations) {
+					String type = _rt_type(vdnode->datatype, vdnode->struct_name, declaration.size);
+					declarations += declarations.is_empty() ? _constr(vdnode->is_const) + type + " " : type == previous_type ? ", "
+																															 : "; " + _constr(vdnode->is_const) + type + " ";
+					declarations += _mkid(declaration.name);
+					if (!declaration.initializer.is_empty()) {
+						declarations += " = ";
+						if (declaration.size > 0 && !declaration.single_expression) {
+							SL::ArrayConstructNode array;
+							array.datatype = vdnode->datatype;
+							array.struct_name = vdnode->struct_name;
+							array.initializer = declaration.initializer;
+							declarations += _rt_expression(&array, p_level, r_gen_code, p_actions, p_default_actions, false);
+						} else {
+							declarations += _rt_expression(declaration.initializer[0], p_level, r_gen_code, p_actions, p_default_actions, false);
+						}
+					}
+					previous_type = type;
+				}
+				return declarations;
+			}
 
 			String declaration;
 			declaration += _constr(vdnode->is_const);
@@ -1693,6 +1913,11 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 				}
 			}
 
+			if (rt_array_overrides.has(p_node)) {
+				code = rt_array_overrides[p_node];
+				rt_texture_indexed = false;
+				rt_texture_length = false;
+			}
 			if (anode->call_expression != nullptr && !rt_texture_length) {
 				code += ".";
 				code += _dump_node_code(anode->call_expression, p_level, r_gen_code, p_actions, p_default_actions, p_assigning, false);
@@ -2096,17 +2321,19 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 		case SL::Node::NODE_TYPE_CONTROL_FLOW: {
 			SL::ControlFlowNode *cfnode = (SL::ControlFlowNode *)p_node;
 			if (cfnode->flow_op == SL::FLOW_OP_IF) {
-				code += _mktab(p_level) + "if (" + _dump_node_code(cfnode->expressions[0], p_level, r_gen_code, p_actions, p_default_actions, p_assigning) + ")\n";
+				code += _mktab(p_level) + "if (" + (p_default_actions.ray_hit_context ? "(" : "") + _dump_node_code(cfnode->expressions[0], p_level, r_gen_code, p_actions, p_default_actions, p_assigning) + (p_default_actions.ray_hit_context ? ").value" : "") + ")\n";
 				code += _dump_node_code(cfnode->blocks[0], p_level + 1, r_gen_code, p_actions, p_default_actions, p_assigning);
 				if (cfnode->blocks.size() == 2) {
 					code += _mktab(p_level) + "else\n";
 					code += _dump_node_code(cfnode->blocks[1], p_level + 1, r_gen_code, p_actions, p_default_actions, p_assigning);
 				}
 			} else if (cfnode->flow_op == SL::FLOW_OP_SWITCH) {
-				code += _mktab(p_level) + "switch (" + _dump_node_code(cfnode->expressions[0], p_level, r_gen_code, p_actions, p_default_actions, p_assigning) + ")\n";
+				code += _mktab(p_level) + "switch (" + (p_default_actions.ray_hit_context ? "(" : "") + _dump_node_code(cfnode->expressions[0], p_level, r_gen_code, p_actions, p_default_actions, p_assigning) + (p_default_actions.ray_hit_context ? ").value" : "") + ")\n";
 				code += _dump_node_code(cfnode->blocks[0], p_level + 1, r_gen_code, p_actions, p_default_actions, p_assigning);
 			} else if (cfnode->flow_op == SL::FLOW_OP_CASE) {
+				rt_native_expression = p_default_actions.ray_hit_context;
 				code += _mktab(p_level) + "case " + _dump_node_code(cfnode->expressions[0], p_level, r_gen_code, p_actions, p_default_actions, p_assigning) + ":\n";
+				rt_native_expression = false;
 				code += _dump_node_code(cfnode->blocks[0], p_level + 1, r_gen_code, p_actions, p_default_actions, p_assigning);
 			} else if (cfnode->flow_op == SL::FLOW_OP_DEFAULT) {
 				code += _mktab(p_level) + "default:\n";
@@ -2114,9 +2341,9 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 			} else if (cfnode->flow_op == SL::FLOW_OP_DO) {
 				code += _mktab(p_level) + "do";
 				code += _dump_node_code(cfnode->blocks[0], p_level + 1, r_gen_code, p_actions, p_default_actions, p_assigning);
-				code += _mktab(p_level) + "while (" + _dump_node_code(cfnode->expressions[0], p_level, r_gen_code, p_actions, p_default_actions, p_assigning) + ");";
+				code += _mktab(p_level) + "while (" + (p_default_actions.ray_hit_context ? "(" : "") + _dump_node_code(cfnode->expressions[0], p_level, r_gen_code, p_actions, p_default_actions, p_assigning) + (p_default_actions.ray_hit_context ? ").value" : "") + ");";
 			} else if (cfnode->flow_op == SL::FLOW_OP_WHILE) {
-				code += _mktab(p_level) + "while (" + _dump_node_code(cfnode->expressions[0], p_level, r_gen_code, p_actions, p_default_actions, p_assigning) + ")\n";
+				code += _mktab(p_level) + "while (" + (p_default_actions.ray_hit_context ? "(" : "") + _dump_node_code(cfnode->expressions[0], p_level, r_gen_code, p_actions, p_default_actions, p_assigning) + (p_default_actions.ray_hit_context ? ").value" : "") + ")\n";
 				code += _dump_node_code(cfnode->blocks[0], p_level + 1, r_gen_code, p_actions, p_default_actions, p_assigning);
 			} else if (cfnode->flow_op == SL::FLOW_OP_FOR) {
 				String left = _dump_node_code(cfnode->blocks[0], p_level, r_gen_code, p_actions, p_default_actions, p_assigning);
@@ -2308,6 +2535,12 @@ Error ShaderCompiler::compile(RSE::ShaderMode p_mode, const String &p_code, Iden
 	}
 	used_name_defines.clear();
 	used_rmode_defines.clear();
+	rt_native_expression = false;
+	rt_expression_overrides.clear();
+	rt_array_overrides.clear();
+	rt_builtin_types.clear();
+	rt_builtin_values.clear();
+	rt_written_builtins.clear();
 	used_flag_pointers.clear();
 	fragment_varyings.clear();
 
@@ -2315,6 +2548,47 @@ Error ShaderCompiler::compile(RSE::ShaderMode p_mode, const String &p_code, Iden
 	function = nullptr;
 	// Return value only relevant within nested calls.
 	_ALLOW_DISCARD_ _dump_node_code(shader, 1, r_gen_code, *p_actions, actions, false);
+	if (actions.ray_hit_context) {
+		Vector<String> names;
+		for (const KeyValue<String, String> &entry : rt_builtin_types) {
+			names.push_back(entry.key);
+		}
+		names.sort();
+		HashMap<String, String> interpolants;
+		interpolants["UV"] = "uv";
+		interpolants["UV2"] = "uv2";
+		interpolants["COLOR"] = "color";
+		interpolants["NORMAL"] = "normal";
+		interpolants["TANGENT"] = "tangent";
+		interpolants["BINORMAL"] = "binormal";
+		for (int i = 0; i < 4; i++) {
+			interpolants["CUSTOM" + itos(i)] = "custom" + itos(i);
+		}
+		for (const String &name : names) {
+			String native = rt_builtin_values[name];
+			r_gen_code.stage_globals[STAGE_FRAGMENT] += "static " + rt_builtin_types[name] + " " + name + ";\n";
+			String initialize = name + " = rt_value(" + native + ");\n";
+			r_gen_code.code["rt_vertex_enter"] += initialize;
+			r_gen_code.code["rt_fragment_enter"] += initialize;
+			String builtin = name.trim_prefix("godot_rt_value_");
+			for (const String &direction : { String("x"), String("y") }) {
+				String delta;
+				if (interpolants.has(builtin)) {
+					delta = "rt_interpolants_d" + direction + "." + interpolants[builtin];
+				} else if (builtin == "VERTEX" || builtin == "LIGHT_VERTEX") {
+					delta = "mul((float3x3)rt_world_to_view, rt_position_d" + direction + ")";
+				}
+				if (!delta.is_empty()) {
+					r_gen_code.code["rt_fragment_enter"] += name + "." + direction + " += " + delta + ";\n";
+				} else if (builtin == "VIEW") {
+					r_gen_code.code["rt_fragment_enter"] += name + "." + direction + " = normalize(" + native + " - mul((float3x3)rt_world_to_view, rt_position_d" + direction + ") / max(rt_hit_distance, 1e-6));\n";
+				}
+			}
+			if (rt_written_builtins.has(name)) {
+				r_gen_code.code["rt_values_leave"] += native + " = " + name + ".value;\n";
+			}
+		}
+	}
 	if (actions.target == TARGET_SLANG) {
 		for (int i = 0; i < STAGE_MAX; i++) {
 			r_gen_code.stage_globals[i] = slang_helpers + r_gen_code.stage_globals[i];

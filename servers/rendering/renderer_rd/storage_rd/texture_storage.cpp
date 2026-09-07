@@ -3694,7 +3694,6 @@ RID TextureStorage::decal_allocate() {
 }
 
 void TextureStorage::decal_initialize(RID p_decal) {
-	decal_generation++;
 	decal_owner.initialize_rid(p_decal, Decal());
 }
 
@@ -3706,7 +3705,6 @@ void TextureStorage::decal_free(RID p_rid) {
 		}
 	}
 	decal->dependency.deleted_notify(p_rid);
-	decal_generation++;
 	decal_owner.free(p_rid);
 }
 
@@ -3716,7 +3714,6 @@ void TextureStorage::decal_set_size(RID p_decal, const Vector3 &p_size) {
 	if (decal->size == p_size) {
 		return;
 	}
-	decal_generation++;
 	decal->size = p_size;
 	decal->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_AABB);
 }
@@ -3736,7 +3733,6 @@ void TextureStorage::decal_set_texture(RID p_decal, RSE::DecalTexture p_type, RI
 		texture_remove_from_decal_atlas(decal->textures[p_type]);
 	}
 
-	decal_generation++;
 	decal->textures[p_type] = p_texture;
 
 	if (decal->textures[p_type].is_valid()) {
@@ -3752,7 +3748,6 @@ void TextureStorage::decal_set_emission_energy(RID p_decal, float p_energy) {
 	if (decal->emission_energy == p_energy) {
 		return;
 	}
-	decal_generation++;
 	decal->emission_energy = p_energy;
 }
 
@@ -3762,7 +3757,6 @@ void TextureStorage::decal_set_albedo_mix(RID p_decal, float p_mix) {
 	if (decal->albedo_mix == p_mix) {
 		return;
 	}
-	decal_generation++;
 	decal->albedo_mix = p_mix;
 }
 
@@ -3772,7 +3766,6 @@ void TextureStorage::decal_set_modulate(RID p_decal, const Color &p_modulate) {
 	if (decal->modulate == p_modulate) {
 		return;
 	}
-	decal_generation++;
 	decal->modulate = p_modulate;
 }
 
@@ -3782,7 +3775,6 @@ void TextureStorage::decal_set_cull_mask(RID p_decal, uint32_t p_layers) {
 	if (decal->cull_mask == p_layers) {
 		return;
 	}
-	decal_generation++;
 	decal->cull_mask = p_layers;
 	decal->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_CULL_MASK);
 }
@@ -3793,7 +3785,6 @@ void TextureStorage::decal_set_distance_fade(RID p_decal, bool p_enabled, float 
 	if (decal->distance_fade == p_enabled && decal->distance_fade_begin == p_begin && decal->distance_fade_length == p_length) {
 		return;
 	}
-	decal_generation++;
 	decal->distance_fade = p_enabled;
 	decal->distance_fade_begin = p_begin;
 	decal->distance_fade_length = p_length;
@@ -3805,7 +3796,6 @@ void TextureStorage::decal_set_fade(RID p_decal, float p_above, float p_below) {
 	if (decal->upper_fade == p_above && decal->lower_fade == p_below) {
 		return;
 	}
-	decal_generation++;
 	decal->upper_fade = p_above;
 	decal->lower_fade = p_below;
 }
@@ -3816,7 +3806,6 @@ void TextureStorage::decal_set_normal_fade(RID p_decal, float p_fade) {
 	if (decal->normal_fade == p_fade) {
 		return;
 	}
-	decal_generation++;
 	decal->normal_fade = p_fade;
 }
 
@@ -3824,14 +3813,12 @@ void TextureStorage::decal_atlas_mark_dirty_on_texture(RID p_texture) {
 	if (decal_atlas.textures.has(p_texture)) {
 		//belongs to decal atlas..
 
-		decal_generation++;
 		decal_atlas.dirty = true;
 	}
 }
 
 void TextureStorage::decal_atlas_remove_texture(RID p_texture) {
 	if (decal_atlas.textures.has(p_texture)) {
-		decal_generation++;
 		decal_atlas.textures.erase(p_texture);
 		//there is not much a point of making it dirty, just let it be.
 	}
@@ -3866,7 +3853,6 @@ void TextureStorage::update_decal_atlas() {
 		return; //nothing to do
 	}
 
-	decal_generation++;
 	decal_atlas.dirty = false;
 
 	if (decal_atlas.texture.is_valid()) {
@@ -4040,6 +4026,7 @@ void TextureStorage::update_decal_atlas() {
 					Texture *src_tex = get_texture(E.key);
 
 					copy_effects->copy_to_atlas_fb(src_tex->rd_texture, mm.fb, t->uv_rect, draw_list, false, t->panorama_to_dp_users > 0);
+					t->content_generation = hash_djb2_one_64(texture_get_content_generation(E.key), t->panorama_to_dp_users > 0);
 				}
 
 				RD::get_singleton()->draw_list_end();
@@ -4061,7 +4048,6 @@ void TextureStorage::texture_add_to_decal_atlas(RID p_texture, bool p_panorama_t
 		t.users = 1;
 		t.panorama_to_dp_users = p_panorama_to_dp ? 1 : 0;
 		decal_atlas.textures[p_texture] = t;
-		decal_generation++;
 		decal_atlas.dirty = true;
 	} else {
 		DecalAtlas::Texture *t = decal_atlas.textures.getptr(p_texture);
@@ -4081,7 +4067,6 @@ void TextureStorage::texture_remove_from_decal_atlas(RID p_texture, bool p_panor
 		t->panorama_to_dp_users--;
 	}
 	if (t->users == 0) {
-		decal_generation++;
 		decal_atlas.textures.erase(p_texture);
 		//do not mark it dirty, there is no need to since it remains working
 	}
@@ -4093,14 +4078,12 @@ RID TextureStorage::decal_instance_create(RID p_decal) {
 	DecalInstance di;
 	di.decal = p_decal;
 	di.forward_id = ForwardIDStorage::get_singleton()->allocate_forward_id(FORWARD_ID_TYPE_DECAL);
-	decal_generation++;
 	return decal_instance_owner.make_rid(di);
 }
 
 void TextureStorage::decal_instance_free(RID p_decal_instance) {
 	DecalInstance *di = decal_instance_owner.get_or_null(p_decal_instance);
 	ForwardIDStorage::get_singleton()->free_forward_id(FORWARD_ID_TYPE_DECAL, di->forward_id);
-	decal_generation++;
 	decal_instance_owner.free(p_decal_instance);
 }
 
@@ -4110,7 +4093,6 @@ void TextureStorage::decal_instance_set_transform(RID p_decal_instance, const Tr
 	if (di->transform == p_transform) {
 		return;
 	}
-	decal_generation++;
 	di->transform = p_transform;
 }
 
@@ -4120,7 +4102,6 @@ void TextureStorage::decal_instance_set_sorting_offset(RID p_decal_instance, flo
 	if (di->sorting_offset == p_sorting_offset) {
 		return;
 	}
-	decal_generation++;
 	di->sorting_offset = p_sorting_offset;
 }
 
@@ -4381,7 +4362,14 @@ TextureStorage::RTDecalSnapshot TextureStorage::build_rt_decal_snapshot(const Pa
 		_pack_decal(ordered[i].decal, frame, data);
 		memcpy(snapshot.data.ptrw() + i * sizeof(DecalData), &data, sizeof(DecalData));
 	}
-	snapshot.generation = hash_djb2_one_64(hash_djb2_buffer(snapshot.data.ptr(), snapshot.data.size()), decal_generation);
+	snapshot.generation = hash_djb2_buffer(snapshot.data.ptr(), snapshot.data.size());
+	for (const OrderedDecal &entry : ordered) {
+		for (const RID &texture : entry.decal.decal->textures) {
+			snapshot.generation = hash_djb2_one_64(texture_get_content_generation(texture), snapshot.generation);
+			const DecalAtlas::Texture *atlas_texture = decal_atlas.textures.getptr(texture);
+			snapshot.generation = hash_djb2_one_64(atlas_texture ? atlas_texture->content_generation : 0, snapshot.generation);
+		}
+	}
 	return snapshot;
 }
 

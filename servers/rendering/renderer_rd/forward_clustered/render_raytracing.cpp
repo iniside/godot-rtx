@@ -1896,7 +1896,7 @@ bool RenderRaytracing::_build_merged_mm_blas(
 
 	// Skip compressed meshes: their positions are UNORM16x4, not float3.
 	uint64_t surface_format = mesh_storage->mesh_surface_get_format(p_mesh_surface);
-	if (surface_format & RSE::ARRAY_FLAG_COMPRESS_ATTRIBUTES) {
+	if (surface_format & (RSE::ARRAY_FLAG_COMPRESS_ATTRIBUTES | RSE::ARRAY_FLAG_USE_2D_VERTICES)) {
 		return false;
 	}
 
@@ -2246,6 +2246,7 @@ bool RenderRaytracing::_build_merged_mm_blas(
 
 	RT_GeometryData &geom = r_surf_data->geometry;
 
+	geom.source_vertex_address = geom.vertex_buffer_address;
 	geom.vertex_buffer_address = rd->buffer_get_device_address(entry.merged_vtx_buffer);
 	const uint64_t previous_address = rd->buffer_get_device_address(mm_last_change == current_frame ? entry.previous_position_buffer : entry.merged_vtx_buffer);
 	geom.prev_vertex_buffer_address_lo = uint32_t(previous_address);
@@ -2257,6 +2258,7 @@ bool RenderRaytracing::_build_merged_mm_blas(
 	geom.source_vertex_count = vertex_count;
 	geom.multimesh_flags = uint32_t(mesh_storage->multimesh_uses_colors(p_mm_rid)) | (uint32_t(mesh_storage->multimesh_uses_custom_data(p_mm_rid)) << 1);
 	geometry_buffer_dependencies.insert(p_mm_gpu_buffer);
+	geometry_buffer_dependencies.insert(vtx_buf);
 	RID skin_buffer = mesh_storage->mesh_surface_get_skin_buffer(p_mesh_surface);
 	if (skin_buffer.is_valid()) {
 		geometry_buffer_dependencies.insert(skin_buffer);
