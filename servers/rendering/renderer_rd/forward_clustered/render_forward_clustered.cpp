@@ -2484,6 +2484,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		rb_data->commit_rtxdi_surface();
 		RD::get_singleton()->draw_command_end_label();
 		RenderRTXDISurfaceResources surface;
+		surface.samplers = samplers;
 		for (uint32_t attachment = 0; attachment < 6; attachment++) {
 			surface.current[attachment] = rb_data->get_rtxdi_surface_texture(attachment);
 			surface.previous[attachment] = rb_data->get_rtxdi_surface_texture(attachment, true);

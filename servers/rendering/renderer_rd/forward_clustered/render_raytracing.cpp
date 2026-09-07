@@ -1729,10 +1729,18 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 	RendererRD::TextureStorage *texture_storage = RendererRD::TextureStorage::get_singleton();
 
 	mat.coverage_flags = 0;
+	mat.coverage_sampler = 0;
 	mat.alpha_scissor_threshold = 0.5f;
 	mat.alpha_hash_scale = 1.0f;
 	const SceneShaderForwardClustered::MaterialData *raster_material = static_cast<SceneShaderForwardClustered::MaterialData *>(material_storage->material_get_data(p_material_rid, RendererRD::MaterialStorage::SHADER_TYPE_3D));
 	if (raster_material && raster_material->shader_data && raster_material->shader_data->generated_standard_material) {
+		for (const ShaderCompiler::GeneratedCode::Texture &texture : raster_material->shader_data->texture_uniforms) {
+			if (texture.name == SNAME("texture_albedo")) {
+				DEV_ASSERT(texture.filter < ShaderLanguage::FILTER_DEFAULT && texture.repeat < ShaderLanguage::REPEAT_DEFAULT);
+				mat.coverage_sampler = uint32_t(texture.filter) + (texture.repeat == ShaderLanguage::REPEAT_ENABLE ? 6u : 0u);
+				break;
+			}
+		}
 		const String &code = raster_material->shader_data->code;
 		if (code.contains("ALPHA_SCISSOR_THRESHOLD = alpha_scissor_threshold;")) {
 			mat.coverage_flags |= 1u;

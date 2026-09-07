@@ -191,6 +191,36 @@ vec3 rtxdi_sample_environment_radiance(vec3 world_direction) {
 #endif
 }
 
+float rtxdi_sample_coverage(MaterialData material, vec2 uv, vec2 uv_dx, vec2 uv_dy) {
+	switch (material.coverage_sampler) {
+		case 0u:
+			return textureGrad(sampler2D(bindless_textures[nonuniformEXT(material.albedo_texture_idx)], SAMPLER_NEAREST_CLAMP), uv, uv_dx, uv_dy).a;
+		case 1u:
+			return textureGrad(sampler2D(bindless_textures[nonuniformEXT(material.albedo_texture_idx)], SAMPLER_LINEAR_CLAMP), uv, uv_dx, uv_dy).a;
+		case 2u:
+			return textureGrad(sampler2D(bindless_textures[nonuniformEXT(material.albedo_texture_idx)], SAMPLER_NEAREST_WITH_MIPMAPS_CLAMP), uv, uv_dx, uv_dy).a;
+		case 3u:
+			return textureGrad(sampler2D(bindless_textures[nonuniformEXT(material.albedo_texture_idx)], SAMPLER_LINEAR_WITH_MIPMAPS_CLAMP), uv, uv_dx, uv_dy).a;
+		case 4u:
+			return textureGrad(sampler2D(bindless_textures[nonuniformEXT(material.albedo_texture_idx)], SAMPLER_NEAREST_WITH_MIPMAPS_ANISOTROPIC_CLAMP), uv, uv_dx, uv_dy).a;
+		case 5u:
+			return textureGrad(sampler2D(bindless_textures[nonuniformEXT(material.albedo_texture_idx)], SAMPLER_LINEAR_WITH_MIPMAPS_ANISOTROPIC_CLAMP), uv, uv_dx, uv_dy).a;
+		case 6u:
+			return textureGrad(sampler2D(bindless_textures[nonuniformEXT(material.albedo_texture_idx)], SAMPLER_NEAREST_REPEAT), uv, uv_dx, uv_dy).a;
+		case 7u:
+			return textureGrad(sampler2D(bindless_textures[nonuniformEXT(material.albedo_texture_idx)], SAMPLER_LINEAR_REPEAT), uv, uv_dx, uv_dy).a;
+		case 8u:
+			return textureGrad(sampler2D(bindless_textures[nonuniformEXT(material.albedo_texture_idx)], SAMPLER_NEAREST_WITH_MIPMAPS_REPEAT), uv, uv_dx, uv_dy).a;
+		case 9u:
+			return textureGrad(sampler2D(bindless_textures[nonuniformEXT(material.albedo_texture_idx)], SAMPLER_LINEAR_WITH_MIPMAPS_REPEAT), uv, uv_dx, uv_dy).a;
+		case 10u:
+			return textureGrad(sampler2D(bindless_textures[nonuniformEXT(material.albedo_texture_idx)], SAMPLER_NEAREST_WITH_MIPMAPS_ANISOTROPIC_REPEAT), uv, uv_dx, uv_dy).a;
+		case 11u:
+			return textureGrad(sampler2D(bindless_textures[nonuniformEXT(material.albedo_texture_idx)], SAMPLER_LINEAR_WITH_MIPMAPS_ANISOTROPIC_REPEAT), uv, uv_dx, uv_dy).a;
+	}
+	return 0.0;
+}
+
 bool rtxdi_alpha_covered(uint geometry_index, uint primitive_id, int cluster_id, vec2 barycentrics, mat4x3 object_to_world, bool shadow_ray);
 
 RAB_LightSample RAB_SamplePolymorphicLight(RAB_LightInfo light, RAB_Surface surface, float2 random) {
@@ -324,8 +354,32 @@ bool rtxdi_alpha_covered(uint geometry_index, uint primitive_id, int cluster_id,
 	uint i2;
 	rtxdi_get_triangle_indices(geometry, primitive, i0, i1, i2);
 	vec3 bary = vec3(1.0 - barycentrics.x - barycentrics.y, barycentrics.x, barycentrics.y);
-	vec2 uv = rtxdi_fetch_uv(geometry, uvec3(i0, i1, i2), bary) * material.uv1_scale + material.uv1_offset;
-	float alpha = textureLod(sampler2D(bindless_textures[nonuniformEXT(material.albedo_texture_idx)], bindless_linear_mip_repeat), uv, 0.0).a * material.albedo_color.a;
+	vec3 p0 = rtxdi_fetch_position(geometry, i0);
+	vec3 p1 = rtxdi_fetch_position(geometry, i1);
+	vec3 p2 = rtxdi_fetch_position(geometry, i2);
+	vec3 object_position = p0 * bary.x + p1 * bary.y + p2 * bary.z;
+	vec3 normal = cross(p1 - p0, p2 - p0);
+	mat4 object_to_clip = scene_data_block.data.projection_matrix * inverse(rtxdi_decode_inv_view(scene_data_block.data)) * mat4(object_to_world);
+	mat4 clip_to_object = inverse(object_to_clip);
+	vec4 clip = object_to_clip * vec4(object_position, 1.0);
+	vec4 clip_plane = transpose(clip_to_object) * vec4(normal, -dot(normal, p0));
+	float plane_denominator = (clip_plane.z < 0.0 ? -1.0 : 1.0) * max(abs(clip_plane.z), 1e-20);
+	vec3 derivatives[2];
+	for (uint axis = 0u; axis < 2u; axis++) {
+		vec4 homogeneous_derivative = clip_to_object[axis] - clip_to_object[2] * (clip_plane[axis] / plane_denominator);
+		derivatives[axis] = (homogeneous_derivative.xyz - object_position * homogeneous_derivative.w) * clip.w * 2.0 * scene_data_block.data.screen_pixel_size[axis];
+	}
+	vec2 uv0 = rtxdi_fetch_uv(geometry, uvec3(i0, i1, i2), vec3(1.0, 0.0, 0.0));
+	vec2 uv1 = rtxdi_fetch_uv(geometry, uvec3(i0, i1, i2), vec3(0.0, 1.0, 0.0));
+	vec2 uv2 = rtxdi_fetch_uv(geometry, uvec3(i0, i1, i2), vec3(0.0, 0.0, 1.0));
+	vec3 barycentric_u = cross(p2 - p0, normal) / max(dot(normal, normal), 1e-20);
+	vec3 barycentric_v = cross(normal, p1 - p0) / max(dot(normal, normal), 1e-20);
+	vec2 uv_derivatives[2];
+	for (uint axis = 0u; axis < 2u; axis++) {
+		uv_derivatives[axis] = ((uv1 - uv0) * dot(barycentric_u, derivatives[axis]) + (uv2 - uv0) * dot(barycentric_v, derivatives[axis])) * material.uv1_scale;
+	}
+	vec2 uv = (uv0 * bary.x + uv1 * bary.y + uv2 * bary.z) * material.uv1_scale + material.uv1_offset;
+	float alpha = rtxdi_sample_coverage(material, uv, uv_derivatives[0], uv_derivatives[1]) * material.albedo_color.a;
 	if ((material.coverage_flags & 4u) != 0u && geometry.color_byte_offset != OFFSET_NONE) {
 		Uint32Buffer attributes = Uint32Buffer(geometry.attribute_address);
 		uvec3 offsets = (uvec3(i0, i1, i2) * geometry.attribute_stride + geometry.color_byte_offset) >> 2u;
@@ -335,28 +389,6 @@ bool rtxdi_alpha_covered(uint geometry_index, uint primitive_id, int cluster_id,
 		return false;
 	}
 	if ((material.coverage_flags & 2u) != 0u) {
-		vec3 p0 = rtxdi_fetch_position(geometry, i0);
-		vec3 p1 = rtxdi_fetch_position(geometry, i1);
-		vec3 p2 = rtxdi_fetch_position(geometry, i2);
-		vec3 object_position = p0 * bary.x + p1 * bary.y + p2 * bary.z;
-		mat4 world_to_object = inverse(mat4(object_to_world));
-		mat4 view_to_object = world_to_object * rtxdi_decode_inv_view(scene_data_block.data);
-		vec3 world_position = object_to_world * vec4(object_position, 1.0);
-		mat4 world_to_view = inverse(rtxdi_decode_inv_view(scene_data_block.data));
-		vec4 clip = scene_data_block.data.projection_matrix * world_to_view * vec4(world_position, 1.0);
-		vec2 ndc = clip.xy / clip.w;
-		vec3 normal = normalize(cross(p1 - p0, p2 - p0));
-		vec3 derivatives[2];
-		for (uint axis = 0u; axis < 2u; axis++) {
-			vec2 neighbor_ndc = ndc;
-			neighbor_ndc[axis] += 2.0 * scene_data_block.data.screen_pixel_size[axis];
-			vec4 near_point = view_to_object * scene_data_block.data.inv_projection_matrix * vec4(neighbor_ndc, 1.0, 1.0);
-			vec4 far_point = view_to_object * scene_data_block.data.inv_projection_matrix * vec4(neighbor_ndc, 0.5, 1.0);
-			vec3 origin = near_point.xyz / near_point.w;
-			vec3 direction = normalize(far_point.xyz / far_point.w - origin);
-			float denominator = dot(normal, direction);
-			derivatives[axis] = abs(denominator) > 1e-6 ? origin + direction * (dot(normal, object_position - origin) / denominator) - object_position : vec3(1.0);
-		}
 		if (alpha < compute_alpha_hash_threshold(object_position, max(material.alpha_hash_scale, 1e-6), derivatives[0], derivatives[1])) {
 			return false;
 		}

@@ -115,6 +115,9 @@ layout(set = 0, binding = 30) uniform sampler bindless_linear_mip_repeat;
 layout(set = 0, binding = 31, rgba16f) uniform writeonly image2D diffuse_radiance_distance;
 layout(set = 0, binding = 32, rgba16f) uniform writeonly image2D specular_radiance_distance;
 
+#define SAMPLERS_BINDING_FIRST_INDEX 33
+#include "../samplers_inc.glsl"
+
 layout(set = 1, binding = 0) uniform texture2D bindless_textures[];
 
 #define SAMPLER_LINEAR_CLAMP bindless_linear_clamp
@@ -126,6 +129,8 @@ uint rtxdi_visibility_caster_mask;
 
 // clang-format off
 #include "rtxdi_light_sampling_inc.glsl"
+#undef SAMPLER_LINEAR_CLAMP
+#undef SAMPLER_LINEAR_WITH_MIPMAPS_REPEAT
 #include "rtxdi_application_bridge_inc.glsl"
 #include <Rtxdi/DI/InitialSampling.hlsli>
 #include <Rtxdi/DI/TemporalResampling.hlsli>
@@ -198,7 +203,9 @@ void main() {
 	int2 temporal_pixel;
 	RTXDI_DIReservoir reservoir = current_reservoir;
 	if (rtxdi_params.extent_history.z != 0u) {
-		reservoir = RTXDI_DITemporalResampling(pixel, surface, current_reservoir, rng, rtxdi_params.runtime, rtxdi_params.restir.reservoirBufferParams, surface.motion, rtxdi_params.restir.bufferIndices.temporalResamplingInputBufferIndex, rtxdi_params.restir.temporalResamplingParams, temporal_pixel, selected_sample);
+		vec3 temporal_motion = surface.motion;
+		temporal_motion.xy += (scene_data_block.prev_data.taa_jitter - scene_data_block.data.taa_jitter) * 0.5 * scene_data_block.data.viewport_size;
+		reservoir = RTXDI_DITemporalResampling(pixel, surface, current_reservoir, rng, rtxdi_params.runtime, rtxdi_params.restir.reservoirBufferParams, temporal_motion, rtxdi_params.restir.bufferIndices.temporalResamplingInputBufferIndex, rtxdi_params.restir.temporalResamplingParams, temporal_pixel, selected_sample);
 	}
 	RTXDI_StoreDIReservoir(reservoir, rtxdi_params.restir.reservoirBufferParams, pixel, rtxdi_params.restir.bufferIndices.temporalResamplingOutputBufferIndex);
 #elif defined(MODE_SPATIAL)

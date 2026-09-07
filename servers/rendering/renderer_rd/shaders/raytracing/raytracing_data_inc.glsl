@@ -86,5 +86,5 @@ struct MaterialData {
 	float alpha_scissor_threshold;
 	float alpha_hash_scale;
 	uint coverage_flags;
-	uint _coverage_pad;
+	uint coverage_sampler;
 };

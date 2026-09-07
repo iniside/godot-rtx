@@ -108,7 +108,7 @@ struct alignas(16) RT_MaterialData {
 	float alpha_scissor_threshold = 0.5f;
 	float alpha_hash_scale = 1.0f;
 	uint32_t coverage_flags = 0;
-	uint32_t _coverage_pad = 0;
+	uint32_t coverage_sampler = 0;
 };
 static_assert(sizeof(RT_MaterialData) == 112, "RT_MaterialData must be 112 bytes for std430");
 

@@ -216,6 +216,7 @@ RID RenderRTXDI::_create_uniform_set(const RenderRTXDISurfaceResources &p_surfac
 	append_uniform(uniforms, RD::UNIFORM_TYPE_SAMPLER, 30, bindless_linear_mip_repeat);
 	append_uniform(uniforms, RD::UNIFORM_TYPE_IMAGE, 31, view_resources.diffuse_radiance_distance);
 	append_uniform(uniforms, RD::UNIFORM_TYPE_IMAGE, 32, view_resources.specular_radiance_distance);
+	p_surface.samplers.append_uniforms(uniforms, 33);
 	return RD::get_singleton()->uniform_set_create(uniforms, shader.shader_rid[p_pass], 0, true);
 }
 

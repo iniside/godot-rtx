@@ -1201,6 +1201,11 @@ void fragment_shader(in SceneData scene_data) {
 #endif // PREMUL_ALPHA_USED
 	//lay out everything, whatever is unused is optimized away anyway
 	vec3 vertex = vertex_interp;
+#ifdef MODE_RTXDI_SURFACE
+	vec3 rtxdi_geometric_normal = normalize(cross(dFdx(vertex_interp), dFdy(vertex_interp)));
+	vec3 rtxdi_incident = projection_matrix[3][3] == 0.0 ? vertex_interp : vec3(0.0, 0.0, -1.0);
+	rtxdi_geometric_normal = faceforward(rtxdi_geometric_normal, rtxdi_incident, rtxdi_geometric_normal);
+#endif
 #ifdef USE_MULTIVIEW
 	vec3 eye_offset = scene_data.eye_offset[ViewIndex].xyz;
 	vec3 view_highp = -normalize(vertex_interp - eye_offset);
@@ -2896,7 +2901,7 @@ void fragment_shader(in SceneData scene_data) {
 	vec2 position_clip = (screen_position.xy / screen_position.w) - scene_data.taa_jitter;
 	vec2 prev_position_clip = (prev_screen_position.xy / prev_screen_position.w) - scene_data_block.prev_data.taa_jitter;
 	vec3 world_normal = normalize(mat3(inv_view_matrix) * normal);
-	vec3 world_geo_normal = normalize(mat3(inv_view_matrix) * geo_normal);
+	vec3 world_geo_normal = normalize(mat3(inv_view_matrix) * rtxdi_geometric_normal);
 	bool unsupported = bool(instances.data[instance_index].rtxdi_material_flags & 2u);
 	rtxdi_base_output = unsupported ? vec4(1.0, 0.0, 1.0, 1.0) : vec4(albedo, alpha);
 	rtxdi_shading_output = vec4(vec3_to_oct(world_normal), roughness, specular);
@@ -3105,7 +3110,7 @@ void fragment_shader(in SceneData scene_data) {
 #endif //MODE_SEPARATE_SPECULAR
 
 #endif //MODE_RENDER_DEPTH
-#ifdef MOTION_VECTORS
+#if defined(MOTION_VECTORS) && !defined(MODE_RTXDI_SURFACE)
 	vec2 position_clip = (screen_position.xy / screen_position.w) - scene_data.taa_jitter;
 	vec2 prev_position_clip = (prev_screen_position.xy / prev_screen_position.w) - scene_data_block.prev_data.taa_jitter;
 
