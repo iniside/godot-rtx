@@ -1,0 +1,5 @@
+render_rtxdi.cpp
+
+diagnostic.cpp
+
+   Creating library C:\Users\lukas\AppData\Local\Temp\godot-shader-unification-20260907\step3\diagnostic.lib and object C:\Users\lukas\AppData\Local\Temp\godot-shader-unification-20260907\step3\diagnostic.exp

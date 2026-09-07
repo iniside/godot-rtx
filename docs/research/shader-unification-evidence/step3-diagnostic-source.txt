@@ -1,0 +1,46 @@
+
+#include "core/io/file_access.h"
+#define RtxdiDiShaderRD Step3DiagnosticShaderRD
+#include "servers/rendering/renderer_rd/shaders/raytracing/rtxdi_di.slang.gen.h"
+#undef RtxdiDiShaderRD
+
+int step3_diagnostic() {
+ auto *rd=RenderingDevice::get_singleton();
+ if(!rd){print_line("STEP3 no RD");return 1;}
+ String directory=OS::get_singleton()->get_environment("STEP3_DIAG_DIR");
+ const char *names[]={"INITIAL","TEMPORAL","SPATIAL","SHADE"};
+ int failures=0;
+ for(int configuration=0;configuration<4;configuration++) {
+  Step3DiagnosticShaderRD shader;
+  Vector<ShaderRD::VariantDefine> modes;
+  for(int mode=0;mode<4;mode++)modes.push_back(ShaderRD::VariantDefine(0,String("\n#define MODE_")+names[mode]+" 1\n",true));
+  String defines;
+  if(configuration&1)defines+="\n#define USE_DOUBLE_PRECISION\n";
+  if(configuration&2)defines+="\n#define USE_RADIANCE_OCTMAP_ARRAY\n";
+  shader.initialize(modes,defines,Vector<RD::PipelineImmutableSampler>(),Vector<uint64_t>(),false,false);
+  RID version=shader.version_create();
+  auto request=shader.get_compile_request();
+  auto identity_file=FileAccess::open(directory+vformat("/request-%d.txt",configuration),FileAccess::WRITE); identity_file->store_string(request.get_identity()); identity_file.unref();
+  print_line(vformat("STEP3 REQUEST config=%d includes=%d rowmajor=%d preserve=%d precise=%d optimization=%d",configuration,request.includes.size(),int(!request.column_major),int(request.preserve_parameters),int(request.precise_float),request.optimization_level));
+  for(int mode=0;mode<4;mode++) {
+   String stem=directory+vformat("/native-%d-%s",configuration,names[mode]);
+   RID runtime_shader=shader.version_get_shader(version,mode);
+   auto sources=shader.version_build_variant_stage_sources(version,mode);
+   auto source_file=FileAccess::open(stem+".slang",FileAccess::WRITE);
+   source_file->store_string(sources[RD::SHADER_STAGE_COMPUTE]);source_file.unref();
+   auto stages=ShaderRD::compile_stages(sources,shader.get_dynamic_buffers(),request);
+   if(stages.is_empty()){print_line("STEP3 FAIL compile "+stem);failures++;continue;}
+   auto spirv_file=FileAccess::open(stem+".api.spv",FileAccess::WRITE);
+   spirv_file->store_buffer(stages[0].spirv);spirv_file.unref();
+   auto binary=rd->shader_compile_binary_from_spirv(stages,"Step3NativeDI");
+   auto container_file=FileAccess::open(stem+".container",FileAccess::WRITE);
+   container_file->store_buffer(binary);container_file.unref();
+   RID pipeline=runtime_shader.is_valid()?rd->compute_pipeline_create(runtime_shader):RID();
+   print_line(vformat("STEP3 RESULT config=%d mode=%s spirv=%d container=%d shader=%s pipeline=%s",configuration,names[mode],stages[0].spirv.size(),binary.size(),runtime_shader.is_valid()?"valid":"invalid",pipeline.is_valid()?"valid":"invalid"));
+   if(pipeline.is_valid())rd->free_rid(pipeline);else failures++;
+  }
+  shader.version_free(version);
+ }
+ print_line(vformat("STEP3 COMPLETE failures=%d",failures));
+ return failures?1:0;
+}

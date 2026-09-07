@@ -1,0 +1,12 @@
+
+from pathlib import Path
+import os,subprocess,json,hashlib
+root=Path('G:/Projects/godot-rtx');out=Path(os.environ['TEMP'])/'godot-shader-unification-20260907'/'step3'
+command=[str(out/'diagnostic.exe'),'--path',str(root/'demos/rtxdi_manual'),'--rendering-driver','vulkan','--rendering-method','forward_plus','--audio-driver','Dummy']
+env=dict(os.environ);env['STEP3_DIAG_DIR']=str(out).replace('\\','/')
+receipt={'command':command,'cwd':str(root),'environment':{'STEP3_DIAG_DIR':env['STEP3_DIAG_DIR']},'binary_sha256':hashlib.sha256((out/'diagnostic.exe').read_bytes()).hexdigest(),'compiler_sha256':hashlib.sha256((out/'slang-compiler.2026.13.1.x86_64.dll').read_bytes()).hexdigest()}
+(out/'run-receipt.json').write_text(json.dumps(receipt,indent=2))
+p=subprocess.run(command,cwd=root,env=env,capture_output=True,text=True,creationflags=subprocess.CREATE_NO_WINDOW)
+(out/'run.log').write_text(p.stdout);(out/'run.err').write_text(p.stderr)
+receipt['exit_code']=p.returncode;(out/'run-receipt.json').write_text(json.dumps(receipt,indent=2))
+print('EXIT',p.returncode);print(p.stdout);print(p.stderr)

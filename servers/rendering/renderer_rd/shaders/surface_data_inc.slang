@@ -49,4 +49,23 @@ SurfaceBufferData encode_surface_buffers(SurfaceData surface) {
 	return result;
 }
 
+SurfaceData decode_surface_buffers(SurfaceBufferData packed, float3 world_position, float3 view_direction) {
+	SurfaceData surface;
+	surface.world_position = world_position;
+	surface.normal = oct_to_vec3(packed.shading.xy * 2.0 - 1.0);
+	float2 geometry = float2(packed.geometry & 0xFFFFu, packed.geometry >> 16u) / 65535.0;
+	surface.geometry_normal = oct_to_vec3(geometry * 2.0 - 1.0);
+	surface.view_direction = view_direction;
+	surface.layer_mask = packed.classification.y;
+	surface.material.base_color = packed.base.rgb;
+	surface.material.opacity = packed.base.a;
+	surface.material.roughness = packed.shading.z;
+	surface.material.metallic = packed.emission.a;
+	surface.material.specular = packed.shading.w;
+	surface.material.emission = packed.emission.rgb;
+	surface.material.ambient_occlusion = packed.ambient_occlusion;
+	surface.material.flags = packed.classification.x;
+	return surface;
+}
+
 #endif

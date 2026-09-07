@@ -31,7 +31,7 @@
 
 #include "core/math/projection.h"
 #include "core/math/vector2.h"
-#include "servers/rendering/renderer_rd/shaders/raytracing/rtxdi_di.glsl.gen.h"
+#include "servers/rendering/renderer_rd/shaders/raytracing/rtxdi_di.slang.gen.h"
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
 
 #include <Rtxdi/DI/ReSTIRDI.h>

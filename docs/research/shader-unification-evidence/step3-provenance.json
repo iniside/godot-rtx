@@ -1,0 +1,906 @@
+{
+  "baseline": "1a5faf5c601bcd346f5c55134f02b8b9550daf07",
+  "method": "Native generated ShaderRD header in a temporary diagnostic linked with retained STEP2 engine objects; changed host DI TU compiled separately, not linked into this diagnostic. No complete engine rebuild or DI dispatch.",
+  "sources": [
+    {
+      "path": "G:\\Projects\\godot-rtx\\servers\\rendering\\renderer_rd\\forward_clustered\\render_rtxdi.cpp",
+      "bytes": 19438,
+      "sha256": "c815493dca230026c926780cd1f7f8d52471ed3f4067dbf7f69840b204c1574f"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\servers\\rendering\\renderer_rd\\forward_clustered\\render_rtxdi.h",
+      "bytes": 4720,
+      "sha256": "3a1ec56511b67b3210437a172922ed2fd7217a622fe2105989eb45dbf8e57307"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\servers\\rendering\\renderer_rd\\shaders\\oct_inc.slang",
+      "bytes": 1215,
+      "sha256": "0d3cfa025c4be12269370323637dd28d46cbf44cd93899f80e391fe322df56e8"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\servers\\rendering\\renderer_rd\\shaders\\raytracing\\geometry_data_inc.slang",
+      "bytes": 1585,
+      "sha256": "6cc661f1f7843c4dfe307da0ea40764bc456cfdf4afc59dfb15ba959ebadfad4"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\servers\\rendering\\renderer_rd\\shaders\\raytracing\\geometry_decode_inc.slang",
+      "bytes": 9051,
+      "sha256": "69405d490237a8da78ef425dfbdf5425a665df79430ca50e45b6501865e880cd"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\servers\\rendering\\renderer_rd\\shaders\\raytracing\\light_data_inc.slang",
+      "bytes": 1322,
+      "sha256": "21b4a814f8e6e7a9da0d14456afa3c993df4e2fe074aa1472e9bbdd50359f3a0"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\servers\\rendering\\renderer_rd\\shaders\\raytracing\\light_sampling_inc.slang",
+      "bytes": 13488,
+      "sha256": "4a1e77d9bc92c6aa2ddb9478af387d56962aa3c2b6ae93eac9c48d2f1ac0c306"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\servers\\rendering\\renderer_rd\\shaders\\raytracing\\rtxdi_application_bridge_inc.slang",
+      "bytes": 8996,
+      "sha256": "653fada5221fa83682564fba3a7ea1f5ce97ac7c90f12c0955c8f485f6915bcd"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\servers\\rendering\\renderer_rd\\shaders\\raytracing\\rtxdi_di.slang",
+      "bytes": 12095,
+      "sha256": "fab6a25b15fd993483e04e78234003e4817534582a81d67931f1bfcf5ab19efa"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\servers\\rendering\\renderer_rd\\shaders\\raytracing\\rtxdi_nrd_inc.slang",
+      "bytes": 501,
+      "sha256": "b81fe32c2523643013bac4ffcf47e11d1dfcd4f43b538c5df609db517bc64291"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\servers\\rendering\\renderer_rd\\shaders\\raytracing\\surface_brdf_inc.slang",
+      "bytes": 11210,
+      "sha256": "cdfe3b063e41d1b1657ed4d45ee5c14335a1ff9feccab9fe92057badd34e9273"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\servers\\rendering\\renderer_rd\\shaders\\raytracing\\surface_shading_inc.slang",
+      "bytes": 10559,
+      "sha256": "88692d76f6cfec426789ef7b4222eee170e22d7fc3b6368e0a3b1367c8c7fc5a"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\servers\\rendering\\renderer_rd\\shaders\\scene_data_inc.slang",
+      "bytes": 2025,
+      "sha256": "874cda1e9e6d84a636e7cf8845a5136c4832f73b6f60ba6a613b9e3eeb3d99bb"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\servers\\rendering\\renderer_rd\\shaders\\scene_forward_aa_inc.slang",
+      "bytes": 1993,
+      "sha256": "d939d67fbd87744faadac3fcf2c5780ce7f3042634d5194b9ad1a19efefb4167"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\servers\\rendering\\renderer_rd\\shaders\\surface_data_inc.slang",
+      "bytes": 2359,
+      "sha256": "c9d2bc0f1be2bf9ba2ea54573e82bd4161e6644faeb7ab3d4e503011736dad8a"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\nrd\\Shaders\\NRD.hlsli",
+      "bytes": 46603,
+      "sha256": "c57fd8074750423462bd608a2b7807f3145e7977db0d71a46fac5cd049a87afd"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\nrd\\Shaders\\NRDConfig.hlsli",
+      "bytes": 425,
+      "sha256": "ba024772a8f05b4eed94498993089cc1ae85f07aa75ab7805af6bdec4fe3f300"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\rtxdi\\Include\\Rtxdi\\DI\\InitialSampling.hlsli",
+      "bytes": 24128,
+      "sha256": "77924adf7a67ffc8ffd6fc8d5dbcd765d0d39fe67f137783ae93036d9babecfb"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\rtxdi\\Include\\Rtxdi\\DI\\PairwiseStreaming.hlsli",
+      "bytes": 5174,
+      "sha256": "7ceaabe2e84bde53383c746e5b4e3485b7b36cad09738ee6662d4257e336b840"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\rtxdi\\Include\\Rtxdi\\DI\\ReSTIRDIParameters.h",
+      "bytes": 8378,
+      "sha256": "96c36815d06f915519c2844005b9a67f4ae8e1597a3107c5c5f1e74a6b6039ce"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\rtxdi\\Include\\Rtxdi\\DI\\Reservoir.hlsli",
+      "bytes": 10014,
+      "sha256": "814a17f8e6961c5d745d51a880e726821eb3f6295c775522b891d58d1908a55f"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\rtxdi\\Include\\Rtxdi\\DI\\ReservoirStorage.hlsli",
+      "bytes": 4838,
+      "sha256": "35144255a0e1084e06a898adfae417853b59a86b7b369776817404ad642b1e5f"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\rtxdi\\Include\\Rtxdi\\DI\\SpatialResampling.hlsli",
+      "bytes": 13618,
+      "sha256": "cbfe19c64497d9b406af8cf7d1d7f81f0c319acd8fa35905d6e3edbb71f1c3fe"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\rtxdi\\Include\\Rtxdi\\DI\\TemporalResampling.hlsli",
+      "bytes": 8540,
+      "sha256": "5395e33d446387026b3a1b950270f27daf5437c83723087262fb1d884b4be478"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\rtxdi\\Include\\Rtxdi\\LightSampling\\LocalLightSelection.hlsli",
+      "bytes": 3963,
+      "sha256": "d388d2b1889f39200f9ab11eeff2dc7667e975a2e5c3b649f71de81567baf611"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\rtxdi\\Include\\Rtxdi\\LightSampling\\RISBuffer.hlsli",
+      "bytes": 1584,
+      "sha256": "9e2c1ddb813203b7dc559fbd1223deedc9d16bf146f750c77074f0e4d2729c9a"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\rtxdi\\Include\\Rtxdi\\LightSampling\\RISBufferSegmentParameters.h",
+      "bytes": 901,
+      "sha256": "73571c665dc331a45020fdb36dd7c9b38c0a2a0297a6b805d96d078473fdaf8b"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\rtxdi\\Include\\Rtxdi\\LightSampling\\UniformSampling.hlsli",
+      "bytes": 1081,
+      "sha256": "40ecea3503a1eeeb734db65e09fef1f4dbea7574883f80d6043a59dca3a4b86e"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\rtxdi\\Include\\Rtxdi\\ReGIR\\ReGIRParameters.h",
+      "bytes": 2619,
+      "sha256": "ed4ec974469089e21661117c09c2e7383d4c0ee563c055d16958e4c37127567a"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\rtxdi\\Include\\Rtxdi\\ReGIR\\ReGIRSampling.hlsli",
+      "bytes": 9028,
+      "sha256": "a40f21d02df3ae7e546e8e2f1435482fbb0d6cf073a8a08c7d580c2efc6b43a7"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\rtxdi\\Include\\Rtxdi\\RtxdiParameters.h",
+      "bytes": 5019,
+      "sha256": "eff40446099cabde4896488b4765552ea070d82e6aba68c09793fa575fa36ee8"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\rtxdi\\Include\\Rtxdi\\RtxdiTypes.h",
+      "bytes": 1813,
+      "sha256": "a605db5f4c996279ffd51d023132345d22f8853575935077c55e23eb46acbd1f"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\rtxdi\\Include\\Rtxdi\\Utils\\Checkerboard.hlsli",
+      "bytes": 1682,
+      "sha256": "f26ad86599175d73b9626a48ccd2c561c1b5281636a523e3cf5c73d67227d8c4"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\rtxdi\\Include\\Rtxdi\\Utils\\Math.hlsli",
+      "bytes": 6056,
+      "sha256": "70c2d65013d4639243cea43f282f5ac02f111b4d289802a23b2ef4ce22414d29"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\rtxdi\\Include\\Rtxdi\\Utils\\RandomSamplerPerPassSeeds.hlsli",
+      "bytes": 1757,
+      "sha256": "b9dcc43d1e578b5276cb71f1b23f58c38cb10690a128f7b49a8d294f39ffd520"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\rtxdi\\Include\\Rtxdi\\Utils\\RandomSamplerState.hlsli",
+      "bytes": 3165,
+      "sha256": "47f14c16afdab0cf9734cf21c2ef2389532d389d194732aa3bda831dab3d142a"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\thirdparty\\rtxdi\\Include\\Rtxdi\\Utils\\ReservoirAddressing.hlsli",
+      "bytes": 2279,
+      "sha256": "cfe65684fb4fd958534e92a107e9db2cf47aae443395164c1c18d833d768b261"
+    }
+  ],
+  "generated_header": {
+    "path": "G:\\Projects\\godot-rtx\\servers\\rendering\\renderer_rd\\shaders\\raytracing\\rtxdi_di.slang.gen.h",
+    "bytes": 244760,
+    "sha256": "202a80817fa9490d612c666057da5bc3b4910f585f030ae857dfdb3622ddfe9c"
+  },
+  "artifacts": [
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\diagnostic.cpp",
+      "bytes": 8134,
+      "sha256": "0811e847c2b74fd5c24aee41c2998555afa110100130efd33b6d36ad4c98f033"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\diagnostic-extra.inc",
+      "bytes": 3021,
+      "sha256": "515bda24d0b0581dfc082f163064b0301af80070bcab8c14f895d32f8e340f70"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\diagnostic.obj",
+      "bytes": 435810,
+      "sha256": "9a8e865d0658a6e4c0b38d36a246377856eca69187cba6d800fc86cc4da3b734"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\diagnostic.exe",
+      "bytes": 169443328,
+      "sha256": "5a0c935f4a58c8721a27b918a95b8d588d27c5af073581d9e93d19d66794efa5"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\render_rtxdi.obj",
+      "bytes": 185830,
+      "sha256": "6de179a2dd6bcf09dac4db3e49c1f1de49da5f07254dae487b9db23cda2e4b98"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\slang-compiler.2026.13.1.x86_64.dll",
+      "bytes": 35200000,
+      "sha256": "6cd4e6bee3ee8a1f8349f77c838ac711a3d217465771b114f461075b77b71b40"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\link.rsp",
+      "bytes": 5735,
+      "sha256": "af26561251c767932f95969a8e3abb1675996ba44794613c459523d84449a64f"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\build.py",
+      "bytes": 2334,
+      "sha256": "0369feddbebca320d5a7c822ceba39b9aaa6abdefc4b5275d51ddc9e368c6ee9"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\run.py",
+      "bytes": 1113,
+      "sha256": "7d597194277eb38eb1b30f3a72351fd3bb8f3b496195a0a5b95312551a4cb3da"
+    }
+  ],
+  "request_identities": [
+    "1/4206592/67072/slang/2026.13.1/fa1c9bcab2cdcd3626f7a1e250dd35d606c1b84745b64627f1dd63fca3746a70/embedded-spirv-v1/0/1/0/0/645d7beb513c6676e85e3a38d97f1030c0ccbd89762f102ac0f285df4032b649/1/1/0/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/9158bcad9e9c4a4b6298daa93fb74dc087dbd57ec72f1c5bca6190943e58c0a1/0d3cfa025c4be12269370323637dd28d46cbf44cd93899f80e391fe322df56e8/8a41df39674f7f3b138fb907e8b7ac3fc23729403502ab844627c1467c3f4a42/6cc661f1f7843c4dfe307da0ea40764bc456cfdf4afc59dfb15ba959ebadfad4/93862d31f67ed062b624df658901dd1eb4a486343ff40147e942d86baf7bd8ec/578ebe3e5e98962e78965612de22c385f829f77dbffd3024e590b7fe5f176d58/55ad9e4edc575180fb0b9129ce4026e624fd4646391f275e252036a42ff9dd3a/854ce0411f0576a1e5edab453ac5f4e801a049944394d14e598910b6d1febc3b/2d4de1ea7432814e4b1ca8f9634767f842939636ed34a88129bd003bf6b217d6/4deab916f72cc0336c706ac3f685d25282eb9844ecd0d57d7ef8e25ad1e17fa3/59fbde97f07975f9f476bfaf030e6492260f84e7845424b095bd32f8d7dc0fa7/d85c173208f19d8080b2d131176079ecafd3718713a5d78ab5870945446303f1/06638b0b7794c10d4882a4b7485507effefc6a6baa04114f0f303d3b887c0ba9/a15bd261f692704878b72443c832127e371b8c5b78212f32928305e2bd3042d8/6f8a39ab67c466e87e3aa01978d386027779bc91110a603e50c164d879f3f14f/b1514f5f1649291ef8727ad325b52c456c7e9fc44e6a0c83964945cb7996fb67/e98ec35201e89cdc44624b0c10c026e4311ecf6b9c337c1a58ebb1071ffa931e/c5a2ee79fac1e0bcc75da40663a851595e3c9cdd4fb9569309fccbed32c0c60e/827dcf3a66c7324136573e3410124596e88764d7c19f9647656b36557722fd5d/874cda1e9e6d84a636e7cf8845a5136c4832f73b6f60ba6a613b9e3eeb3d99bb/0caffa85832faa5d13dd9250a83cacc6f4eaa1e36e6089880cd30750419e95a3/d939d67fbd87744faadac3fcf2c5780ce7f3042634d5194b9ad1a19efefb4167/de9e10e4cd84f73e688352926398fb51ae01e9bfdd41aada12aaf5056d7f7288/f57029d9c7fbc1d3e6809fac511b90c8286fe46095951f78dfab503d400cfe42/7106e699ce14f9f33afa4fe2099577cb88d6c933ae07935be0c577709c0cd117/ace09780613dff1a9b7ef0334702598bd9aeaa79b6ba9217fb9df2900d9fc80b/2fc028193080aca9aabfdf31adaeea5b431b294934a924d2d1cb0f999dc746d5/29b2146f8064da4fbdcde0a1c4e5504dd2849b41894348c148d6106b7300ab10/10ca5187102d9f64616f7f861b1ac754b5cece84b878187f43289529d1d225c0/6cce37a07d620c71628bb94dd09f9c49f2f7a0c2b1d19b465a14dc6b4c39dc06/4888eb897ee84a5e56d5caf455a3b62b9f2d56c776da63c54b1041a75a83e206/e7b393337a555e4157b5b7460f5ac1da38cc5f0bc8267883d6d1cac219fa204b/de589e41ba3af761b4515422fde6ab6a5edf77ff2ed8057eaa4cd51dd445a773/1b2d92b18fe66212a5662f60eb800e8abe7e9e426450ed2983114430a5a3fc7e/0b046c95c4d10efd0c046f2014e8df204490515480831d21d974130ea909b216/d63f7dd26d14e5d7442c5016d4a84d577be91ee3d243d0b7a6eb865beb0cf028/abe0be3287bac771953d6d5b85e449997aa7bc81f91e1faec67b047800a7f178/fa07fadc6c696b7e151b090c434a962d4a15ec0148c8e29f10e77dd1e4bb8909/7b0dc5faaa6798c539bacbb496b435944dd0d0aa7e89385f350bbd78121d6e51/a09707b9e5d91bd268ef5af568278303a65d9499f29e87b80873fded92b27b05/12b3530045f2d8cf65943bdfd373872e5ef4d067bb8560c124663f633a254492/bc39a1676d2a3c7f6e71d31c6b9b2b19e2deae45f6ad14d9c9886059007cf7a2/db1dd924b9abbf60f64e03b8b5442654f5435152ace1bdc24fb2d8c8e4e3079e/b62b01fa5652a49a6f1b928e46e1a904b8cd06b489421b446b21863ce6e93d76/64e0b8895bebfe9ff5f699cb1892a6ab4fcad30f3f0f9898f076a65ef52e3448/23b7dd3d870ce210fc51925fdc3a66f6fca2960962256287631a65da28f15f1c/cbd794b97e6661719e5d21d05be1d130fd091b16bdcf4d827b79d147191cf1aa/1f4d512ec7df984cb63247733e9477423c8e8377428ab15fe23d8119bfdfaa39/995bd377bffc81b36999c4d1d50f402c2ab80fb4bd486cc198ca51b3c2ba983b/3d3779cf58a4b2e68658d56d4acc3240be5ca92f387c8a70ab553793a466675c/854f03accd7f2703ef99fe15f5ccf8171511cd4df3dee1305235ee94913fa1ed/5567612733aee3181ed4074ad3cac2837c869f54b749dd3052666a9f43000e10/b5642884c350bce536f0a612a13bc5e87c39448d983cd65631f38498b2f968b8/fba9b81a34d63d8d5b3b6fda7a5792557e3ab309ae6d98c0ab95fb8bfc153720/acbf111bec714a317c45213e7cafc3a681b11199ff2e53c354a7f2ff25ffe580/4c169a8fc4cac6c070b847b5eb4b5a7fb7ee0170e7bc098fafe099d2c9abbd5b/1bf651301ce77e6adeb388fbcf67a16200ea9610038f0ab8643b4dc97e5d45c0/772fe8f9e46c3fab6fe33c66fdc81a9e1e6082e678cb8e47f9e6a3c4a7558fe6/542b750541416ed03df12acab872174983094d04e55fa1dd66d0637b381615b7/9d787231c7c4d32a9e7b575166fd77eeecc74759e540ca44f98149e5901865b5/29c4a987c2bcc28f16a7a96de86415586357391b25eb32cc3a18826a15f88dbd/ce729782c6d2d53b763fa538ed144d74bd2eb06c0b9bb40cf84603eecb0696c9/b9c73091931f50ca27a7b72a84e12edc73ed690e77fee19be83d6638e6283fd5/3d950eb56e16b96265eee33bfb8987e7eaff735292aa8f38a8447451848aa57c/de1cbf58a6ead5620d98d0f96439a864b74d19ff9db5523140259a78d4950657/f30fa5977debba5e4071cdb601e31c4ea8aad6cb6bb2860c81215e6cb45cb36c/2e3c41915ade897f109613b2fde957e498c227fb28949cbcd082f42c4bb27505/df44bf8fbc1d5bbcda24e40d4f4acc71bedab5ffa24d7f2db8c3e515cf4a86da",
+    "1/4206592/67072/slang/2026.13.1/fa1c9bcab2cdcd3626f7a1e250dd35d606c1b84745b64627f1dd63fca3746a70/embedded-spirv-v1/0/1/0/0/645d7beb513c6676e85e3a38d97f1030c0ccbd89762f102ac0f285df4032b649/1/1/0/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/9158bcad9e9c4a4b6298daa93fb74dc087dbd57ec72f1c5bca6190943e58c0a1/0d3cfa025c4be12269370323637dd28d46cbf44cd93899f80e391fe322df56e8/8a41df39674f7f3b138fb907e8b7ac3fc23729403502ab844627c1467c3f4a42/6cc661f1f7843c4dfe307da0ea40764bc456cfdf4afc59dfb15ba959ebadfad4/93862d31f67ed062b624df658901dd1eb4a486343ff40147e942d86baf7bd8ec/578ebe3e5e98962e78965612de22c385f829f77dbffd3024e590b7fe5f176d58/55ad9e4edc575180fb0b9129ce4026e624fd4646391f275e252036a42ff9dd3a/854ce0411f0576a1e5edab453ac5f4e801a049944394d14e598910b6d1febc3b/2d4de1ea7432814e4b1ca8f9634767f842939636ed34a88129bd003bf6b217d6/4deab916f72cc0336c706ac3f685d25282eb9844ecd0d57d7ef8e25ad1e17fa3/59fbde97f07975f9f476bfaf030e6492260f84e7845424b095bd32f8d7dc0fa7/d85c173208f19d8080b2d131176079ecafd3718713a5d78ab5870945446303f1/06638b0b7794c10d4882a4b7485507effefc6a6baa04114f0f303d3b887c0ba9/a15bd261f692704878b72443c832127e371b8c5b78212f32928305e2bd3042d8/6f8a39ab67c466e87e3aa01978d386027779bc91110a603e50c164d879f3f14f/b1514f5f1649291ef8727ad325b52c456c7e9fc44e6a0c83964945cb7996fb67/e98ec35201e89cdc44624b0c10c026e4311ecf6b9c337c1a58ebb1071ffa931e/c5a2ee79fac1e0bcc75da40663a851595e3c9cdd4fb9569309fccbed32c0c60e/827dcf3a66c7324136573e3410124596e88764d7c19f9647656b36557722fd5d/874cda1e9e6d84a636e7cf8845a5136c4832f73b6f60ba6a613b9e3eeb3d99bb/0caffa85832faa5d13dd9250a83cacc6f4eaa1e36e6089880cd30750419e95a3/d939d67fbd87744faadac3fcf2c5780ce7f3042634d5194b9ad1a19efefb4167/de9e10e4cd84f73e688352926398fb51ae01e9bfdd41aada12aaf5056d7f7288/f57029d9c7fbc1d3e6809fac511b90c8286fe46095951f78dfab503d400cfe42/7106e699ce14f9f33afa4fe2099577cb88d6c933ae07935be0c577709c0cd117/ace09780613dff1a9b7ef0334702598bd9aeaa79b6ba9217fb9df2900d9fc80b/2fc028193080aca9aabfdf31adaeea5b431b294934a924d2d1cb0f999dc746d5/29b2146f8064da4fbdcde0a1c4e5504dd2849b41894348c148d6106b7300ab10/10ca5187102d9f64616f7f861b1ac754b5cece84b878187f43289529d1d225c0/6cce37a07d620c71628bb94dd09f9c49f2f7a0c2b1d19b465a14dc6b4c39dc06/4888eb897ee84a5e56d5caf455a3b62b9f2d56c776da63c54b1041a75a83e206/e7b393337a555e4157b5b7460f5ac1da38cc5f0bc8267883d6d1cac219fa204b/de589e41ba3af761b4515422fde6ab6a5edf77ff2ed8057eaa4cd51dd445a773/1b2d92b18fe66212a5662f60eb800e8abe7e9e426450ed2983114430a5a3fc7e/0b046c95c4d10efd0c046f2014e8df204490515480831d21d974130ea909b216/d63f7dd26d14e5d7442c5016d4a84d577be91ee3d243d0b7a6eb865beb0cf028/abe0be3287bac771953d6d5b85e449997aa7bc81f91e1faec67b047800a7f178/fa07fadc6c696b7e151b090c434a962d4a15ec0148c8e29f10e77dd1e4bb8909/7b0dc5faaa6798c539bacbb496b435944dd0d0aa7e89385f350bbd78121d6e51/a09707b9e5d91bd268ef5af568278303a65d9499f29e87b80873fded92b27b05/12b3530045f2d8cf65943bdfd373872e5ef4d067bb8560c124663f633a254492/bc39a1676d2a3c7f6e71d31c6b9b2b19e2deae45f6ad14d9c9886059007cf7a2/db1dd924b9abbf60f64e03b8b5442654f5435152ace1bdc24fb2d8c8e4e3079e/b62b01fa5652a49a6f1b928e46e1a904b8cd06b489421b446b21863ce6e93d76/64e0b8895bebfe9ff5f699cb1892a6ab4fcad30f3f0f9898f076a65ef52e3448/23b7dd3d870ce210fc51925fdc3a66f6fca2960962256287631a65da28f15f1c/cbd794b97e6661719e5d21d05be1d130fd091b16bdcf4d827b79d147191cf1aa/1f4d512ec7df984cb63247733e9477423c8e8377428ab15fe23d8119bfdfaa39/995bd377bffc81b36999c4d1d50f402c2ab80fb4bd486cc198ca51b3c2ba983b/3d3779cf58a4b2e68658d56d4acc3240be5ca92f387c8a70ab553793a466675c/854f03accd7f2703ef99fe15f5ccf8171511cd4df3dee1305235ee94913fa1ed/5567612733aee3181ed4074ad3cac2837c869f54b749dd3052666a9f43000e10/b5642884c350bce536f0a612a13bc5e87c39448d983cd65631f38498b2f968b8/fba9b81a34d63d8d5b3b6fda7a5792557e3ab309ae6d98c0ab95fb8bfc153720/acbf111bec714a317c45213e7cafc3a681b11199ff2e53c354a7f2ff25ffe580/4c169a8fc4cac6c070b847b5eb4b5a7fb7ee0170e7bc098fafe099d2c9abbd5b/1bf651301ce77e6adeb388fbcf67a16200ea9610038f0ab8643b4dc97e5d45c0/772fe8f9e46c3fab6fe33c66fdc81a9e1e6082e678cb8e47f9e6a3c4a7558fe6/542b750541416ed03df12acab872174983094d04e55fa1dd66d0637b381615b7/9d787231c7c4d32a9e7b575166fd77eeecc74759e540ca44f98149e5901865b5/29c4a987c2bcc28f16a7a96de86415586357391b25eb32cc3a18826a15f88dbd/ce729782c6d2d53b763fa538ed144d74bd2eb06c0b9bb40cf84603eecb0696c9/b9c73091931f50ca27a7b72a84e12edc73ed690e77fee19be83d6638e6283fd5/3d950eb56e16b96265eee33bfb8987e7eaff735292aa8f38a8447451848aa57c/de1cbf58a6ead5620d98d0f96439a864b74d19ff9db5523140259a78d4950657/f30fa5977debba5e4071cdb601e31c4ea8aad6cb6bb2860c81215e6cb45cb36c/2e3c41915ade897f109613b2fde957e498c227fb28949cbcd082f42c4bb27505/df44bf8fbc1d5bbcda24e40d4f4acc71bedab5ffa24d7f2db8c3e515cf4a86da",
+    "1/4206592/67072/slang/2026.13.1/fa1c9bcab2cdcd3626f7a1e250dd35d606c1b84745b64627f1dd63fca3746a70/embedded-spirv-v1/0/1/0/0/645d7beb513c6676e85e3a38d97f1030c0ccbd89762f102ac0f285df4032b649/1/1/0/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/9158bcad9e9c4a4b6298daa93fb74dc087dbd57ec72f1c5bca6190943e58c0a1/0d3cfa025c4be12269370323637dd28d46cbf44cd93899f80e391fe322df56e8/8a41df39674f7f3b138fb907e8b7ac3fc23729403502ab844627c1467c3f4a42/6cc661f1f7843c4dfe307da0ea40764bc456cfdf4afc59dfb15ba959ebadfad4/93862d31f67ed062b624df658901dd1eb4a486343ff40147e942d86baf7bd8ec/578ebe3e5e98962e78965612de22c385f829f77dbffd3024e590b7fe5f176d58/55ad9e4edc575180fb0b9129ce4026e624fd4646391f275e252036a42ff9dd3a/854ce0411f0576a1e5edab453ac5f4e801a049944394d14e598910b6d1febc3b/2d4de1ea7432814e4b1ca8f9634767f842939636ed34a88129bd003bf6b217d6/4deab916f72cc0336c706ac3f685d25282eb9844ecd0d57d7ef8e25ad1e17fa3/59fbde97f07975f9f476bfaf030e6492260f84e7845424b095bd32f8d7dc0fa7/d85c173208f19d8080b2d131176079ecafd3718713a5d78ab5870945446303f1/06638b0b7794c10d4882a4b7485507effefc6a6baa04114f0f303d3b887c0ba9/a15bd261f692704878b72443c832127e371b8c5b78212f32928305e2bd3042d8/6f8a39ab67c466e87e3aa01978d386027779bc91110a603e50c164d879f3f14f/b1514f5f1649291ef8727ad325b52c456c7e9fc44e6a0c83964945cb7996fb67/e98ec35201e89cdc44624b0c10c026e4311ecf6b9c337c1a58ebb1071ffa931e/c5a2ee79fac1e0bcc75da40663a851595e3c9cdd4fb9569309fccbed32c0c60e/827dcf3a66c7324136573e3410124596e88764d7c19f9647656b36557722fd5d/874cda1e9e6d84a636e7cf8845a5136c4832f73b6f60ba6a613b9e3eeb3d99bb/0caffa85832faa5d13dd9250a83cacc6f4eaa1e36e6089880cd30750419e95a3/d939d67fbd87744faadac3fcf2c5780ce7f3042634d5194b9ad1a19efefb4167/de9e10e4cd84f73e688352926398fb51ae01e9bfdd41aada12aaf5056d7f7288/f57029d9c7fbc1d3e6809fac511b90c8286fe46095951f78dfab503d400cfe42/7106e699ce14f9f33afa4fe2099577cb88d6c933ae07935be0c577709c0cd117/ace09780613dff1a9b7ef0334702598bd9aeaa79b6ba9217fb9df2900d9fc80b/2fc028193080aca9aabfdf31adaeea5b431b294934a924d2d1cb0f999dc746d5/29b2146f8064da4fbdcde0a1c4e5504dd2849b41894348c148d6106b7300ab10/10ca5187102d9f64616f7f861b1ac754b5cece84b878187f43289529d1d225c0/6cce37a07d620c71628bb94dd09f9c49f2f7a0c2b1d19b465a14dc6b4c39dc06/4888eb897ee84a5e56d5caf455a3b62b9f2d56c776da63c54b1041a75a83e206/e7b393337a555e4157b5b7460f5ac1da38cc5f0bc8267883d6d1cac219fa204b/de589e41ba3af761b4515422fde6ab6a5edf77ff2ed8057eaa4cd51dd445a773/1b2d92b18fe66212a5662f60eb800e8abe7e9e426450ed2983114430a5a3fc7e/0b046c95c4d10efd0c046f2014e8df204490515480831d21d974130ea909b216/d63f7dd26d14e5d7442c5016d4a84d577be91ee3d243d0b7a6eb865beb0cf028/abe0be3287bac771953d6d5b85e449997aa7bc81f91e1faec67b047800a7f178/fa07fadc6c696b7e151b090c434a962d4a15ec0148c8e29f10e77dd1e4bb8909/7b0dc5faaa6798c539bacbb496b435944dd0d0aa7e89385f350bbd78121d6e51/a09707b9e5d91bd268ef5af568278303a65d9499f29e87b80873fded92b27b05/12b3530045f2d8cf65943bdfd373872e5ef4d067bb8560c124663f633a254492/bc39a1676d2a3c7f6e71d31c6b9b2b19e2deae45f6ad14d9c9886059007cf7a2/db1dd924b9abbf60f64e03b8b5442654f5435152ace1bdc24fb2d8c8e4e3079e/b62b01fa5652a49a6f1b928e46e1a904b8cd06b489421b446b21863ce6e93d76/64e0b8895bebfe9ff5f699cb1892a6ab4fcad30f3f0f9898f076a65ef52e3448/23b7dd3d870ce210fc51925fdc3a66f6fca2960962256287631a65da28f15f1c/cbd794b97e6661719e5d21d05be1d130fd091b16bdcf4d827b79d147191cf1aa/1f4d512ec7df984cb63247733e9477423c8e8377428ab15fe23d8119bfdfaa39/995bd377bffc81b36999c4d1d50f402c2ab80fb4bd486cc198ca51b3c2ba983b/3d3779cf58a4b2e68658d56d4acc3240be5ca92f387c8a70ab553793a466675c/854f03accd7f2703ef99fe15f5ccf8171511cd4df3dee1305235ee94913fa1ed/5567612733aee3181ed4074ad3cac2837c869f54b749dd3052666a9f43000e10/b5642884c350bce536f0a612a13bc5e87c39448d983cd65631f38498b2f968b8/fba9b81a34d63d8d5b3b6fda7a5792557e3ab309ae6d98c0ab95fb8bfc153720/acbf111bec714a317c45213e7cafc3a681b11199ff2e53c354a7f2ff25ffe580/4c169a8fc4cac6c070b847b5eb4b5a7fb7ee0170e7bc098fafe099d2c9abbd5b/1bf651301ce77e6adeb388fbcf67a16200ea9610038f0ab8643b4dc97e5d45c0/772fe8f9e46c3fab6fe33c66fdc81a9e1e6082e678cb8e47f9e6a3c4a7558fe6/542b750541416ed03df12acab872174983094d04e55fa1dd66d0637b381615b7/9d787231c7c4d32a9e7b575166fd77eeecc74759e540ca44f98149e5901865b5/29c4a987c2bcc28f16a7a96de86415586357391b25eb32cc3a18826a15f88dbd/ce729782c6d2d53b763fa538ed144d74bd2eb06c0b9bb40cf84603eecb0696c9/b9c73091931f50ca27a7b72a84e12edc73ed690e77fee19be83d6638e6283fd5/3d950eb56e16b96265eee33bfb8987e7eaff735292aa8f38a8447451848aa57c/de1cbf58a6ead5620d98d0f96439a864b74d19ff9db5523140259a78d4950657/f30fa5977debba5e4071cdb601e31c4ea8aad6cb6bb2860c81215e6cb45cb36c/2e3c41915ade897f109613b2fde957e498c227fb28949cbcd082f42c4bb27505/df44bf8fbc1d5bbcda24e40d4f4acc71bedab5ffa24d7f2db8c3e515cf4a86da",
+    "1/4206592/67072/slang/2026.13.1/fa1c9bcab2cdcd3626f7a1e250dd35d606c1b84745b64627f1dd63fca3746a70/embedded-spirv-v1/0/1/0/0/645d7beb513c6676e85e3a38d97f1030c0ccbd89762f102ac0f285df4032b649/1/1/0/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/9158bcad9e9c4a4b6298daa93fb74dc087dbd57ec72f1c5bca6190943e58c0a1/0d3cfa025c4be12269370323637dd28d46cbf44cd93899f80e391fe322df56e8/8a41df39674f7f3b138fb907e8b7ac3fc23729403502ab844627c1467c3f4a42/6cc661f1f7843c4dfe307da0ea40764bc456cfdf4afc59dfb15ba959ebadfad4/93862d31f67ed062b624df658901dd1eb4a486343ff40147e942d86baf7bd8ec/578ebe3e5e98962e78965612de22c385f829f77dbffd3024e590b7fe5f176d58/55ad9e4edc575180fb0b9129ce4026e624fd4646391f275e252036a42ff9dd3a/854ce0411f0576a1e5edab453ac5f4e801a049944394d14e598910b6d1febc3b/2d4de1ea7432814e4b1ca8f9634767f842939636ed34a88129bd003bf6b217d6/4deab916f72cc0336c706ac3f685d25282eb9844ecd0d57d7ef8e25ad1e17fa3/59fbde97f07975f9f476bfaf030e6492260f84e7845424b095bd32f8d7dc0fa7/d85c173208f19d8080b2d131176079ecafd3718713a5d78ab5870945446303f1/06638b0b7794c10d4882a4b7485507effefc6a6baa04114f0f303d3b887c0ba9/a15bd261f692704878b72443c832127e371b8c5b78212f32928305e2bd3042d8/6f8a39ab67c466e87e3aa01978d386027779bc91110a603e50c164d879f3f14f/b1514f5f1649291ef8727ad325b52c456c7e9fc44e6a0c83964945cb7996fb67/e98ec35201e89cdc44624b0c10c026e4311ecf6b9c337c1a58ebb1071ffa931e/c5a2ee79fac1e0bcc75da40663a851595e3c9cdd4fb9569309fccbed32c0c60e/827dcf3a66c7324136573e3410124596e88764d7c19f9647656b36557722fd5d/874cda1e9e6d84a636e7cf8845a5136c4832f73b6f60ba6a613b9e3eeb3d99bb/0caffa85832faa5d13dd9250a83cacc6f4eaa1e36e6089880cd30750419e95a3/d939d67fbd87744faadac3fcf2c5780ce7f3042634d5194b9ad1a19efefb4167/de9e10e4cd84f73e688352926398fb51ae01e9bfdd41aada12aaf5056d7f7288/f57029d9c7fbc1d3e6809fac511b90c8286fe46095951f78dfab503d400cfe42/7106e699ce14f9f33afa4fe2099577cb88d6c933ae07935be0c577709c0cd117/ace09780613dff1a9b7ef0334702598bd9aeaa79b6ba9217fb9df2900d9fc80b/2fc028193080aca9aabfdf31adaeea5b431b294934a924d2d1cb0f999dc746d5/29b2146f8064da4fbdcde0a1c4e5504dd2849b41894348c148d6106b7300ab10/10ca5187102d9f64616f7f861b1ac754b5cece84b878187f43289529d1d225c0/6cce37a07d620c71628bb94dd09f9c49f2f7a0c2b1d19b465a14dc6b4c39dc06/4888eb897ee84a5e56d5caf455a3b62b9f2d56c776da63c54b1041a75a83e206/e7b393337a555e4157b5b7460f5ac1da38cc5f0bc8267883d6d1cac219fa204b/de589e41ba3af761b4515422fde6ab6a5edf77ff2ed8057eaa4cd51dd445a773/1b2d92b18fe66212a5662f60eb800e8abe7e9e426450ed2983114430a5a3fc7e/0b046c95c4d10efd0c046f2014e8df204490515480831d21d974130ea909b216/d63f7dd26d14e5d7442c5016d4a84d577be91ee3d243d0b7a6eb865beb0cf028/abe0be3287bac771953d6d5b85e449997aa7bc81f91e1faec67b047800a7f178/fa07fadc6c696b7e151b090c434a962d4a15ec0148c8e29f10e77dd1e4bb8909/7b0dc5faaa6798c539bacbb496b435944dd0d0aa7e89385f350bbd78121d6e51/a09707b9e5d91bd268ef5af568278303a65d9499f29e87b80873fded92b27b05/12b3530045f2d8cf65943bdfd373872e5ef4d067bb8560c124663f633a254492/bc39a1676d2a3c7f6e71d31c6b9b2b19e2deae45f6ad14d9c9886059007cf7a2/db1dd924b9abbf60f64e03b8b5442654f5435152ace1bdc24fb2d8c8e4e3079e/b62b01fa5652a49a6f1b928e46e1a904b8cd06b489421b446b21863ce6e93d76/64e0b8895bebfe9ff5f699cb1892a6ab4fcad30f3f0f9898f076a65ef52e3448/23b7dd3d870ce210fc51925fdc3a66f6fca2960962256287631a65da28f15f1c/cbd794b97e6661719e5d21d05be1d130fd091b16bdcf4d827b79d147191cf1aa/1f4d512ec7df984cb63247733e9477423c8e8377428ab15fe23d8119bfdfaa39/995bd377bffc81b36999c4d1d50f402c2ab80fb4bd486cc198ca51b3c2ba983b/3d3779cf58a4b2e68658d56d4acc3240be5ca92f387c8a70ab553793a466675c/854f03accd7f2703ef99fe15f5ccf8171511cd4df3dee1305235ee94913fa1ed/5567612733aee3181ed4074ad3cac2837c869f54b749dd3052666a9f43000e10/b5642884c350bce536f0a612a13bc5e87c39448d983cd65631f38498b2f968b8/fba9b81a34d63d8d5b3b6fda7a5792557e3ab309ae6d98c0ab95fb8bfc153720/acbf111bec714a317c45213e7cafc3a681b11199ff2e53c354a7f2ff25ffe580/4c169a8fc4cac6c070b847b5eb4b5a7fb7ee0170e7bc098fafe099d2c9abbd5b/1bf651301ce77e6adeb388fbcf67a16200ea9610038f0ab8643b4dc97e5d45c0/772fe8f9e46c3fab6fe33c66fdc81a9e1e6082e678cb8e47f9e6a3c4a7558fe6/542b750541416ed03df12acab872174983094d04e55fa1dd66d0637b381615b7/9d787231c7c4d32a9e7b575166fd77eeecc74759e540ca44f98149e5901865b5/29c4a987c2bcc28f16a7a96de86415586357391b25eb32cc3a18826a15f88dbd/ce729782c6d2d53b763fa538ed144d74bd2eb06c0b9bb40cf84603eecb0696c9/b9c73091931f50ca27a7b72a84e12edc73ed690e77fee19be83d6638e6283fd5/3d950eb56e16b96265eee33bfb8987e7eaff735292aa8f38a8447451848aa57c/de1cbf58a6ead5620d98d0f96439a864b74d19ff9db5523140259a78d4950657/f30fa5977debba5e4071cdb601e31c4ea8aad6cb6bb2860c81215e6cb45cb36c/2e3c41915ade897f109613b2fde957e498c227fb28949cbcd082f42c4bb27505/df44bf8fbc1d5bbcda24e40d4f4acc71bedab5ffa24d7f2db8c3e515cf4a86da"
+  ],
+  "run": {
+    "command": [
+      "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\diagnostic.exe",
+      "--path",
+      "G:\\Projects\\godot-rtx\\demos\\rtxdi_manual",
+      "--rendering-driver",
+      "vulkan",
+      "--rendering-method",
+      "forward_plus",
+      "--audio-driver",
+      "Dummy"
+    ],
+    "cwd": "G:\\Projects\\godot-rtx",
+    "environment": {
+      "STEP3_DIAG_DIR": "C:/Users/lukas/AppData/Local/Temp/godot-shader-unification-20260907/step3"
+    },
+    "binary_sha256": "5a0c935f4a58c8721a27b918a95b8d588d27c5af073581d9e93d19d66794efa5",
+    "compiler_sha256": "6cd4e6bee3ee8a1f8349f77c838ac711a3d217465771b114f461075b77b71b40",
+    "exit_code": 0
+  },
+  "commands": {
+    "embedding": [
+      "scons",
+      "platform=windows",
+      "target=editor",
+      "accesskit=no",
+      "d3d12=no",
+      "servers/rendering/renderer_rd/shaders/raytracing/rtxdi_di.slang.gen.h",
+      "-j16"
+    ],
+    "host_compile": "cl /Fo\"C:/Users/lukas/AppData/Local/Temp/godot-shader-unification-20260907/step3/render_rtxdi.obj\" /c servers\\rendering\\renderer_rd\\forward_clustered\\render_rtxdi.cpp /Zc:__cplusplus /std:c++17 /TP /permissive- /nologo /MT /fp:strict /Gd /GR /utf-8 /bigobj /d2archSSE42 /O2 /W3 /w34458 /wd4100 /wd4127 /wd4201 /wd4244 /wd4245 /wd4267 /wd4305 /wd4324 /wd4514 /wd4714 /wd4820 /DTOOLS_ENABLED /DDEBUG_ENABLED /DNDEBUG /DENGINE_UPDATE_CHECK_ENABLED /DNO_EDITOR_SPLASH /DSTREAMLINE_ENABLED /DENABLE_PREFER_HIGH_PERFORMANCE_GPU /DWINDOWS_ENABLED /DWASAPI_ENABLED /DWINMIDI_ENABLED /DTYPED_METHOD_BIND /DWIN32 /DWINVER=0x0A00 /D_WIN32_WINNT=0x0A00 /DNOMINMAX /D_WIN64 /DVULKAN_ENABLED /DRD_ENABLED /DSDL_ENABLED /DGLES3_ENABLED /D_HAS_EXCEPTIONS=0 /DMINIZIP_ENABLED /DBROTLI_ENABLED /DOVERRIDE_ENABLED /DOVERRIDE_PATH_ENABLED /DTHREADS_ENABLED /DCLIPPER2_ENABLED /DZSTD_STATIC_LINKING_ONLY /Ithirdparty\\rtxdi\\Include /Ithirdparty\\zstd /Ithirdparty\\zlib /Ithirdparty\\clipper2\\include /Ithirdparty\\brotli\\include /Iplatform\\windows /I.",
+    "diagnostic_compile": "cl /Fo\"C:/Users/lukas/AppData/Local/Temp/godot-shader-unification-20260907/step3/diagnostic.obj\" /c \"C:/Users/lukas/AppData/Local/Temp/godot-shader-unification-20260907/step3/diagnostic.cpp\" /Zc:__cplusplus /std:c++17 /TP /permissive- /nologo /MT /fp:strict /Gd /GR /utf-8 /bigobj /d2archSSE42 /O2 /W3 /w34458 /wd4100 /wd4127 /wd4201 /wd4244 /wd4245 /wd4267 /wd4305 /wd4324 /wd4514 /wd4714 /wd4820 /DTOOLS_ENABLED /DDEBUG_ENABLED /DNDEBUG /DENGINE_UPDATE_CHECK_ENABLED /DNO_EDITOR_SPLASH /DSTREAMLINE_ENABLED /DENABLE_PREFER_HIGH_PERFORMANCE_GPU /DWINDOWS_ENABLED /DWASAPI_ENABLED /DWINMIDI_ENABLED /DTYPED_METHOD_BIND /DWIN32 /DWINVER=0x0A00 /D_WIN32_WINNT=0x0A00 /DNOMINMAX /D_WIN64 /DVULKAN_ENABLED /DRD_ENABLED /DSDL_ENABLED /DGLES3_ENABLED /D_HAS_EXCEPTIONS=0 /DMINIZIP_ENABLED /DBROTLI_ENABLED /DOVERRIDE_ENABLED /DOVERRIDE_PATH_ENABLED /DTHREADS_ENABLED /DCLIPPER2_ENABLED /DZSTD_STATIC_LINKING_ONLY /DUSE_VOLK /DVK_USE_PLATFORM_WIN32_KHR /DVMA_EXTERNAL_MEMORY_WIN32=0 /DGLAD_ENABLED /Ithirdparty\\freetype\\include /Ithirdparty\\libpng /Ithirdparty\\glad /Ithirdparty\\volk /Ithirdparty\\vulkan /Ithirdparty\\vulkan\\include /Ithirdparty\\zstd /Ithirdparty\\zlib /Ithirdparty\\clipper2\\include /Ithirdparty\\brotli\\include /Iplatform\\windows /I.",
+    "link_response": "/nologo /SUBSYSTEM:CONSOLE /INCREMENTAL:NO winmm.lib dsound.lib kernel32.lib ole32.lib oleaut32.lib sapi.lib user32.lib gdi32.lib IPHLPAPI.lib Shlwapi.lib Shcore.lib wsock32.lib Ws2_32.lib shell32.lib advapi32.lib dinput8.lib dxguid.lib imm32.lib bcrypt.lib Crypt32.lib Avrt.lib dwmapi.lib dwrite.lib wbemuuid.lib ntdll.lib hid.lib mincore.lib psapi.lib dbghelp.lib psapi.lib dbghelp.lib /NATVIS:platform\\windows\\godot.natvis /STACK:8388608 /DEBUG:NONE /OPT:REF /OPT:NOICF psapi.lib /ENTRY:ShimMainCRTStartup /OUT:\"C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\diagnostic.exe\" bin\\obj\\main\\main.windows.editor.x86_64.lib bin\\obj\\modules\\modules.windows.editor.x86_64.lib bin\\obj\\modules\\module_text_server_adv.windows.editor.x86_64.lib bin\\obj\\modules\\module_fbx.windows.editor.x86_64.lib bin\\obj\\modules\\module_gltf.windows.editor.x86_64.lib bin\\obj\\modules\\module_ktx.windows.editor.x86_64.lib bin\\obj\\modules\\module_svg.windows.editor.x86_64.lib bin\\obj\\modules\\module_theora.windows.editor.x86_64.lib bin\\obj\\modules\\module_vorbis.windows.editor.x86_64.lib bin\\obj\\modules\\module_astcenc.windows.editor.x86_64.lib bin\\obj\\modules\\module_basis_universal.windows.editor.x86_64.lib bin\\obj\\modules\\module_bcdec.windows.editor.x86_64.lib bin\\obj\\modules\\module_betsy.windows.editor.x86_64.lib bin\\obj\\modules\\module_bmp.windows.editor.x86_64.lib bin\\obj\\modules\\module_camera.windows.editor.x86_64.lib bin\\obj\\modules\\module_csg.windows.editor.x86_64.lib bin\\obj\\modules\\module_cvtt.windows.editor.x86_64.lib bin\\obj\\modules\\module_dds.windows.editor.x86_64.lib bin\\obj\\modules\\module_enet.windows.editor.x86_64.lib bin\\obj\\modules\\module_etcpak.windows.editor.x86_64.lib bin\\obj\\modules\\module_gdscript.windows.editor.x86_64.lib bin\\obj\\modules\\module_glslang.windows.editor.x86_64.lib bin\\obj\\modules\\module_godot_physics_2d.windows.editor.x86_64.lib bin\\obj\\modules\\module_godot_physics_3d.windows.editor.x86_64.lib bin\\obj\\modules\\module_gridmap.windows.editor.x86_64.lib bin\\obj\\modules\\module_hdr.windows.editor.x86_64.lib bin\\obj\\modules\\module_interactive_music.windows.editor.x86_64.lib bin\\obj\\modules\\module_jolt_physics.windows.editor.x86_64.lib bin\\obj\\modules\\module_jpg.windows.editor.x86_64.lib bin\\obj\\modules\\module_jsonrpc.windows.editor.x86_64.lib bin\\obj\\modules\\module_lightmapper_rd.windows.editor.x86_64.lib bin\\obj\\modules\\module_mbedtls.windows.editor.x86_64.lib bin\\obj\\modules\\module_meshoptimizer.windows.editor.x86_64.lib bin\\obj\\modules\\module_mobile_vr.windows.editor.x86_64.lib bin\\obj\\modules\\module_mp3.windows.editor.x86_64.lib bin\\obj\\modules\\module_multiplayer.windows.editor.x86_64.lib bin\\obj\\modules\\module_navigation_2d.windows.editor.x86_64.lib bin\\obj\\modules\\module_navigation_3d.windows.editor.x86_64.lib bin\\obj\\modules\\module_noise.windows.editor.x86_64.lib bin\\obj\\modules\\module_objectdb_profiler.windows.editor.x86_64.lib bin\\obj\\modules\\module_ogg.windows.editor.x86_64.lib bin\\obj\\modules\\module_openxr.windows.editor.x86_64.lib bin\\obj\\modules\\module_raycast.windows.editor.x86_64.lib bin\\obj\\modules\\module_regex.windows.editor.x86_64.lib bin\\obj\\modules\\module_slang.windows.editor.x86_64.lib bin\\obj\\modules\\module_tga.windows.editor.x86_64.lib bin\\obj\\modules\\module_tinyexr.windows.editor.x86_64.lib bin\\obj\\modules\\module_upnp.windows.editor.x86_64.lib bin\\obj\\modules\\module_vhacd.windows.editor.x86_64.lib bin\\obj\\modules\\module_visual_shader.windows.editor.x86_64.lib bin\\obj\\modules\\module_webp.windows.editor.x86_64.lib bin\\obj\\modules\\module_webrtc.windows.editor.x86_64.lib bin\\obj\\modules\\module_websocket.windows.editor.x86_64.lib bin\\obj\\modules\\module_webxr.windows.editor.x86_64.lib bin\\obj\\modules\\module_xatlas_unwrap.windows.editor.x86_64.lib bin\\obj\\modules\\module_zip.windows.editor.x86_64.lib bin\\obj\\platform\\platform.windows.editor.x86_64.lib bin\\obj\\drivers\\drivers.windows.editor.x86_64.lib bin\\obj\\editor\\editor.windows.editor.x86_64.lib bin\\obj\\scene\\scene.windows.editor.x86_64.lib bin\\obj\\servers\\servers.windows.editor.x86_64.lib bin\\obj\\core\\core.windows.editor.x86_64.lib bin\\obj\\modules\\freetype\\freetype_builtin.windows.editor.x86_64.lib bin\\obj\\modules\\msdfgen\\msdfgen_builtin.windows.editor.x86_64.lib bin\\obj\\modules\\text_server_adv\\harfbuzz_builtin.windows.editor.x86_64.lib bin\\obj\\modules\\text_server_adv\\graphite_builtin.windows.editor.x86_64.lib bin\\obj\\modules\\text_server_adv\\icu_builtin.windows.editor.x86_64.lib bin\\obj\\platform\\windows\\cpu_feature_validation.windows.editor.x86_64.obj bin\\obj\\platform\\windows\\os_windows.windows.editor.x86_64.obj bin\\obj\\platform\\windows\\display_server_windows.windows.editor.x86_64.obj bin\\obj\\platform\\windows\\key_mapping_windows.windows.editor.x86_64.obj bin\\obj\\platform\\windows\\windows_terminal_logger.windows.editor.x86_64.obj bin\\obj\\platform\\windows\\windows_utils.windows.editor.x86_64.obj bin\\obj\\platform\\windows\\native_menu_windows.windows.editor.x86_64.obj bin\\obj\\platform\\windows\\gl_manager_windows_native.windows.editor.x86_64.obj bin\\obj\\platform\\windows\\wgl_detect_version.windows.editor.x86_64.obj bin\\obj\\platform\\windows\\rendering_context_driver_vulkan_windows.windows.editor.x86_64.obj bin\\obj\\platform\\windows\\drop_target_windows.windows.editor.x86_64.obj \"C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\diagnostic.obj\" bin\\obj\\platform\\windows\\crash_handler_windows_seh.windows.editor.x86_64.obj bin\\obj\\platform\\windows\\tts_windows.windows.editor.x86_64.obj bin\\obj\\platform\\windows\\tts_driver_sapi.windows.editor.x86_64.obj bin\\obj\\platform\\windows\\winrt_utils.windows.editor.x86_64.obj bin\\obj\\platform\\windows\\tts_driver_onecore.windows.editor.x86_64.obj bin\\obj\\platform\\windows\\godot_res.windows.editor.x86_64.obj"
+  },
+  "link_inputs": [
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\main\\main.windows.editor.x86_64.lib",
+      "bytes": 3226840,
+      "sha256": "010e2151b2618be70fbcd007dfacf92bada5a9eef030c263d68bd6d83fad0709"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\modules.windows.editor.x86_64.lib",
+      "bytes": 14532,
+      "sha256": "d36b6e299561e318ae2809ada8d4f0c8fce2e9eccb5cea049376824fc3e1db73"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_text_server_adv.windows.editor.x86_64.lib",
+      "bytes": 8392988,
+      "sha256": "7b4f0b5f961ac4a49615b97a6b47b2706eab54862f66beb2f18228916b7b6f71"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_fbx.windows.editor.x86_64.lib",
+      "bytes": 5357528,
+      "sha256": "953032f239700b13ee7acdd27f988fe4ad4085b47a4c647fb3af3e4ee71f8a98"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_gltf.windows.editor.x86_64.lib",
+      "bytes": 23400300,
+      "sha256": "64ea1bca53eb32790bc81e511406340f9001863f6cae0ad90c2c2656a39d8ad0"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_ktx.windows.editor.x86_64.lib",
+      "bytes": 921786,
+      "sha256": "888d85adbac37e29c53e1a65c8f2794c005d02229bfaf9ba624e6987c5fbf6ca"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_svg.windows.editor.x86_64.lib",
+      "bytes": 2548702,
+      "sha256": "9229d56581c354ea469178771f9e1f9a0882c97fa69d8d89dbc30f58ea3b9752"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_theora.windows.editor.x86_64.lib",
+      "bytes": 1164992,
+      "sha256": "070c242aaca214e58199a60ac661707802cbdc3fdcb3a97b69055f98d5fa93b4"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_vorbis.windows.editor.x86_64.lib",
+      "bytes": 2684030,
+      "sha256": "7d51204757f59a9ec77fe1b0203a2089f948d340cebe6919ea3de1992e0f4da8"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_astcenc.windows.editor.x86_64.lib",
+      "bytes": 888542,
+      "sha256": "e18d9cbed6c8c832be424d7ee2213d976a7a76d4bad902474ef6d49811c6f70a"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_basis_universal.windows.editor.x86_64.lib",
+      "bytes": 8755386,
+      "sha256": "a89b3e1f059f37e8c8ce3812d6e951217f25e5e841af7c35ba895754fc213fb0"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_bcdec.windows.editor.x86_64.lib",
+      "bytes": 112180,
+      "sha256": "a4b778bee79896fdd209734efeae6c568abdb9b6397c44f59a6383e6e0b02dd8"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_betsy.windows.editor.x86_64.lib",
+      "bytes": 1075130,
+      "sha256": "2773682de9ed3b1eeab074bd55e1c397c52f5150601ac810757e341ecda19c5b"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_bmp.windows.editor.x86_64.lib",
+      "bytes": 311992,
+      "sha256": "fe004c6416c7c221c28492c9d7ca1a90d9de9ef072244845964164c232ffb0c9"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_camera.windows.editor.x86_64.lib",
+      "bytes": 114300,
+      "sha256": "36ab79515fc9b5f166cb1f0d3a891ff16a3772bb9bb1ada4e002f39dda79698e"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_csg.windows.editor.x86_64.lib",
+      "bytes": 16617298,
+      "sha256": "ef629d3127e5be545243c0cd68d8a5cd83814f13e5679b24dd33ecad6e5a8fd7"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_cvtt.windows.editor.x86_64.lib",
+      "bytes": 886658,
+      "sha256": "5626c0c298119fa5e877456bb6d04385e2f3f616c4d7c4170d57eb08ef45eef5"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_dds.windows.editor.x86_64.lib",
+      "bytes": 676264,
+      "sha256": "285d497572934c868b0d52c15a08d568ac23cdd93df74f04add3ab1dfc33c7b5"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_enet.windows.editor.x86_64.lib",
+      "bytes": 2587350,
+      "sha256": "4e4dada89978b94ec3012d1a0e2aae1c8b2fb97382285818613e080dc993fe73"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_etcpak.windows.editor.x86_64.lib",
+      "bytes": 314812,
+      "sha256": "8af8c87bb5d32d5e61a01ac29544658c3cdeb995c8526637a4ad1b695abd8fe1"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_gdscript.windows.editor.x86_64.lib",
+      "bytes": 24208758,
+      "sha256": "53bf8b7e6668bcae6ed899d5767f4c8d58919b3d40c4a1d4805ac91c7c9d3db0"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_glslang.windows.editor.x86_64.lib",
+      "bytes": 35230126,
+      "sha256": "17e2bb24c7356d6e760bd049d4117ac6da14f18b53430b79ab6f52094802af67"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_godot_physics_2d.windows.editor.x86_64.lib",
+      "bytes": 7555344,
+      "sha256": "37531ba9c76a07ffb9227c77148389478b01657ed0db4392814206116ff68a91"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_godot_physics_3d.windows.editor.x86_64.lib",
+      "bytes": 5237060,
+      "sha256": "1423a085f1e414bd09f10bb212cee3dc14c8ab88c884003b4d9921c3c2115391"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_gridmap.windows.editor.x86_64.lib",
+      "bytes": 4859476,
+      "sha256": "f3617b696928260425815d9927eac5647a25438d712658047d639ce5de790a2c"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_hdr.windows.editor.x86_64.lib",
+      "bytes": 198752,
+      "sha256": "3df88d9fec2847a2603aae8601b1756ee456e8decc9e415a71e2183d4ed1a670"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_interactive_music.windows.editor.x86_64.lib",
+      "bytes": 3730896,
+      "sha256": "ca7a0e43efe8bb1cf93ee58e7eb0cc8d9c2702ee1c916f9dd712ab77c211c5ca"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_jolt_physics.windows.editor.x86_64.lib",
+      "bytes": 26314694,
+      "sha256": "28147af1db0fba637f7e1f7b7a27bb1890ff42297ae2c2420372c2b602d015c8"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_jpg.windows.editor.x86_64.lib",
+      "bytes": 2057518,
+      "sha256": "e04a157e7297bef09a17f2f9480bcf5a77cb702afebc2ac746421034430c75f4"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_jsonrpc.windows.editor.x86_64.lib",
+      "bytes": 607456,
+      "sha256": "e03517afeaa786ffa5eec3a150fcebafe7858a02832a984c18a140000b2c7927"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_lightmapper_rd.windows.editor.x86_64.lib",
+      "bytes": 2072482,
+      "sha256": "381a4cc34582d180d277430c67ebc1c82e7f20075edfc2dc71073b823ddc2c1c"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_mbedtls.windows.editor.x86_64.lib",
+      "bytes": 4692520,
+      "sha256": "f508f0e0ef08e15fbbe122f6c646a2f98309eb714c3ae97ca9ef5d39ec4f8064"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_meshoptimizer.windows.editor.x86_64.lib",
+      "bytes": 517016,
+      "sha256": "f2cab256a0b80485d4f4ddd834fa97c0db8d3af03a8ab5d3736970e9718a819b"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_mobile_vr.windows.editor.x86_64.lib",
+      "bytes": 644454,
+      "sha256": "e88a76ab67c097099a52510070ce2ba7385726af2c9090e965ea6315ed34a7a9"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_mp3.windows.editor.x86_64.lib",
+      "bytes": 1248486,
+      "sha256": "6eb75404a7074913dc97d0e705d24292cc7d2a087fbad5a900c31779f50279c0"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_multiplayer.windows.editor.x86_64.lib",
+      "bytes": 8129528,
+      "sha256": "55ecf6b20c02e642a0fc3d8172adbcee2fbb50497ba6f1fdeb78b2e9bae6e2c2"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_navigation_2d.windows.editor.x86_64.lib",
+      "bytes": 5713998,
+      "sha256": "9dab4de402824a5020d474d4bd3ec65e77308f3b63889403d3b0e49dd81f1ba1"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_navigation_3d.windows.editor.x86_64.lib",
+      "bytes": 6735926,
+      "sha256": "487a608af3f9024053003f2f18dd6ca4414a4575bfef14c8baef9becc1fd0223"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_noise.windows.editor.x86_64.lib",
+      "bytes": 3415624,
+      "sha256": "62b17a2ac0ba69515d4f0fe9924507a567c87bd86cf0772262817e1a70758e94"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_objectdb_profiler.windows.editor.x86_64.lib",
+      "bytes": 5269074,
+      "sha256": "d7dbdf882f94611774a08f9c4a2009c4f9be580abd322ccb7ed8e7877a20b143"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_ogg.windows.editor.x86_64.lib",
+      "bytes": 681250,
+      "sha256": "ef7e0e6867898b18ad9c2815285785e53065d9f89132a0cf6a2c730e41b9e162"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_openxr.windows.editor.x86_64.lib",
+      "bytes": 48568308,
+      "sha256": "3e28ffffe6327e6ca501ed9282241ee00592101046035c4e315fbeae209cd03a"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_raycast.windows.editor.x86_64.lib",
+      "bytes": 33518426,
+      "sha256": "7036195cb8e084214fb2c42a05ddf1c72e16cf1dcb60b22ea956341a70b22b5f"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_regex.windows.editor.x86_64.lib",
+      "bytes": 3006612,
+      "sha256": "67c03646ff0e33342a0f00d7db3a6e0192253ee3cced176e55e00e38bc8595f7"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_slang.windows.editor.x86_64.lib",
+      "bytes": 174676,
+      "sha256": "2cde6ebc62ed27bd6b64a8df349cbde2dc5aab35728f70f8526a4fe7384ae9a0"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_tga.windows.editor.x86_64.lib",
+      "bytes": 302786,
+      "sha256": "e243b5422d02f9728da090d9ee9b1c5e3337876e807e84d8dda14988d212b733"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_tinyexr.windows.editor.x86_64.lib",
+      "bytes": 2408226,
+      "sha256": "431069d53e068550a304458c1a46639c71806dda800b32a3bde39bf2608c0046"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_upnp.windows.editor.x86_64.lib",
+      "bytes": 1406724,
+      "sha256": "e049d181b205e2d91e28562a5a46de28feea61b74e6290d20a88cb25992daec5"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_vhacd.windows.editor.x86_64.lib",
+      "bytes": 2400750,
+      "sha256": "bfabc373122a1c88033d29e7aeae02958c85f073e1e977d430f0c1a2fe2e500d"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_visual_shader.windows.editor.x86_64.lib",
+      "bytes": 25685978,
+      "sha256": "79d56a99a53c0a1540a1da2119cbeee0ea3d38a772659c38736d12f090815a6e"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_webp.windows.editor.x86_64.lib",
+      "bytes": 2409626,
+      "sha256": "d84ee399dcaf6cb261943bf95fc0a73064f5b19216ce2938b62595dd008ee34f"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_webrtc.windows.editor.x86_64.lib",
+      "bytes": 2914652,
+      "sha256": "4e82ea310c0d77ac34e159f8a639cb1b048544efe45f5dc9c42c335ce53e9fb4"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_websocket.windows.editor.x86_64.lib",
+      "bytes": 2907320,
+      "sha256": "fac37b78a95029ad3113a259382bb0d970a2005452a1d7d93798df8bff7bac46"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_webxr.windows.editor.x86_64.lib",
+      "bytes": 542206,
+      "sha256": "fb99b723ca5d54740fe39345f74ca53954b4f199b9163d527dec795bc2f05ec8"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_xatlas_unwrap.windows.editor.x86_64.lib",
+      "bytes": 918736,
+      "sha256": "128cf968ba12f7b0243028a3c3ee40be73c107efa7bd01d5f737ba767e04c7c5"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\module_zip.windows.editor.x86_64.lib",
+      "bytes": 903698,
+      "sha256": "dfe2187240d678a1afe4ff1bd9041a12dc53bf53130800548f02ace079e1a98f"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\platform\\platform.windows.editor.x86_64.lib",
+      "bytes": 1392020,
+      "sha256": "437df5e4710a3ad4a6b26e88e960e99578dbe313f665fccd7305284f8a694a46"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\drivers\\drivers.windows.editor.x86_64.lib",
+      "bytes": 21031410,
+      "sha256": "24c92e1dec5831e9749efd482c6fcaaaf49a81e63168e7da0d8891ea552dca27"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\editor\\editor.windows.editor.x86_64.lib",
+      "bytes": 310021708,
+      "sha256": "f1320b4616609b3054a87ed9f00374109c5e6769316bb7e43df21c22cca2d499"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\scene\\scene.windows.editor.x86_64.lib",
+      "bytes": 326053966,
+      "sha256": "8230322182cfc998b1be677e904413716fcd2f2eaa2830434b3de6cd415664c8"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\servers\\servers.windows.editor.x86_64.lib",
+      "bytes": 164075264,
+      "sha256": "eb0991fcbcfc0b039c4e7b9f7657094f239b0c19b20ee955df22a60faeaef94d"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\core\\core.windows.editor.x86_64.lib",
+      "bytes": 118514088,
+      "sha256": "c36ea3591dafeb240351c57891b41e5a8ddc03c965a0b4636052076256aacda2"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\freetype\\freetype_builtin.windows.editor.x86_64.lib",
+      "bytes": 2562812,
+      "sha256": "d5659e81ebd7cc1dc0c4105b9d28a1e98775257d1b56397e59965a1544555339"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\msdfgen\\msdfgen_builtin.windows.editor.x86_64.lib",
+      "bytes": 1957616,
+      "sha256": "fe98fcb2a5450ef454a6a944c98f1806fffedcd5aea866ca2c16617d8550cd35"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\text_server_adv\\harfbuzz_builtin.windows.editor.x86_64.lib",
+      "bytes": 29237158,
+      "sha256": "395d49f7c562b166ee9836df567efbb6297592c460b8771eafeb0a460442dfc2"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\text_server_adv\\graphite_builtin.windows.editor.x86_64.lib",
+      "bytes": 837320,
+      "sha256": "59701d05add507ce8c0bc6582207a091931615c22eccd7aebc09b2174c8b1e56"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\modules\\text_server_adv\\icu_builtin.windows.editor.x86_64.lib",
+      "bytes": 7573096,
+      "sha256": "52765f7f29eb40d20f00b1c3f9b239e835a6cc1ef6fcdb8b77df4973a5381db0"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\platform\\windows\\cpu_feature_validation.windows.editor.x86_64.obj",
+      "bytes": 1875,
+      "sha256": "839e67b0e4bf94886878292fb172a1a161b01b5252835f97d38de435a3be6de0"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\platform\\windows\\os_windows.windows.editor.x86_64.obj",
+      "bytes": 846531,
+      "sha256": "47a9e302403d86b131146f94d6647ef0778203a983f31d197875d2acb9eea6fa"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\platform\\windows\\display_server_windows.windows.editor.x86_64.obj",
+      "bytes": 1719334,
+      "sha256": "971eee33a2a2012de1de9a2af7218e0c341763ae8967613dfbfefc20543294af"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\platform\\windows\\key_mapping_windows.windows.editor.x86_64.obj",
+      "bytes": 104468,
+      "sha256": "b877b8364aff77d5ebe337df7ab182269d549860b3fcf28fa2af20bca50fe53a"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\platform\\windows\\windows_terminal_logger.windows.editor.x86_64.obj",
+      "bytes": 26057,
+      "sha256": "175672daf29bf08ce1042dc7e657a316d9f400da8e0e0e742951ed65de851aaa"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\platform\\windows\\windows_utils.windows.editor.x86_64.obj",
+      "bytes": 162944,
+      "sha256": "0e616d373e9e392296d5d0475097da570f7bb35cbad6b9863da20c6f1d050d40"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\platform\\windows\\native_menu_windows.windows.editor.x86_64.obj",
+      "bytes": 318132,
+      "sha256": "9ed86b259b53a1327f2ba0f6f1848583a0a37ad64540f0bff62991aee34dc750"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\platform\\windows\\gl_manager_windows_native.windows.editor.x86_64.obj",
+      "bytes": 119897,
+      "sha256": "38bd7e75469ff7957a2822285ed07675e8f220e9d762f6fe4d556638602ec387"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\platform\\windows\\wgl_detect_version.windows.editor.x86_64.obj",
+      "bytes": 32389,
+      "sha256": "251ee6bb8c4d8469365e1559fd92f73a925032c9272ed24661d282638f535dcd"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\platform\\windows\\rendering_context_driver_vulkan_windows.windows.editor.x86_64.obj",
+      "bytes": 20575,
+      "sha256": "35bb08ca487398246030a12301fcb38de2a1cb8ff651a1245198fabfdefff17f"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\platform\\windows\\drop_target_windows.windows.editor.x86_64.obj",
+      "bytes": 94495,
+      "sha256": "23a551dea5a60511bb834462bf4a400355e65b055dea9be74bff80c9fea2e9cd"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\diagnostic.obj",
+      "bytes": 435810,
+      "sha256": "9a8e865d0658a6e4c0b38d36a246377856eca69187cba6d800fc86cc4da3b734"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\platform\\windows\\crash_handler_windows_seh.windows.editor.x86_64.obj",
+      "bytes": 208322,
+      "sha256": "567e5975785ca233ccac824d42638292829808bf35aeccae73b8005971f66b9b"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\platform\\windows\\tts_windows.windows.editor.x86_64.obj",
+      "bytes": 83090,
+      "sha256": "00d2a41e512a8afe806d981143b13ce5c79d5b8ccd8470ad881cd2e22186b840"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\platform\\windows\\tts_driver_sapi.windows.editor.x86_64.obj",
+      "bytes": 172610,
+      "sha256": "c742206d00ef83be4cd0bc18821a632e27aca534969f3dfdc29aeff782af4560"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\platform\\windows\\winrt_utils.windows.editor.x86_64.obj",
+      "bytes": 520756,
+      "sha256": "360ba6fb302b62af9241456c23167395329f95f382ff703d8f707aeefdd80f14"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\platform\\windows\\tts_driver_onecore.windows.editor.x86_64.obj",
+      "bytes": 976765,
+      "sha256": "e4cead09933bcd6eedefff961c8ad38bec7c89968bc48208de86569bb58d7bb6"
+    },
+    {
+      "path": "G:\\Projects\\godot-rtx\\bin\\obj\\platform\\windows\\godot_res.windows.editor.x86_64.obj",
+      "bytes": 144396,
+      "sha256": "d91cc8cf470b4f5d6ed271635a9eca3f1b8158f90ae9c2ae64ce2456ff0c0fc5"
+    }
+  ],
+  "logical_system_libraries": [
+    "winmm.lib",
+    "dsound.lib",
+    "kernel32.lib",
+    "ole32.lib",
+    "oleaut32.lib",
+    "sapi.lib",
+    "user32.lib",
+    "gdi32.lib",
+    "IPHLPAPI.lib",
+    "Shlwapi.lib",
+    "Shcore.lib",
+    "wsock32.lib",
+    "Ws2_32.lib",
+    "shell32.lib",
+    "advapi32.lib",
+    "dinput8.lib",
+    "dxguid.lib",
+    "imm32.lib",
+    "bcrypt.lib",
+    "Crypt32.lib",
+    "Avrt.lib",
+    "dwmapi.lib",
+    "dwrite.lib",
+    "wbemuuid.lib",
+    "ntdll.lib",
+    "hid.lib",
+    "mincore.lib",
+    "psapi.lib",
+    "dbghelp.lib",
+    "psapi.lib",
+    "dbghelp.lib",
+    "psapi.lib"
+  ],
+  "outputs": [
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-0-INITIAL.api.spv",
+      "bytes": 206988,
+      "sha256": "d07845f51303ce0ea0abba09841313b87e13f6669b4c1eacc06cc970780affa2"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-0-SHADE.api.spv",
+      "bytes": 153416,
+      "sha256": "018be6233e25995d8d5db5d22211d7df042815d784f05cdbfdf2a4e707f5ff98"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-0-SPATIAL.api.spv",
+      "bytes": 175448,
+      "sha256": "e03c9ea48c8aee5811c417eb5851c29423f462821c6c8f1305c34ea5d0ebd9be"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-0-TEMPORAL.api.spv",
+      "bytes": 168796,
+      "sha256": "e14e07c189293c2550754fc9b39452be3dd2a140c69ee064e98a4fb75bc22cca"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-1-INITIAL.api.spv",
+      "bytes": 208316,
+      "sha256": "1882739f72fc22a4a3319aa262f57855eda0471afe8396c8b7ac6c7ee0e82024"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-1-SHADE.api.spv",
+      "bytes": 154744,
+      "sha256": "c75d14bf38216b4d6adb7723939a0a6b966953926f4af7b75bfe5179f6bac66a"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-1-SPATIAL.api.spv",
+      "bytes": 176776,
+      "sha256": "7e3ec299537dcbe7a16029bac7f9eb9eeec94c7f97604370db19de632876a36d"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-1-TEMPORAL.api.spv",
+      "bytes": 170124,
+      "sha256": "20b4942d26c83131df069d72c95a96c49dbe159940dc3a6358e776ac72cde27d"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-2-INITIAL.api.spv",
+      "bytes": 207072,
+      "sha256": "4766c57333e410de2633759103a54b695caee066b7f69468685f5ea7166013b9"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-2-SHADE.api.spv",
+      "bytes": 153500,
+      "sha256": "9e167cc129008d8c8eb2b0415784b9d5fda2ba0610bdbce78ab967fc11e401d4"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-2-SPATIAL.api.spv",
+      "bytes": 175532,
+      "sha256": "837ea45d18b98043f135886c1f18346f4c7ed8cb15cec9fa6b7bce494c8f8fb5"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-2-TEMPORAL.api.spv",
+      "bytes": 168880,
+      "sha256": "ad7155c92fc841a64915cfca7ed4391635b03549820c9f9a88c6e2d36a8f12d6"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-3-INITIAL.api.spv",
+      "bytes": 208400,
+      "sha256": "183cea8aaa08f7eaa0fe43533cea156a03bb10a743db60ee52b7c275e4e881dd"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-3-SHADE.api.spv",
+      "bytes": 154828,
+      "sha256": "bf7ea0a020c96b8fb98bbed872c69a532b2a957ab90122bee2d9b4c8ebc6f8ec"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-3-SPATIAL.api.spv",
+      "bytes": 176860,
+      "sha256": "4d5fdb4cdb6bb5c0677b666e93f31cec3ced0a42ecd31a6b7d138735d7666e0c"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-3-TEMPORAL.api.spv",
+      "bytes": 170208,
+      "sha256": "071f9e8544f4920950010a3344a45df90609643446dcf8341b7c5a1285f3669a"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-0-INITIAL.container",
+      "bytes": 31724,
+      "sha256": "e7379cc85ff08ee1af145869ac20844f5dcdbb5fc25edf416604a8e6ef563ca0"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-0-SHADE.container",
+      "bytes": 23676,
+      "sha256": "c6ece656aa50f4201555c4c218731a55c7c17ed2334d99d3ca13631383000e6c"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-0-SPATIAL.container",
+      "bytes": 27552,
+      "sha256": "3496565917dcf6203d9f3c6359c012e03ac753eb9211eb88971ea4ab6388e1cb"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-0-TEMPORAL.container",
+      "bytes": 26332,
+      "sha256": "b5cc197148351406e1a340f524272a4bbd24a56a1e1172d5aa8565f59989b437"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-1-INITIAL.container",
+      "bytes": 31884,
+      "sha256": "c8ab73a50ce836c875e81c970b09c0d91e206745f9bc8a0798ba8da5e9c3c30f"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-1-SHADE.container",
+      "bytes": 23716,
+      "sha256": "24033cc06830e7fb257ad30d86fff3fe8108b300cf4027cb9fb11df0cfc2249a"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-1-SPATIAL.container",
+      "bytes": 27680,
+      "sha256": "1d0766d5fe2f67a5056721225dc225efc7cebe9c4c7663eea72b8c85980a5f44"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-1-TEMPORAL.container",
+      "bytes": 26496,
+      "sha256": "5531c0d3fac6aa7823cbf703e43fe38e2053809e8fc0431a1ce642fdee1ad3b3"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-2-INITIAL.container",
+      "bytes": 31812,
+      "sha256": "880b82bdd6b6dcf3494db54f06d793a2de8f7c84abd9417ecf3023146aa550c5"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-2-SHADE.container",
+      "bytes": 23740,
+      "sha256": "6ebe32545fb830bb041e4191fe0e96249ae8af69ebe5ca648e7873d5e31b8be9"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-2-SPATIAL.container",
+      "bytes": 27608,
+      "sha256": "3f89949027d4e7b45aad73423c18228285411217cdc752cd10c9efc931ad9061"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-2-TEMPORAL.container",
+      "bytes": 26424,
+      "sha256": "d223abeb266eff08d132eabb994eb56efb333ddcf40fdd28839ccbad652a46b0"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-3-INITIAL.container",
+      "bytes": 31972,
+      "sha256": "f459e1869beaefa4afd464e774000c2c8ff0d1b2634b06657ca2440e2840a784"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-3-SHADE.container",
+      "bytes": 23728,
+      "sha256": "9fb57b11f3440ffb88d1dc593eda8ea1d9f06547cebbd90e5c66f87cb1088235"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-3-SPATIAL.container",
+      "bytes": 27692,
+      "sha256": "e6d257917145e49c132426d58a1f8d3b11abc52a839299da742bc1293ad56558"
+    },
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step3\\native-3-TEMPORAL.container",
+      "bytes": 26540,
+      "sha256": "8db3097bdb19e08927eb057a37c3aad1dfc957d8997d05009b54a62c5145f8c6"
+    }
+  ]
+}

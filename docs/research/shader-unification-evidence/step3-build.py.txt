@@ -1,0 +1,31 @@
+
+import json,os,re,subprocess,shutil,sys
+from pathlib import Path
+from SCons.Script import Environment
+root=Path('G:/Projects/godot-rtx');base=Path(os.environ['TEMP'])/'godot-shader-unification-20260907';out=base/'step3'
+env=Environment(tools=['msvc','mslink'],MSVC_VERSION='14.5',TARGET_ARCH='amd64')
+process_env=dict(os.environ);process_env.update(env['ENV'])
+entries=json.loads((root/'compile_commands.json').read_text())
+if sys.argv[1]=='compile':
+ for filename,source,stem in [('render_rtxdi.cpp',root/'servers/rendering/renderer_rd/forward_clustered/render_rtxdi.cpp','render_rtxdi'),('godot_windows.cpp',out/'diagnostic.cpp','diagnostic')]:
+  entry=next(x for x in entries if x['file'].endswith(filename))
+  cmd=entry['command'].replace('\\\\','\\')
+  cmd=re.sub(r'/Fo\S+', '/Fo"'+str(out/(stem+'.obj')).replace('\\','/')+'"',cmd)
+  cmd=re.sub(r'/Fd\S+', '/Fd"'+str(out/(stem+'.pdb')).replace('\\','/')+'"',cmd)
+  if filename=='godot_windows.cpp':cmd=cmd.replace('platform\\windows\\godot_windows.cpp','"'+str(source).replace('\\','/')+'"')
+  (out/(stem+'-compile-command.txt')).write_text(cmd)
+  p=subprocess.run(cmd,shell=True,env=process_env,capture_output=True,text=True,cwd=root)
+  (out/(stem+'-compile.log')).write_text(p.stdout+p.stderr)
+  print(stem,p.returncode,p.stdout+p.stderr,flush=True)
+  if p.returncode:sys.exit(p.returncode)
+if sys.argv[1]=='link':
+ link=next(line for line in (base/'step1-editor-build.log').read_text().splitlines() if line.startswith('link /') and '/ENTRY:ShimMainCRTStartup' in line)
+ link=link.replace('bin\\obj\\platform\\windows\\godot_windows.windows.editor.x86_64.obj','"'+str(out/'diagnostic.obj')+'"')
+ link=link.replace('/OUT:bin\\godot.windows.editor.x86_64.exe','/OUT:"'+str(out/'diagnostic.exe')+'"').replace('/SUBSYSTEM:WINDOWS','/SUBSYSTEM:CONSOLE')
+ link=re.sub(r'/PDB:\S+','/PDB:"'+str(out/'diagnostic-link.pdb').replace('\\','/')+'"',link)
+ response=out/'link.rsp';response.write_text(link.removeprefix('link '))
+ p=subprocess.run([shutil.which('link',path=process_env['PATH']),'@'+str(response)],env=process_env,capture_output=True,text=True,cwd=root)
+ (out/'link.log').write_text(p.stdout+p.stderr)
+ print(p.returncode,p.stdout+p.stderr)
+ shutil.copy2(root/'thirdparty/slang/slang-compiler.2026.13.1.x86_64.dll',out)
+ sys.exit(p.returncode)

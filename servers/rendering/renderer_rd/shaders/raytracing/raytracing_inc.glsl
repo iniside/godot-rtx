@@ -137,14 +137,6 @@ bool is_path_terminated(uint packed) {
 // CONSTANTS
 // ============================================================================
 const uint OFFSET_NONE = 0xFFFFFFFFu;
-const uint FLAG_COMPRESSED = 1u;
-const uint FLAG_PROCEDURAL = 2u;
-// Set when the BLAS uses a per-frame-deformed vertex buffer.
-const uint FLAG_DEFORMED = 4u;
-// Set when the BLAS is built from clusters, so gl_PrimitiveID is cluster-relative.
-const uint FLAG_CLUSTERED = 8u;
-const uint FLAG_CASTS_SHADOWS = 16u;
-const uint FLAG_SHADOWS_ONLY = 32u;
 
 // ============================================================================
 // RANDOM NUMBER GENERATION - PCG (Permuted Congruential Generator)

@@ -1,30 +1,27 @@
-#ifndef RTXDI_LIGHT_DATA_INC_GLSL
-#define RTXDI_LIGHT_DATA_INC_GLSL
+#ifndef LIGHT_DATA_INC_SLANG
+#define LIGHT_DATA_INC_SLANG
 
-#define RT_LIGHT_TYPE_OMNI 0
-#define RT_LIGHT_TYPE_DIRECTIONAL 1
-#define RT_LIGHT_TYPE_SPOT 2
-#define RT_LIGHT_TYPE_AREA 3
-#define RT_LIGHT_TYPE_EMISSIVE_TRIANGLE 4
-#define RT_LIGHT_TYPE_ENVIRONMENT 5
+static const uint RT_LIGHT_TYPE_OMNI = 0;
+static const uint RT_LIGHT_TYPE_DIRECTIONAL = 1;
+static const uint RT_LIGHT_TYPE_SPOT = 2;
+static const uint RT_LIGHT_TYPE_AREA = 3;
+static const uint RT_LIGHT_TYPE_EMISSIVE_TRIANGLE = 4;
+static const uint RT_LIGHT_TYPE_ENVIRONMENT = 5;
 
-#define RT_LIGHT_FLAG_CASTS_SHADOW 1u
-#define RT_LIGHT_FLAG_TEXTURED 2u
+static const uint RT_LIGHT_FLAG_CASTS_SHADOW = 1u;
+static const uint RT_LIGHT_FLAG_TEXTURED = 2u;
 
-#ifndef RT_LIGHT_RESERVOIR_SIZE
-#define RT_LIGHT_RESERVOIR_SIZE 16
-#endif
 
 struct RTLightData {
-	vec3 position;
+	float3 position;
 	uint type;
-	vec3 direction;
+	float3 direction;
 	uint flags;
-	vec3 emission;
+	float3 emission;
 	float radius;
-	vec3 axis_u;
+	float3 axis_u;
 	float inv_area;
-	vec3 axis_v;
+	float3 axis_v;
 	float attenuation;
 	float range;
 	float cos_spot_angle;
@@ -36,8 +33,8 @@ struct RTLightData {
 	uint receiver_mask;
 	uint caster_mask;
 	uint topology_generation;
-	uvec2 _pad0;
-	vec4 uv_rect;
+	uint2 _pad0;
+	float4 uv_rect;
 	float transform[12];
 };
 
@@ -53,11 +50,11 @@ struct RTLightBufferParameters {
 };
 
 struct RTLightProposal {
-	vec3 direction;
+	float3 direction;
 	float distance;
-	vec3 radiance;
+	float3 radiance;
 	float solid_angle_pdf;
-	vec3 position;
+	float3 position;
 	uint valid;
 };
 
