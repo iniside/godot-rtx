@@ -43,7 +43,7 @@ struct GeometryData {
 };
 
 struct InstanceMotionData {
-	float prev_xform[12];
+	float prev_object_to_rt[12];
 };
 
 struct MaterialData {

@@ -80,6 +80,7 @@ private:
 
 	// Environment
 	struct Environment {
+		uint64_t rt_generation = 0;
 		RaytracingSettings raytracing;
 		// Note, we capture and store all environment parameters received from Godot here.
 		// Not all renderers support all effects and should just ignore the bits they don't support.
@@ -228,6 +229,7 @@ public:
 	void environment_set_camera_feed_id(RID p_env, int p_camera_feed_id);
 	int environment_get_camera_feed_id(RID p_env) const;
 
+	uint64_t environment_get_rt_generation(RID p_env) const;
 	RSE::EnvironmentBG environment_get_background(RID p_env) const;
 	RID environment_get_sky(RID p_env) const;
 	float environment_get_sky_custom_fov(RID p_env) const;

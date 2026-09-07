@@ -26,19 +26,9 @@ RAB_LightSample RAB_EmptyLightSample() {
 	return sample;
 }
 
-float4x4 rtxdi_decode_inv_view(SceneData scene_data) {
-	float4x4 inv_view = float4x4(scene_data.inv_view_matrix[0], scene_data.inv_view_matrix[1], scene_data.inv_view_matrix[2], float4(0.0, 0.0, 0.0, 1.0));
-#ifdef USE_DOUBLE_PRECISION
-	inv_view[0][3] = -(inv_view[0][3] + scene_data.inv_view_precision.x);
-	inv_view[1][3] = -(inv_view[1][3] + scene_data.inv_view_precision.y);
-	inv_view[2][3] = -(inv_view[2][3] + scene_data.inv_view_precision.z);
-#endif
-	return inv_view;
-}
-
 GeometryFootprint rtxdi_camera_footprint() {
 	GeometryFootprint footprint;
-	footprint.world_to_clip = mul(transpose(scene_data_block.data.projection_matrix), geometry_inverse(rtxdi_decode_inv_view(scene_data_block.data)));
+	footprint.world_to_clip = mul(transpose(scene_data_block.data.projection_matrix), geometry_inverse(rt_camera_to_rt(rt_frame, false)));
 	footprint.pixel_size = scene_data_block.data.screen_pixel_size;
 	return footprint;
 }
@@ -64,7 +54,7 @@ RAB_Surface RAB_GetGBufferSurface(int2 pixel, bool previous_frame) {
 	float2 ndc = (float2(pixel) + 0.5) * scene_data.screen_pixel_size * 2.0 - 1.0;
 	float4 view = mul(float4(ndc, depth, 1.0), scene_data.inv_projection_matrix);
 	view /= view.w;
-	float4x4 inv_view = rtxdi_decode_inv_view(scene_data);
+	float4x4 inv_view = rt_camera_to_rt(rt_frame, previous_frame);
 	float3 world_position = mul(inv_view, float4(view.xyz, 1.0)).xyz;
 	float3 camera_direction = float3(inv_view[0][2], inv_view[1][2], inv_view[2][2]);
 	float3 camera_position = float3(inv_view[0][3], inv_view[1][3], inv_view[2][3]);

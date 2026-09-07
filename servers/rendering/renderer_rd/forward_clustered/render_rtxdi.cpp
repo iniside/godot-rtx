@@ -217,6 +217,7 @@ RID RenderRTXDI::_create_uniform_set(const RenderRTXDISurfaceResources &p_surfac
 	append_uniform(uniforms, RD::UNIFORM_TYPE_IMAGE, 31, view_resources.diffuse_radiance_distance);
 	append_uniform(uniforms, RD::UNIFORM_TYPE_IMAGE, 32, view_resources.specular_radiance_distance);
 	p_surface.samplers.append_uniforms(uniforms, 33);
+	append_uniform(uniforms, RD::UNIFORM_TYPE_UNIFORM_BUFFER, 45, p_state->frame_constants_buffer);
 	return RD::get_singleton()->uniform_set_create(uniforms, shader.shader_rid[p_pass], 0, true);
 }
 
@@ -224,6 +225,7 @@ void RenderRTXDI::render(const RenderRTXDISurfaceResources &p_surface, RTViewpor
 	ERR_FAIL_NULL(p_state);
 	ERR_FAIL_COND(p_surface.size.x <= 0 || p_surface.size.y <= 0);
 	ERR_FAIL_COND(!p_state->tlas.is_valid());
+	ERR_FAIL_COND(!p_state->frame_constants_buffer.is_valid());
 	ERR_FAIL_COND(p_view_count != 1 || p_view != 0);
 	ERR_FAIL_COND(!_ensure_viewport_resources(p_state, p_surface.size, p_view_count));
 	ERR_FAIL_UNSIGNED_INDEX(p_view, p_state->rtxdi_di->views.size());
@@ -249,7 +251,7 @@ void RenderRTXDI::render(const RenderRTXDISurfaceResources &p_surface, RTViewpor
 	parameters.light_buffer.environmentLightParams.lightPresent = light_snapshot.parameters.environment_present;
 	parameters.extent_history[0] = p_surface.size.x;
 	parameters.extent_history[1] = p_surface.size.y;
-	parameters.extent_history[2] = p_surface.history_valid && view_resources.last_frame_index != UINT64_MAX && view_resources.last_frame_index + 1 == p_surface.frame_index ? 1u : 0u;
+	parameters.extent_history[2] = p_surface.history_valid && view_resources.camera_history_epoch == p_state->camera_history_epoch && view_resources.last_frame_index != UINT64_MAX && view_resources.last_frame_index + 1 == p_surface.frame_index ? 1u : 0u;
 	parameters.extent_history[3] = p_surface.orthogonal ? 1u : 0u;
 	RD::get_singleton()->buffer_update(view_resources.parameters_buffer, 0, sizeof(parameters), &parameters);
 
@@ -280,6 +282,7 @@ void RenderRTXDI::render(const RenderRTXDISurfaceResources &p_surface, RTViewpor
 		rd->free_rid(uniform_sets[pass]);
 	}
 	view_resources.last_frame_index = p_surface.frame_index;
+	view_resources.camera_history_epoch = p_state->camera_history_epoch;
 }
 
 RID RenderRTXDI::get_diffuse_radiance_distance(const RTViewportState *p_state, uint32_t p_view) const {

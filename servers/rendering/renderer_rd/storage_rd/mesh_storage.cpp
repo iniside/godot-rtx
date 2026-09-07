@@ -1162,6 +1162,9 @@ void MeshStorage::mesh_instance_set_blend_shape_weight(RID p_mesh_instance, int 
 	MeshInstance *mi = mesh_instance_owner.get_or_null(p_mesh_instance);
 	ERR_FAIL_NULL(mi);
 	ERR_FAIL_INDEX(p_shape, (int)mi->blend_weights.size());
+	if (mi->blend_weights[p_shape] == p_weight) {
+		return;
+	}
 	mi->blend_weights[p_shape] = p_weight;
 	mi->weights_dirty = true;
 	//will be eventually updated
@@ -1937,6 +1940,7 @@ bool MeshStorage::_multimesh_uses_motion_vectors(MultiMesh *multimesh) {
 }
 
 void MeshStorage::_multimesh_mark_dirty(MultiMesh *multimesh, int p_index, bool p_aabb) {
+	multimesh->rt_generation++;
 	uint32_t region_index = p_index / MULTIMESH_DIRTY_REGION_SIZE;
 #ifdef DEBUG_ENABLED
 	uint32_t data_cache_dirty_region_count = Math::division_round_up(multimesh->instances, MULTIMESH_DIRTY_REGION_SIZE);
@@ -2033,6 +2037,17 @@ void MeshStorage::_multimesh_instance_set_transform(RID p_multimesh, int p_index
 	ERR_FAIL_COND(multimesh->xform_format != RSE::MULTIMESH_TRANSFORM_3D);
 
 	_multimesh_make_local(multimesh);
+	float packed_transform[12];
+	for (int row = 0; row < 3; row++) {
+		for (int column = 0; column < 3; column++) {
+			packed_transform[row * 4 + column] = p_transform.basis.rows[row][column];
+		}
+		packed_transform[row * 4 + 3] = p_transform.origin[row];
+	}
+	if (memcmp(multimesh->data_cache.ptr() + (multimesh->motion_vectors_current_offset + p_index) * multimesh->stride_cache, packed_transform, sizeof(packed_transform)) == 0) {
+		return;
+	}
+
 
 	bool uses_motion_vectors = (RSG::viewport->get_num_viewports_with_motion_vectors() > 0) || (RendererCompositorStorage::get_singleton()->get_num_compositor_effects_with_motion_vectors() > 0);
 	if (uses_motion_vectors) {
@@ -2097,6 +2112,11 @@ void MeshStorage::_multimesh_instance_set_color(RID p_multimesh, int p_index, co
 	ERR_FAIL_COND(!multimesh->uses_colors);
 
 	_multimesh_make_local(multimesh);
+	const float *current_data = multimesh->data_cache.ptr() + (multimesh->motion_vectors_current_offset + p_index) * multimesh->stride_cache + multimesh->color_offset_cache;
+	if (current_data[0] == p_color.r && current_data[1] == p_color.g && current_data[2] == p_color.b && current_data[3] == p_color.a) {
+		return;
+	}
+
 	_multimesh_update_motion_vectors_data_cache(multimesh);
 
 	{
@@ -2120,6 +2140,11 @@ void MeshStorage::_multimesh_instance_set_custom_data(RID p_multimesh, int p_ind
 	ERR_FAIL_COND(!multimesh->uses_custom_data);
 
 	_multimesh_make_local(multimesh);
+	const float *current_data = multimesh->data_cache.ptr() + (multimesh->motion_vectors_current_offset + p_index) * multimesh->stride_cache + multimesh->custom_data_offset_cache;
+	if (current_data[0] == p_color.r && current_data[1] == p_color.g && current_data[2] == p_color.b && current_data[3] == p_color.a) {
+		return;
+	}
+
 	_multimesh_update_motion_vectors_data_cache(multimesh);
 
 	{
@@ -2256,6 +2281,10 @@ void MeshStorage::_multimesh_set_buffer(RID p_multimesh, const Vector<float> &p_
 	MultiMesh *multimesh = multimesh_owner.get_or_null(p_multimesh);
 	ERR_FAIL_NULL(multimesh);
 	ERR_FAIL_COND(p_buffer.size() != (multimesh->instances * (int)multimesh->stride_cache));
+	if (multimesh->data_cache.size() && memcmp(multimesh->data_cache.ptr() + multimesh->motion_vectors_current_offset * multimesh->stride_cache, p_buffer.ptr(), p_buffer.size() * sizeof(float)) == 0) {
+		return;
+	}
+	multimesh->rt_generation++;
 
 	bool used_motion_vectors = multimesh->motion_vectors_enabled;
 	bool uses_motion_vectors = (RSG::viewport->get_num_viewports_with_motion_vectors() > 0) || (RendererCompositorStorage::get_singleton()->get_num_compositor_effects_with_motion_vectors() > 0);
@@ -2288,7 +2317,8 @@ void MeshStorage::_multimesh_set_buffer(RID p_multimesh, const Vector<float> &p_
 	// transform buffer so ray tracing never needs a GPU->CPU readback.
 	// Trade-off: CPU memory usage doubles for every MultiMesh that calls set_buffer().
 	static const bool keep_cpu_cache = GLOBAL_GET("rendering/raytracing/multimesh_cache_cpu_transforms");
-	if (keep_cpu_cache && multimesh->data_cache.size() == 0) {
+	const bool cache_created = keep_cpu_cache && multimesh->data_cache.size() == 0;
+	if (cache_created) {
 		// Initialize the data cache from the data we already have on CPU.
 		uint32_t cache_size = multimesh->instances * multimesh->stride_cache;
 		if (multimesh->motion_vectors_enabled) {
@@ -2308,6 +2338,9 @@ void MeshStorage::_multimesh_set_buffer(RID p_multimesh, const Vector<float> &p_
 	if (multimesh->data_cache.size()) {
 		float *cache_data = multimesh->data_cache.ptrw();
 		memcpy(cache_data + (multimesh->motion_vectors_current_offset * multimesh->stride_cache), p_buffer.ptr(), p_buffer.size() * sizeof(float));
+		if (multimesh->motion_vectors_enabled && (cache_created || !used_motion_vectors)) {
+			memcpy(cache_data + multimesh->motion_vectors_previous_offset * multimesh->stride_cache, p_buffer.ptr(), p_buffer.size() * sizeof(float));
+		}
 		_multimesh_mark_all_dirty(multimesh, true, true); //update AABB
 	} else if (multimesh->mesh.is_valid()) {
 		//if we have a mesh set, we need to re-generate the AABB from the new data
@@ -2564,6 +2597,17 @@ void MeshStorage::skeleton_bone_set_transform(RID p_skeleton, int p_bone, const 
 	ERR_FAIL_COND(skeleton->use_2d);
 
 	float *dataptr = skeleton->data.ptr() + p_bone * 12;
+	float packed_transform[12];
+	for (int row = 0; row < 3; row++) {
+		for (int column = 0; column < 3; column++) {
+			packed_transform[row * 4 + column] = p_transform.basis.rows[row][column];
+		}
+		packed_transform[row * 4 + 3] = p_transform.origin[row];
+	}
+	if (memcmp(dataptr, packed_transform, sizeof(packed_transform)) == 0) {
+		return;
+	}
+
 
 	dataptr[0] = p_transform.basis.rows[0][0];
 	dataptr[1] = p_transform.basis.rows[0][1];

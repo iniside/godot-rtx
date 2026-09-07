@@ -213,6 +213,9 @@ void LightStorage::light_set_color(RID p_light, const Color &p_color) {
 	Light *light = light_owner.get_or_null(p_light);
 	ERR_FAIL_NULL(light);
 
+	if (light->color != p_color) {
+		light->rt_generation++;
+	}
 	light->color = p_color;
 }
 
@@ -248,12 +251,18 @@ void LightStorage::light_set_param(RID p_light, RSE::LightParam p_param, float p
 		}
 	}
 
+	if (light->param[p_param] != p_value) {
+		light->rt_generation++;
+	}
 	light->param[p_param] = p_value;
 }
 
 void LightStorage::light_set_shadow(RID p_light, bool p_enabled) {
 	Light *light = light_owner.get_or_null(p_light);
 	ERR_FAIL_NULL(light);
+	if (light->shadow != p_enabled) {
+		light->rt_generation++;
+	}
 	light->shadow = p_enabled;
 
 	light->version++;
@@ -275,6 +284,9 @@ void LightStorage::light_set_projector(RID p_light, RID p_texture) {
 		texture_storage->texture_remove_from_decal_atlas(light->projector, light->type == RSE::LIGHT_OMNI);
 	}
 
+	if (light->projector != p_texture) {
+		light->rt_generation++;
+	}
 	light->projector = p_texture;
 
 	if (light->type != RSE::LIGHT_DIRECTIONAL) {
@@ -289,6 +301,9 @@ void LightStorage::light_set_negative(RID p_light, bool p_enable) {
 	Light *light = light_owner.get_or_null(p_light);
 	ERR_FAIL_NULL(light);
 
+	if (light->negative != p_enable) {
+		light->rt_generation++;
+	}
 	light->negative = p_enable;
 }
 
@@ -296,6 +311,9 @@ void LightStorage::light_set_cull_mask(RID p_light, uint32_t p_mask) {
 	Light *light = light_owner.get_or_null(p_light);
 	ERR_FAIL_NULL(light);
 
+	if (light->cull_mask != p_mask) {
+		light->rt_generation++;
+	}
 	light->cull_mask = p_mask;
 
 	light->version++;
@@ -326,6 +344,9 @@ void LightStorage::light_set_shadow_caster_mask(RID p_light, uint32_t p_caster_m
 	Light *light = light_owner.get_or_null(p_light);
 	ERR_FAIL_NULL(light);
 
+	if (light->shadow_caster_mask != p_caster_mask) {
+		light->rt_generation++;
+	}
 	light->shadow_caster_mask = p_caster_mask;
 
 	light->version++;
@@ -411,6 +432,9 @@ void LightStorage::light_directional_set_sky_mode(RID p_light, RSE::LightDirecti
 	Light *light = light_owner.get_or_null(p_light);
 	ERR_FAIL_NULL(light);
 
+	if (light->directional_sky_mode != p_mode) {
+		light->rt_generation++;
+	}
 	light->directional_sky_mode = p_mode;
 }
 
@@ -430,6 +454,9 @@ RSE::LightDirectionalShadowMode LightStorage::light_directional_get_shadow_mode(
 
 void LightStorage::light_area_set_size(RID p_light, const Vector2 &p_size) {
 	Light *light = light_owner.get_or_null(p_light);
+	if (light->area_size != p_size.maxf(0.0f)) {
+		light->rt_generation++;
+	}
 	light->area_size = p_size.maxf(0.0f);
 	// The range in which objects are illuminated change, so the z-range of the shadow map needs to adjust accordingly.
 	light->version++;
@@ -442,6 +469,9 @@ Vector2 LightStorage::light_area_get_size(RID p_light) const {
 
 void LightStorage::light_area_set_normalize_energy(RID p_light, bool p_enabled) {
 	Light *light = light_owner.get_or_null(p_light);
+	if (light->area_normalize_energy != p_enabled) {
+		light->rt_generation++;
+	}
 	light->area_normalize_energy = p_enabled;
 }
 bool LightStorage::light_area_get_normalize_energy(RID p_light) const {
@@ -464,6 +494,9 @@ void LightStorage::light_area_set_texture(RID p_light, RID p_texture) {
 		texture_storage->texture_remove_from_area_light_atlas(light->area_texture);
 	}
 
+	if (light->area_texture != p_texture) {
+		light->rt_generation++;
+	}
 	light->area_texture = p_texture;
 
 	if (light->area_texture.is_valid()) {
@@ -489,6 +522,12 @@ RSE::LightBakeMode LightStorage::light_get_bake_mode(RID p_light) {
 	ERR_FAIL_NULL_V(light, RSE::LIGHT_BAKE_DISABLED);
 
 	return light->bake_mode;
+}
+
+uint64_t LightStorage::light_get_rt_generation(RID p_light) const {
+	const Light *light = light_owner.get_or_null(p_light);
+	ERR_FAIL_NULL_V(light, 0);
+	return light->rt_generation;
 }
 
 uint64_t LightStorage::light_get_version(RID p_light) const {

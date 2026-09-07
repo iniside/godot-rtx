@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/math/projection.h"
 #include "core/math/transform_3d.h"
 #include "core/string/string_name.h"
 #include "core/templates/hash_map.h"
@@ -83,7 +84,7 @@ static_assert(sizeof(RT_GeometryData) == 128, "RT_GeometryData must be 128 bytes
 
 /// Per-instance motion data for velocity computation (matches GLSL InstanceMotionData, 48 bytes).
 struct RT_InstanceMotionData {
-	float prev_object_to_world[12]; // Previous object-to-world (mat3x4, transposed 3x4).
+	float prev_object_to_rt[12];
 };
 static_assert(sizeof(RT_InstanceMotionData) == 48, "RT_InstanceMotionData must be 48 bytes");
 
@@ -237,6 +238,7 @@ enum {
 
 /// Per-instance state for procedural RT geometry. Heap-allocated, only exists for procedural instances.
 struct RTProceduralState {
+	uint64_t content_generation = 0;
 	AABB culling_aabb;
 	PackedFloat32Array aabb_data; // N * 6 floats (min/max per AABB). Empty = single AABB.
 	bool expose_bounds = false;
@@ -365,6 +367,7 @@ struct RTMergedMMEntry {
 	// Merged vertex buffer: [float3 pos × N*V] + [packed TBN × N*V] (if mesh has normals).
 	// The BLAS reads only the position section; the hit shader reads TBN via normal_byte_offset.
 	RID merged_vtx_buffer;
+	RID previous_position_buffer;
 	uint32_t vtx_capacity_bytes = 0;
 
 	// Merged attribute buffer: [UV + color × N*V] replicated per instance.
@@ -379,7 +382,7 @@ struct RTMergedMMEntry {
 	uint32_t last_mm_count = 0;
 	uint32_t last_surface_counter = 0;
 	uint32_t last_used_frame = 0;
-	uint64_t cached_mm_last_change = 0;
+	uint64_t cached_mm_generation = 0;
 	bool blas_built_once = false;
 	bool indexed = false; // selects MODE_INDEXED vs MODE_NON_INDEXED variant
 };
@@ -391,7 +394,14 @@ struct RTMaterialCacheEntry {
 	uint32_t cached_rid_version = 0;
 	uint64_t cached_shader_hash = 0;
 	uint64_t cached_shader_hash_b = 0;
+	uint64_t cached_content_generation = 0;
 };
+
+struct alignas(16) RTFrameConstants {
+	float camera_to_rt[12] = {};
+	float previous_camera_to_rt[12] = {};
+};
+static_assert(sizeof(RTFrameConstants) == 96);
 
 /// Per-viewport raytracing state.
 ///
@@ -413,6 +423,16 @@ struct RTViewportState {
 	uint64_t ddgi_history_epoch = 0;
 	uint64_t pathtracing_history_epoch = 0;
 	uint64_t camera_history_epoch = 0;
+	uint64_t scene_generation = 0;
+	uint64_t scene_signature = 0;
+	Vector3 rt_origin;
+	Transform3D camera_transform;
+	Projection camera_projection;
+	bool camera_orthogonal = false;
+	bool camera_uses_jitter = false;
+	bool coordinates_initialized = false;
+	RTFrameConstants frame_constants;
+	RID frame_constants_buffer;
 
 	RID tlas;
 	uint32_t tlas_max_instances = 0;
@@ -571,7 +591,7 @@ class RenderRaytracing {
 	void update_procedural_blas(RTProceduralState *p_state, LocalVector<RID> &r_dirty_blas_list);
 	void build_acceleration_structures(RTViewportState *p_state, const LocalVector<RID> &p_dirty_blas_list, const LocalVector<RID> &p_dirty_blas_update_list);
 	void finalize_buffers(RTViewportState *p_state);
-	void build_light_registry(RTViewportState *p_state, const RenderDataRD *p_render_data);
+	void build_light_registry(RTViewportState *p_state, const RenderDataRD *p_render_data, uint64_t &r_scene_signature);
 	void prepare_frame();
 
 public:

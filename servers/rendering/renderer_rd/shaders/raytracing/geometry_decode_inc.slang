@@ -157,6 +157,8 @@ GeometryData geometry_previous_positions(GeometryData geometry) {
 	uint64_t address = (uint64_t(geometry.prev_vertex_address_hi) << 32u) | uint64_t(geometry.prev_vertex_address_lo);
 	if (address != 0) {
 		geometry.vertex_address = address;
+		geometry.position_stride = 12u;
+		geometry.flags &= ~FLAG_COMPRESSED;
 	}
 	return geometry;
 }

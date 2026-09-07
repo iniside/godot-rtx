@@ -31,6 +31,7 @@
 #pragma once
 
 #include "core/templates/rid_owner.h"
+#include "core/templates/safe_refcount.h"
 #include "core/templates/self_list.h"
 #include "servers/rendering/renderer_rd/pipeline_cache_rd.h"
 #include "servers/rendering/renderer_rd/storage_rd/texture_storage.h"
@@ -124,6 +125,7 @@ public:
 		Vector<uint8_t> ubo_data[2]; // 0: linear buffer; 1: sRGB buffer.
 		RID uniform_buffer[2]; // 0: linear buffer; 1: sRGB buffer.
 		Vector<RID> texture_cache;
+		bool uses_external_content_updates = false;
 	};
 
 	struct Samplers {
@@ -325,11 +327,14 @@ private:
 
 	SelfList<Material>::List material_update_list;
 	Mutex material_update_list_mutex;
+	SafeNumeric<uint64_t> rt_content_generation{ 1 };
 
 	static void _material_uniform_set_erased(void *p_material);
 
 public:
 	static MaterialStorage *get_singleton();
+	uint64_t get_rt_content_generation() const { return rt_content_generation.get(); }
+	bool material_uses_external_content_updates(RID p_material) const;
 
 	MaterialStorage();
 	virtual ~MaterialStorage();

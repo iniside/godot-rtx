@@ -239,6 +239,7 @@ private:
 	/* MultiMesh */
 
 	struct MultiMesh {
+		uint64_t rt_generation = 0;
 		RID mesh;
 		int instances = 0;
 		RSE::MultimeshTransformFormat xform_format = RSE::MULTIMESH_TRANSFORM_3D;
@@ -890,6 +891,16 @@ public:
 	_FORCE_INLINE_ uint64_t multimesh_get_last_change(RID p_multimesh) const {
 		MultiMesh *mm = multimesh_owner.get_or_null(p_multimesh);
 		return mm ? mm->motion_vectors_last_change : (uint64_t)-1;
+	}
+
+	_FORCE_INLINE_ uint64_t multimesh_get_rt_generation(RID p_multimesh) const {
+		MultiMesh *mm = multimesh_owner.get_or_null(p_multimesh);
+		return mm ? mm->rt_generation : 0;
+	}
+
+	_FORCE_INLINE_ uint32_t multimesh_get_previous_instance_offset(RID p_multimesh) const {
+		MultiMesh *mm = multimesh_owner.get_or_null(p_multimesh);
+		return mm && mm->motion_vectors_last_change == RSG::rasterizer->get_frame_number() ? mm->motion_vectors_previous_offset : multimesh_get_current_instance_offset(p_multimesh);
 	}
 
 	_FORCE_INLINE_ RID multimesh_get_gpu_buffer(RID p_multimesh) const {

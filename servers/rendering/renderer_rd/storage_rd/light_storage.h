@@ -82,6 +82,7 @@ private:
 		bool area_normalize_energy = true;
 		RID area_texture;
 		uint64_t version = 0;
+		uint64_t rt_generation = 0;
 
 		Dependency dependency;
 	};
@@ -618,6 +619,7 @@ public:
 	virtual RSE::LightBakeMode light_get_bake_mode(RID p_light) override;
 	virtual uint32_t light_get_max_sdfgi_cascade(RID p_light) override;
 	virtual uint64_t light_get_version(RID p_light) const override;
+	uint64_t light_get_rt_generation(RID p_light) const;
 	virtual uint32_t light_get_cull_mask(RID p_light) const override;
 
 	Dependency *light_get_dependency(RID p_light) const;

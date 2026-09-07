@@ -11,6 +11,7 @@
 #include "../scene_forward_aa_inc.slang"
 #include "surface_brdf_inc.slang"
 #include "geometry_decode_inc.slang"
+#include "rt_frame_constants_inc.slang"
 #include "light_data_inc.slang"
 #include "rtxdi_nrd_inc.slang"
 #include <Rtxdi/DI/ReSTIRDIParameters.h>
@@ -78,6 +79,7 @@ struct RtxdiParametersBlock {
 [[vk::binding(42, 0)]] SamplerState SAMPLER_LINEAR_WITH_MIPMAPS_REPEAT;
 [[vk::binding(43, 0)]] SamplerState SAMPLER_NEAREST_WITH_MIPMAPS_ANISOTROPIC_REPEAT;
 [[vk::binding(44, 0)]] SamplerState SAMPLER_LINEAR_WITH_MIPMAPS_ANISOTROPIC_REPEAT;
+[[vk::binding(45, 0)]] ConstantBuffer<RTFrameConstants> rt_frame;
 
 [[vk::binding(0, 1)]] Texture2D<float4> bindless_textures[];
 

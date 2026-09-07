@@ -60,6 +60,7 @@ struct RenderRTXDIViewResources {
 	RID diffuse_radiance_distance;
 	RID specular_radiance_distance;
 	uint64_t last_frame_index = UINT64_MAX;
+	uint64_t camera_history_epoch = UINT64_MAX;
 };
 
 struct RenderRTXDIViewportResources {

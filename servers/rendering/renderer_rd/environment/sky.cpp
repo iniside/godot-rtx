@@ -998,6 +998,10 @@ void SkyRD::setup_sky(const RenderDataRD *p_render_data, const Size2i p_screen_s
 	material->set_as_used();
 
 	if (sky) {
+		if (material_storage->material_uses_external_content_updates(sky_material)) {
+			sky->content_generation++;
+			sky->reflection.dirty = true;
+		}
 		// Save our screen size; our buffers will already have been cleared.
 		sky->screen_size.x = p_screen_size.x < 4 ? 4 : p_screen_size.x;
 		sky->screen_size.y = p_screen_size.y < 4 ? 4 : p_screen_size.y;
@@ -1031,24 +1035,28 @@ void SkyRD::setup_sky(const RenderDataRD *p_render_data, const Size2i p_screen_s
 			update_dirty_skys();
 		}
 
-		if (shader_data->uses_time && p_render_data->scene_data->time - sky->prev_time > 0.00001) {
+		if (shader_data->uses_time && p_render_data->scene_data->time != sky->prev_time) {
 			sky->prev_time = p_render_data->scene_data->time;
+			sky->content_generation++;
 			sky->reflection.dirty = true;
 			RenderingServerDefault::redraw_request();
 		}
 
 		if (material != sky->prev_material) {
 			sky->prev_material = material;
+			sky->content_generation++;
 			sky->reflection.dirty = true;
 		}
 
 		if (material->uniform_set_updated) {
 			material->uniform_set_updated = false;
+			sky->content_generation++;
 			sky->reflection.dirty = true;
 		}
 
-		if (!p_render_data->scene_data->cam_transform.origin.is_equal_approx(sky->prev_position) && shader_data->uses_position) {
+		if (p_render_data->scene_data->cam_transform.origin != sky->prev_position && shader_data->uses_position) {
 			sky->prev_position = p_render_data->scene_data->cam_transform.origin;
+			sky->content_generation++;
 			sky->reflection.dirty = true;
 		}
 	}
@@ -1071,6 +1079,7 @@ void SkyRD::setup_sky(const RenderDataRD *p_render_data, const Size2i p_screen_s
 			RSE::LightType type = light_storage->light_get_type(base);
 			if (type == RSE::LIGHT_DIRECTIONAL && light_storage->light_directional_get_sky_mode(base) != RSE::LIGHT_DIRECTIONAL_SKY_MODE_LIGHT_ONLY) {
 				SkyDirectionalLightData &sky_light_data = sky_scene_state.directional_lights[sky_scene_state.ubo.directional_light_count];
+				sky_light_data = {};
 				Transform3D light_transform = light_storage->light_instance_get_base_transform(lights[i]);
 				Vector3 world_direction = light_transform.basis.xform(Vector3(0, 0, 1)).normalized();
 
@@ -1143,6 +1152,18 @@ void SkyRD::setup_sky(const RenderDataRD *p_render_data, const Size2i p_screen_s
 			if (sky) {
 				sky->reflection.dirty = true;
 			}
+		}
+	}
+
+	if (sky) {
+		uint32_t light_count = sky_scene_state.ubo.directional_light_count;
+		const SkyDirectionalLightData *lights = sky_scene_state.last_frame_directional_lights;
+		if (sky->prev_directional_lights.size() != light_count || (light_count > 0 && memcmp(sky->prev_directional_lights.ptr(), lights, sizeof(SkyDirectionalLightData) * light_count) != 0)) {
+			sky->prev_directional_lights.resize(light_count);
+			if (light_count > 0) {
+				memcpy(sky->prev_directional_lights.ptr(), lights, sizeof(SkyDirectionalLightData) * light_count);
+			}
+			sky->content_generation++;
 		}
 	}
 
@@ -1623,6 +1644,11 @@ RID SkyRD::sky_get_material(RID p_sky) const {
 	return sky->material;
 }
 
+uint64_t SkyRD::sky_get_content_generation(RID p_sky) const {
+	const Sky *sky = get_sky(p_sky);
+	return sky ? sky->content_generation : 0;
+}
+
 float SkyRD::sky_get_baked_exposure(RID p_sky) const {
 	Sky *sky = get_sky(p_sky);
 	ERR_FAIL_NULL_V(sky, 1.0);
@@ -1655,6 +1681,7 @@ void SkyRD::sky_set_radiance_size(RID p_sky, int p_radiance_size) {
 	ERR_FAIL_NULL(sky);
 
 	if (sky->set_radiance_size(p_radiance_size)) {
+		sky->content_generation++;
 		invalidate_sky(sky);
 	}
 }
@@ -1671,6 +1698,7 @@ void SkyRD::sky_set_mode(RID p_sky, RSE::SkyMode p_mode) {
 	ERR_FAIL_NULL(sky);
 
 	if (sky->set_mode(p_mode)) {
+		sky->content_generation++;
 		invalidate_sky(sky);
 	}
 }
@@ -1680,6 +1708,7 @@ void SkyRD::sky_set_material(RID p_sky, RID p_material) {
 	ERR_FAIL_NULL(sky);
 
 	if (sky->set_material(p_material)) {
+		sky->content_generation++;
 		invalidate_sky(sky);
 	}
 }

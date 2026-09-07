@@ -270,11 +270,13 @@ public:
 		int processing_layer = 0;
 		Sky *dirty_list = nullptr;
 		float baked_exposure = 1.0;
+		uint64_t content_generation = 1;
 
 		// State to track when radiance octmap needs updating.
 		SkyMaterialData *prev_material = nullptr;
 		Vector3 prev_position;
-		float prev_time;
+		double prev_time = 0.0;
+		LocalVector<SkyDirectionalLightData> prev_directional_lights;
 
 		void free_radiance();
 
@@ -315,6 +317,7 @@ public:
 	void update_dirty_skys();
 
 	RID sky_get_material(RID p_sky) const;
+	uint64_t sky_get_content_generation(RID p_sky) const;
 	RID sky_get_radiance_texture_rd(RID p_sky) const;
 	// Returns a TEXTURE_TYPE_2D view of the radiance octahedral map (layer 0 slice
 	// when the radiance is stored as a 2D array), for shaders that bind it as texture2D.

@@ -53,6 +53,11 @@ layout(set = 0, binding = 4) restrict writeonly buffer DstIdxBuf {
 dst_idx;
 #endif
 
+layout(set = 0, binding = 5) restrict writeonly buffer PreviousPositionBuf {
+	uint v[];
+}
+previous_position;
+
 layout(push_constant, std430) uniform PC {
 	uint src_vtx_lo; // BDA lo of source vertex buffer (immutable)
 	uint src_vtx_hi;
@@ -72,6 +77,7 @@ layout(push_constant, std430) uniform PC {
 	uint mm_offset; // mm current instance offset (motion vectors double-buffer)
 	uint has_tbn; // 1 if mesh has normals/tangents, 0 otherwise
 	uint attr_stride_words; // attribute stride in uint words (0 = mesh has no attribs)
+	uint mm_previous_offset;
 }
 push;
 
@@ -121,6 +127,13 @@ void main() {
 		dst_vtx.v[pos_base + 0u] = floatBitsToUint(wp.x);
 		dst_vtx.v[pos_base + 1u] = floatBitsToUint(wp.y);
 		dst_vtx.v[pos_base + 2u] = floatBitsToUint(wp.z);
+		uint previous_base = (push.mm_previous_offset + inst) * push.mm_stride;
+		vec4 previous_row0 = vec4(mm_buf.v[previous_base], mm_buf.v[previous_base + 1u], mm_buf.v[previous_base + 2u], mm_buf.v[previous_base + 3u]);
+		vec4 previous_row1 = vec4(mm_buf.v[previous_base + 4u], mm_buf.v[previous_base + 5u], mm_buf.v[previous_base + 6u], mm_buf.v[previous_base + 7u]);
+		vec4 previous_row2 = vec4(mm_buf.v[previous_base + 8u], mm_buf.v[previous_base + 9u], mm_buf.v[previous_base + 10u], mm_buf.v[previous_base + 11u]);
+		previous_position.v[pos_base] = floatBitsToUint(dot(previous_row0, vec4(p, 1.0)));
+		previous_position.v[pos_base + 1u] = floatBitsToUint(dot(previous_row1, vec4(p, 1.0)));
+		previous_position.v[pos_base + 2u] = floatBitsToUint(dot(previous_row2, vec4(p, 1.0)));
 
 		for (uint w = 0u; w < push.attr_stride_words; w++) {
 			dst_attr.v[idx * push.attr_stride_words + w] = src_attr.v[vtx * push.attr_stride_words + w];
