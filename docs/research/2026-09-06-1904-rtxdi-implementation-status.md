@@ -51,10 +51,16 @@ below. After the requested stop, the owner authorized "popraw i kontynuuj" on
 2026-09-07. Corrective commit `5a532d08b36a4d262a7d372dd50f4c81b151fefa`
 implements those fixes. Fresh final round 2 review returned REJECT on 2026-09-07
 for shadow-facing semantics; it confirmed the three earlier findings are closed.
-Work is paused under the two-round review limit. Step 6 NRD/HDR began from that
+The owner subsequently authorized "no to popraw te cienie" on 2026-09-07.
+A bounded shadow-facing correction landed in `29a810ad370a3cd3d4519040e2973f9dbabe9d01`
+from `1868d9649f83ed9606b453c7b3817f6d0d745e65`; fresh bounded review returned
+PASS on 2026-09-07. The remaining reported shadow-facing defect is closed at the
+source/compile boundary.
+Step 6 NRD/HDR began from that
 corrective commit in a separate core-implementer context (`gpt-6-astra`, high
 effort for GPU lifetime, pinned SPIR-V integration and frame composition), then
-paused with its unwired partial source preserved. Step 7 has not started.
+paused with its unwired partial source preserved. It resumed after the shadow
+correction passed review. Step 7 real-device validation has not started.
 The frame dispatch is wired in code; real-device execution and rendered output
 remain unverified.
 
@@ -162,16 +168,37 @@ the retained raster shadow path honors the distinction at
 `forward_clustered/render_forward_clustered.cpp:521`. The required correction
 must respect material-facing shadow culling and the explicit double-sided
 override for mesh and MultiMesh instances; a global cull flag alone is not enough.
-No third review round is authorized by repository policy. The three round-one
-findings are closed; the shadow-facing correction was not implemented.
+The two-round review stopped the prior task. The three round-one findings are
+closed; the owner's subsequent "no to popraw te cienie" authorizes a separate
+bounded correction of the remaining shadow-facing defect. Commit `29a810ad37`
+exports material culling and the explicit double-sided override in geometry
+metadata, filters candidates from the light side, and corrects expanded MultiMesh
+facing for negative local determinants. The query direction is receiver-to-light,
+opposite the raster shadow view. Mesh and merged/expanded MultiMesh paths carry
+the metadata; material masks and alpha coverage remain in the confirmation path.
+Fresh review of this separately authorized correction returned PASS. It checked
+material back/front/disabled culling, the double-sided override, owner mirror
+compensation and expanded/merged MultiMesh parity against frozen source and
+Khronos traversal semantics. Runtime coverage remains outstanding.
 
-Step 6 pause boundary: uncommitted `effects/nrd_effect.{h,cpp}` and
+Shadow-correction evidence, 2026-09-07: four DI variants passed Vulkan 1.3 GLSL
+compilation; the SCons `render_raytracing.windows.editor.x86_64.obj` target passed
+in 3.69 seconds. Logs are `%TEMP%/rtxdi-shadow-facing-glsl/compile.log` and
+`%TEMP%/rtxdi-shadow-facing-object-build.log`. The full editor attempt was blocked
+by preserved incomplete Step 6 `nrd_effect.cpp` fields/types (`spir_v` and label
+`String` versus `Span<char>`), recorded in `%TEMP%/rtxdi-shadow-facing-build.log`.
+No real-device facing or rendering validation has run.
+
+Step 6 resume boundary: uncommitted `effects/nrd_effect.{h,cpp}` and
 `shaders/effects/rtxdi_frame.glsl`, with their two `SCsub` edits, are partial and
-not wired to Forward+. No Stage 6 build, shader generation, test or commit ran.
+not wired to Forward+. No dedicated Stage 6 validation or commit ran; the later
+shadow-correction full-build attempt reached these incomplete sources and failed
+as recorded above. No automated tests ran.
 Resume requires completing the adapter/shader interfaces and per-render-buffer
 ownership, normalizing analytic/emissive/environment radiance before NRD with
 exposure applied in composition, then closing reflection capture and old GI
-resources. These unfinished files are not evidence of functioning NRD.
+resources. Implementation resumed after the shadow fix's fresh review PASS.
+These unfinished files are not evidence of functioning NRD.
 
 Evidence date: 2026-09-06 UTC. Frozen Step 4 final review target:
 `5075e8b3fc3b19213744d0e9ac9f3648ca710359`.
@@ -218,7 +245,7 @@ correction uses current AS and can exhibit transient bias. Outputs are separate
 RGBA16F diffuse/specular radiance and linear hit distance, demodulated with pinned
 NRD material factors and sanitized/clamped for FP16. The next stages are NRD/HDR
 composition and final editor/template/real-Vulkan visual validation. NRD/HDR
-implementation is paused after final Step 5 review rejection; final real-device
+implementation resumed after the separately authorized shadow fix passed review; final real-device
 validation has not started. No automated tests have been run.
 
 Intermediate builds/rendering may fail by explicit owner authorization. Final

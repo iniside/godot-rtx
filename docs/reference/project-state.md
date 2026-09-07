@@ -84,8 +84,11 @@ corrections are in the status document. On 2026-09-07 the owner resumed work wit
 "popraw i kontynuuj": corrective commit `5a532d08b3` passed four DI and four
 surface shader compile diagnostics plus the editor build. Fresh final round 2
 closed the original findings but rejected a remaining shadow-facing defect:
-ordinary single-sided casters act double-sided. Work is paused under the review
-limit; the unwired, uncompiled partial NRD/HDR source is preserved uncommitted.
+ordinary single-sided casters act double-sided. The owner subsequently authorized
+"no to popraw te cienie"; bounded correction `29a810ad37` has shader and owned
+C++ object compile evidence and fresh bounded review PASS on 2026-09-07.
+The reported shadow defect is closed; NRD/HDR implementation resumed from its
+preserved, uncommitted partial source.
 The status document records the exact correction and resume boundary.
 Dispatch is wired in code, but
 real-device DI execution, visual correctness and template build remain unverified.
