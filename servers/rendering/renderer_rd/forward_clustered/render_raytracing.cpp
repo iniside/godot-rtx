@@ -2595,7 +2595,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 		source.material = p_material;
 		emissive_sources.push_back(source);
 	};
-	auto instance_geometry = [](const RenderForwardClustered::GeometryInstanceForwardClustered *p_instance, const RT_GeometryData &p_geometry) {
+	auto instance_geometry = [](const RenderForwardClustered::GeometryInstanceForwardClustered *p_instance, const RT_GeometryData &p_geometry, const RenderForwardClustered::GeometryInstanceSurfaceDataCache *p_surface) {
 		RT_GeometryData geometry = p_geometry;
 		geometry.instance_layer_mask = p_instance->layer_mask;
 		if (p_instance->rt_casts_shadows) {
@@ -2603,6 +2603,10 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 		}
 		if (p_instance->rt_shadows_only) {
 			geometry.flags |= RT_GEOM_FLAG_SHADOWS_ONLY;
+		}
+		if (p_surface && (!p_surface->shader || p_surface->shader->cull_mode != RSE::CULL_MODE_DISABLED) &&
+				!(p_surface->flags & RenderForwardClustered::GeometryInstanceSurfaceDataCache::FLAG_USES_DOUBLE_SIDED_SHADOWS)) {
+			geometry.flags |= RT_GEOM_FLAG_SHADOW_CULL_ENABLED;
 		}
 		return geometry;
 	};
@@ -2666,7 +2670,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 				RT_GeometryData geom = {};
 				geom.flags = RT_GEOM_FLAG_PROCEDURAL;
 				geom.vertex_buffer_address = ps->gpu_buffer_address;
-				geometry_data.push_back(instance_geometry(inst, geom));
+				geometry_data.push_back(instance_geometry(inst, geom, nullptr));
 
 				if (inst->transform_status == RenderForwardClustered::GeometryInstanceForwardClustered::TransformStatus::MOVED) {
 					motion_indices.push_back((int32_t)motion_transforms.size());
@@ -2746,7 +2750,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 
 				uint32_t inst_flags = 0;
 				if (mm_surf->shader) {
-					switch (mm_surf->shader->rt_cull_mode()) {
+					switch (mm_surf->shader->cull_mode) {
 						case RSE::CULL_MODE_DISABLED:
 							inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT;
 							inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FLIP_FACING_BIT;
@@ -2873,7 +2877,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 
 			blass.push_back(surf_data->blas);
 			const uint32_t geometry_index = geometry_data.size();
-			geometry_data.push_back(instance_geometry(inst, surf_data->geometry));
+			geometry_data.push_back(instance_geometry(inst, surf_data->geometry, surf));
 			for (RID buffer : { mesh_storage->mesh_surface_get_vertex_buffer(mesh_surface), mesh_storage->mesh_surface_get_attribute_buffer(mesh_surface), mesh_storage->mesh_surface_get_index_buffer(mesh_surface, 0), surf_data->cluster_remap_buffer }) {
 				if (buffer.is_valid()) {
 					geometry_buffer_dependencies.insert(buffer);
@@ -2913,7 +2917,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 			// Determine per-instance TLAS flags from material properties.
 			uint32_t inst_flags = 0;
 			if (surf->shader) {
-				switch (surf->shader->rt_cull_mode()) {
+				switch (surf->shader->cull_mode) {
 					case RSE::CULL_MODE_DISABLED:
 						inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT;
 						inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FLIP_FACING_BIT;
@@ -2970,7 +2974,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 			blass.push_back(merged_sd.blas);
 			blas_transforms.push_back(pending.instance_transform);
 			const uint32_t geometry_index = geometry_data.size();
-			geometry_data.push_back(instance_geometry(pending.mm_surf->owner, merged_sd.geometry));
+			geometry_data.push_back(instance_geometry(pending.mm_surf->owner, merged_sd.geometry, pending.mm_surf));
 			register_emissive_source(pending.mm_surf->owner, pending.mm_rid, pending.surface_index, pending.surface_counter,
 					geometry_index, 0, merged_sd.geometry.primitive_count, pending.instance_transform, pending.mat_data);
 			sbt_offsets.push_back(pending.mat_data->rt_sbt_offset);
@@ -3028,7 +3032,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 				blass.push_back(surf_data->blas);
 				blas_transforms.push_back(final_transform);
 				const uint32_t geometry_index = geometry_data.size();
-				geometry_data.push_back(instance_geometry(pending.mm_surf->owner, surf_data->geometry));
+				geometry_data.push_back(instance_geometry(pending.mm_surf->owner, surf_data->geometry, pending.mm_surf));
 				for (RID buffer : { mesh_storage->mesh_surface_get_vertex_buffer(pending.mesh_surface), mesh_storage->mesh_surface_get_attribute_buffer(pending.mesh_surface), mesh_storage->mesh_surface_get_index_buffer(pending.mesh_surface, 0), surf_data->cluster_remap_buffer }) {
 					if (buffer.is_valid()) {
 						geometry_buffer_dependencies.insert(buffer);
@@ -3049,7 +3053,11 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 					motion_indices.push_back(-1);
 				}
 
-				instance_flags.push_back(pending.inst_flags);
+				uint32_t inst_flags = pending.inst_flags;
+				if (mm_xform.basis.determinant() < 0.0) {
+					inst_flags ^= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FLIP_FACING_BIT;
+				}
+				instance_flags.push_back(inst_flags);
 				instance_masks.push_back(0xFF);
 			}
 

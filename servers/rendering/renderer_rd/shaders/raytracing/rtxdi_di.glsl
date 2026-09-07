@@ -28,6 +28,7 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 #define FLAG_CLUSTERED 8u
 #define FLAG_CASTS_SHADOWS 16u
 #define FLAG_SHADOWS_ONLY 32u
+#define FLAG_SHADOW_CULL_ENABLED 64u
 #include "../oct_inc.glsl"
 #include "../scene_data_inc.glsl"
 #include <Rtxdi/DI/ReSTIRDIParameters.h>

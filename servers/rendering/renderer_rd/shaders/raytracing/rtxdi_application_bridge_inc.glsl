@@ -405,8 +405,12 @@ bool rtxdi_trace_visibility(RAB_Surface surface, RAB_LightSample light_sample) {
 	float max_distance = light_sample.light_type == RT_LIGHT_TYPE_ENVIRONMENT || light_sample.light_type == RT_LIGHT_TYPE_DIRECTIONAL ? 3.402823466e+38 : max(light_sample.distance - 0.002, 0.001);
 	rayQueryInitializeEXT(query, scene_tlas, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsNoOpaqueEXT, 0xFF, surface.world_pos, 0.001, light_sample.direction, max_distance);
 	while (rayQueryProceedEXT(query)) {
-		if (rayQueryGetIntersectionTypeEXT(query, false) == gl_RayQueryCandidateIntersectionTriangleEXT && rtxdi_alpha_covered(rayQueryGetIntersectionInstanceCustomIndexEXT(query, false), rayQueryGetIntersectionPrimitiveIndexEXT(query, false), rayQueryGetIntersectionClusterIdNV(query, false), rayQueryGetIntersectionBarycentricsEXT(query, false), rayQueryGetIntersectionObjectToWorldEXT(query, false), true)) {
-			rayQueryConfirmIntersectionEXT(query);
+		if (rayQueryGetIntersectionTypeEXT(query, false) == gl_RayQueryCandidateIntersectionTriangleEXT) {
+			uint geometry_index = rayQueryGetIntersectionInstanceCustomIndexEXT(query, false);
+			bool shadow_facing = (geometries[geometry_index].flags & FLAG_SHADOW_CULL_ENABLED) == 0u || !rayQueryGetIntersectionFrontFaceEXT(query, false);
+			if (shadow_facing && rtxdi_alpha_covered(geometry_index, rayQueryGetIntersectionPrimitiveIndexEXT(query, false), rayQueryGetIntersectionClusterIdNV(query, false), rayQueryGetIntersectionBarycentricsEXT(query, false), rayQueryGetIntersectionObjectToWorldEXT(query, false), true)) {
+				rayQueryConfirmIntersectionEXT(query);
+			}
 		}
 	}
 	return rayQueryGetIntersectionTypeEXT(query, true) == gl_RayQueryCommittedIntersectionNoneEXT;

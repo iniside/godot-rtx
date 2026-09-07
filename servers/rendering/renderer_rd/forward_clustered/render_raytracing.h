@@ -232,6 +232,7 @@ enum {
 	RT_GEOM_FLAG_CLUSTERED = 8u,
 	RT_GEOM_FLAG_CASTS_SHADOWS = 16u,
 	RT_GEOM_FLAG_SHADOWS_ONLY = 32u,
+	RT_GEOM_FLAG_SHADOW_CULL_ENABLED = 64u,
 };
 
 /// Per-instance state for procedural RT geometry. Heap-allocated, only exists for procedural instances.
