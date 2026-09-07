@@ -186,7 +186,8 @@ layout(set = 0, binding = 15, std140) uniform Params {
 	float temporal_blend;
 
 	vec2 sky_border_size;
-	vec2 pad;
+	float sky_energy;
+	float pad;
 
 	mat3x4 cam_rotation;
 	mat4 to_prev_view;
@@ -457,7 +458,7 @@ void main() {
 #endif //USE_RADIANCE_OCTMAP_ARRAY
 			}
 
-			total_light += mix(params.ambient_color, mix(isotropic, anisotropic, abs(params.phase_g)), params.sky_contribution) * params.ambient_inject;
+			total_light += mix(params.ambient_color, mix(isotropic, anisotropic, abs(params.phase_g)) * params.sky_energy, params.sky_contribution) * params.ambient_inject;
 		}
 
 		//compute lights from cluster

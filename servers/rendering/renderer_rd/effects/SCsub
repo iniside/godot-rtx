@@ -73,6 +73,8 @@ env.servers_sources += thirdparty_obj
 module_obj = []
 
 env_effects.add_source_files(module_obj, "*.cpp")
+
+env.Depends(module_obj, ["#thirdparty/nrd/Include/NRD.h", "#thirdparty/nrd/Include/NRDDescs.h", "#thirdparty/nrd/Include/NRDSettings.h"])
 env.servers_sources += module_obj
 
 # Needed to force rebuilding the module files when the thirdparty library is updated.

@@ -185,9 +185,9 @@ vec3 rtxdi_sample_environment_radiance(vec3 world_direction) {
 	vec2 border = vec2(scene_data_block.data.radiance_border_size, 1.0 - scene_data_block.data.radiance_border_size * 2.0);
 	vec2 uv = vec3_to_oct_with_border(sky_direction, border);
 #ifdef USE_RADIANCE_OCTMAP_ARRAY
-	return textureLod(sampler2DArray(radiance_octmap, environment_sampler), vec3(uv, 0.0), 0.0).rgb * scene_data_block.data.IBL_exposure_normalization;
+	return textureLod(sampler2DArray(radiance_octmap, environment_sampler), vec3(uv, 0.0), 0.0).rgb;
 #else
-	return textureLod(sampler2D(radiance_octmap, environment_sampler), uv, 0.0).rgb * scene_data_block.data.IBL_exposure_normalization;
+	return textureLod(sampler2D(radiance_octmap, environment_sampler), uv, 0.0).rgb;
 #endif
 }
 
@@ -230,7 +230,7 @@ RAB_LightSample RAB_SamplePolymorphicLight(RAB_LightInfo light, RAB_Surface surf
 	RTLightProposal proposal;
 	if (light.type == RT_LIGHT_TYPE_ENVIRONMENT) {
 		proposal = rtxdi_sample_environment(random, vec3(1.0));
-		proposal.radiance = rtxdi_sample_environment_radiance(proposal.direction);
+		proposal.radiance = rtxdi_sample_environment_radiance(proposal.direction) * light.emission;
 	} else {
 		proposal = rtxdi_sample_analytic_light(light, surface.world_pos, random);
 	}

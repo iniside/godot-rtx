@@ -931,7 +931,7 @@ void Fog::volumetric_fog_update(const VolumetricFogSettings &p_settings, const P
 			u.uniform_type = RD::UNIFORM_TYPE_TEXTURE;
 			u.binding = 13;
 			for (int i = 0; i < RendererRD::GI::MAX_VOXEL_GI_INSTANCES; i++) {
-				u.append_id(p_settings.rbgi->voxel_gi_textures[i]);
+				u.append_id(p_settings.rbgi.is_valid() ? p_settings.rbgi->voxel_gi_textures[i] : RendererRD::TextureStorage::get_singleton()->texture_rd_get_default(RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_3D_WHITE));
 			}
 			uniforms.push_back(u);
 			copy_uniforms.push_back(u);
@@ -1097,6 +1097,7 @@ void Fog::volumetric_fog_update(const VolumetricFogSettings &p_settings, const P
 	params.ambient_color[1] = ambient_color.g;
 	params.ambient_color[2] = ambient_color.b;
 	params.sky_contribution = RendererSceneRenderRD::get_singleton()->environment_get_ambient_sky_contribution(p_settings.env);
+	params.sky_energy = p_settings.sky_energy;
 
 	params.fog_volume_size[0] = fog->width;
 	params.fog_volume_size[1] = fog->height;

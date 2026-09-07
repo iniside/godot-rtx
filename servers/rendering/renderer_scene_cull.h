@@ -644,14 +644,6 @@ public:
 		HashSet<Instance *> geometries;
 
 		RID instance;
-		SelfList<InstanceReflectionProbeData> update_list;
-
-		int render_step;
-
-		InstanceReflectionProbeData() :
-				update_list(this) {
-			render_step = -1;
-		}
 	};
 
 	struct InstanceDecalData : public InstanceBaseData {
@@ -665,7 +657,6 @@ public:
 		}
 	};
 
-	SelfList<InstanceReflectionProbeData>::List reflection_probe_render_list;
 
 	struct InstanceParticlesCollisionData : public InstanceBaseData {
 		RID instance;
@@ -769,42 +760,16 @@ public:
 
 		HashSet<Instance *> lights;
 
-		struct LightCache {
-			RSE::LightType type;
-			Transform3D transform;
-			Color color;
-			float energy;
-			float intensity;
-			float bake_energy;
-			float radius;
-			float attenuation;
-			float spot_angle;
-			float spot_attenuation;
-			bool has_shadow;
-			RSE::LightDirectionalSkyMode sky_mode;
-			Vector2 area_size;
-			bool area_normalize_energy;
-			RID area_texture;
-		};
-
-		Vector<LightCache> light_cache;
-		Vector<RID> light_instances;
-
 		RID probe_instance;
 
 		bool invalid;
 		uint32_t base_version;
 
-		SelfList<InstanceVoxelGIData> update_element;
-
-		InstanceVoxelGIData() :
-				update_element(this) {
+		InstanceVoxelGIData() {
 			invalid = true;
 			base_version = 0;
 		}
 	};
-
-	SelfList<InstanceVoxelGIData>::List voxel_gi_update_list;
 
 	struct InstanceLightmapData : public InstanceBaseData {
 		RID instance;
@@ -1171,7 +1136,6 @@ public:
 	static void _scene_particles_set_view_axis(RID p_particles, const Vector3 &p_axis, const Vector3 &p_up_axis);
 	_FORCE_INLINE_ bool _visibility_parent_check(const CullData &p_cull_data, const InstanceData &p_instance_data);
 
-	bool _render_reflection_probe_step(Instance *p_instance, int p_step);
 
 	void _render_scene(RID p_camera, const RendererSceneRender::CameraData *p_camera_data, const Ref<RenderSceneBuffers> &p_render_buffers, RID p_environment, RID p_force_camera_attributes, RID p_compositor, uint32_t p_visible_layers, RID p_scenario, RID p_viewport, RID p_shadow_atlas, RID p_reflection_probe, int p_reflection_probe_pass, float p_screen_mesh_lod_threshold, float p_window_output_max_value, bool p_using_shadows = true, RenderingServerTypes::RenderInfo *r_render_info = nullptr);
 	void render_empty_scene(const Ref<RenderSceneBuffers> &p_render_buffers, RID p_scenario, RID p_shadow_atlas, float p_window_output_max_value);

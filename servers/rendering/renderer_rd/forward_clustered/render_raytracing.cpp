@@ -3140,9 +3140,6 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 		} else {
 			e *= Math::PI;
 		}
-		if (p_render_data->camera_attributes.is_valid()) {
-			e *= RSG::camera_attributes->camera_attributes_get_exposure_normalization_factor(p_render_data->camera_attributes);
-		}
 		return e;
 	};
 
@@ -3313,6 +3310,10 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 				key.type = RT_LIGHT_TYPE_ENVIRONMENT;
 				RT_LightData light = {};
 				light.type = RT_LIGHT_TYPE_ENVIRONMENT;
+				const float environment_energy = owner->environment_get_bg_energy_multiplier(p_render_data->environment) * owner->environment_get_bg_intensity(p_render_data->environment);
+				light.emission[0] = environment_energy;
+				light.emission[1] = environment_energy;
+				light.emission[2] = environment_energy;
 				light.flags = RT_LIGHT_FLAG_CASTS_SHADOW;
 				light.specular_amount = 1.0f;
 				light.receiver_mask = UINT32_MAX;

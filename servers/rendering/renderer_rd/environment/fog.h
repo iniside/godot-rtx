@@ -183,7 +183,8 @@ private:
 			float temporal_blend;
 
 			float sky_border_size[2];
-			float pad[2];
+			float sky_energy;
+			float pad;
 
 			float cam_rotation[12];
 			float to_prev_view[16];
@@ -347,6 +348,7 @@ public:
 	void free_fog_shader();
 
 	struct VolumetricFogSettings {
+		float sky_energy = 1.0f;
 		Vector2i rb_size;
 		double time;
 		bool is_using_radiance_octmap_array;
