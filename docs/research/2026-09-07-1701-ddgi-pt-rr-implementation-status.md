@@ -21,7 +21,7 @@ Automated tests are not authorized. The full implementation is not complete.
 |---|---|---|
 | 1. Public settings and per-buffer ownership | Source review PASS | `8aa9a77747`; ordinary editor builds |
 | 2. Common RT coordinates and temporal basis | Final round 2 source PASS and proof PASS | `eecc668b45` + correction `28dbaa3dd2` |
-| 3. Shared native RT hit materials | Correction committed; fresh final round 2 running | `d3936e37b7` + `faa1f8dcfe`; proof audit pending |
+| 3. Shared native RT hit materials | Final round 2 REJECT; owner authorized remaining fix beyond cap | `d3936e37b7` + `faa1f8dcfe`; bounded proof audit running |
 | 4. Pinned DDGI import and moving cascades | Pending | Depends on step 3 |
 | 5. DDGI lighting and hybrid composition | Pending | Depends on step 4 |
 | 6. True camera-ray PT | Pending | Depends on step 5 |
@@ -110,8 +110,22 @@ Frozen `d3936e37b7f8e3c900416da0a2e70ee40096fa4d`, baseline `28dbaa3dd2`:
 after examining the exact commit and both cumulative ranges. A separate proof-auditor spawn hit the
 harness thread limit, including a retry after the writer completed. Neither
 review nor proof PASS is claimed. Correction `faa1f8dcfe` is committed;
-fresh final `ddgi_step3_review_r2` is running. The post-correction proof-auditor
-spawn again hit the harness limit while that source review was active.
+fresh final `ddgi_step3_review_r2` returned REJECT. The post-correction
+proof-auditor spawn hit the harness limit while source review was active, then
+`ddgi_step3_proof_final` started successfully after the reviewer completed.
+
+Final round 2 confirms the initial three findings corrected but rejects one
+remaining LOD defect: `rt_hit_context_inc.slang:236,248` clamps the raw footprint
+before `shader_compiler.cpp:772` applies bias. Raw LOD 10, last mip 8 and bias -2
+therefore select mip 6 instead of 8. `shader_compiler.cpp:724` similarly returns
+`textureQueryLod=(8,8)` instead of clamped/unclamped `(8,10)`. Recommended fix:
+preserve raw footprint LOD through bias and the unclamped query component, then
+clamp only final sampled/clamped-query values. The owner explicitly overrode the
+review-round cap with "ani sie waz naprawiaj, z goal mozesz isc ponad limit" and
+directed the remaining fix and continued goal execution. Additional correction
+and fresh review are authorized. Resuming the original writer currently hits the
+harness thread limit while the independent proof audit is active. That audit
+examines retained compilation/pipeline-creation claims, not overall correctness.
 
 Confirmed round 1 defects:
 
