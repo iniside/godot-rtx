@@ -11,8 +11,8 @@ Research and standalone compiler limitations are recorded in the
 
 | Step | State | Evidence |
 |---|---|---|
-| 1. Slang compiler, request, cache/export and distribution | Implemented; fresh review and proof audit in progress | `3a04df35e6`; [evidence](2026-09-07-1154-slang-compiler-step1-status.md) |
-| 2. Spatial frontend and surfaces | Pending step 1 | No implementation evidence |
+| 1. Slang compiler, request, cache/export and distribution | Source review and proof audit PASS | `3a04df35e6`, fix `836f8c7e77`; [evidence](2026-09-07-1154-slang-compiler-step1-status.md), [proof supplement](2026-09-07-1219-slang-step1-proof-supplement-status.md) |
+| 2. Spatial frontend and surfaces | In progress | Separate core-implementer context; task baseline `836f8c7e77` |
 | 3. Shared shading and DI replacement | Pending step 2 | No implementation evidence |
 | 4. NRD/HDR and removal of PT dependency | Pending step 3 | No implementation evidence |
 | 5. Final validation and documentation | Pending implementation | No new renderer/runtime proof |
@@ -64,3 +64,23 @@ Existing unsupported-material/OpTypeForwardPointer diagnostics are unchanged.
 This checks the retained renderer after compiler infrastructure changes. It does
 not exercise migrated Slang material shaders, which do not exist until later steps.
 No deterministic pixel equality or performance regression claim is made.
+
+## Step 1 review
+
+Fresh round 1 reviewed exact `3a04df35e6` and cumulative `b2d04129cb..3a04df35e6`:
+REJECT, one P1 build-graph defect. `glsl_builders.py:298-304` resolves SDK includes
+relative to process cwd; SCons changes cwd for nested SCsub execution, so
+`Rtxdi/DI/Reservoir.hlsli` fails during the synchronous dependency scan. Local
+relative-include diagnostics did not cover this path. The correction must anchor
+physical SDK paths at repository root and preserve stable virtual include identity.
+Correction `836f8c7e77` passed actual nested SCons SDK/local include generation and
+production ShaderRD/Vulkan creation. Fresh final round 2 returned PASS for exact
+fix, original commit and cumulative `b2d04129cb..836f8c7e77`.
+
+The independent proof audit returned PASS after the
+[supplement](2026-09-07-1219-slang-step1-proof-supplement-status.md) supplied
+fail-closed temporary diagnostic exits and exact launch/spirv-val receipts.
+CLAS, ABI and nested ShaderRD creation exited zero; the intentional missing-DLL
+compile failure exited one; both SPIR-V validator runs exited zero. Production
+code remained unchanged. This proves compilation and Vulkan object creation,
+not dispatch, matrix math or migrated rendering. Step 2 is released to build.
