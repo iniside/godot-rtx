@@ -96,11 +96,27 @@ fresh final round 2 review returned PASS on 2026-09-07. Stage 7 landed in
 evidence: corrected culling, mixed energy, raster/CLAS geometry, motion history,
 resource/thread teardown and material diagnostics. See the
 [Stage 7 evidence](../research/2026-09-07-0848-rtxdi-stage7-rendering-status.md).
-Fresh hostile review and proof audit remain blocked by the session's agent-thread
-limit despite completed children; no review verdict exists yet. Resume exact
-`c8ba1736e1` plus cumulative `217396c25c..c8ba1736e1` in fresh contexts. The owner
-then requests migration of `gi_demo/test.tscn` into the new demo and editor launch
-instructions; dependency scope is recorded in the implementation status.
+Fresh Stage 7 review resumed on 2026-09-07 at frozen `c8ba1736e1` and cumulative
+`217396c25c..c8ba1736e1`. Round 1 rejected the directional-light registry inheriting
+the raster/fog limit of eight. Correction `73616056ee` has editor-build and real
+Vulkan nine/sixteen-light energy evidence; fresh final round 2 returned PASS
+at `73616056ee`, and its bounded proof audit returned PASS on the ordinary-editor
+Vulkan path. Fixed-template and separate-thread axes were not rerun for the fix.
+See the [fix evidence](../research/2026-09-07-0959-rtxdi-directional-registry-fix.md).
+The independent proof audit returned PASS for the retained source/binary hashes,
+Vulkan logs, images and manual scenarios within the documented limits.
+
+The owner resumed migration of `gi_demo/test.tscn` into `demos/rtxdi_manual`
+from `b01c5849a8` and reported empty editor scenes. Migration `b32e62a7a3` replaces
+runtime-only construction with serialized, editable hierarchies; `edffcf48db`
+restores the private deformer mesh release case. All seven scenes load and
+instantiate. After the owner re-enabled driver cache, the current ordinary editor
+rendered the migrated map and gallery on Vulkan without environment overrides.
+The current editor shows the authored scene tree and geometry; F5/Delete/F12/Escape
+were exercised. Final evidence and SVG import settings landed in `6e03ebe1be`.
+No cache or engine workaround was added. Fresh source review returned PASS at
+`edffcf48db`, also examining the final evidence/import follow-on. The separate
+proof-auditor spawn is blocked by the harness agent limit. See the [migration status](../research/2026-09-07-1034-rtxdi-demo-migration-status.md).
 
 The [approved RTXDI replacement plan](../plans/2026-09-06-1854-rtxdi-renderer-plan.md)
 received a fresh hostile plan-review PASS and owner approval on 2026-09-06 at

@@ -72,13 +72,28 @@ on RTX 4090 passed the recorded manual scenarios. The development template used
 timings, limitations and removed diagnostic provenance are in the
 [Stage 7 evidence](2026-09-07-0848-rtxdi-stage7-rendering-status.md).
 
-Fresh hostile review round 1 and the required proof-auditor have NOT run.
-The runtime rejects fresh spawns with `agent thread limit reached` even after all
-three child contexts report completed; interrupting the completed writer does not
-release a slot. No reviewer was reused and no PASS was fabricated. Continue in a
-session able to create fresh contexts: review exact `c8ba1736e1` and cumulative
-`217396c25c..c8ba1736e1`, then audit its evidence. Two review rounds remain available.
-The owner-requested old-scene migration below follows closure of this gate.
+Fresh Stage 7 round 1 review resumed on 2026-09-07 after the previous session's
+agent-thread limit. It rejected one concrete defect at frozen `c8ba1736e1`:
+`renderer_scene_cull.cpp` supplies RTXDI directionals from the raster/fog list
+capped at eight, omitting the ninth eligible directional light. The complete
+RTXDI registry must collect them independently of that bound. Correction
+`73616056ee` collects eligible scenario directionals independently; its editor
+build and real Vulkan captures with nine and sixteen lights passed. Sixteen
+lights at 0.0625 energy match one unit-energy reference. See the
+[fix evidence](2026-09-07-0959-rtxdi-directional-registry-fix.md). Fresh final
+round 2 returned PASS at `73616056ee`, covering the exact fix and cumulative
+`217396c25c..73616056ee`. The bounded fix proof audit also returned PASS,
+confirming source/build/capture provenance and ninth/sixteenth-light contribution
+on the ordinary-editor Vulkan path. Fixed-template and separate-thread axes
+were not rerun for that final correction. The separate proof audit returned
+PASS for frozen `c8ba1736e1` on 2026-09-07: source/binary/readback provenance,
+retained Vulkan images and logs, shadow/lifecycle scenarios and timing summaries
+were checked independently. Both proof audits retain the documented
+single-device, manual-run limits.
+
+The owner explicitly resumed the old-scene migration before closure of that
+review and reported empty scenes in the editor. The bounded demo task now also
+replaces runtime-only construction with serialized, editable scene hierarchies.
 
 Step 1 evidence: pinned importer completed 159 NRD SPIR-V tasks; a temporary
 native GLSL reservoir/random-sampler closure passed glslangValidator Vulkan 1.2.
@@ -351,20 +366,32 @@ rendering and pass timings are recorded in the final Stage 7 evidence linked abo
 The manual project is owned at `demos/rtxdi_manual`; owner demo assets were excluded
 from that commit.
 
-Owner follow-on, 2026-09-07: after Stage 7 closes, migrate `gi_demo/test.tscn` into
+Owner follow-on, 2026-09-07: migrate `gi_demo/test.tscn` into
 the new demonstration project, adapt it to actual RTXDI/NRD capabilities, and
 document editor launch controls. This explicitly authorizes that bounded use of
 the previously excluded old demo. Read-only inventory: the scene uses self-contained
 `zdm2.glb` and `cube.glb`, old GI/reflection/SSIL switch scripts, baked GI resources,
 PT environment properties and primitive camera-attached meshes. Preserve the map,
 light/camera placement and source attribution; replace retired controls and use
-imported CLAS-capable geometry. No migration edits have been made yet. GLB JSON
+imported CLAS-capable geometry. Migration landed in `b32e62a7a3` from `b01c5849a8`;
+`edffcf48db` restores the private deformer mesh release case. GLB JSON
 inspection found no external buffer/image URIs in either file. Preserve the
 `gi_demo/README.md` zdm2 attribution (Cube 2: Sauerbraten, CC BY 4.0 and its linked
 credit source). Replace old baked-GI/probe/SSIL/PT controls rather than presenting
 them as functional. Reuse the current demo's F5/F6 and camera-control conventions.
-Delegate the migration as a separate bounded task after the Stage 7 review gate;
-verify the imported scene with the actual editor/Vulkan and review its own commit.
+The separate migration task also makes all existing demo scenes visible and
+editable without running them. Verify the imported scene and existing cases in
+the actual editor/Vulkan and review the demo commit independently of Stage 7.
+All seven scenes pass actual ResourceLoader/instantiation inspection. After the
+owner re-enabled driver cache, the current ordinary editor rendered the migrated
+map on Vulkan without environment overrides; the capture succeeded at frame 576.
+No engine or driver-cache workaround was added. Final evidence `6e03ebe1be`
+includes the normal gallery capture, populated current-editor hierarchy, and
+F5/Delete/F12/Escape interaction with rendering continuing after mesh removal.
+Fresh source review returned PASS at `edffcf48db`, covering implementation and
+private mesh ownership and separately examining the `6e03ebe1be` follow-on.
+A separate proof-auditor spawn was rejected by the harness agent limit. No proof-audit verdict exists for the migration. See the
+[migration status](2026-09-07-1034-rtxdi-demo-migration-status.md).
 
 Evidence date: 2026-09-06 UTC. Frozen Step 4 final review target:
 `5075e8b3fc3b19213744d0e9ac9f3648ca710359`.
@@ -413,8 +440,8 @@ NRD material factors and sanitized/clamped for FP16. The next stages are NRD/HDR
 composition and final editor/template/real-Vulkan visual validation. NRD/HDR
 implementation landed in `a661887676` after the separately authorized shadow fix
 passed review. Its corrective commit `217396c25c` passed final round 2; final
-real-device validation is recorded in Stage 7 `c8ba1736e1`; its independent review
-is pending. No automated tests have been run.
+real-device validation is recorded in Stage 7 `c8ba1736e1`; final source review
+passed after `73616056ee`, and both the original and corrective proof audits passed. No automated tests have been run.
 
 Intermediate builds/rendering may fail by explicit owner authorization. Final
 completion requires the plan's real-device rendering gate. Automated tests are

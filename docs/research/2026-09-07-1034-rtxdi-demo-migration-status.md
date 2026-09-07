@@ -60,8 +60,10 @@ and [import output](rtxdi-demo-migration-evidence/import.txt) retain the evidenc
 
 Real-device visual closure for the requested migrated map, gallery and populated
 editor is complete on the ordinary current editor after `edffcf48db190ee1b44517d5ddabef2211480fa9`.
-Fresh independent hostile review and proof audit remain pending; a coordinator
-spawn attempt hit the harness agent limit, which is not a review verdict.
+Fresh independent source review returned PASS at `edffcf48db`, covering the exact
+source commits and cumulative migration diff, with `6e03ebe1be` evidence/import
+updates examined separately. The required independent proof audit remains pending:
+its fresh spawn hit the harness agent limit, which is not a proof-audit verdict.
 
 The owner re-enabled the NVIDIA driver cache, then explicitly requested a normal
 launch. With no OBS environment overrides, audio overrides or engine/cache fixes,
@@ -116,7 +118,7 @@ proof; successful images use the ordinary current editor identified above.
 
 ## Private deforming-mesh lifetime correction
 
-Coordinator review of the migrated ownership found that an authored PackedScene
+Coordinator inspection of the migrated ownership found that an authored PackedScene
 can retain the imported deformer mesh after its visible node is removed. The
 gallery now duplicates that node's ArrayMesh during `_ready`, and Delete queues
 the node for release and clears the script's node handle. The private runtime
