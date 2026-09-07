@@ -45,6 +45,10 @@
 
 #include "modules/modules_enabled.gen.h"
 
+#ifdef MODULE_SLANG_ENABLED
+#include "modules/slang/shader_compile.h"
+#endif
+
 #ifdef MODULE_GLSLANG_ENABLED
 #include "modules/glslang/shader_compile.h"
 #endif
@@ -228,6 +232,64 @@ void RenderingDevice::_free_dependencies(RID p_id) {
 /*******************************/
 /**** SHADER INFRASTRUCTURE ****/
 /*******************************/
+
+String RenderingShaderCompileRequest::get_identity() const {
+	String result = vformat("%d/%d/%d/%s/%d/%d/%d/%d/%s", language, target, spirv_version, compiler_identity, int(column_major), int(gl_layout), int(debug_info), optimization_level, source_path.sha256_text());
+	for (const String &entry : entry_points) {
+		result += "/" + entry.sha256_text();
+	}
+	Vector<String> paths;
+	for (const KeyValue<String, String> &include : includes) {
+		paths.push_back(include.key);
+	}
+	paths.sort();
+	for (const String &path : paths) {
+		result += "/" + path.sha256_text() + "/" + includes[path].sha256_text();
+	}
+	return result;
+}
+
+RenderingShaderCompileRequest RenderingDevice::shader_get_compile_request(RenderingShaderCompileRequest::Language p_language, const String &p_source_path) const {
+	RenderingShaderCompileRequest request;
+	request.language = p_language;
+	request.source_path = p_source_path;
+	request.debug_info = Engine::get_singleton()->is_generate_spirv_debug_info_enabled();
+	for (String &entry : request.entry_points) {
+		entry = "main";
+	}
+	if (p_language == RenderingShaderCompileRequest::SLANG) {
+		request.target = SHADER_LANGUAGE_VULKAN_VERSION_1_3;
+		request.spirv_version = SHADER_SPIRV_VERSION_1_6;
+#ifdef MODULE_SLANG_ENABLED
+		request.compiler_identity = get_slang_shader_compiler_identity();
+#else
+		request.compiler_identity = "slang/unavailable";
+#endif
+	} else {
+		request.target = driver->get_shader_container_format().get_shader_language_version();
+		request.spirv_version = driver->get_shader_container_format().get_shader_spirv_version();
+		request.compiler_identity = "glslang/godot";
+	}
+	return request;
+}
+
+Vector<uint8_t> RenderingDevice::shader_compile_spirv_from_internal_source(ShaderStage p_stage, const String &p_source_code, const RenderingShaderCompileRequest &p_request, String *r_error) {
+	if (p_request.language == RenderingShaderCompileRequest::SLANG) {
+#ifdef MODULE_SLANG_ENABLED
+		return compile_slang_shader(p_stage, p_source_code, p_request, r_error);
+#else
+		if (r_error) {
+			*r_error = "The internal Slang compiler is unavailable in this build.";
+		}
+		return {};
+#endif
+	}
+#ifdef MODULE_GLSLANG_ENABLED
+	return compile_glslang_shader(p_stage, ShaderIncludeDB::parse_include_files(p_source_code), p_request.target, p_request.spirv_version, r_error);
+#else
+	return {};
+#endif
+}
 
 Vector<uint8_t> RenderingDevice::shader_compile_spirv_from_source(ShaderStage p_stage, const String &p_source_code, ShaderLanguage p_language, String *r_error, bool p_allow_cache) {
 	switch (p_language) {

@@ -1,0 +1,15 @@
+{
+  "version": "2026.13.1",
+  "url": "https://github.com/shader-slang/slang/releases/download/v2026.13.1/slang-2026.13.1-windows-x86_64.zip",
+  "sha256": "fa1c9bcab2cdcd3626f7a1e250dd35d606c1b84745b64627f1dd63fca3746a70",
+  "files": {
+    "include/slang.h": "e0dc6ca7972e8743d90e96b4caee7309f04ba3f3797c57053b5aae3e201b9649",
+    "include/slang-deprecated.h": "09a8b3fb65ba00daef1cc2462fad552c273db4472187ddf421224a190e0dcf47",
+    "include/slang-com-ptr.h": "eae0752c45971854a5dc132edf46da00296b7141fc6894b512c45d69eff7b26a",
+    "include/slang-com-helper.h": "8c4936e5bad6e61222cde9ae266dc5931cdcd5989d01495cef6dff2aef9b9276",
+    "include/slang-image-format-defs.h": "35ad9b68cfa889157b2bf4a4ef39263b4ad5f0f760ffee66aca03438e8363bcd",
+    "include/slang-tag-version.h": "24914739dfb717ab619a5dcc21137030d3a29bba825f6a82934fd3f1d26d69a0",
+    "LICENSE": "b738d98b7725414b534c119ac66126876b8cbd40aa8ae48210db190714b81670",
+    "slang-compiler.2026.13.1.x86_64.dll": "6cd4e6bee3ee8a1f8349f77c838ac711a3d217465771b114f461075b77b71b40"
+  }
+}

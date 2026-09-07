@@ -1,6 +1,7 @@
 """Functions used to generate source files during build time"""
 
 import os.path
+import re
 
 from methods import generated_wrapper, print_error, to_raw_cstring
 
@@ -201,8 +202,22 @@ def build_rd_header_lines_for_raytracing_stage(lines, stage: str):
 
 
 def build_rd_header(filename: str, shader: str) -> None:
-    include_file_in_rd_header(shader, header_data := RDHeaderStruct(), 0)
-    class_name = os.path.basename(shader).replace(".glsl", "").title().replace("_", "").replace(".", "") + "ShaderRD"
+    shader_path = os.path.normpath(shader).replace(os.sep, "/")
+    header_data = RDHeaderStruct()
+    slang_includes = {}
+    if shader.endswith(".slang"):
+        lines, slang_includes = read_slang_sources(shader)
+        stage = ""
+        for line_number, line in enumerate(lines, 1):
+            match = re.fullmatch(r"#\[(\w+)\]", line.strip())
+            if match:
+                stage = match[1]
+                getattr(header_data, stage + "_lines").append(f'#line {line_number + 1} "/godot/{shader_path}"')
+            elif stage:
+                getattr(header_data, stage + "_lines").append(line)
+    else:
+        include_file_in_rd_header(shader, header_data, 0)
+    class_name = os.path.splitext(os.path.basename(shader))[0].title().replace("_", "").replace(".", "") + "ShaderRD"
 
     with generated_wrapper(filename) as file:
         file.write(f"""\
@@ -249,6 +264,12 @@ public:
 		setup(_vertex_code, _fragment_code, _compute_code, "{class_name}");
 """)
 
+        if shader.endswith(".slang"):
+            file.write(f'\t\tsetup_slang("/godot/{shader_path}");\n')
+            for index, (path, contents) in enumerate(sorted(slang_includes.items())):
+                file.write(f'\t\tstatic const char _include_{index}[] = {{\n{to_raw_cstring(contents)}\n\t\t}};\n')
+                file.write(f'\t\tsetup_slang_include("/godot/{path}", _include_{index});\n')
+
         file.write("""\
 	}
 };
@@ -259,6 +280,38 @@ def build_rd_headers(target, source, env):
     env.NoCache(target)
     for src in source:
         build_rd_header(f"{src}.gen.h", str(src))
+
+
+def read_slang_sources(shader):
+    includes = {}
+
+    def read_file(path):
+        path = os.path.normpath(path).replace(os.sep, "/")
+        with open(path, encoding="utf-8") as source:
+            lines = source.read().splitlines()
+        for index, line in enumerate(lines):
+            match = re.match(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', line)
+            if not match:
+                continue
+            name = match[1]
+            root = next((root for prefix, root in RD_HEADER_INCLUDE_ROOTS.items() if name.startswith(prefix)), None)
+            included = os.path.normpath(os.path.join(root or os.path.dirname(path), name)).replace(os.sep, "/")
+            if name.startswith("thirdparty/"):
+                included = name
+            lines[index] = f'#include "/godot/{included}"'
+            if included not in includes:
+                includes[included] = []
+                includes[included] = read_file(included)
+        return lines
+
+    return read_file(shader), includes
+
+
+def rd_slang_dependencies(target, source, env):
+    for shader in source:
+        _, includes = read_slang_sources(shader.abspath)
+        env.Depends(target, [env.File(os.path.abspath(path)) for path in includes] + [env.File("#glsl_builders.py")])
+    return target, source
 
 
 class RAWHeaderStruct:

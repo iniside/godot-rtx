@@ -35,6 +35,7 @@
 #include "core/os/condition_variable.h"
 #include "core/templates/rb_set.h"
 #include "editor/export/editor_export_plugin.h"
+#include "servers/rendering/rendering_shader_compile_request.h"
 
 class ShaderRD;
 class RenderingShaderContainerFormat;
@@ -57,6 +58,7 @@ protected:
 		String shader_name;
 		Vector<String> stage_sources;
 		Vector<uint64_t> dynamic_buffers;
+		RenderingShaderCompileRequest compile_request;
 		int64_t variant = 0;
 	};
 

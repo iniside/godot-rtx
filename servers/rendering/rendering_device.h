@@ -30,6 +30,8 @@
 
 #pragma once
 
+#include "servers/rendering/rendering_shader_compile_request.h"
+
 #include "core/object/worker_thread_pool.h"
 #include "core/os/condition_variable.h"
 #include "core/os/thread_safe.h"
@@ -1031,6 +1033,8 @@ public:
 	bool has_feature(const Features p_feature) const;
 
 	Vector<uint8_t> shader_compile_spirv_from_source(ShaderStage p_stage, const String &p_source_code, ShaderLanguage p_language = SHADER_LANGUAGE_GLSL, String *r_error = nullptr, bool p_allow_cache = true);
+	RenderingShaderCompileRequest shader_get_compile_request(RenderingShaderCompileRequest::Language p_language, const String &p_source_path) const;
+	Vector<uint8_t> shader_compile_spirv_from_internal_source(ShaderStage p_stage, const String &p_source_code, const RenderingShaderCompileRequest &p_request, String *r_error);
 	Vector<uint8_t> shader_compile_binary_from_spirv(const Vector<ShaderStageSPIRVData> &p_spirv, const String &p_shader_name = "");
 
 	RID shader_create_from_spirv(const Vector<ShaderStageSPIRVData> &p_spirv, const String &p_shader_name = "");

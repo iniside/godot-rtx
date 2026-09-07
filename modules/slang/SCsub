@@ -1,0 +1,28 @@
+from misc.utility.scons_hints import *
+
+import hashlib
+import json
+from pathlib import Path
+
+Import("env")
+Import("env_modules")
+
+root = Path(env.Dir("#thirdparty/slang").abspath)
+manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+for name, digest in manifest["files"].items():
+    source = root / name
+    if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest() != digest:
+        raise RuntimeError("Missing or modified Slang dependency. Run python misc/scripts/update_slang.py")
+
+env_slang = env_modules.Clone()
+env_slang.Append(CPPPATH=["#thirdparty/slang/include"])
+env_slang.Append(CPPDEFINES=[("GODOT_SLANG_VERSION", '\\"' + manifest["version"] + '\\"'), ("GODOT_SLANG_ARCHIVE_SHA256", '\\"' + manifest["sha256"] + '\\"')])
+dll_name = "slang-compiler." + manifest["version"] + ".x86_64.dll"
+env_slang.Append(CPPDEFINES=[("GODOT_SLANG_DLL_SHA256", '\\"' + manifest["files"][dll_name] + '\\"')])
+runtime = env.Install("#bin", str(root / dll_name))
+runtime += env.InstallAs("#bin/slang.LICENSE.txt", str(root / "LICENSE"))
+env.Alias("slang_runtime", runtime)
+module_sources = []
+env_slang.add_source_files(module_sources, "*.cpp")
+env.Depends(module_sources, runtime)
+env.modules_sources += module_sources

@@ -1214,6 +1214,12 @@ env["OBJPREFIX"] = env["object_prefix"]
 env["SHOBJPREFIX"] = env["object_prefix"]
 
 GLSL_BUILDERS = {
+    "RD_SLANG": env.Builder(
+        action=env.Run(glsl_builders.build_rd_headers),
+        emitter=glsl_builders.rd_slang_dependencies,
+        suffix="slang.gen.h",
+        src_suffix=".slang",
+    ),
     "RD_GLSL": env.Builder(
         action=env.Run(glsl_builders.build_rd_headers),
         suffix="glsl.gen.h",

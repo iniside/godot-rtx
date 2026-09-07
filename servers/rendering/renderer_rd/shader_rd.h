@@ -139,6 +139,7 @@ private:
 	RD::PipelineType pipeline_type = RD::PIPELINE_TYPE_RASTERIZATION;
 
 	String name;
+	RenderingShaderCompileRequest compile_request;
 
 	CharString base_compute_defines;
 
@@ -187,6 +188,8 @@ private:
 
 protected:
 	ShaderRD();
+	void setup_slang(const char *p_source_path);
+	void setup_slang_include(const char *p_path, const char *p_source);
 	void setup(const char *p_vertex_code, const char *p_fragment_code, const char *p_compute_code, const char *p_name);
 	void setup_raytracing(const char *p_raygen_code, const char *p_any_hit_code, const char *p_closest_hit_code, const char *p_miss_code, const char *p_intersection_code, const char *p_name);
 
@@ -261,7 +264,8 @@ public:
 	static void set_shader_cache_save_compressed_zstd(bool p_enable);
 	static void set_shader_cache_save_debug(bool p_enable);
 
-	static Vector<RD::ShaderStageSPIRVData> compile_stages(const Vector<String> &p_stage_sources, const Vector<uint64_t> &p_dynamic_buffers);
+	const RenderingShaderCompileRequest &get_compile_request() const { return compile_request; }
+	static Vector<RD::ShaderStageSPIRVData> compile_stages(const Vector<String> &p_stage_sources, const Vector<uint64_t> &p_dynamic_buffers, const RenderingShaderCompileRequest &p_request);
 	static PackedByteArray save_shader_cache_bytes(const LocalVector<int> &p_variants, const Vector<Vector<uint8_t>> &p_variant_data);
 
 	Vector<String> version_build_variant_stage_sources(RID p_version, int p_variant);

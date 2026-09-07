@@ -724,7 +724,7 @@ bool SceneShaderRaytracing::_ensure_variant_compile_context(uint32_t p_rt_flags)
 	Vector<RD::ShaderStageSPIRVData> base_stages;
 	{
 		MutexLock lock(spirv_compile_mutex);
-		base_stages = ShaderRD::compile_stages(sources, {});
+		base_stages = ShaderRD::compile_stages(sources, {}, raygen_shader.get_compile_request());
 	}
 	ERR_FAIL_COND_V(base_stages.is_empty(), false);
 

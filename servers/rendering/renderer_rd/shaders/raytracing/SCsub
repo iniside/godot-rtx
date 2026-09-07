@@ -5,6 +5,10 @@ from misc.utility.scons_hints import *
 
 Import("env")
 
+for slang_file in Glob("*.slang"):
+    if not str(slang_file).endswith("_inc.slang"):
+        env.RD_SLANG(slang_file)
+
 if "RD_GLSL" in env["BUILDERS"]:
     # find all include files
     gl_include_files = [str(f) for f in Glob("*_inc.glsl")] + [str(f) for f in Glob("../*_inc.glsl")]

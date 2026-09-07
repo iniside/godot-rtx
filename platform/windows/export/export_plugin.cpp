@@ -30,6 +30,11 @@
 
 #include "export_plugin.h"
 
+#include "modules/modules_enabled.gen.h"
+#ifdef MODULE_SLANG_ENABLED
+#include "modules/slang/shader_compile.h"
+#endif
+
 #include "logo_svg.gen.h"
 #include "run_icon_svg.gen.h"
 #include "template_modifier.h"
@@ -251,6 +256,22 @@ Error EditorExportPlatformWindows::export_project(const Ref<EditorExportPreset> 
 	}
 
 	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+#ifdef MODULE_SLANG_ENABLED
+	if (String(get_project_setting(p_preset, "rendering/renderer/rendering_method")) != "gl_compatibility" && arch == "x86_64") {
+		const String dependencies[] = { get_slang_shader_compiler_filename(), "slang.LICENSE.txt" };
+		for (const String &dependency : dependencies) {
+			String source = template_path.get_base_dir().path_join(dependency);
+			String destination = path.get_base_dir().path_join(dependency);
+			if (source != destination) {
+				Error copy_error = da->copy(source, destination, get_chmod_flags());
+				if (copy_error != OK) {
+					add_message(EXPORT_MESSAGE_ERROR, TTR("Prepare Templates"), "Unable to export pinned Slang runtime dependency: " + source);
+					return copy_error;
+				}
+			}
+		}
+	}
+#endif
 	int export_angle = p_preset->get("application/export_angle");
 	bool include_angle_libs = false;
 	if (export_angle == 0) {
