@@ -63,27 +63,25 @@ bound, not proof that the features are absent elsewhere or under other names.
 
 ## Known Gaps
 
-Shader unification research, 2026-09-07 at `a89cd8a3b0`, recommends Slang direct
-SPIR-V for the spatial/surface/DI/NRD-HDR core while retaining public gdshader and
-distinct canvas/UI/effect consumers. The mapped scope includes material codegen,
-ShaderRD cache/export identity, common shading, and removing old PT readiness
-gates that still control live TLAS geometry. Selected CLAS/RTXDI/NRD/DDGI shader
-compiler diagnostics passed with Slang; this is not full renderer/runtime proof.
-See the [research](../research/2026-09-07-1112-shader-unification-summary.md).
-The [implementation plan](../plans/2026-09-07-1126-shader-unification-plan.md)
-received fresh hostile review PASS and owner approval on 2026-09-07. It landed
-separately in `b2d04129cb`. Compiler integration passed source/proof review at
-`836f8c7e77`; spatial Slang migration passed final source review and bounded proof
-audits at `1a5faf5c60` on 2026-09-07. Editor/template compilation, native shader
-diagnostics and ordinary Vulkan rendering are recorded; complete exported-project,
-double-runtime and material/topology validation remain final-stage work. Shared
-shading/DI replacement passed source review and bounded proof audit at
-`38884029bf`: sixteen native variants create Vulkan compute pipelines. NRD/HDR and
-dormant PT removal passed source review and bounded proof audit at `99c67e1f78`:
-the source-matched ordinary editor renders the integrated native path on RTX 4090
-Vulkan. Final export, double-runtime and interactive validation are in progress.
-Evidence and precise validation limits are in the
-[migration status](../research/2026-09-07-1126-shader-unification-status.md).
+Shader unification, completed 2026-09-07 through `c148e8fbb9`: the spatial/surface,
+DI and NRD/HDR core uses pinned Slang directly to SPIR-V, preserving public
+gdshader/VisualShader and distinct GLSL canvas/UI/effect consumers. Shared shading,
+material metadata, geometry and light semantics replace the former adapters;
+dormant PT compilation, bundles and TLAS readiness dependencies are removed.
+The owner-approved [plan](../plans/2026-09-07-1126-shader-unification-plan.md)
+landed separately in `b2d04129cb`. Steps 1–4 passed fresh source reviews and bounded
+proof audits at `836f8c7e77`, `1a5faf5c60`, `38884029bf`, and `99c67e1f78`.
+Final validation builds editor/template/double, renders material reload and
+interactive topology on RTX 4090 Vulkan, and runs the exported baked package
+outside VulkanSDK. Export uncovered the existing re-spirv caller-variable crash;
+recorded patch `4c24eeefe0` passes source review, proof audit and actual export.
+Final validation at `c148e8fbb9` passes fresh source review and independent proof
+audit. Large-origin lighting near 1e8 still
+exposes unchanged absolute-float light/AS precision limits; no broader coordinate
+redesign or historical large-origin image equivalence is claimed. Exact provenance,
+observations and remaining limits are in the
+[migration status](../research/2026-09-07-1126-shader-unification-status.md) and
+[final validation report](../research/2026-09-07-1518-shader-unification-step5-status.md).
 
 Active work is tracked in the [RTXDI implementation status](../research/2026-09-06-1904-rtxdi-implementation-status.md).
 Approval/plan commit: `e02ea8c87d`. Dependency integration landed in `89b35e1d1c`

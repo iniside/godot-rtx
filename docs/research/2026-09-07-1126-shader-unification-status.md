@@ -2,6 +2,8 @@
 
 Started 2026-09-07 11:26 UTC. Overall source baseline:
 `a89cd8a3b064427e29a89af0f0b6823bfac21da7`.
+Completed 2026-09-07: all five steps have fresh source review and bounded proof
+audit PASS. Final evidence commit: `c148e8fbb94220064b98413a82253965b9b94fcc`.
 
 Owner approved execution with "no to zaczynaj" after presentation of the reviewed
 [plan](../plans/2026-09-07-1126-shader-unification-plan.md). The plan landed in its
@@ -15,7 +17,7 @@ Research and standalone compiler limitations are recorded in the
 | 2. Spatial frontend and surfaces | Final source review and bounded proof audits PASS | `675d3cbe7f`, fix `1a5faf5c60`; [evidence](2026-09-07-1305-shader-unification-step2-summary.md), [fix](2026-09-07-1323-shader-unification-step2-round1.md); task baseline `836f8c7e77` |
 | 3. Shared shading and DI replacement | Fresh source review and bounded proof audit PASS | `38884029bf`; [evidence](2026-09-07-1400-shader-unification-step3-status.md); task baseline `1a5faf5c60` |
 | 4. NRD/HDR and removal of PT dependency | Fresh source review and bounded proof audit PASS | `99c67e1f78`; [evidence](2026-09-07-1425-shader-unification-step4-status.md); task baseline `38884029bf` |
-| 5. Final validation and documentation | In progress | Released after step-4 PASS; task baseline `99c67e1f78` |
+| 5. Final validation and documentation | Fresh source review and bounded proof audit PASS | `c148e8fbb9`; [evidence](2026-09-07-1518-shader-unification-step5-status.md); task baseline `99c67e1f78` |
 
 The selected step-1 implementer is `core-implementer (gpt-6-astra)`, high effort,
 because compiler ABI, concurrency, shader cache/export and RD integration cross
@@ -101,8 +103,10 @@ The first real Vulkan launch exposed Slang's downstream optimizer eliminating
 unused resource parameters despite PreserveParameters. Pinned SDK source and
 same-source API diagnostics isolated O2 (3 descriptors) versus native O0 output
 (31 descriptors). The internal Slang request now selects native O0 output;
-Godot retains its existing final reflection/container and Vulkan performs final
-driver compilation. No extra optimizer or dummy shader reads were introduced.
+Godot retains its existing final reflection/container. The Vulkan backend also
+runs its existing re-spirv inliner/optimizer before driver compilation when its
+eligibility conditions apply; specialization can trigger a later optimization.
+No extra optimizer or dummy shader reads were introduced.
 Pinned `Linkage::addTarget` also overwrites session FloatingPointMode from the
 TargetDesc field; precise mode is now supplied at that target field. A narrow
 vertex-position Invariant decoration closes the existing position contract.
@@ -218,3 +222,63 @@ Step 5 is released at `99c67e1f78`. Remaining required proof includes template a
 export/bake/runtime distribution, a separate double-precision build/run, visible
 supported material and include hot reload, nontrivial AST-generated matrix output,
 and the stated interactive/material/topology axes. No automated tests are authorized.
+
+## Step 5 validation and export diagnosis
+
+The [final validation report](2026-09-07-1518-shader-unification-step5-status.md)
+indexes editor/template/double builds and actual Vulkan rendering. The parent
+inspected the supported matrix/uniform/reload/VisualShader presentation, separate
+shadow scenes, double cold/warm gallery, animated dual-viewport/fog/FSR2 sequence,
+camera cut/resize/release sequence, and retained canvas/UI/GPU-particle capture.
+Observed image changes establish these bounded operations, not exhaustive shader
+language coverage, pixel equivalence or performance improvement.
+
+The production bake/export exposed a re-spirv inliner access violation. An exact
+current object-code match identifies `respv::Shader::inlineData`; the recovered
+12096-byte input has SHA-256
+`b15e97709376a1a8d2ba5c3fd0f3bf73201112b033a1fd3ddbcd30f3c6f312cf`
+and passes Vulkan 1.3 SPIR-V validation. Its entry function has no local variables
+but calls a function containing eleven. The old reservation at the caller's first
+OpVariable never executes, leaving the destination index at UINT32_MAX. The
+separately delegated recorded vendor patch reserves this space after the entry
+label. Fix `4c24eeefe0` passes production inlining/optimization of that captured
+input, all three SPIR-V validations, editor/template/double builds and real
+bake/export. The source-matched exported package also renders the gallery with
+VulkanSDK removed from its child environment; the parent inspected that image.
+Fresh round-1 fix review and independent proof audit both returned PASS. The
+auditor independently recovered the input bytes from the minidump, reparsed the
+output topology and matched current binaries, source, package and raw log hashes.
+Real export completed 435 baking steps. Existing optimizer unsupported-opcode
+fallback is not proof of this fix; the captured-input diagnostic independently
+executes the failing branch.
+
+Final evidence commit `c148e8fbb9` retains the actual editor 2D/3D views and the
+source-matched final double gallery. The parent inspected these images. Package
+inspection matches all 104 baked shader-cache entries against production baker
+outputs; fresh and warm user-data launches render without user cache files or
+reported misses. With cache disabled through the existing documented override,
+the exported process loads the hash-matched Slang DLL from its own directory and
+renders while VulkanSDK is absent from its child environment. The exact commands,
+module path, package identity, successful save receipts and limitations are in
+the final report. No dependency was manually copied into the export to simulate
+production distribution.
+
+Fresh round-1 final review returned PASS for exact `c148e8fbb9` and cumulative
+`99c67e1f78..c148e8fbb9`, covering applicable taxonomy classes 1–9. The independent
+proof auditor returned PASS for the bounded observations after checking all 138
+artifact hashes, 25 embedded manual inputs, 31 copied demo inputs, 52 final source
+hashes, three binaries, all 104 packaged shader entries and 78 actual cold/warm
+cache files. It inspected public material actions, interactive topology, editor
+views and final package/double images against actual consumers and receipts.
+Capture/orchestration helpers are not reliable standalone pass/fail gates; actual
+successful saves, selected-case logs and inspected images support the claims.
+No automated tests were run. The approved migration is complete within the
+documented Windows/Vulkan scope; no exhaustive language, full sibling backend,
+separate-render-thread, validation-layer-clean or performance claim is made.
+
+A large-origin double run at approximately 1e8 preserves projected placement but
+changes lighting/shadows materially. Source comparison identifies unchanged float
+absolute light positions and Vulkan AS transforms, plus float camera reconstruction
+in both former GLSL and current native paths. This is an existing source precision
+vulnerability, not large-origin validation PASS or a historically reproduced image
+comparison. A broader world-coordinate redesign is outside this migration.

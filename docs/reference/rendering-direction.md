@@ -37,6 +37,24 @@ nie jest docelową podstawą oświetlenia tych scen.
 - Zabudowa, geometryczne foliage i wokselowe foliage uczestniczą we wspólnym
   oświetleniu, cieniach i GI.
 
+## Stan ujednolicenia shaderów
+
+Weryfikacja 2026-09-07, finalne dowody `c148e8fbb9`: zatwierdzona migracja zastąpiła
+spatial/surface, RTXDI i NRD/HDR natywnym Slangiem do SPIR-V. Wspólne cieniowanie,
+geometria i światła mają jedną implementację; usunięto dawny kompilator PT,
+bundles i bramki gotowości TLAS. Publiczne .gdshader/VisualShader pozostają,
+a odrębne 2D/UI, sky/fog/particles i pozostałe efekty zachowują GLSL.
+Kroki 1–4 przeszły niezależne przeglądy kodu i dowodów. Edytor, template i double
+kompilują się; rzeczywiste obrazy obejmują materiały, hot reload, wiele viewportów
+i eksportowaną paczkę poza VulkanSDK. Poprawka awarii inlinera re-spirv podczas
+eksportu przeszła przegląd kodu i dowodów. Końcowy krok walidacji również otrzymał
+niezależne wyniki PASS; zatwierdzony zakres migracji jest ukończony.
+[Status migracji](../research/2026-09-07-1126-shader-unification-status.md) opisuje
+dokładny zakres i ograniczenia. Próba przy współrzędnych około 1e8 ujawniła
+istniejące ograniczenie precyzji pozycji świateł i transformacji RT typu float;
+nie jest to potwierdzenie poprawnego oświetlenia dużego świata. DDGI i przebudowa
+współrzędnych pozostają osobnymi pracami; nie ma deklaracji wzrostu wydajności.
+
 ## TODO — dalszy research
 
 - [ ] Ustalić zakres istniejącej integracji meshletów/CLAS oraz brakujące elementy
