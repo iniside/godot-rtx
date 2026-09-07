@@ -2114,8 +2114,6 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 
 	RTViewportState *rt_state = raytracing->build_tlas(p_render_data, 0);
 	ERR_FAIL_NULL(rt_state);
-	RENDER_TIMESTAMP("Process Pre Opaque Compositor Effects");
-	_process_compositor_effects(RSE::COMPOSITOR_EFFECT_CALLBACK_TYPE_PRE_OPAQUE, p_render_data);
 	_pre_opaque_render(p_render_data);
 	SceneShaderForwardClustered::ShaderSpecialization base_specialization = scene_shader.default_specialization;
 	base_specialization.cluster_has_area_light = current_cluster_builder->get_cluster_count_by_type(ClusterBuilderRD::ELEMENT_TYPE_AREA_LIGHT) != 0;
@@ -2150,17 +2148,11 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	surface.history_valid = rb_data->is_rtxdi_surface_history_valid();
 	surface.orthogonal = rb_data->is_rtxdi_surface_camera_orthogonal();
 	surface.frame_index = rb_data->get_rtxdi_surface_frame_index();
-	RENDER_TIMESTAMP("RTXDI Direct Lighting");
-	rtxdi->render(surface, rt_state, scene_state.uniform_buffers[opaque_pass_uniform_buffer_index], 0, 1);
-	ERR_FAIL_COND_MSG(!rt_state->rtxdi_di || rt_state->rtxdi_di->views.is_empty() || rt_state->rtxdi_di->views[0].last_frame_index != surface.frame_index, "RTXDI did not produce lighting for this frame.");
-
 	RendererRD::NRDEffect::Frame frame;
 	for (uint32_t attachment = 0; attachment < 6; attachment++) {
 		frame.surface[attachment] = surface.current[attachment];
 	}
 	frame.depth = surface.current_depth;
-	frame.noisy_diffuse = rtxdi->get_diffuse_radiance_distance(rt_state, 0);
-	frame.noisy_specular = rtxdi->get_specular_radiance_distance(rt_state, 0);
 	frame.scene_data = scene_state.uniform_buffers[opaque_pass_uniform_buffer_index];
 	frame.color = rb->get_internal_texture(0);
 	if (separate_specular) {
@@ -2193,6 +2185,15 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	frame.history_valid = surface.history_valid;
 	frame.orthogonal = surface.orthogonal;
 	frame.time_step = time_step;
+	RENDER_TIMESTAMP("RTXDI Guides");
+	ERR_FAIL_COND_MSG(!nrd_effect->prepare(rb_data->nrd_context, frame), "RTXDI guide preparation failed.");
+	RENDER_TIMESTAMP("Process Pre Opaque Compositor Effects");
+	_process_compositor_effects(RSE::COMPOSITOR_EFFECT_CALLBACK_TYPE_PRE_OPAQUE, p_render_data);
+	RENDER_TIMESTAMP("RTXDI Direct Lighting");
+	rtxdi->render(surface, rt_state, scene_state.uniform_buffers[opaque_pass_uniform_buffer_index], 0, 1);
+	ERR_FAIL_COND_MSG(!rt_state->rtxdi_di || rt_state->rtxdi_di->views.is_empty() || rt_state->rtxdi_di->views[0].last_frame_index != surface.frame_index, "RTXDI did not produce lighting for this frame.");
+	frame.noisy_diffuse = rtxdi->get_diffuse_radiance_distance(rt_state, 0);
+	frame.noisy_specular = rtxdi->get_specular_radiance_distance(rt_state, 0);
 	RENDER_TIMESTAMP("NRD RELAX and HDR Composition");
 	ERR_FAIL_COND_MSG(!nrd_effect->process(rb_data->nrd_context, frame), "NRD frame processing failed.");
 	RENDER_TIMESTAMP("Process Post Opaque Compositor Effects");

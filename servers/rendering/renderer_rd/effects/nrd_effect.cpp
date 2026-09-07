@@ -201,9 +201,13 @@ bool NRDEffect::_process_frame(Context *p_context, const Frame &p_frame, bool p_
 	return true;
 }
 
+bool NRDEffect::prepare(Context *p_context, const Frame &p_frame) {
+	ERR_FAIL_NULL_V(p_context, false);
+	return _process_frame(p_context, p_frame, false);
+}
+
 bool NRDEffect::process(Context *p_context, const Frame &p_frame) {
 	ERR_FAIL_NULL_V(p_context, false);
-	ERR_FAIL_COND_V(!_process_frame(p_context, p_frame, false), false);
 	nrd::CommonSettings common;
 	Projection correction;
 	correction.set_depth_correction(false, false, true);

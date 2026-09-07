@@ -99,6 +99,7 @@ private:
 
 public:
 	Context *create_context(const Size2i &p_size);
+	bool prepare(Context *p_context, const Frame &p_frame);
 	bool process(Context *p_context, const Frame &p_frame);
 	NRDEffect(bool p_radiance_array, uint32_t p_roughness_layers);
 	~NRDEffect();

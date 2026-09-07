@@ -1085,9 +1085,6 @@ void SkyRD::setup_sky(const RenderDataRD *p_render_data, const Size2i p_screen_s
 					sky_light_data.energy *= light_storage->light_get_param(base, RSE::LIGHT_PARAM_INTENSITY);
 				}
 
-				if (p_render_data->camera_attributes.is_valid()) {
-					sky_light_data.energy *= RSG::camera_attributes->camera_attributes_get_exposure_normalization_factor(p_render_data->camera_attributes);
-				}
 
 				Color linear_col = light_storage->light_get_color(base).srgb_to_linear();
 				sky_light_data.color[0] = linear_col.r;
@@ -1223,6 +1220,9 @@ void SkyRD::setup_sky(const RenderDataRD *p_render_data, const Size2i p_screen_s
 	sky_scene_state.ubo.fog_light_color[1] = fog_color.g * fog_energy;
 	sky_scene_state.ubo.fog_light_color[2] = fog_color.b * fog_energy;
 	sky_scene_state.ubo.fog_sun_scatter = RendererSceneRenderRD::get_singleton()->environment_get_fog_sun_scatter(p_render_data->environment);
+	if (p_render_data->camera_attributes.is_valid()) {
+		sky_scene_state.ubo.fog_sun_scatter *= RSG::camera_attributes->camera_attributes_get_exposure_normalization_factor(p_render_data->camera_attributes);
+	}
 
 	sky_scene_state.ubo.fog_sky_affect = RendererSceneRenderRD::get_singleton()->environment_get_fog_sky_affect(p_render_data->environment);
 	sky_scene_state.ubo.volumetric_fog_sky_affect = RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_sky_affect(p_render_data->environment);
