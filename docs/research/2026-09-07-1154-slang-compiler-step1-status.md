@@ -157,3 +157,47 @@ and [pinned release](https://github.com/shader-slang/slang/releases/tag/v2026.13
 Applicable failure classes: 1/4 public API preservation; 2/7 SDK/session/thread
 lifetime; 3 downstream shader ABI; 5 editor/template/build distribution; 6 evidence
 limits; 8/9 scope and commit ownership. Comments: default NONE.
+
+## Round 1 build-graph correction, 2026-09-07 12:08 UTC
+
+Fresh review of `3a04df35e6` rejected one class-5 defect: Slang SDK includes were
+opened relative to the process working directory during the SCons emitter. SCons
+enters the nested SCsub directory while constructing the graph, so `Rtxdi/...` and
+explicit `thirdparty/...` includes could fail before the build action ran. The
+original standalone header-generation diagnostic did not exercise this context.
+
+The correction is confined to `glsl_builders.py`: physical include reads and SCons
+dependency nodes are anchored to the repository containing the builder. Source
+paths inside that repository are normalized to the same repository-relative
+virtual identity for both the emitter and build action. External diagnostic sources
+retain their absolute virtual identities; SDK contents retain
+`/godot/thirdparty/...` keys. Local includes still resolve beside their including
+source. No SDK, generated, compiler or rendering source was edited.
+
+Actual SCons verification ran from
+`%TEMP%/godot-shader-unification-20260907/scons-nested-sdk` using
+`scons -C <directory> --tree=prune`. Its `nested/shaders/SCsub` invoked the production
+`rd_slang_dependencies` and `build_rd_headers` through RD_SLANG. The log
+`step1-fix-nested-scons.log` records the nested working directory, successful graph
+construction/header generation, and dependencies on `Rtxdi/DI/Reservoir.hlsli`,
+its four transitive SDK headers, explicit `thirdparty/nrd/Shaders/NRDConfig.hlsli`,
+and `local_inc.slang`. Generated header SHA-256:
+`0016FD181E9FCB12E726EA2379BA059BECFFA30CE7FD052A125C0C8835EC3DC0`.
+
+`build_step1_fix_diag.py` compiled this actual SCons-generated ProbeShaderRD into
+the existing temporary engine diagnostic. `step1-fix-diag-sdk.log` records a fresh
+ShaderRD cache miss followed by a valid Vulkan shader for group hash
+`a5c3b2bf354b11950e9f0e24295b70ad74be0093a27edb08ab5205a644c3b401`.
+No compile errors occurred. The separate existing CLAS diagnostic also created its
+Vulkan pipeline successfully. Diagnostic source SHA-256:
+`213D4E8B12F927CDCF9C9A81F0E6CF596836502EADE5A16CE44E8418C285857A`;
+EXE SHA-256:
+`523A3F959A50D5C580014D7727C1B7A94B9648E0A773416DB082231D05C96965`.
+Commands and linker response are retained as `step1-fix-diag-compile-command.txt`
+and `step1-fix-diag-link.rsp`; arguments/device match the initial diagnostic above.
+
+The bounded `scons platform=windows target=editor accesskit=no d3d12=no -j16` build
+passed in `step1-fix-editor-build.log`; scoped diff checking passed. No automated
+tests or assertions were introduced or run. Template/runtime coverage remains as
+recorded above; this correction specifically verifies the previously missing
+nested SCons topology. Comments: default NONE.

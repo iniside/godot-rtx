@@ -9,6 +9,7 @@ from methods import generated_wrapper, print_error, to_raw_cstring
 RD_HEADER_INCLUDE_ROOTS = {
     "Rtxdi/": "thirdparty/rtxdi/Include",
 }
+RD_HEADER_SOURCE_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 
 class RDHeaderStruct:
@@ -202,7 +203,7 @@ def build_rd_header_lines_for_raytracing_stage(lines, stage: str):
 
 
 def build_rd_header(filename: str, shader: str) -> None:
-    shader_path = os.path.normpath(shader).replace(os.sep, "/")
+    shader_path = slang_source_path(shader) if shader.endswith(".slang") else shader
     header_data = RDHeaderStruct()
     slang_includes = {}
     if shader.endswith(".slang"):
@@ -282,12 +283,20 @@ def build_rd_headers(target, source, env):
         build_rd_header(f"{src}.gen.h", str(src))
 
 
+def slang_source_path(path):
+    path = os.path.abspath(path)
+    prefix = RD_HEADER_SOURCE_ROOT + os.sep
+    if os.path.normcase(path).startswith(os.path.normcase(prefix)):
+        path = path[len(prefix) :]
+    return path.replace(os.sep, "/")
+
+
 def read_slang_sources(shader):
     includes = {}
 
     def read_file(path):
         path = os.path.normpath(path).replace(os.sep, "/")
-        with open(path, encoding="utf-8") as source:
+        with open(os.path.join(RD_HEADER_SOURCE_ROOT, path), encoding="utf-8") as source:
             lines = source.read().splitlines()
         for index, line in enumerate(lines):
             match = re.match(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', line)
@@ -304,13 +313,15 @@ def read_slang_sources(shader):
                 includes[included] = read_file(included)
         return lines
 
-    return read_file(shader), includes
+    return read_file(slang_source_path(shader)), includes
 
 
 def rd_slang_dependencies(target, source, env):
     for shader in source:
         _, includes = read_slang_sources(shader.abspath)
-        env.Depends(target, [env.File(os.path.abspath(path)) for path in includes] + [env.File("#glsl_builders.py")])
+        dependencies = [env.File(os.path.join(RD_HEADER_SOURCE_ROOT, path)) for path in includes]
+        dependencies.append(env.File(os.path.join(RD_HEADER_SOURCE_ROOT, "glsl_builders.py")))
+        env.Depends(target, dependencies)
     return target, source
 
 
