@@ -64,12 +64,21 @@ correction passed review and landed in `a661887676ce3c1e1f51ecb1a44bb9c2483627e7
 Fresh Stage 6 round 1 review returned REJECT for sky-light exposure and
 PRE_OPAQUE guide ordering. Corrective commit `217396c25cc8a54804007c99e7445d35ac00da49`
 implements both fixes; fresh final round 2 review returned PASS on 2026-09-07.
-Editor and template compilation passed. Stage 7 manual demonstration and actual
-Vulkan validation are active in a separate core-implementer context (`gpt-6-astra`,
-high effort for GPU diagnosis and proof), from `217396c25c`. No rendering result
-has been confirmed yet.
-The frame dispatch is wired in code; real-device execution and rendered output
-remain unverified.
+Stage 7 landed in `c8ba1736e1a67fad02bb20d85b6328fab0c3d51b`, from
+`217396c25cc8a54804007c99e7445d35ac00da49`, executed by core-implementer
+(`gpt-6-astra`, high). Editor/default-template builds and actual Vulkan rendering
+on RTX 4090 passed the recorded manual scenarios. The development template used
+`disable_path_overrides=no` to load the demo. Final source/binary hashes, images,
+timings, limitations and removed diagnostic provenance are in the
+[Stage 7 evidence](2026-09-07-0848-rtxdi-stage7-rendering-status.md).
+
+Fresh hostile review round 1 and the required proof-auditor have NOT run.
+The runtime rejects fresh spawns with `agent thread limit reached` even after all
+three child contexts report completed; interrupting the completed writer does not
+release a slot. No reviewer was reused and no PASS was fabricated. Continue in a
+session able to create fresh contexts: review exact `c8ba1736e1` and cumulative
+`217396c25c..c8ba1736e1`, then audit its evidence. Two review rounds remain available.
+The owner-requested old-scene migration below follows closure of this gate.
 
 Step 1 evidence: pinned importer completed 159 NRD SPIR-V tasks; a temporary
 native GLSL reservoir/random-sampler closure passed glslangValidator Vulkan 1.2.
@@ -243,7 +252,119 @@ Initial Step 7 template evidence: the Windows Vulkan `template_debug` build with
 `8D8D6A3846C0F144B27671018F548EFE853CABF967DC166F664F482F668BCC48`.
 Log: `%TEMP%/rtxdi-step7-template-build.log`. This predates the pending Stage 6
 corrections and does not prove rendering. Local `nvidia-smi` on 2026-09-07 reports
-RTX 4090, driver 616.64 and 24564 MiB; no new renderer GPU execution has occurred.
+RTX 4090, driver 616.64 and 24564 MiB; this initial build/device evidence preceded
+the runtime investigation below.
+
+Stage 7 diagnostic history, 2026-09-07, source baseline `217396c25c`, now closed
+by `c8ba1736e1` except independent review: actual Vulkan 1.4.351 startup on RTX 4090
+exposed initialization and dispatch defects not covered by source review.
+`RenderingServerDefault::_init()` created the compositor before camera attributes,
+which renderer initialization dereferenced; `/MAP` symbols located that crash.
+Corrected allocation order gets through startup. NRDEffect's constructor also
+queried the directional-light limit before LightStorage initialization; the
+correction uses the same canonical renderer constant as storage initialization.
+These corrections are committed; independent final review remains pending.
+
+Pinned NRD SPIR-V is valid before re-spirv and invalid afterward. Immutable
+diagnostic blobs live under `%TEMP%/rtxdi-step7-optimizer-failure/`: input
+`681D0771CDAE5F6DC4F38E7DF59C22CA9EAC6A7DB5E707AA87845EB077680F5C`, pre-optimizer
+`318C1D13E8432A1E297BB0FD23DDE832D8E26A30A55F341DF12637F782EB0B3C`, post-optimizer
+`E0836C09CE40DF0A3E3D13620A382F46E2FFE334CB2C8EBF9BD4E60B5DA37426` (SHA-256).
+The lost IDs 307/310/312/314/316/327 are loop Phi/increment definitions still
+referenced by surviving Phi instructions. Source diagnosis: re-spirv's
+`Shader::parseData()` omits loop-continue operands from its acyclic dependency
+graph, but `Shader::sort()` derives liveness out-degrees solely from that graph;
+optimizer dead-code removal deletes the omitted live definitions. The working
+recorded dependency patch preserves the omitted liveness counts without adding
+sort cycles. Corrected live Vulkan output at `%TEMP%/rtxdi-nrd-fixed-post-optimizer.spv`
+passes `spirv-val --target-env vulkan1.3` (independently checked by the parent) and
+matches the valid pre-optimizer SHA-256 above. No NRD-specific bypass is used.
+
+Ordinary Vulkan now creates all 15 NRD pipelines and dispatches DI. The working
+bindless correction finalizes the existing texture owner against the actual DI
+compute layout rather than the old raygen layout. Isolated directional and emission
+cases now render correctly: directionals were missing from the RT light list in
+`renderer_scene_cull.cpp`; the working fix appends them alongside the raster list.
+Directional raw/NRD diffuse values are approximately 0.931/0.929, with final gray
+127/255. An emission-only authored sRGB (0.125, 0.25, 0.5) produces linear HDR
+(0.01434, 0.05087, 0.214), zero DI and final (32, 64, 127), demonstrating one emission
+addition in this case. All 15 captured optimized NRD modules validate for Vulkan 1.3.
+
+The mixed-light gallery still fails acceptance. Targeted pinned SDK source reads
+identify an initial-reservoir combination defect: `RTXDI_SampleLightsForSurface`
+returns finalized inverse-PDF weight, but the custom environment combination uses
+it directly as an unfinalized running weight sum. `Reservoir.hlsli` requires a fresh
+empty accumulator populated through `RTXDI_CombineDIReservoirs` before finalization.
+The working correction restores bounded mixed energy: the same wall HDR sample
+changes from approximately (7.28, 2.54, 10.33) to (0.1255, 0.0724, 0.07965).
+Remaining sphere bands disappear with the diagnostic viewport LOD threshold zero:
+raster-selected simplified triangles differ from the full CLAS triangles. The
+working RTXDI surface-pass correction selects the matching base geometry. The
+ordinary demo threshold has been restored; a new gallery capture has smooth
+spheres, visible patterned emission and coherent shadows (parent visually checked).
+
+Native stack capture and exact executable disassembly attribute shutdown's invalid
+RID to the deformed BLAS free in `RenderRaytracing::cleanup_caches()`. RD registers
+that BLAS as dependent on MeshStorage's index buffer; freeing the source buffer
+recursively destroys the BLAS before the retained cache releases it. Existing mesh
+change/deletion notifications occur after source buffers are freed. The cache
+lifetime correction uses an unbound RD acceleration-structure validity query at
+deformed-cache release and rebuild decisions. The subsequent build passed in
+52.34 seconds. A separate-render-thread run with motion, two viewports, fog and
+FSR2 exited zero without ERROR/invalid-RID messages in that capture. A later run
+exposed a separate render-thread teardown defect: after joining the rendering
+worker, `RenderingServerDefault::finish()` resets its thread ID but does not call
+the existing `RenderingDevice::make_current()` on the main thread. DisplayServer
+later deletes RD on main, failing its `finalize()` thread guard. A working handback
+correction and another ordinary shutdown check are required. Primary internal resolution
+was 858x483 for 1280x720 output; the independent child was 384x216. Readback
+instrumentation was still present. The upscaled capture has visible staircase
+edges. Subsequent static motion readback explains a temporal integration defect:
+floor samples carry tens of pixels of motion and nonzero depth change while still.
+The retained `GeometryInstanceForwardClustered::age_out_motion()` lost its caller
+with removal of the old PT prepass, leaving initial previous transforms stale.
+The working correction restores its existing per-frame call before current
+raster/RT instance uploads. A 29.85-second build and actual stationary readback
+show floor motion below 0.00004 pixels and depth delta exactly zero. The resulting
+FSR2 capture has smooth edges and no earlier sphere crosshatch (parent inspected).
+Separate-thread shutdown exits zero without errors after the RD handback fix.
+Separate source tracing found per-viewport previous camera
+copy/update and mono UBO population intact. FSR2 also needs zero opaque reactivity:
+old raster output applied `pass_alpha_multiplier = 0`, whereas new HDR alpha is 1
+and the existing reactive view reads that alpha. A default black reactive binding
+preserves the current opaque contract without changing HDR alpha. Final
+diagnostics-free editor build passed in 31.73 seconds; movement, cut, resize,
+second-view creation/destruction, fog/FSR2, light reorder/removal, off-screen
+caster toggle and deformer/source deletion were exercised without shutdown errors.
+Final template execution subsequently passed; review remains pending. The unsupported-material scene
+exposed an anisotropy classification collision: `ShaderData::set_code()` maps
+`ANISOTROPY` to `uses_anisotropy`, then overwrites it with `uses_tangent`. The
+committed correction removes the collision and maps `ANISOTROPY_FLOW` through the
+same anisotropy flag; the existing tangent propagation remains intact. The actual
+unsupported-material wrapper now marks all three unsupported cases diagnostically.
+Earlier numeric observations used temporary surface/DI/NRD/HDR readback instrumentation.
+Surface base/shading inputs look coherent;
+signed NRD roughness values near the normal Z hemisphere boundary decode correctly
+and are not evidence of a packing defect. Final ordinary captures run without
+temporary dump/readback instrumentation or an optimizer bypass. Actual scoped
+rendering and pass timings are recorded in the final Stage 7 evidence linked above.
+The manual project is owned at `demos/rtxdi_manual`; owner demo assets were excluded
+from that commit.
+
+Owner follow-on, 2026-09-07: after Stage 7 closes, migrate `gi_demo/test.tscn` into
+the new demonstration project, adapt it to actual RTXDI/NRD capabilities, and
+document editor launch controls. This explicitly authorizes that bounded use of
+the previously excluded old demo. Read-only inventory: the scene uses self-contained
+`zdm2.glb` and `cube.glb`, old GI/reflection/SSIL switch scripts, baked GI resources,
+PT environment properties and primitive camera-attached meshes. Preserve the map,
+light/camera placement and source attribution; replace retired controls and use
+imported CLAS-capable geometry. No migration edits have been made yet. GLB JSON
+inspection found no external buffer/image URIs in either file. Preserve the
+`gi_demo/README.md` zdm2 attribution (Cube 2: Sauerbraten, CC BY 4.0 and its linked
+credit source). Replace old baked-GI/probe/SSIL/PT controls rather than presenting
+them as functional. Reuse the current demo's F5/F6 and camera-control conventions.
+Delegate the migration as a separate bounded task after the Stage 7 review gate;
+verify the imported scene with the actual editor/Vulkan and review its own commit.
 
 Evidence date: 2026-09-06 UTC. Frozen Step 4 final review target:
 `5075e8b3fc3b19213744d0e9ac9f3648ca710359`.
@@ -292,8 +413,8 @@ NRD material factors and sanitized/clamped for FP16. The next stages are NRD/HDR
 composition and final editor/template/real-Vulkan visual validation. NRD/HDR
 implementation landed in `a661887676` after the separately authorized shadow fix
 passed review. Its corrective commit `217396c25c` passed final round 2; final
-real-device validation is active but has no confirmed result yet. No automated
-tests have been run.
+real-device validation is recorded in Stage 7 `c8ba1736e1`; its independent review
+is pending. No automated tests have been run.
 
 Intermediate builds/rendering may fail by explicit owner authorization. Final
 completion requires the plan's real-device rendering gate. Automated tests are

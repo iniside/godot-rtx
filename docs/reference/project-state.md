@@ -91,11 +91,16 @@ The reported shadow defect is closed. NRD/HDR landed in `a661887676` with final
 editor/console compilation and 40 DI/frame/fog shader variant diagnostics passed;
 fresh Stage 6 review requires sky-light exposure and PRE_OPAQUE guide-ordering
 corrections. They landed in `217396c25c` with editor and template builds passed;
-fresh final round 2 review returned PASS on 2026-09-07. Stage 7 manual demo and
-real Vulkan validation are active. Real rendering remains unverified.
-The status document records the exact correction and resume boundary.
-Dispatch is wired in code, but
-real-device DI execution and visual correctness remain unverified.
+fresh final round 2 review returned PASS on 2026-09-07. Stage 7 landed in
+`c8ba1736e1` with editor/template builds and real RTX 4090 Vulkan manual rendering
+evidence: corrected culling, mixed energy, raster/CLAS geometry, motion history,
+resource/thread teardown and material diagnostics. See the
+[Stage 7 evidence](../research/2026-09-07-0848-rtxdi-stage7-rendering-status.md).
+Fresh hostile review and proof audit remain blocked by the session's agent-thread
+limit despite completed children; no review verdict exists yet. Resume exact
+`c8ba1736e1` plus cumulative `217396c25c..c8ba1736e1` in fresh contexts. The owner
+then requests migration of `gi_demo/test.tscn` into the new demo and editor launch
+instructions; dependency scope is recorded in the implementation status.
 
 The [approved RTXDI replacement plan](../plans/2026-09-06-1854-rtxdi-renderer-plan.md)
 received a fresh hostile plan-review PASS and owner approval on 2026-09-06 at
