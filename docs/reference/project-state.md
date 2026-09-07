@@ -83,7 +83,10 @@ material coverage sampler and temporal jitter defects; exact anchors and propose
 corrections are in the status document. On 2026-09-07 the owner resumed work with
 "popraw i kontynuuj": corrective commit `5a532d08b3` passed four DI and four
 surface shader compile diagnostics plus the editor build. Fresh final round 2
-review is active against that commit; NRD/HDR implementation has started.
+closed the original findings but rejected a remaining shadow-facing defect:
+ordinary single-sided casters act double-sided. Work is paused under the review
+limit; the unwired, uncompiled partial NRD/HDR source is preserved uncommitted.
+The status document records the exact correction and resume boundary.
 Dispatch is wired in code, but
 real-device DI execution, visual correctness and template build remain unverified.
 

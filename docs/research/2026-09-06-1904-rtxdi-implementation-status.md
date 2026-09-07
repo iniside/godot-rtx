@@ -49,11 +49,12 @@ dispatch synchronization. Step 5 landed in
 2026-09-06 UTC for three confirmed surface/coverage/reprojection defects listed
 below. After the requested stop, the owner authorized "popraw i kontynuuj" on
 2026-09-07. Corrective commit `5a532d08b36a4d262a7d372dd50f4c81b151fefa`
-implements those fixes; a fresh final round 2 review is running against that
-frozen target. Step 6 NRD/HDR implementation has started from the corrective
-commit in a separate core-implementer context (`gpt-6-astra`, high effort for
-GPU resource lifetime, pinned SPIR-V integration and frame composition).
-Step 7 has not started.
+implements those fixes. Fresh final round 2 review returned REJECT on 2026-09-07
+for shadow-facing semantics; it confirmed the three earlier findings are closed.
+Work is paused under the two-round review limit. Step 6 NRD/HDR began from that
+corrective commit in a separate core-implementer context (`gpt-6-astra`, high
+effort for GPU lifetime, pinned SPIR-V integration and frame composition), then
+paused with its unwired partial source preserved. Step 7 has not started.
 The frame dispatch is wired in code; real-device execution and rendered output
 remain unverified.
 
@@ -149,7 +150,28 @@ The Windows editor and console linked in 34.81 seconds using
 `scons platform=windows target=editor accesskit=no d3d12=no -j16`.
 Evidence artifacts: `%TEMP%/rtxdi-step5-fix-glsl/compile.log` and
 `%TEMP%/rtxdi-step5-fix-build-final.log`. These are compilation results only;
-round 2 review and real-device execution remain unverified.
+real-device execution remains unverified.
+
+Final round 2 result, 2026-09-07, frozen `5a532d08b3`, cumulative
+`41bcc80c4..5a532d08b3`: REJECT for one P1 shadow-facing defect.
+`shaders/raytracing/rtxdi_application_bridge_inc.glsl:406–409` uses no facing-cull
+flag and confirms every covered candidate. A single-sided plane hit from its
+culled side therefore blocks DI even with ordinary `SHADOW_CASTING_SETTING_ON`.
+`doc/classes/GeometryInstance3D.xml:97–104` distinguishes this from `DOUBLE_SIDED`;
+the retained raster shadow path honors the distinction at
+`forward_clustered/render_forward_clustered.cpp:521`. The required correction
+must respect material-facing shadow culling and the explicit double-sided
+override for mesh and MultiMesh instances; a global cull flag alone is not enough.
+No third review round is authorized by repository policy. The three round-one
+findings are closed; the shadow-facing correction was not implemented.
+
+Step 6 pause boundary: uncommitted `effects/nrd_effect.{h,cpp}` and
+`shaders/effects/rtxdi_frame.glsl`, with their two `SCsub` edits, are partial and
+not wired to Forward+. No Stage 6 build, shader generation, test or commit ran.
+Resume requires completing the adapter/shader interfaces and per-render-buffer
+ownership, normalizing analytic/emissive/environment radiance before NRD with
+exposure applied in composition, then closing reflection capture and old GI
+resources. These unfinished files are not evidence of functioning NRD.
 
 Evidence date: 2026-09-06 UTC. Frozen Step 4 final review target:
 `5075e8b3fc3b19213744d0e9ac9f3648ca710359`.
@@ -196,7 +218,7 @@ correction uses current AS and can exhibit transient bias. Outputs are separate
 RGBA16F diffuse/specular radiance and linear hit distance, demodulated with pinned
 NRD material factors and sanitized/clamped for FP16. The next stages are NRD/HDR
 composition and final editor/template/real-Vulkan visual validation. NRD/HDR
-implementation is active after the Step 5 corrective commit; final real-device
+implementation is paused after final Step 5 review rejection; final real-device
 validation has not started. No automated tests have been run.
 
 Intermediate builds/rendering may fail by explicit owner authorization. Final
