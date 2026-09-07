@@ -215,6 +215,7 @@ public:
 		RID get_velocity_only_fb();
 		RID prepare_rtxdi_surface(const RenderSceneDataRD *p_scene_data, bool p_invalid_deformation);
 		void commit_rtxdi_surface();
+		void invalidate_raytracing_history() { rtxdi_surface_initialized = false; }
 		RID get_rtxdi_surface_texture(uint32_t p_attachment, bool p_previous = false) const;
 		RID get_rtxdi_surface_depth(bool p_previous = false) const;
 		bool is_rtxdi_surface_history_valid() const { return rtxdi_surface_history_valid; }

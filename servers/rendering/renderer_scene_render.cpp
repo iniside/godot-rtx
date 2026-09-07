@@ -659,6 +659,18 @@ float RendererSceneRender::environment_get_ssil_normal_rejection(RID p_env) cons
 	return environment_storage.environment_get_ssil_normal_rejection(p_env);
 }
 
+void RendererSceneRender::environment_set_raytracing(RID p_env, RSE::RaytracingRenderingMode p_mode, RSE::RaytracingDenoiser p_denoiser) {
+	environment_storage.environment_set_raytracing(p_env, p_mode, p_denoiser);
+}
+
+void RendererSceneRender::environment_set_ddgi(RID p_env, bool p_enabled, int p_cascade_count, float p_probe_spacing, int p_rays_per_probe, int p_updates_per_frame) {
+	environment_storage.environment_set_ddgi(p_env, p_enabled, p_cascade_count, p_probe_spacing, p_rays_per_probe, p_updates_per_frame);
+}
+
+void RendererSceneRender::environment_set_pathtracing(RID p_env, int p_samples_per_pixel, int p_max_bounces, bool p_accumulate) {
+	environment_storage.environment_set_pathtracing(p_env, p_samples_per_pixel, p_max_bounces, p_accumulate);
+}
+
 // SDFGI
 
 void RendererSceneRender::environment_set_sdfgi(RID p_env, bool p_enable, int p_cascades, float p_min_cell_size, RSE::EnvironmentSDFGIYScale p_y_scale, bool p_use_occlusion, float p_bounce_feedback, bool p_read_sky, float p_energy, float p_normal_bias, float p_probe_bias) {

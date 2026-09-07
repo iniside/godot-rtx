@@ -71,6 +71,17 @@ public:
 		TONE_MAPPER_AGX,
 	};
 
+	enum RaytracingRenderingMode {
+		RAYTRACING_RENDERING_MODE_HYBRID,
+		RAYTRACING_RENDERING_MODE_PATH_TRACED,
+	};
+
+	enum RaytracingDenoiser {
+		RAYTRACING_DENOISER_NRD,
+		RAYTRACING_DENOISER_DLSS_RR,
+		RAYTRACING_DENOISER_NONE,
+	};
+
 	enum SDFGIYScale {
 		SDFGI_Y_SCALE_50_PERCENT,
 		SDFGI_Y_SCALE_75_PERCENT,
@@ -149,6 +160,20 @@ private:
 	float ssil_normal_rejection = 1.0;
 
 	void _update_ssil();
+
+	RaytracingRenderingMode raytracing_rendering_mode = RAYTRACING_RENDERING_MODE_HYBRID;
+	RaytracingDenoiser raytracing_denoiser = RAYTRACING_DENOISER_NRD;
+	bool ddgi_enabled = true;
+	int ddgi_cascade_count = 4;
+	float ddgi_probe_spacing = 2.0;
+	int ddgi_rays_per_probe = 128;
+	int ddgi_updates_per_frame = 1;
+	int pathtracing_samples_per_pixel = 1;
+	int pathtracing_max_bounces = 8;
+	bool pathtracing_accumulate = true;
+	void _update_raytracing();
+	void _update_ddgi();
+	void _update_pathtracing();
 
 	// SDFGI
 	bool sdfgi_enabled = false;
@@ -324,7 +349,29 @@ public:
 	void set_ssil_normal_rejection(float p_normal_rejection);
 	float get_ssil_normal_rejection() const;
 
+	void set_raytracing_rendering_mode(RaytracingRenderingMode p_value);
+	RaytracingRenderingMode get_raytracing_rendering_mode() const;
+	void set_raytracing_denoiser(RaytracingDenoiser p_value);
+	RaytracingDenoiser get_raytracing_denoiser() const;
+	void set_ddgi_enabled(bool p_value);
+	bool is_ddgi_enabled() const;
+	void set_ddgi_cascade_count(int p_value);
+	int get_ddgi_cascade_count() const;
+	void set_ddgi_probe_spacing(float p_value);
+	float get_ddgi_probe_spacing() const;
+	void set_ddgi_rays_per_probe(int p_value);
+	int get_ddgi_rays_per_probe() const;
+	void set_ddgi_updates_per_frame(int p_value);
+	int get_ddgi_updates_per_frame() const;
+	void set_pathtracing_samples_per_pixel(int p_value);
+	int get_pathtracing_samples_per_pixel() const;
+	void set_pathtracing_max_bounces(int p_value);
+	int get_pathtracing_max_bounces() const;
+	void set_pathtracing_accumulate(bool p_value);
+	bool is_pathtracing_accumulate() const;
+
 	// SDFGI
+
 	void set_sdfgi_enabled(bool p_enabled);
 	bool is_sdfgi_enabled() const;
 	void set_sdfgi_cascades(int p_cascades);
@@ -458,6 +505,8 @@ VARIANT_ENUM_CAST(Environment::BGMode)
 VARIANT_ENUM_CAST(Environment::AmbientSource)
 VARIANT_ENUM_CAST(Environment::ReflectionSource)
 VARIANT_ENUM_CAST(Environment::ToneMapper)
+VARIANT_ENUM_CAST(Environment::RaytracingRenderingMode)
+VARIANT_ENUM_CAST(Environment::RaytracingDenoiser)
 VARIANT_ENUM_CAST(Environment::SDFGIYScale)
 VARIANT_ENUM_CAST(Environment::GlowBlendMode)
 VARIANT_ENUM_CAST(Environment::FogMode)

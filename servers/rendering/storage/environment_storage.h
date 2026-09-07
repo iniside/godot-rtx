@@ -35,6 +35,23 @@
 
 class RendererEnvironmentStorage {
 public:
+	struct RaytracingSettings {
+		RSE::RaytracingRenderingMode raytracing_rendering_mode = RSE::RAYTRACING_RENDERING_MODE_HYBRID;
+		RSE::RaytracingDenoiser raytracing_denoiser = RSE::RAYTRACING_DENOISER_NRD;
+		bool ddgi_enabled = true;
+		int ddgi_cascade_count = 4;
+		float ddgi_probe_spacing = 2.0;
+		int ddgi_rays_per_probe = 128;
+		int ddgi_updates_per_frame = 1;
+		int pathtracing_samples_per_pixel = 1;
+		int pathtracing_max_bounces = 8;
+		bool pathtracing_accumulate = true;
+		uint64_t mode_generation = 1;
+		uint64_t ddgi_generation = 1;
+		uint64_t ddgi_layout_generation = 1;
+		uint64_t pathtracing_generation = 1;
+	};
+
 	union TonemapParameters {
 		// Shader vec4:
 		float tonemapper_params[4];
@@ -63,6 +80,7 @@ private:
 
 	// Environment
 	struct Environment {
+		RaytracingSettings raytracing;
 		// Note, we capture and store all environment parameters received from Godot here.
 		// Not all renderers support all effects and should just ignore the bits they don't support.
 
@@ -310,6 +328,12 @@ public:
 	float environment_get_ssil_intensity(RID p_env) const;
 	float environment_get_ssil_sharpness(RID p_env) const;
 	float environment_get_ssil_normal_rejection(RID p_env) const;
+
+	RaytracingSettings environment_get_raytracing_settings(RID p_env) const;
+
+	void environment_set_raytracing(RID p_env, RSE::RaytracingRenderingMode p_mode, RSE::RaytracingDenoiser p_denoiser);
+	void environment_set_ddgi(RID p_env, bool p_enabled, int p_cascade_count, float p_probe_spacing, int p_rays_per_probe, int p_updates_per_frame);
+	void environment_set_pathtracing(RID p_env, int p_samples_per_pixel, int p_max_bounces, bool p_accumulate);
 
 	// SDFGI
 	void environment_set_sdfgi(RID p_env, bool p_enable, int p_cascades, float p_min_cell_size, RSE::EnvironmentSDFGIYScale p_y_scale, bool p_use_occlusion, float p_bounce_feedback, bool p_read_sky, float p_energy, float p_normal_bias, float p_probe_bias);

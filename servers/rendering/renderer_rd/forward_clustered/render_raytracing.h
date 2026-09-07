@@ -39,6 +39,7 @@
 #include "servers/rendering/renderer_rd/bindless_block.h"
 #include "servers/rendering/renderer_rd/shaders/raytracing/multimesh_merge.glsl.gen.h"
 #include "servers/rendering/rendering_device.h"
+#include "servers/rendering/storage/environment_storage.h"
 
 class RenderDataRD;
 class RenderSceneBuffersRD;
@@ -404,6 +405,15 @@ struct RTMaterialCacheEntry {
 /// `build_tlas` for that viewport, freed via `RenderRaytracing::free_viewport_state`
 /// from `RenderBufferDataForwardClustered::free_data()`.
 struct RTViewportState {
+	RendererEnvironmentStorage::RaytracingSettings settings;
+	RID settings_environment;
+	RID settings_camera;
+	uint32_t settings_visible_layers = 0;
+	bool settings_initialized = false;
+	uint64_t ddgi_history_epoch = 0;
+	uint64_t pathtracing_history_epoch = 0;
+	uint64_t camera_history_epoch = 0;
+
 	RID tlas;
 	uint32_t tlas_max_instances = 0;
 
@@ -569,6 +579,7 @@ public:
 
 	void cleanup_caches();
 
+	bool update_viewport_settings(const RenderDataRD *p_render_data);
 	RTViewportState *build_tlas(const RenderDataRD *p_render_data);
 	void free_viewport_state(RenderSceneBuffersRD *p_render_buffers);
 

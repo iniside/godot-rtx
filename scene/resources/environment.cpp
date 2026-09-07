@@ -469,6 +469,151 @@ void Environment::_update_ssil() {
 			ssil_normal_rejection);
 }
 
+void Environment::set_raytracing_rendering_mode(RaytracingRenderingMode p_value) {
+	ERR_FAIL_COND(p_value < RAYTRACING_RENDERING_MODE_HYBRID || p_value > RAYTRACING_RENDERING_MODE_PATH_TRACED);
+	if (raytracing_rendering_mode == p_value) {
+		return;
+	}
+	raytracing_rendering_mode = p_value;
+	_update_raytracing();
+	notify_property_list_changed();
+}
+
+Environment::RaytracingRenderingMode Environment::get_raytracing_rendering_mode() const {
+	return raytracing_rendering_mode;
+}
+
+void Environment::set_raytracing_denoiser(RaytracingDenoiser p_value) {
+	ERR_FAIL_COND(p_value < RAYTRACING_DENOISER_NRD || p_value > RAYTRACING_DENOISER_NONE);
+	if (raytracing_denoiser == p_value) {
+		return;
+	}
+	raytracing_denoiser = p_value;
+	_update_raytracing();
+	notify_property_list_changed();
+}
+
+Environment::RaytracingDenoiser Environment::get_raytracing_denoiser() const {
+	return raytracing_denoiser;
+}
+
+void Environment::set_ddgi_enabled(bool p_value) {
+	if (ddgi_enabled == p_value) {
+		return;
+	}
+	ddgi_enabled = p_value;
+	_update_ddgi();
+	notify_property_list_changed();
+}
+
+bool Environment::is_ddgi_enabled() const {
+	return ddgi_enabled;
+}
+
+void Environment::set_ddgi_cascade_count(int p_value) {
+	ERR_FAIL_COND(p_value < 1 || p_value > 6);
+	if (ddgi_cascade_count == p_value) {
+		return;
+	}
+	ddgi_cascade_count = p_value;
+	ddgi_updates_per_frame = MIN(ddgi_updates_per_frame, ddgi_cascade_count);
+	_update_ddgi();
+	notify_property_list_changed();
+}
+
+int Environment::get_ddgi_cascade_count() const {
+	return ddgi_cascade_count;
+}
+
+void Environment::set_ddgi_probe_spacing(float p_value) {
+	ERR_FAIL_COND(!Math::is_finite(p_value) || p_value < 0.01f || p_value > 1024.0f);
+	if (ddgi_probe_spacing == p_value) {
+		return;
+	}
+	ddgi_probe_spacing = p_value;
+	_update_ddgi();
+}
+
+float Environment::get_ddgi_probe_spacing() const {
+	return ddgi_probe_spacing;
+}
+
+void Environment::set_ddgi_rays_per_probe(int p_value) {
+	ERR_FAIL_COND(p_value != 64 && p_value != 128 && p_value != 256);
+	if (ddgi_rays_per_probe == p_value) {
+		return;
+	}
+	ddgi_rays_per_probe = p_value;
+	_update_ddgi();
+}
+
+int Environment::get_ddgi_rays_per_probe() const {
+	return ddgi_rays_per_probe;
+}
+
+void Environment::set_ddgi_updates_per_frame(int p_value) {
+	ERR_FAIL_COND(p_value < 1 || p_value > ddgi_cascade_count);
+	if (ddgi_updates_per_frame == p_value) {
+		return;
+	}
+	ddgi_updates_per_frame = p_value;
+	_update_ddgi();
+}
+
+int Environment::get_ddgi_updates_per_frame() const {
+	return ddgi_updates_per_frame;
+}
+
+void Environment::set_pathtracing_samples_per_pixel(int p_value) {
+	ERR_FAIL_COND(p_value < 1 || p_value > 64);
+	if (pathtracing_samples_per_pixel == p_value) {
+		return;
+	}
+	pathtracing_samples_per_pixel = p_value;
+	_update_pathtracing();
+}
+
+int Environment::get_pathtracing_samples_per_pixel() const {
+	return pathtracing_samples_per_pixel;
+}
+
+void Environment::set_pathtracing_max_bounces(int p_value) {
+	ERR_FAIL_COND(p_value < 1 || p_value > 32);
+	if (pathtracing_max_bounces == p_value) {
+		return;
+	}
+	pathtracing_max_bounces = p_value;
+	_update_pathtracing();
+}
+
+int Environment::get_pathtracing_max_bounces() const {
+	return pathtracing_max_bounces;
+}
+
+void Environment::set_pathtracing_accumulate(bool p_value) {
+	if (pathtracing_accumulate == p_value) {
+		return;
+	}
+	pathtracing_accumulate = p_value;
+	_update_pathtracing();
+}
+
+bool Environment::is_pathtracing_accumulate() const {
+	return pathtracing_accumulate;
+}
+
+void Environment::_update_raytracing() {
+	RS::get_singleton()->environment_set_raytracing(environment, RSE::RaytracingRenderingMode(raytracing_rendering_mode), RSE::RaytracingDenoiser(raytracing_denoiser));
+}
+
+void Environment::_update_ddgi() {
+	RS::get_singleton()->environment_set_ddgi(environment, ddgi_enabled, ddgi_cascade_count, ddgi_probe_spacing, ddgi_rays_per_probe, ddgi_updates_per_frame);
+}
+
+void Environment::_update_pathtracing() {
+	RS::get_singleton()->environment_set_pathtracing(environment, pathtracing_samples_per_pixel, pathtracing_max_bounces, pathtracing_accumulate);
+}
+
 // SDFGI
 
 void Environment::set_sdfgi_enabled(bool p_enabled) {
@@ -1105,6 +1250,21 @@ void Environment::_update_adjustment() {
 // Private methods, constructor and destructor
 
 void Environment::_validate_property(PropertyInfo &p_property) const {
+	if (p_property.name.begins_with("ddgi_")) {
+		if (raytracing_rendering_mode != RAYTRACING_RENDERING_MODE_HYBRID || (!ddgi_enabled && p_property.name != "ddgi_enabled")) {
+			p_property.usage |= PROPERTY_USAGE_READ_ONLY;
+		}
+		if (p_property.name == "ddgi_updates_per_frame") {
+			p_property.hint_string = vformat("1,%d,1", ddgi_cascade_count);
+		}
+		return;
+	}
+	if (p_property.name.begins_with("pathtracing_")) {
+		if (raytracing_rendering_mode != RAYTRACING_RENDERING_MODE_PATH_TRACED || (raytracing_denoiser != RAYTRACING_DENOISER_NONE && p_property.name != "pathtracing_max_bounces")) {
+			p_property.usage |= PROPERTY_USAGE_READ_ONLY;
+		}
+		return;
+	}
 	if (!Engine::get_singleton()->is_editor_hint()) {
 		return;
 	}
@@ -1240,6 +1400,47 @@ bool Environment::_set(const StringName &p_name, const Variant &p_value) {
 #endif
 
 void Environment::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_raytracing_rendering_mode", "value"), &Environment::set_raytracing_rendering_mode);
+	ClassDB::bind_method(D_METHOD("get_raytracing_rendering_mode"), &Environment::get_raytracing_rendering_mode);
+	ClassDB::bind_method(D_METHOD("set_raytracing_denoiser", "value"), &Environment::set_raytracing_denoiser);
+	ClassDB::bind_method(D_METHOD("get_raytracing_denoiser"), &Environment::get_raytracing_denoiser);
+	ClassDB::bind_method(D_METHOD("set_ddgi_enabled", "value"), &Environment::set_ddgi_enabled);
+	ClassDB::bind_method(D_METHOD("is_ddgi_enabled"), &Environment::is_ddgi_enabled);
+	ClassDB::bind_method(D_METHOD("set_ddgi_cascade_count", "value"), &Environment::set_ddgi_cascade_count);
+	ClassDB::bind_method(D_METHOD("get_ddgi_cascade_count"), &Environment::get_ddgi_cascade_count);
+	ClassDB::bind_method(D_METHOD("set_ddgi_probe_spacing", "value"), &Environment::set_ddgi_probe_spacing);
+	ClassDB::bind_method(D_METHOD("get_ddgi_probe_spacing"), &Environment::get_ddgi_probe_spacing);
+	ClassDB::bind_method(D_METHOD("set_ddgi_rays_per_probe", "value"), &Environment::set_ddgi_rays_per_probe);
+	ClassDB::bind_method(D_METHOD("get_ddgi_rays_per_probe"), &Environment::get_ddgi_rays_per_probe);
+	ClassDB::bind_method(D_METHOD("set_ddgi_updates_per_frame", "value"), &Environment::set_ddgi_updates_per_frame);
+	ClassDB::bind_method(D_METHOD("get_ddgi_updates_per_frame"), &Environment::get_ddgi_updates_per_frame);
+	ClassDB::bind_method(D_METHOD("set_pathtracing_samples_per_pixel", "value"), &Environment::set_pathtracing_samples_per_pixel);
+	ClassDB::bind_method(D_METHOD("get_pathtracing_samples_per_pixel"), &Environment::get_pathtracing_samples_per_pixel);
+	ClassDB::bind_method(D_METHOD("set_pathtracing_max_bounces", "value"), &Environment::set_pathtracing_max_bounces);
+	ClassDB::bind_method(D_METHOD("get_pathtracing_max_bounces"), &Environment::get_pathtracing_max_bounces);
+	ClassDB::bind_method(D_METHOD("set_pathtracing_accumulate", "value"), &Environment::set_pathtracing_accumulate);
+	ClassDB::bind_method(D_METHOD("is_pathtracing_accumulate"), &Environment::is_pathtracing_accumulate);
+
+	ADD_GROUP("Ray Tracing", "");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "raytracing_rendering_mode", PROPERTY_HINT_ENUM, "Hybrid,Path Traced"), "set_raytracing_rendering_mode", "get_raytracing_rendering_mode");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "raytracing_denoiser", PROPERTY_HINT_ENUM, "NRD,DLSS Ray Reconstruction,None"), "set_raytracing_denoiser", "get_raytracing_denoiser");
+	ADD_SUBGROUP("DDGI", "ddgi_");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "ddgi_enabled"), "set_ddgi_enabled", "is_ddgi_enabled");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "ddgi_cascade_count", PROPERTY_HINT_RANGE, "1,6,1"), "set_ddgi_cascade_count", "get_ddgi_cascade_count");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "ddgi_probe_spacing", PROPERTY_HINT_RANGE, "0.01,1024,0.01,suffix:m"), "set_ddgi_probe_spacing", "get_ddgi_probe_spacing");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "ddgi_rays_per_probe", PROPERTY_HINT_ENUM, "64:64,128:128,256:256"), "set_ddgi_rays_per_probe", "get_ddgi_rays_per_probe");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "ddgi_updates_per_frame", PROPERTY_HINT_RANGE, "1,6,1"), "set_ddgi_updates_per_frame", "get_ddgi_updates_per_frame");
+	ADD_SUBGROUP("Path Tracing", "pathtracing_");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "pathtracing_samples_per_pixel", PROPERTY_HINT_RANGE, "1,64,1"), "set_pathtracing_samples_per_pixel", "get_pathtracing_samples_per_pixel");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "pathtracing_max_bounces", PROPERTY_HINT_RANGE, "1,32,1"), "set_pathtracing_max_bounces", "get_pathtracing_max_bounces");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "pathtracing_accumulate"), "set_pathtracing_accumulate", "is_pathtracing_accumulate");
+
+	BIND_ENUM_CONSTANT(RAYTRACING_RENDERING_MODE_HYBRID);
+	BIND_ENUM_CONSTANT(RAYTRACING_RENDERING_MODE_PATH_TRACED);
+	BIND_ENUM_CONSTANT(RAYTRACING_DENOISER_NRD);
+	BIND_ENUM_CONSTANT(RAYTRACING_DENOISER_DLSS_RR);
+	BIND_ENUM_CONSTANT(RAYTRACING_DENOISER_NONE);
+
 	// Background
 
 	ClassDB::bind_method(D_METHOD("set_background", "mode"), &Environment::set_background);
@@ -1648,6 +1849,9 @@ Environment::Environment() {
 	glow_levels.write[5] = 0.0;
 	glow_levels.write[6] = 0.0;
 
+	_update_raytracing();
+	_update_ddgi();
+	_update_pathtracing();
 	_update_ambient_light();
 	_update_tonemap();
 	_update_ssr();

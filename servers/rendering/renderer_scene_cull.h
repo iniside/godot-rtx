@@ -1326,8 +1326,11 @@ public:
 
 	PASS6(environment_set_ssil_quality, RSE::EnvironmentSSILQuality, bool, float, int, float, float)
 
-	// SDFGI
+	PASS3(environment_set_raytracing, RID, RSE::RaytracingRenderingMode, RSE::RaytracingDenoiser)
+	PASS6(environment_set_ddgi, RID, bool, int, float, int, int)
+	PASS4(environment_set_pathtracing, RID, int, int, bool)
 
+	// SDFGI
 	PASS11(environment_set_sdfgi, RID, bool, int, float, RSE::EnvironmentSDFGIYScale, bool, float, bool, float, float, float)
 
 	PASS1RC(bool, environment_get_sdfgi_enabled, RID)

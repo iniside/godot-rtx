@@ -82,6 +82,21 @@
 		<member name="background_mode" type="int" setter="set_background" getter="get_background" enum="Environment.BGMode" default="0">
 			The background mode.
 		</member>
+		<member name="ddgi_cascade_count" type="int" setter="set_ddgi_cascade_count" getter="get_ddgi_cascade_count" default="4">
+			Number of nested camera-following probe grids, from 1 to 6. Each grid contains 16 cubed probes. Changing this setting rebuilds probe state. Reducing this value also reduces [member ddgi_updates_per_frame] if needed.
+		</member>
+		<member name="ddgi_enabled" type="bool" setter="set_ddgi_enabled" getter="is_ddgi_enabled" default="true">
+			Enables automatic camera-following diffuse GI probes in hybrid mode. Ignored and read-only in path-traced mode. Probe history belongs to each mono viewport, even when viewports share this Environment. [b]Probe lighting is not implemented yet.[/b]
+		</member>
+		<member name="ddgi_probe_spacing" type="float" setter="set_ddgi_probe_spacing" getter="get_ddgi_probe_spacing" default="2.0">
+			Base probe spacing in world units, finite and bounded from [code]0.01[/code] to [code]1024.0[/code]. Successive cascades double this spacing. Changing spacing rebuilds probe state. These defaults are starting settings, not measured performance presets.
+		</member>
+		<member name="ddgi_rays_per_probe" type="int" setter="set_ddgi_rays_per_probe" getter="get_ddgi_rays_per_probe" default="128">
+			Rays traced per updated probe. Supported values are 64, 128 and 256. Changing this value rebuilds probe ray storage.
+		</member>
+		<member name="ddgi_updates_per_frame" type="int" setter="set_ddgi_updates_per_frame" getter="get_ddgi_updates_per_frame" default="1">
+			Whole cascades whose lighting is updated per frame, from 1 to [member ddgi_cascade_count]. Scrolling coverage is independent of this budget. Changing the budget preserves overlapping probe history.
+		</member>
 		<member name="fog_aerial_perspective" type="float" setter="set_fog_aerial_perspective" getter="get_fog_aerial_perspective" default="0.0">
 			If set above [code]0.0[/code] (exclusive), blends between the fog's color and the color of the background [Sky], as read from the radiance cubemap. This has a small performance cost when set above [code]0.0[/code]. Must have [member background_mode] set to [constant BG_SKY].
 			This is useful to simulate [url=https://en.wikipedia.org/wiki/Aerial_perspective]aerial perspective[/url] in large scenes with low density fog. However, it is not very useful for high-density fog, as the sky will shine through. When set to [code]1.0[/code], the fog color comes completely from the [Sky]. If set to [code]0.0[/code], aerial perspective is disabled.
@@ -199,6 +214,21 @@
 		<member name="glow_strength" type="float" setter="set_glow_strength" getter="get_glow_strength" default="1.0">
 			The strength that is used when blurring across the screen to generate the glow effect. This affects the distance and intensity of the blur. When using the Mobile rendering method, this should be increased to compensate for the lower dynamic range.
 			[b]Note:[/b] [member glow_strength] has no effect when using the Compatibility rendering method, due to this rendering method using a simpler glow implementation optimized for low-end devices.
+		</member>
+		<member name="pathtracing_accumulate" type="bool" setter="set_pathtracing_accumulate" getter="is_pathtracing_accumulate" default="true">
+			Accumulates progressive scene-linear raw path-tracing samples across frames. Changing this setting resets accumulation. Ignored and read-only in hybrid mode and denoised previews.
+		</member>
+		<member name="pathtracing_max_bounces" type="int" setter="set_pathtracing_max_bounces" getter="get_pathtracing_max_bounces" default="8">
+			Maximum path length in bounces, from 1 to 32. Changing this setting resets path-tracing history. Read-only in hybrid mode.
+		</member>
+		<member name="pathtracing_samples_per_pixel" type="int" setter="set_pathtracing_samples_per_pixel" getter="get_pathtracing_samples_per_pixel" default="1">
+			Camera samples per pixel per rendered frame, from 1 to 64, used by raw reference mode. NRD and RR previews use one primary sample per pixel so guides match that sample. Read-only for hybrid mode and denoised previews.
+		</member>
+		<member name="raytracing_denoiser" type="int" setter="set_raytracing_denoiser" getter="get_raytracing_denoiser" enum="Environment.RaytracingDenoiser" default="0">
+			Selects NRD, DLSS Ray Reconstruction, or raw output. RR requires [member Viewport.scaling_3d_mode] set to [constant Viewport.SCALING_3D_MODE_DLSS] and supported hardware. For the root viewport, use Project Settings &gt; Rendering &gt; Scaling 3D &gt; Mode &gt; NVIDIA DLSS. Resolution and DLSS quality remain controlled by [member Viewport.scaling_3d_scale] and [member ProjectSettings.rendering/scaling_3d/scale]. Raw PT reference requires scale [code]1.0[/code], no temporal upscaler, TAA or frame generation. [b]This build still uses NRD; RR and raw output are not implemented yet.[/b]
+		</member>
+		<member name="raytracing_rendering_mode" type="int" setter="set_raytracing_rendering_mode" getter="get_raytracing_rendering_mode" enum="Environment.RaytracingRenderingMode" default="0">
+			Selects hybrid raster primary visibility with RTXDI and camera-following DDGI, or true camera-ray path tracing for comparison. Mode and denoiser are independent. [b]This build stores the selection but still renders raster RTXDI with NRD; DDGI and path tracing are not implemented yet.[/b]
 		</member>
 		<member name="reflected_light_source" type="int" setter="set_reflection_source" getter="get_reflection_source" enum="Environment.ReflectionSource" default="0">
 			The reflected (specular) light source.
@@ -415,6 +445,21 @@
 		</constant>
 		<constant name="AMBIENT_SOURCE_SKY" value="3" enum="AmbientSource">
 			Gather ambient light from the [Sky] regardless of what the background is.
+		</constant>
+		<constant name="RAYTRACING_DENOISER_DLSS_RR" value="1" enum="RaytracingDenoiser">
+			DLSS Ray Reconstruction instead of NRD and DLSS Super Resolution. Requires DLSS scaling mode and supported hardware. Camera RR execution is not implemented yet.
+		</constant>
+		<constant name="RAYTRACING_DENOISER_NONE" value="2" enum="RaytracingDenoiser">
+			Raw signal without denoising; path tracing can progressively accumulate. Raw camera output is not implemented yet.
+		</constant>
+		<constant name="RAYTRACING_DENOISER_NRD" value="0" enum="RaytracingDenoiser">
+			NRD denoising, the currently active camera denoiser.
+		</constant>
+		<constant name="RAYTRACING_RENDERING_MODE_HYBRID" value="0" enum="RaytracingRenderingMode">
+			Hybrid primary visibility with RTXDI direct lighting and camera-following DDGI. DDGI execution is not implemented yet.
+		</constant>
+		<constant name="RAYTRACING_RENDERING_MODE_PATH_TRACED" value="1" enum="RaytracingRenderingMode">
+			True camera-ray path tracing for comparison. Execution is not implemented yet.
 		</constant>
 		<constant name="REFLECTION_SOURCE_BG" value="0" enum="ReflectionSource">
 			Use the background for reflections.

@@ -814,6 +814,66 @@ float RendererEnvironmentStorage::environment_get_ssil_normal_rejection(RID p_en
 	return env->ssil_normal_rejection;
 }
 
+RendererEnvironmentStorage::RaytracingSettings RendererEnvironmentStorage::environment_get_raytracing_settings(RID p_env) const {
+	if (p_env.is_null()) {
+		return RaytracingSettings();
+	}
+	const Environment *env = environment_owner.get_or_null(p_env);
+	ERR_FAIL_NULL_V(env, RaytracingSettings());
+	return env->raytracing;
+}
+
+void RendererEnvironmentStorage::environment_set_raytracing(RID p_env, RSE::RaytracingRenderingMode p_mode, RSE::RaytracingDenoiser p_denoiser) {
+	Environment *env = environment_owner.get_or_null(p_env);
+	ERR_FAIL_NULL(env);
+	ERR_FAIL_COND(p_mode < RSE::RAYTRACING_RENDERING_MODE_HYBRID || p_mode > RSE::RAYTRACING_RENDERING_MODE_PATH_TRACED);
+	ERR_FAIL_COND(p_denoiser < RSE::RAYTRACING_DENOISER_NRD || p_denoiser > RSE::RAYTRACING_DENOISER_NONE);
+	RaytracingSettings &settings = env->raytracing;
+	if (settings.raytracing_rendering_mode == p_mode && settings.raytracing_denoiser == p_denoiser) {
+		return;
+	}
+	settings.raytracing_rendering_mode = p_mode;
+	settings.raytracing_denoiser = p_denoiser;
+	settings.mode_generation++;
+}
+
+void RendererEnvironmentStorage::environment_set_ddgi(RID p_env, bool p_enabled, int p_cascade_count, float p_probe_spacing, int p_rays_per_probe, int p_updates_per_frame) {
+	Environment *env = environment_owner.get_or_null(p_env);
+	ERR_FAIL_NULL(env);
+	ERR_FAIL_COND(p_cascade_count < 1 || p_cascade_count > 6);
+	ERR_FAIL_COND(!Math::is_finite(p_probe_spacing) || p_probe_spacing < 0.01f || p_probe_spacing > 1024.0f);
+	ERR_FAIL_COND(p_rays_per_probe != 64 && p_rays_per_probe != 128 && p_rays_per_probe != 256);
+	ERR_FAIL_COND(p_updates_per_frame < 1 || p_updates_per_frame > p_cascade_count);
+	RaytracingSettings &settings = env->raytracing;
+	if (settings.ddgi_enabled == p_enabled && settings.ddgi_cascade_count == p_cascade_count && settings.ddgi_probe_spacing == p_probe_spacing && settings.ddgi_rays_per_probe == p_rays_per_probe && settings.ddgi_updates_per_frame == p_updates_per_frame) {
+		return;
+	}
+	if (settings.ddgi_cascade_count != p_cascade_count || settings.ddgi_probe_spacing != p_probe_spacing || settings.ddgi_rays_per_probe != p_rays_per_probe) {
+		settings.ddgi_layout_generation++;
+	}
+	settings.ddgi_enabled = p_enabled;
+	settings.ddgi_cascade_count = p_cascade_count;
+	settings.ddgi_probe_spacing = p_probe_spacing;
+	settings.ddgi_rays_per_probe = p_rays_per_probe;
+	settings.ddgi_updates_per_frame = p_updates_per_frame;
+	settings.ddgi_generation++;
+}
+
+void RendererEnvironmentStorage::environment_set_pathtracing(RID p_env, int p_samples_per_pixel, int p_max_bounces, bool p_accumulate) {
+	Environment *env = environment_owner.get_or_null(p_env);
+	ERR_FAIL_NULL(env);
+	ERR_FAIL_COND(p_samples_per_pixel < 1 || p_samples_per_pixel > 64);
+	ERR_FAIL_COND(p_max_bounces < 1 || p_max_bounces > 32);
+	RaytracingSettings &settings = env->raytracing;
+	if (settings.pathtracing_samples_per_pixel == p_samples_per_pixel && settings.pathtracing_max_bounces == p_max_bounces && settings.pathtracing_accumulate == p_accumulate) {
+		return;
+	}
+	settings.pathtracing_samples_per_pixel = p_samples_per_pixel;
+	settings.pathtracing_max_bounces = p_max_bounces;
+	settings.pathtracing_accumulate = p_accumulate;
+	settings.pathtracing_generation++;
+}
+
 // SDFGI
 
 void RendererEnvironmentStorage::environment_set_sdfgi(RID p_env, bool p_enable, int p_cascades, float p_min_cell_size, RSE::EnvironmentSDFGIYScale p_y_scale, bool p_use_occlusion, float p_bounce_feedback, bool p_read_sky, float p_energy, float p_normal_bias, float p_probe_bias) {

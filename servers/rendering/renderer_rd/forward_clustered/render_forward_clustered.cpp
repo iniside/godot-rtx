@@ -1808,6 +1808,26 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	ERR_FAIL_COND_MSG(p_render_data->scene_data->view_count != 1, "RTXDI surface rendering supports one view per viewport.");
 	Ref<RenderBufferDataForwardClustered> rb_data = rb->get_custom_data(RB_SCOPE_FORWARD_CLUSTERED);
 	ERR_FAIL_COND(rb_data.is_null());
+	if (raytracing->update_viewport_settings(p_render_data)) {
+		rb_data->invalidate_raytracing_history();
+	}
+	const RendererEnvironmentStorage::RaytracingSettings &rt_settings = raytracing->_get_viewport_state(p_render_data)->settings;
+	if (rt_settings.raytracing_rendering_mode == RSE::RAYTRACING_RENDERING_MODE_PATH_TRACED) {
+		WARN_PRINT_ONCE("Path Traced mode is not implemented yet. This build continues rendering raster RTXDI with NRD; it does not produce a path-traced reference.");
+	} else if (rt_settings.ddgi_enabled) {
+		WARN_PRINT_ONCE("DDGI settings are stored, but probe lighting is not implemented yet. This build renders RTXDI direct lighting without DDGI.");
+	}
+	if (rt_settings.raytracing_denoiser == RSE::RAYTRACING_DENOISER_DLSS_RR) {
+		if (rb->get_scaling_3d_mode() != RSE::VIEWPORT_SCALING_3D_MODE_DLSS) {
+			WARN_PRINT_ONCE("DLSS Ray Reconstruction requires Viewport.scaling_3d_mode = NVIDIA DLSS, or Project Settings > Rendering > Scaling 3D > Mode > NVIDIA DLSS, and supported hardware.");
+		}
+		WARN_PRINT_ONCE("DLSS Ray Reconstruction is not implemented in the camera renderer yet. This build continues using NRD and the configured upscaler; no RR evaluation occurs.");
+	} else if (rt_settings.raytracing_denoiser == RSE::RAYTRACING_DENOISER_NONE) {
+		WARN_PRINT_ONCE("Raw ray-tracing output is not implemented yet. This build continues using NRD.");
+		if (rt_settings.raytracing_rendering_mode == RSE::RAYTRACING_RENDERING_MODE_PATH_TRACED && (rb->get_internal_size() != rb->get_target_size() || RSE::scaling_3d_mode_type(rb->get_scaling_3d_mode()) == RSE::VIEWPORT_SCALING_3D_TYPE_TEMPORAL || rb->get_use_taa() || rb->get_frame_generation())) {
+			WARN_PRINT_ONCE("Raw path-traced reference requires native resolution, no temporal upscaler, TAA or frame generation. Set Scaling 3D Scale to 1.0 and disable temporal filtering and frame generation.");
+		}
+	}
 	const bool separate_specular = _compositor_effects_has_flag(p_render_data, RSE::COMPOSITOR_EFFECT_FLAG_NEEDS_SEPARATE_SPECULAR);
 	RendererRD::TextureStorage *texture_storage = RendererRD::TextureStorage::get_singleton();
 	current_cluster_builder = rb_data->cluster_builder;

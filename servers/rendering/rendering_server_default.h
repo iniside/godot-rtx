@@ -892,6 +892,10 @@ public:
 	FUNC2(environment_set_volumetric_fog_volume_size, int, int)
 	FUNC1(environment_set_volumetric_fog_filter_active, bool)
 
+	FUNC3(environment_set_raytracing, RID, RSE::RaytracingRenderingMode, RSE::RaytracingDenoiser)
+	FUNC6(environment_set_ddgi, RID, bool, int, float, int, int)
+	FUNC4(environment_set_pathtracing, RID, int, int, bool)
+
 	FUNC11(environment_set_sdfgi, RID, bool, int, float, RSE::EnvironmentSDFGIYScale, bool, float, bool, float, float, float)
 	FUNC1(environment_set_sdfgi_ray_count, RSE::EnvironmentSDFGIRayCount)
 	FUNC1(environment_set_sdfgi_frames_to_converge, RSE::EnvironmentSDFGIFramesToConverge)

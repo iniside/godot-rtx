@@ -99,6 +99,31 @@ RTViewportState *RenderRaytracing::_get_or_create_viewport_state(const RenderDat
 	return state;
 }
 
+bool RenderRaytracing::update_viewport_settings(const RenderDataRD *p_render_data) {
+	RTViewportState *state = _get_or_create_viewport_state(p_render_data);
+	ERR_FAIL_NULL_V(state, false);
+	const RendererEnvironmentStorage::RaytracingSettings settings = RendererEnvironmentStorage::get_singleton()->environment_get_raytracing_settings(p_render_data->environment);
+	const bool environment_changed = !state->settings_initialized || state->settings_environment != p_render_data->environment;
+	const bool layers_changed = state->settings_visible_layers != p_render_data->scene_data->camera_visible_layers;
+	const bool mode_changed = state->settings.raytracing_rendering_mode != settings.raytracing_rendering_mode;
+	const bool camera_changed = state->settings_camera != p_render_data->scene_data->camera;
+	const bool camera_settings_changed = environment_changed || layers_changed || state->settings.mode_generation != settings.mode_generation || state->settings.ddgi_generation != settings.ddgi_generation || state->settings.pathtracing_generation != settings.pathtracing_generation;
+	if (environment_changed || layers_changed || mode_changed || state->settings.ddgi_layout_generation != settings.ddgi_layout_generation || state->settings.ddgi_enabled != settings.ddgi_enabled) {
+		state->ddgi_history_epoch++;
+	}
+	if (camera_settings_changed || camera_changed) {
+		state->pathtracing_history_epoch++;
+		state->camera_history_epoch++;
+		state->light_history_valid = false;
+	}
+	state->settings = settings;
+	state->settings_environment = p_render_data->environment;
+	state->settings_camera = p_render_data->scene_data->camera;
+	state->settings_visible_layers = p_render_data->scene_data->camera_visible_layers;
+	state->settings_initialized = true;
+	return camera_settings_changed || camera_changed;
+}
+
 RTViewportState *RenderRaytracing::_get_viewport_state(const RenderDataRD *p_render_data) const {
 	if (!p_render_data || p_render_data->render_buffers.is_null()) {
 		return nullptr;

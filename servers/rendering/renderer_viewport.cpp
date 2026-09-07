@@ -1339,7 +1339,11 @@ void RendererViewport::viewport_set_scenario(RID p_viewport, RID p_scenario) {
 		RSG::scene->scenario_remove_viewport_visibility_mask(viewport->scenario, p_viewport);
 	}
 
+	const bool scenario_changed = viewport->scenario != p_scenario;
 	viewport->scenario = p_scenario;
+	if (scenario_changed) {
+		_configure_3d_render_buffers(viewport);
+	}
 	if (viewport->use_occlusion_culling) {
 		RendererSceneOcclusionCull::get_singleton()->buffer_set_scenario(p_viewport, p_scenario);
 	}
