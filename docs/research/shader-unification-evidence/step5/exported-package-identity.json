@@ -1,0 +1,972 @@
+{
+  "method": "Read-only PCK directory traversal following core/io/file_access_pack.cpp:289-368, actual version 4 layout. Observations only.",
+  "header": {
+    "magic": 1129333831,
+    "version": 4,
+    "engine": [
+      4,
+      8,
+      0
+    ],
+    "flags": 2,
+    "file_base": 112,
+    "directory": 4273584,
+    "file_count": 161
+  },
+  "outputs": {
+    "manual.exe": {
+      "bytes": 88488960,
+      "sha256": "003ddb63e7f9b26b310fc92dc8e6d772d907073bdf540f149928e3a2de0651db"
+    },
+    "manual.pck": {
+      "bytes": 4299488,
+      "sha256": "716c47567e60ca05477b1d61773c7da8c61125c675cdfe883be3436b71e1ae5d"
+    },
+    "slang-compiler.2026.13.1.x86_64.dll": {
+      "bytes": 35200000,
+      "sha256": "6cd4e6bee3ee8a1f8349f77c838ac711a3d217465771b114f461075b77b71b40"
+    },
+    "slang.LICENSE.txt": {
+      "bytes": 1490,
+      "sha256": "b738d98b7725414b534c119ac66126876b8cbd40aa8ae48210db190714b81670"
+    }
+  },
+  "baked_shader_files": {
+    ".godot/shader_cache/BestFitNormalShaderRD/f45db4f7e8577a57f09de5a11d1722628e7496b95cce6a54f7a489135efab2be/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2525952,
+      "bytes": 864,
+      "flags": 0,
+      "package_md5": "6ea19c9d7599298ce02b875f7e8bae7a",
+      "actual_md5": "6ea19c9d7599298ce02b875f7e8bae7a",
+      "sha256": "679620115f7274f6b2fcc4b8086428b50cbc49af531ffd774d19ef59026dce91",
+      "baked_source_sha256": "679620115f7274f6b2fcc4b8086428b50cbc49af531ffd774d19ef59026dce91"
+    },
+    ".godot/shader_cache/BlitShaderRD/e68e42b9939e404b5f48973d02a8e1efdcbab651e1263d7d08cecfa50b6c88ad/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3151776,
+      "bytes": 6516,
+      "flags": 0,
+      "package_md5": "d11a5e683953c53d886e4a7b0e6aaf2e",
+      "actual_md5": "d11a5e683953c53d886e4a7b0e6aaf2e",
+      "sha256": "8df9c1b8b76982c7ca31939a7fb3e19aea2b1316359f4d6b6ff24033f599d563",
+      "baked_source_sha256": "8df9c1b8b76982c7ca31939a7fb3e19aea2b1316359f4d6b6ff24033f599d563"
+    },
+    ".godot/shader_cache/BokehDofShaderRD/66ab46cfb4b8db03fe23f2db8ffae42a0886af955a853cf511f5c15550e24dac/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3030576,
+      "bytes": 5976,
+      "flags": 0,
+      "package_md5": "e002ff3c1f466c7321d4ea04564a629c",
+      "actual_md5": "e002ff3c1f466c7321d4ea04564a629c",
+      "sha256": "6c2b1b10165a096d74e4b132f3d6d60f2afc87a2890891c8e2ce78042555e9c4",
+      "baked_source_sha256": "6c2b1b10165a096d74e4b132f3d6d60f2afc87a2890891c8e2ce78042555e9c4"
+    },
+    ".godot/shader_cache/CanvasOcclusionShaderRD/642a6b56a5d4bc709dd7a840299285422d4035255baca9a1a7f78d7c325ab402/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2509760,
+      "bytes": 2920,
+      "flags": 0,
+      "package_md5": "1be3ea450282da0346c409ab2982e11b",
+      "actual_md5": "1be3ea450282da0346c409ab2982e11b",
+      "sha256": "619ca952dcc7c46cc67735eccdeece141c802f717d599429748817735f0a6c89",
+      "baked_source_sha256": "619ca952dcc7c46cc67735eccdeece141c802f717d599429748817735f0a6c89"
+    },
+    ".godot/shader_cache/CanvasSdfShaderRD/1005a3c34e1cb6677eefc3ce0576bd085e2a2d3e8206932d699fb8f538ffca96/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2402720,
+      "bytes": 5064,
+      "flags": 0,
+      "package_md5": "36b14a1e55a6e8e1a61677846a9502ab",
+      "actual_md5": "36b14a1e55a6e8e1a61677846a9502ab",
+      "sha256": "31ceef548756239b210b678ddb39b079fe6dc3e2f130885f8992534e75f25f5b",
+      "baked_source_sha256": "31ceef548756239b210b678ddb39b079fe6dc3e2f130885f8992534e75f25f5b"
+    },
+    ".godot/shader_cache/CanvasShaderRD/d524668410a22416936cc52a44bd7d61f297da3e9758de912e96a746d660617a/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2468528,
+      "bytes": 41224,
+      "flags": 0,
+      "package_md5": "de51f53400b9ceb155166c5ba95e274b",
+      "actual_md5": "de51f53400b9ceb155166c5ba95e274b",
+      "sha256": "69aeb5c8513687c075d9407619fc4d73db438809591730a6d7908c04deb5378f",
+      "baked_source_sha256": "69aeb5c8513687c075d9407619fc4d73db438809591730a6d7908c04deb5378f"
+    },
+    ".godot/shader_cache/CanvasShaderRD/d524668410a22416936cc52a44bd7d61f297da3e9758de912e96a746d660617a/89e0c5a264d1558e7bc2ca0dc3d0afd834fbe7b6.vulkan.cache": {
+      "offset": 3203152,
+      "bytes": 25700,
+      "flags": 0,
+      "package_md5": "5c177f87c45d0fd3c027cd1179923908",
+      "actual_md5": "5c177f87c45d0fd3c027cd1179923908",
+      "sha256": "a1dcb2518109de356267d4cc496d4e0436bfd856b855a3eaff80ec7b36162989",
+      "baked_source_sha256": "a1dcb2518109de356267d4cc496d4e0436bfd856b855a3eaff80ec7b36162989"
+    },
+    ".godot/shader_cache/CanvasShaderRD/d524668410a22416936cc52a44bd7d61f297da3e9758de912e96a746d660617a/8f9335de72e837eeead40640cc01fddc5baf5a7c.vulkan.cache": {
+      "offset": 3228864,
+      "bytes": 25384,
+      "flags": 0,
+      "package_md5": "07f123180ce2d374fda6c10c0995fc41",
+      "actual_md5": "07f123180ce2d374fda6c10c0995fc41",
+      "sha256": "778ec92a4e70621f5ed9484e858f976248edab6237354aba3be7a96f339ff3d9",
+      "baked_source_sha256": "778ec92a4e70621f5ed9484e858f976248edab6237354aba3be7a96f339ff3d9"
+    },
+    ".godot/shader_cache/CanvasShaderRD/d524668410a22416936cc52a44bd7d61f297da3e9758de912e96a746d660617a/bd08f664c641a580615b108b08271a0a4308a2d9.vulkan.cache": {
+      "offset": 3589760,
+      "bytes": 41496,
+      "flags": 0,
+      "package_md5": "78e63ae3d3531c7b51dc856daf0084b2",
+      "actual_md5": "78e63ae3d3531c7b51dc856daf0084b2",
+      "sha256": "44e0b4951128d470ae97eab3a3101460488a120ddde88f2ea7c23fcdabfdb9a6",
+      "baked_source_sha256": "44e0b4951128d470ae97eab3a3101460488a120ddde88f2ea7c23fcdabfdb9a6"
+    },
+    ".godot/shader_cache/ClusterDebugShaderRD/624b9066b7f6042faef2f0393b2411b2b52d2ab7005cd3a2e7d82ef5e3cd2749/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2524176,
+      "bytes": 1764,
+      "flags": 0,
+      "package_md5": "8e54fad123e021ae94ad6697754edda1",
+      "actual_md5": "8e54fad123e021ae94ad6697754edda1",
+      "sha256": "35a9aa18005546bd8b507d3a56b758cc5037884d4027c3d7e2560316ff5a6343",
+      "baked_source_sha256": "35a9aa18005546bd8b507d3a56b758cc5037884d4027c3d7e2560316ff5a6343"
+    },
+    ".godot/shader_cache/ClusterRenderShaderRD/4dbfad0c9d45f3df51f5d987e06057306648ec323d7a34d22c9d0b196b2270d7/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2519760,
+      "bytes": 3180,
+      "flags": 0,
+      "package_md5": "95a76b4dd566f92d9f0179e1498352c6",
+      "actual_md5": "95a76b4dd566f92d9f0179e1498352c6",
+      "sha256": "8d45ee12a9660385da4c8083cb3f0d9cbfb9c636d996b6a827b71b16a6a2f1ad",
+      "baked_source_sha256": "8d45ee12a9660385da4c8083cb3f0d9cbfb9c636d996b6a827b71b16a6a2f1ad"
+    },
+    ".godot/shader_cache/ClusterStoreShaderRD/3e53c6ef47f500b90abfa994a5546c441c802376f8eb73a2ef7f2ff8faca8462/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2522944,
+      "bytes": 1228,
+      "flags": 0,
+      "package_md5": "4ce1cf1c7445f91faafab7323a4abd5b",
+      "actual_md5": "4ce1cf1c7445f91faafab7323a4abd5b",
+      "sha256": "76a60847b2161ba50021abfe4e2895a4af45a371f10d6b8c34fcc23ac04e08e9",
+      "baked_source_sha256": "76a60847b2161ba50021abfe4e2895a4af45a371f10d6b8c34fcc23ac04e08e9"
+    },
+    ".godot/shader_cache/CopyShaderRD/40b13d07e79f9e4d2e5f18241ef4dec69ad148ed6a323c05164f1ada24585bf8/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3036560,
+      "bytes": 14196,
+      "flags": 0,
+      "package_md5": "aef2312c11601aec657fd29638b20a92",
+      "actual_md5": "aef2312c11601aec657fd29638b20a92",
+      "sha256": "021135773f8ff77e8a36e2002463659d6602a8188e4380dcf0b4794d3cc10f02",
+      "baked_source_sha256": "021135773f8ff77e8a36e2002463659d6602a8188e4380dcf0b4794d3cc10f02"
+    },
+    ".godot/shader_cache/CopyToFbShaderRD/e612e71d7fd07a6b810ae5e92c68d29e76637358a1be803103c5b3d1335d5845/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3050768,
+      "bytes": 6696,
+      "flags": 0,
+      "package_md5": "93955e282a923267180e1d907a3af4a2",
+      "actual_md5": "93955e282a923267180e1d907a3af4a2",
+      "sha256": "dff0f2fe7245f5ac8d21952200c1d9258283233d032f0196f6085ab7a33a2f5f",
+      "baked_source_sha256": "dff0f2fe7245f5ac8d21952200c1d9258283233d032f0196f6085ab7a33a2f5f"
+    },
+    ".godot/shader_cache/CubeToDpShaderRD/66f1d5f71abb8cf16ade6d2683c967b6d3df45221708133a5f131b0c3073ac87/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3057472,
+      "bytes": 1320,
+      "flags": 0,
+      "package_md5": "041b6b2f430a3d8d5a90c698ba37471f",
+      "actual_md5": "041b6b2f430a3d8d5a90c698ba37471f",
+      "sha256": "09896283c83e012e74a1a0dbe3cdf08405df38ad7aeaf3b8c6a515e938f68001",
+      "baked_source_sha256": "09896283c83e012e74a1a0dbe3cdf08405df38ad7aeaf3b8c6a515e938f68001"
+    },
+    ".godot/shader_cache/CubeToOctmapShaderRD/a02ab23af93a97dcaf4eeb4d7513fe17c880842db4db812daf9421cdfac1ff2f/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3058800,
+      "bytes": 1088,
+      "flags": 0,
+      "package_md5": "6af95d1154267c265e8c5a46543da4fb",
+      "actual_md5": "6af95d1154267c265e8c5a46543da4fb",
+      "sha256": "d5edddb8db65dd760878929a55bb50b291d63cc0ec9171be366767fb9a5663ef",
+      "baked_source_sha256": "d5edddb8db65dd760878929a55bb50b291d63cc0ec9171be366767fb9a5663ef"
+    },
+    ".godot/shader_cache/DepthReconstructShaderRD/39cb0bc2adcbe88916f478f91f75a754d7eeeac26fcccbc73e70f25e907ada71/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3095296,
+      "bytes": 1452,
+      "flags": 0,
+      "package_md5": "c730fb3c1bede8309cd32d7058105f45",
+      "actual_md5": "c730fb3c1bede8309cd32d7058105f45",
+      "sha256": "ddbf35c3938d172ce47228401a13911584cce99eeb2c2f10e15f3c6c9bd1bbaa",
+      "baked_source_sha256": "ddbf35c3938d172ce47228401a13911584cce99eeb2c2f10e15f3c6c9bd1bbaa"
+    },
+    ".godot/shader_cache/Fsr2AccumulatePassShaderRD/3bdbe910095b2f8220fa167c215dc8070705ee2a8a92fc1f16f6af24370092f7/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2554688,
+      "bytes": 41648,
+      "flags": 0,
+      "package_md5": "5fa48fc40bef4f8679503971c3db8120",
+      "actual_md5": "5fa48fc40bef4f8679503971c3db8120",
+      "sha256": "fe7cf72663e36f5f2ddf12ae6c57478e4c234e89a26202a079794061515dfd9f",
+      "baked_source_sha256": "fe7cf72663e36f5f2ddf12ae6c57478e4c234e89a26202a079794061515dfd9f"
+    },
+    ".godot/shader_cache/Fsr2AutogenReactivePassShaderRD/e0f0c742fcdabeb55c8671e8fbb5c14d034045eab4b1a0833071f7ae9aba9d10/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2605136,
+      "bytes": 2888,
+      "flags": 0,
+      "package_md5": "812fada94b9da7e409454954f2f5a839",
+      "actual_md5": "812fada94b9da7e409454954f2f5a839",
+      "sha256": "152def6c36a43a2563e0b70d528fb6f922d9f4f72d75ab26b5c4b09a68bdf49e",
+      "baked_source_sha256": "152def6c36a43a2563e0b70d528fb6f922d9f4f72d75ab26b5c4b09a68bdf49e"
+    },
+    ".godot/shader_cache/Fsr2ComputeLuminancePyramidPassShaderRD/3e876ce7329cabd51c1d33e639203b01abdbe807b5ab8e000afebf22f91c1802/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2599360,
+      "bytes": 5776,
+      "flags": 0,
+      "package_md5": "a01ddb9ec408a4d4158dbe40c91abec7",
+      "actual_md5": "a01ddb9ec408a4d4158dbe40c91abec7",
+      "sha256": "802cd3844d0f25596561af615b1d078e1997833ab4727cb667aa6ab4192f8e85",
+      "baked_source_sha256": "802cd3844d0f25596561af615b1d078e1997833ab4727cb667aa6ab4192f8e85"
+    },
+    ".godot/shader_cache/Fsr2DepthClipPassShaderRD/3f024a455311007cb8dc6803274f0be551700e8539e91b54cae0f08385a1f2ba/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2532560,
+      "bytes": 11148,
+      "flags": 0,
+      "package_md5": "3d8707441adfeaddeb62ee8c2ce12005",
+      "actual_md5": "3d8707441adfeaddeb62ee8c2ce12005",
+      "sha256": "f2e623c00a6b36ad28d186bc6020a96e63eb5ce5a315e5dc23d59bffec2624c5",
+      "baked_source_sha256": "f2e623c00a6b36ad28d186bc6020a96e63eb5ce5a315e5dc23d59bffec2624c5"
+    },
+    ".godot/shader_cache/Fsr2LockPassShaderRD/8ee6ed75ff26e81138ad422193ca98b46e7043190448d6581d0bfbbffbfe34fb/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2550448,
+      "bytes": 4236,
+      "flags": 0,
+      "package_md5": "a831830c7926c3989c4703a53b87aab4",
+      "actual_md5": "a831830c7926c3989c4703a53b87aab4",
+      "sha256": "01df59dbe0ffd202209420ed222162f1f362db362f0b013adad32bd167091631",
+      "baked_source_sha256": "01df59dbe0ffd202209420ed222162f1f362db362f0b013adad32bd167091631"
+    },
+    ".godot/shader_cache/Fsr2RcasPassShaderRD/0742369d1d86813b41fe5f2b9766bf5a972d22a8a5c97e4906203d4bb11e935e/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2596336,
+      "bytes": 3020,
+      "flags": 0,
+      "package_md5": "daea9ee13deefbc378a28e9aae7a6f7a",
+      "actual_md5": "daea9ee13deefbc378a28e9aae7a6f7a",
+      "sha256": "033db5f5131012ac58dae0d6f202b69b4a0c74d83d462f728d52a39743a51ca0",
+      "baked_source_sha256": "033db5f5131012ac58dae0d6f202b69b4a0c74d83d462f728d52a39743a51ca0"
+    },
+    ".godot/shader_cache/Fsr2ReconstructPreviousDepthPassShaderRD/6f42c2e49da725825f09b04a69434672a316fcea98c34b25d041bb392146512d/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2543712,
+      "bytes": 6732,
+      "flags": 0,
+      "package_md5": "ac466bbadf05b8b51261d662c4da5731",
+      "actual_md5": "ac466bbadf05b8b51261d662c4da5731",
+      "sha256": "403b07351953a24903d8fdf1113722818ebcb6f831e06520adf6fc97e1658e4e",
+      "baked_source_sha256": "403b07351953a24903d8fdf1113722818ebcb6f831e06520adf6fc97e1658e4e"
+    },
+    ".godot/shader_cache/Fsr2TcrAutogenPassShaderRD/8563c05c7c85c4a6167b4b2e91d2cc843f1c91eeb61717c9200dff0ea78f35ba/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2608032,
+      "bytes": 7336,
+      "flags": 0,
+      "package_md5": "a75b59ef44695cf5e0df7f28ea462506",
+      "actual_md5": "a75b59ef44695cf5e0df7f28ea462506",
+      "sha256": "cf6bfe84aa0a1ace63db3529ef4a1609e0eb2b4921a8ecc0e896c03ae1910d61",
+      "baked_source_sha256": "cf6bfe84aa0a1ace63db3529ef4a1609e0eb2b4921a8ecc0e896c03ae1910d61"
+    },
+    ".godot/shader_cache/FsrUpscaleShaderRD/2c8e6a67e28f43bf1d6c52f665c538ed9ea8b275446b65fcb228793d93d495b4/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3136176,
+      "bytes": 11548,
+      "flags": 0,
+      "package_md5": "0d57bd52e4363f8465db729c88b028a9",
+      "actual_md5": "0d57bd52e4363f8465db729c88b028a9",
+      "sha256": "f1e0d9da8b8b73e3fcf2ceb698bbf7b7bdf772cb96b33f9f91b237ccb05496d3",
+      "baked_source_sha256": "f1e0d9da8b8b73e3fcf2ceb698bbf7b7bdf772cb96b33f9f91b237ccb05496d3"
+    },
+    ".godot/shader_cache/GiShaderRD/0e7f41d44f309bfca4d9663f015ad369d2cfe3c3987c6a7eab534fba5dd3a6ee/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2952272,
+      "bytes": 34972,
+      "flags": 0,
+      "package_md5": "f9f9adf8899fe59748810899ca771343",
+      "actual_md5": "f9f9adf8899fe59748810899ca771343",
+      "sha256": "fcb4498f83f23242a81de954a0e0a641bc3ed6e62b35952d472a25f469fe5d90",
+      "baked_source_sha256": "fcb4498f83f23242a81de954a0e0a641bc3ed6e62b35952d472a25f469fe5d90"
+    },
+    ".godot/shader_cache/GiShaderRD/864c72adcc9d4215aaa988bcdbe17243ae2584180192c9ad0bf0bfa055a066da/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2920752,
+      "bytes": 31520,
+      "flags": 0,
+      "package_md5": "90458c72883d37b18ec0169f69b6f792",
+      "actual_md5": "90458c72883d37b18ec0169f69b6f792",
+      "sha256": "b1b373ceb5dcb794ab5860e7ddb23a36d59a55447a67af26a34749cafb4a4b53",
+      "baked_source_sha256": "b1b373ceb5dcb794ab5860e7ddb23a36d59a55447a67af26a34749cafb4a4b53"
+    },
+    ".godot/shader_cache/IntegrateDfgShaderRD/158dc8d9c8cb3df6b29130858f47a2ce323b126228381e36f84f1c1937c88a37/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2526816,
+      "bytes": 2000,
+      "flags": 0,
+      "package_md5": "be9dca7dbae4a3903f6040a27be78fb5",
+      "actual_md5": "be9dca7dbae4a3903f6040a27be78fb5",
+      "sha256": "5aeb6b651504f7c75f14a6de5057e600936ea4ee1482a79b702f984454ae164b",
+      "baked_source_sha256": "5aeb6b651504f7c75f14a6de5057e600936ea4ee1482a79b702f984454ae164b"
+    },
+    ".godot/shader_cache/LuminanceReduceShaderRD/4933165b81e86a471b993ab65e6083a133a933164cecd3c02509d46a98d6d474/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3099120,
+      "bytes": 2852,
+      "flags": 0,
+      "package_md5": "650a3b4d35dce84566d5f5fbb4cd1062",
+      "actual_md5": "650a3b4d35dce84566d5f5fbb4cd1062",
+      "sha256": "368ebf26fdb3ac221a4789b2a271274765691543280251318b161c7ad349318c",
+      "baked_source_sha256": "368ebf26fdb3ac221a4789b2a271274765691543280251318b161c7ad349318c"
+    },
+    ".godot/shader_cache/MotionVectorDecodeShaderRD/64763db67196cab1c133af829bbdff843266667f961a57a9dc247ffc78aed1bb/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2615376,
+      "bytes": 840,
+      "flags": 0,
+      "package_md5": "2b6b448d7d749478a013284d58abaad8",
+      "actual_md5": "2b6b448d7d749478a013284d58abaad8",
+      "sha256": "fe9661294b7ff67b47846f5b613faeb6942a28df79a5b862406bc8fdfd099eaa",
+      "baked_source_sha256": "fe9661294b7ff67b47846f5b613faeb6942a28df79a5b862406bc8fdfd099eaa"
+    },
+    ".godot/shader_cache/MotionVectorsShaderRD/3fb7d335d09f01d3df105ead9c3d2be82bb53c6b1343e8b271f0ce6a2b622aa5/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3097456,
+      "bytes": 1652,
+      "flags": 0,
+      "package_md5": "175a06045b48371a129f9a3aeee2042b",
+      "actual_md5": "175a06045b48371a129f9a3aeee2042b",
+      "sha256": "316569e4e2698e6930c35bef5375a91f42630456aa1e5f59a1ec0c24c6caad5f",
+      "baked_source_sha256": "316569e4e2698e6930c35bef5375a91f42630456aa1e5f59a1ec0c24c6caad5f"
+    },
+    ".godot/shader_cache/MotionVectorsStoreShaderRD/3730738c007c9d6f8fd0daad6855f6cd9a8ffc8b853237f14ee41587f4857d48/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2691872,
+      "bytes": 832,
+      "flags": 0,
+      "package_md5": "6686080620f7bf0d5c842dde42280f21",
+      "actual_md5": "6686080620f7bf0d5c842dde42280f21",
+      "sha256": "68fe44ca8306a028810bc5bfd504e8f928412b30e384699e88cc162c2c014544",
+      "baked_source_sha256": "68fe44ca8306a028810bc5bfd504e8f928412b30e384699e88cc162c2c014544"
+    },
+    ".godot/shader_cache/MultimeshMergeShaderRD/a20a8a4b3780145a5ccb0c4fb112787f8700f74c1a4cb028f18fb646a0595e68/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2692704,
+      "bytes": 4644,
+      "flags": 0,
+      "package_md5": "1d76e90557c9adb88e3960cf7605a1de",
+      "actual_md5": "1d76e90557c9adb88e3960cf7605a1de",
+      "sha256": "7a0909c087fcb724a15f39ebd1cd2ce402c23380d47f88c9f652ae944bf82b6f",
+      "baked_source_sha256": "7a0909c087fcb724a15f39ebd1cd2ce402c23380d47f88c9f652ae944bf82b6f"
+    },
+    ".godot/shader_cache/OctmapDownsamplerShaderRD/a1b0d4b6ac7532121dd9ccf7af899c427dffd36d670b569c8b1ce3e2a45c1411/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3059888,
+      "bytes": 2944,
+      "flags": 0,
+      "package_md5": "955471c6f618a63fa1954bb57aba919a",
+      "actual_md5": "955471c6f618a63fa1954bb57aba919a",
+      "sha256": "709dfa309c7327d950d4368d2b95e484de4073269a3ee19763c13420d0b561df",
+      "baked_source_sha256": "709dfa309c7327d950d4368d2b95e484de4073269a3ee19763c13420d0b561df"
+    },
+    ".godot/shader_cache/OctmapFilterShaderRD/a3e56da1e1136940a22a853467979e39f84720aceb55e878e62680be765584a7/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3062832,
+      "bytes": 23840,
+      "flags": 0,
+      "package_md5": "232905ee4656ced6317854baa18a8e34",
+      "actual_md5": "232905ee4656ced6317854baa18a8e34",
+      "sha256": "f262e486ea81f7e3df0139b7fbd12129d6c083dc5f22db1c0194a6733e501ca8",
+      "baked_source_sha256": "f262e486ea81f7e3df0139b7fbd12129d6c083dc5f22db1c0194a6733e501ca8"
+    },
+    ".godot/shader_cache/OctmapRoughnessShaderRD/76a7b47d3125cf23751da3596a7c969df68b01c9923977b1f8e0ba6dfb5c6d92/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3086672,
+      "bytes": 5248,
+      "flags": 0,
+      "package_md5": "5cd407f918b583b3f4254d926762d8a8",
+      "actual_md5": "5cd407f918b583b3f4254d926762d8a8",
+      "sha256": "65ce8924c27b751d9153cf17d075d8d7bd4f8ea37d6a2fbf4faa40b23ce9e7b3",
+      "baked_source_sha256": "65ce8924c27b751d9153cf17d075d8d7bd4f8ea37d6a2fbf4faa40b23ce9e7b3"
+    },
+    ".godot/shader_cache/ParticlesCopyShaderRD/81f96151a10891c4e351c019b41848832723bdccc3d44b60a681aa6361bfbf2d/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2422624,
+      "bytes": 45896,
+      "flags": 0,
+      "package_md5": "7dde5a651a739968fad0d6ae896e7291",
+      "actual_md5": "7dde5a651a739968fad0d6ae896e7291",
+      "sha256": "e9353ed697c601e25574f5a79388234652dc87df902e21317b230610dfe6ed98",
+      "baked_source_sha256": "e9353ed697c601e25574f5a79388234652dc87df902e21317b230610dfe6ed98"
+    },
+    ".godot/shader_cache/ParticlesShaderRD/41705444ee1d8b65e3283e3c542448132a708cdba3d36180d3ab1117f5dcdf09/07b5904b662900d90454c39c46885098de79aa4c.vulkan.cache": {
+      "offset": 2416128,
+      "bytes": 6484,
+      "flags": 0,
+      "package_md5": "6e531c4931699ee90d053e5ce48ef2b9",
+      "actual_md5": "6e531c4931699ee90d053e5ce48ef2b9",
+      "sha256": "136f6950b4e3e99cbdf5a73d681122b74ab32838179057e17505ac8072d7e602",
+      "baked_source_sha256": "136f6950b4e3e99cbdf5a73d681122b74ab32838179057e17505ac8072d7e602"
+    },
+    ".godot/shader_cache/ParticlesShaderRD/41705444ee1d8b65e3283e3c542448132a708cdba3d36180d3ab1117f5dcdf09/516ec521ae34af1eaa78e2bf22f1ed70ea17c826.vulkan.cache": {
+      "offset": 3631264,
+      "bytes": 10656,
+      "flags": 0,
+      "package_md5": "d34d57edcb1b3052f143440caf72abb0",
+      "actual_md5": "d34d57edcb1b3052f143440caf72abb0",
+      "sha256": "65e4a9930c79b19c201e251c1470e490d9d792c6bbad06e634b40f10d207b55b",
+      "baked_source_sha256": "65e4a9930c79b19c201e251c1470e490d9d792c6bbad06e634b40f10d207b55b"
+    },
+    ".godot/shader_cache/ResolveShaderRD/700a81e30e8f167e6a7f197be34a4cf0721262581e1748e785074551a5d5665d/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3147728,
+      "bytes": 4036,
+      "flags": 0,
+      "package_md5": "71738991414068b6ed6a65cc84292eb5",
+      "actual_md5": "71738991414068b6ed6a65cc84292eb5",
+      "sha256": "f473ff0db0c889e4ca933bf5c2e0f0acca58973fc3345af7ef598e2456d71d3a",
+      "baked_source_sha256": "f473ff0db0c889e4ca933bf5c2e0f0acca58973fc3345af7ef598e2456d71d3a"
+    },
+    ".godot/shader_cache/RtxdiDiShaderRD/c1078845a620657e485bb4437b82a6ac751b3a14e45c2ed6085793e410d6cedd/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2697360,
+      "bytes": 109612,
+      "flags": 0,
+      "package_md5": "f196697eaa97792008f3e3c8a248abd7",
+      "actual_md5": "f196697eaa97792008f3e3c8a248abd7",
+      "sha256": "29cab411d776673ad145940a22bc7ecab63236775899b91a4afca479412ca5b8",
+      "baked_source_sha256": "29cab411d776673ad145940a22bc7ecab63236775899b91a4afca479412ca5b8"
+    },
+    ".godot/shader_cache/RtxdiFrameShaderRD/0ca6a2c959ad72af3c9ef1548b363b0c1f1490565344c8b2d18f8a8b912651b7/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2806976,
+      "bytes": 8000,
+      "flags": 0,
+      "package_md5": "195a14198045b2f20f8c8fc40b4fef7f",
+      "actual_md5": "195a14198045b2f20f8c8fc40b4fef7f",
+      "sha256": "8917ddb4a73334c5c37c1b9295fc1fa4c13c6996fb5c2c2a9ca785270bdb7455",
+      "baked_source_sha256": "8917ddb4a73334c5c37c1b9295fc1fa4c13c6996fb5c2c2a9ca785270bdb7455"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/1d0deb3392d8e8d592156b4a8b02ef9f9b88eb956e7da1387118f7ea7f53a9e3/0d76d97b83c56c27c1955052a2b4590b70f0b952.vulkan.cache": {
+      "offset": 3418336,
+      "bytes": 46056,
+      "flags": 0,
+      "package_md5": "f86e3c54461c7d7a1566cb076fe95948",
+      "actual_md5": "f86e3c54461c7d7a1566cb076fe95948",
+      "sha256": "f8b5c264ff3c262a80274c5454c186a3cfa99d4d8985a851fd0b23355f64efbc",
+      "baked_source_sha256": "f8b5c264ff3c262a80274c5454c186a3cfa99d4d8985a851fd0b23355f64efbc"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/1d0deb3392d8e8d592156b4a8b02ef9f9b88eb956e7da1387118f7ea7f53a9e3/16fbf50afc1a60c1a560797c4851f8cc9270a4ee.vulkan.cache": {
+      "offset": 4003680,
+      "bytes": 46068,
+      "flags": 0,
+      "package_md5": "3eeaa0d2c96e4c75aa08d941d651e41a",
+      "actual_md5": "3eeaa0d2c96e4c75aa08d941d651e41a",
+      "sha256": "76ce3babdc2b8cc787bb9babb80d1003b36a04cb029a5695c9437b047c962950",
+      "baked_source_sha256": "76ce3babdc2b8cc787bb9babb80d1003b36a04cb029a5695c9437b047c962950"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/1d0deb3392d8e8d592156b4a8b02ef9f9b88eb956e7da1387118f7ea7f53a9e3/1f3c3eca6da07d809f5bfad6b67793d4e8abfbc1.vulkan.cache": {
+      "offset": 3254256,
+      "bytes": 46108,
+      "flags": 0,
+      "package_md5": "7c553b40b12798519f133b850ecf813f",
+      "actual_md5": "7c553b40b12798519f133b850ecf813f",
+      "sha256": "279c224382c11c4f62ddfdae83b319e986813c44912ddf45cc519281e4e77e17",
+      "baked_source_sha256": "279c224382c11c4f62ddfdae83b319e986813c44912ddf45cc519281e4e77e17"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/1d0deb3392d8e8d592156b4a8b02ef9f9b88eb956e7da1387118f7ea7f53a9e3/1fb882e55a0883484d685c3b3347505390861c6e.vulkan.cache": {
+      "offset": 3732096,
+      "bytes": 51572,
+      "flags": 0,
+      "package_md5": "eb9bc0afd2895b928618a4fb80b8b1f8",
+      "actual_md5": "eb9bc0afd2895b928618a4fb80b8b1f8",
+      "sha256": "164e9daa86560d6e3f1f68a0b7d73d4e18b82c7f1e3d24e03127e2f358169705",
+      "baked_source_sha256": "164e9daa86560d6e3f1f68a0b7d73d4e18b82c7f1e3d24e03127e2f358169705"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/1d0deb3392d8e8d592156b4a8b02ef9f9b88eb956e7da1387118f7ea7f53a9e3/425189d5b00910c4420aac0074efd51cef8c4a0f.vulkan.cache": {
+      "offset": 3913872,
+      "bytes": 50336,
+      "flags": 0,
+      "package_md5": "71b9b39a23c1565786cb3274e0497676",
+      "actual_md5": "71b9b39a23c1565786cb3274e0497676",
+      "sha256": "ca2706f7f9c3a18dbbe0018843b2c98d9fe88d19bade3b538d24a60f5e6b0b4b",
+      "baked_source_sha256": "ca2706f7f9c3a18dbbe0018843b2c98d9fe88d19bade3b538d24a60f5e6b0b4b"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/1d0deb3392d8e8d592156b4a8b02ef9f9b88eb956e7da1387118f7ea7f53a9e3/51a54e9d7da9c8b84b5b8221c7b30a045fbc27c3.vulkan.cache": {
+      "offset": 3823696,
+      "bytes": 50492,
+      "flags": 0,
+      "package_md5": "6f0c8d15706de43cffb4c75e2daf0264",
+      "actual_md5": "6f0c8d15706de43cffb4c75e2daf0264",
+      "sha256": "e5a8227982bc5f227cff9d45b2f8da9a16d08da510590ba91ea04e32dc2f24d3",
+      "baked_source_sha256": "e5a8227982bc5f227cff9d45b2f8da9a16d08da510590ba91ea04e32dc2f24d3"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/1d0deb3392d8e8d592156b4a8b02ef9f9b88eb956e7da1387118f7ea7f53a9e3/78e1a0918b7abf3fbd396f46366c232bba39627d.vulkan.cache": {
+      "offset": 4085792,
+      "bytes": 55260,
+      "flags": 0,
+      "package_md5": "34848ff3ac95cbced2624f452b3b6286",
+      "actual_md5": "34848ff3ac95cbced2624f452b3b6286",
+      "sha256": "f667d02ef82d16475f13ef959ea0baa61f62e0989d19ce5c1ac8c97baf3e8545",
+      "baked_source_sha256": "f667d02ef82d16475f13ef959ea0baa61f62e0989d19ce5c1ac8c97baf3e8545"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/1d0deb3392d8e8d592156b4a8b02ef9f9b88eb956e7da1387118f7ea7f53a9e3/999c67aedede7209b40a5f1b209774e9ea679125.vulkan.cache": {
+      "offset": 4180976,
+      "bytes": 50148,
+      "flags": 0,
+      "package_md5": "cb92503dbe58ed195501974a94284fe7",
+      "actual_md5": "cb92503dbe58ed195501974a94284fe7",
+      "sha256": "c6b9266c902daa4a4b58f978d792334013c7ca304dcf4018a112fc9397751350",
+      "baked_source_sha256": "c6b9266c902daa4a4b58f978d792334013c7ca304dcf4018a112fc9397751350"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/1d0deb3392d8e8d592156b4a8b02ef9f9b88eb956e7da1387118f7ea7f53a9e3/b1f1598258fba0910b0f989d6b58623a7b4445dd.vulkan.cache": {
+      "offset": 3336448,
+      "bytes": 46008,
+      "flags": 0,
+      "package_md5": "802c5695109e1e1fbb681b3ce11a623a",
+      "actual_md5": "802c5695109e1e1fbb681b3ce11a623a",
+      "sha256": "954182306f16a99330e0c1f905e801568b7afaed48a43a928d3242b9dc3e8186",
+      "baked_source_sha256": "954182306f16a99330e0c1f905e801568b7afaed48a43a928d3242b9dc3e8186"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/1d0deb3392d8e8d592156b4a8b02ef9f9b88eb956e7da1387118f7ea7f53a9e3/bf0e57a6f6440558225d83b79e8744c9cd60db0d.vulkan.cache": {
+      "offset": 3641920,
+      "bytes": 50492,
+      "flags": 0,
+      "package_md5": "6f1093c4b15cb3914a4f3005ac511070",
+      "actual_md5": "6f1093c4b15cb3914a4f3005ac511070",
+      "sha256": "df56728cf005d400676013697a488176887bcea6cd119f72be404641aa76271f",
+      "baked_source_sha256": "df56728cf005d400676013697a488176887bcea6cd119f72be404641aa76271f"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/1d0deb3392d8e8d592156b4a8b02ef9f9b88eb956e7da1387118f7ea7f53a9e3/ed8c25bef312f05d3ce5ebfc11de8eed699abe7f.vulkan.cache": {
+      "offset": 3500416,
+      "bytes": 50112,
+      "flags": 0,
+      "package_md5": "27e5a03be4c9a0be961f583cac6cedf8",
+      "actual_md5": "27e5a03be4c9a0be961f583cac6cedf8",
+      "sha256": "c17e3e0cad3a9847587293296fd9761bce6def5342eca420bae253e82215b040",
+      "baked_source_sha256": "c17e3e0cad3a9847587293296fd9761bce6def5342eca420bae253e82215b040"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/247c8be0941b409e0dfeea14bd4e7665622cb143db298397e4b3cff4ceadb693/0d76d97b83c56c27c1955052a2b4590b70f0b952.vulkan.cache": {
+      "offset": 3464400,
+      "bytes": 36016,
+      "flags": 0,
+      "package_md5": "e77575b3a129b5eaa3758400351b7b4d",
+      "actual_md5": "e77575b3a129b5eaa3758400351b7b4d",
+      "sha256": "3128da91baf3b88159b0a9766f6f46b03936fc8fcced0d37b27ca74f5030625e",
+      "baked_source_sha256": "3128da91baf3b88159b0a9766f6f46b03936fc8fcced0d37b27ca74f5030625e"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/247c8be0941b409e0dfeea14bd4e7665622cb143db298397e4b3cff4ceadb693/16fbf50afc1a60c1a560797c4851f8cc9270a4ee.vulkan.cache": {
+      "offset": 4049760,
+      "bytes": 36024,
+      "flags": 0,
+      "package_md5": "048f204873a1c5e8c2f7d945f0e9a593",
+      "actual_md5": "048f204873a1c5e8c2f7d945f0e9a593",
+      "sha256": "ffadfb28d5163f7403fbe367690728dbcd9bd726c50d7af6a1f821bca27aa28a",
+      "baked_source_sha256": "ffadfb28d5163f7403fbe367690728dbcd9bd726c50d7af6a1f821bca27aa28a"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/247c8be0941b409e0dfeea14bd4e7665622cb143db298397e4b3cff4ceadb693/1f3c3eca6da07d809f5bfad6b67793d4e8abfbc1.vulkan.cache": {
+      "offset": 3300368,
+      "bytes": 36076,
+      "flags": 0,
+      "package_md5": "adbad0ecabe367100c2070bd69ffb257",
+      "actual_md5": "adbad0ecabe367100c2070bd69ffb257",
+      "sha256": "0240e0717c5e772d80fc2d51a71e5c8cd11513b3b4b56e92a929ce0388c96282",
+      "baked_source_sha256": "0240e0717c5e772d80fc2d51a71e5c8cd11513b3b4b56e92a929ce0388c96282"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/247c8be0941b409e0dfeea14bd4e7665622cb143db298397e4b3cff4ceadb693/1fb882e55a0883484d685c3b3347505390861c6e.vulkan.cache": {
+      "offset": 3783680,
+      "bytes": 40016,
+      "flags": 0,
+      "package_md5": "0ac6057a0095957eb9805cf859b3961a",
+      "actual_md5": "0ac6057a0095957eb9805cf859b3961a",
+      "sha256": "302107634efb489594513c18f2c796f607a9e185792de5bfcc8d3b033f54de89",
+      "baked_source_sha256": "302107634efb489594513c18f2c796f607a9e185792de5bfcc8d3b033f54de89"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/247c8be0941b409e0dfeea14bd4e7665622cb143db298397e4b3cff4ceadb693/425189d5b00910c4420aac0074efd51cef8c4a0f.vulkan.cache": {
+      "offset": 3964208,
+      "bytes": 39468,
+      "flags": 0,
+      "package_md5": "2b2fd0198d1e83bc6e025b65c6d59d4e",
+      "actual_md5": "2b2fd0198d1e83bc6e025b65c6d59d4e",
+      "sha256": "1bc450f608766024eb0ae90e13014dc7e01a2331717adf6127a0358e3f803e4e",
+      "baked_source_sha256": "1bc450f608766024eb0ae90e13014dc7e01a2331717adf6127a0358e3f803e4e"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/247c8be0941b409e0dfeea14bd4e7665622cb143db298397e4b3cff4ceadb693/51a54e9d7da9c8b84b5b8221c7b30a045fbc27c3.vulkan.cache": {
+      "offset": 3874192,
+      "bytes": 39672,
+      "flags": 0,
+      "package_md5": "163fe69e8d86327f0390f2b516c10518",
+      "actual_md5": "163fe69e8d86327f0390f2b516c10518",
+      "sha256": "e583d70fa06d7c9cd78b2eefa8518f96875ac08f31dc88fdd920d1e740fcbeea",
+      "baked_source_sha256": "e583d70fa06d7c9cd78b2eefa8518f96875ac08f31dc88fdd920d1e740fcbeea"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/247c8be0941b409e0dfeea14bd4e7665622cb143db298397e4b3cff4ceadb693/78e1a0918b7abf3fbd396f46366c232bba39627d.vulkan.cache": {
+      "offset": 4141056,
+      "bytes": 39912,
+      "flags": 0,
+      "package_md5": "90ad01e495916b54fde6b270d8537cf7",
+      "actual_md5": "90ad01e495916b54fde6b270d8537cf7",
+      "sha256": "c48b6a69cf962eb4c40a769cf28581f24ed57044c282e40734a75a3305d8b982",
+      "baked_source_sha256": "c48b6a69cf962eb4c40a769cf28581f24ed57044c282e40734a75a3305d8b982"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/247c8be0941b409e0dfeea14bd4e7665622cb143db298397e4b3cff4ceadb693/999c67aedede7209b40a5f1b209774e9ea679125.vulkan.cache": {
+      "offset": 4231136,
+      "bytes": 39268,
+      "flags": 0,
+      "package_md5": "468712b13bb7fbe3c96a862f1bf05d3b",
+      "actual_md5": "468712b13bb7fbe3c96a862f1bf05d3b",
+      "sha256": "230241d5db18ae97bc0c38f95115d0d33ad2a5b2b95d4d1a75db810d5088df5f",
+      "baked_source_sha256": "230241d5db18ae97bc0c38f95115d0d33ad2a5b2b95d4d1a75db810d5088df5f"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/247c8be0941b409e0dfeea14bd4e7665622cb143db298397e4b3cff4ceadb693/b1f1598258fba0910b0f989d6b58623a7b4445dd.vulkan.cache": {
+      "offset": 3382464,
+      "bytes": 35860,
+      "flags": 0,
+      "package_md5": "872e528e20a8f14a48b7823db8822bbc",
+      "actual_md5": "872e528e20a8f14a48b7823db8822bbc",
+      "sha256": "e5f842eb601929725c90eca3d01dde52ae530561247f3f9d3a3a61ba7628f3c0",
+      "baked_source_sha256": "e5f842eb601929725c90eca3d01dde52ae530561247f3f9d3a3a61ba7628f3c0"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/247c8be0941b409e0dfeea14bd4e7665622cb143db298397e4b3cff4ceadb693/bf0e57a6f6440558225d83b79e8744c9cd60db0d.vulkan.cache": {
+      "offset": 3692416,
+      "bytes": 39672,
+      "flags": 0,
+      "package_md5": "27648ce61f89b4832e0b5a492eca66d0",
+      "actual_md5": "27648ce61f89b4832e0b5a492eca66d0",
+      "sha256": "abd65dae0a485b553447eae4f50fdadd2010ed9c2800ad0a75e91ee85d86e499",
+      "baked_source_sha256": "abd65dae0a485b553447eae4f50fdadd2010ed9c2800ad0a75e91ee85d86e499"
+    },
+    ".godot/shader_cache/SceneForwardClusteredShaderRD/247c8be0941b409e0dfeea14bd4e7665622cb143db298397e4b3cff4ceadb693/ed8c25bef312f05d3ce5ebfc11de8eed699abe7f.vulkan.cache": {
+      "offset": 3550528,
+      "bytes": 39220,
+      "flags": 0,
+      "package_md5": "357f2079b0094d0b59ebc7892ddf02df",
+      "actual_md5": "357f2079b0094d0b59ebc7892ddf02df",
+      "sha256": "15487866f15efccce1ba2a3bf2e336afff96c8355d069efe34acf4ab7a9f811a",
+      "baked_source_sha256": "15487866f15efccce1ba2a3bf2e336afff96c8355d069efe34acf4ab7a9f811a"
+    },
+    ".godot/shader_cache/ScreenSpaceReflectionDownsampleShaderRD/9055968ee5c66d01baf0eccaeb215920c75d1469b429dd6076290765dac90e58/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2672464,
+      "bytes": 3900,
+      "flags": 0,
+      "package_md5": "f86067957fe41972c05409ca30c2eb89",
+      "actual_md5": "f86067957fe41972c05409ca30c2eb89",
+      "sha256": "0a6b200678231755e19bee48d3bfecea316ec8fb31424702ac1582a0b9bb215e",
+      "baked_source_sha256": "0a6b200678231755e19bee48d3bfecea316ec8fb31424702ac1582a0b9bb215e"
+    },
+    ".godot/shader_cache/ScreenSpaceReflectionFilterShaderRD/acec025b59881fd2daa08f4fae76c3e32728fbe78d3c0fc94a86b2eb19f1735c/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2683312,
+      "bytes": 1644,
+      "flags": 0,
+      "package_md5": "39a1d3ce0d773621beb1a64cca7e099f",
+      "actual_md5": "39a1d3ce0d773621beb1a64cca7e099f",
+      "sha256": "00c748a665282b70137b7e91e13d0c3ef9912ffeeb336c136c84ce28abfe5c3b",
+      "baked_source_sha256": "00c748a665282b70137b7e91e13d0c3ef9912ffeeb336c136c84ce28abfe5c3b"
+    },
+    ".godot/shader_cache/ScreenSpaceReflectionHizShaderRD/7d4b7eae5479927807993c9a249c1d1942608d6566b0011613fd5c2459ec8dda/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2676368,
+      "bytes": 2992,
+      "flags": 0,
+      "package_md5": "37f27c011f4a57247e1da4696dea6f5c",
+      "actual_md5": "37f27c011f4a57247e1da4696dea6f5c",
+      "sha256": "5bc8e42bda89c508c010e4eff1caf02a44502ece5ef97b5ae03e341ddbaa1eac",
+      "baked_source_sha256": "5bc8e42bda89c508c010e4eff1caf02a44502ece5ef97b5ae03e341ddbaa1eac"
+    },
+    ".godot/shader_cache/ScreenSpaceReflectionResolveShaderRD/225e43bf344c8563526cdf2e82db0fbb995c5367f1720f5a9f1812d36d9e3bbb/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2684960,
+      "bytes": 1696,
+      "flags": 0,
+      "package_md5": "8a30a0b5dbd6a42c5f0a27a8af89a770",
+      "actual_md5": "8a30a0b5dbd6a42c5f0a27a8af89a770",
+      "sha256": "883456737d4ecfbb08430fe52709de76af4a071e9e1de67e2eb2c53123d4df58",
+      "baked_source_sha256": "883456737d4ecfbb08430fe52709de76af4a071e9e1de67e2eb2c53123d4df58"
+    },
+    ".godot/shader_cache/ScreenSpaceReflectionShaderRD/c349956885cd935fd7caa1b42201d98a59d0054dbc519e1bea8f7b060499b1e0/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2679360,
+      "bytes": 3940,
+      "flags": 0,
+      "package_md5": "e983c068f03fdec8aada92ca6b1b9d1a",
+      "actual_md5": "e983c068f03fdec8aada92ca6b1b9d1a",
+      "sha256": "ec514a254a67c310ecafc02bc10ef78230b6cf11a692016a5e7cd15897e560dd",
+      "baked_source_sha256": "ec514a254a67c310ecafc02bc10ef78230b6cf11a692016a5e7cd15897e560dd"
+    },
+    ".godot/shader_cache/SdfgiDebugProbesShaderRD/2a0a272915c7411c9136be7c74a4499ca0806a8dbfafbe77ded5ab58d7871d3f/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2989616,
+      "bytes": 7980,
+      "flags": 0,
+      "package_md5": "59e80b2a746fbba19898b82696c34129",
+      "actual_md5": "59e80b2a746fbba19898b82696c34129",
+      "sha256": "46fef1bf5a364770aed39703d83e4f22d23ae6409f6e15d8c1babb5570ca37c3",
+      "baked_source_sha256": "46fef1bf5a364770aed39703d83e4f22d23ae6409f6e15d8c1babb5570ca37c3"
+    },
+    ".godot/shader_cache/SdfgiDebugShaderRD/5454b14a5bbf70a177c1f8f436e19702a1f5e36c7664627afd698332f21015e9/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2987248,
+      "bytes": 2364,
+      "flags": 0,
+      "package_md5": "f6f49c73d65054065131e9e5288bdeff",
+      "actual_md5": "f6f49c73d65054065131e9e5288bdeff",
+      "sha256": "a06f4720d0cc52b7dfbf77f6c82b9a67cae7d565ca6cc212c9e0f79860c61533",
+      "baked_source_sha256": "a06f4720d0cc52b7dfbf77f6c82b9a67cae7d565ca6cc212c9e0f79860c61533"
+    },
+    ".godot/shader_cache/SdfgiDirectLightShaderRD/3571316cdc0a22239c1219391a7be6d7b79afdbaf426a2a424f54c6788156170/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2890992,
+      "bytes": 16940,
+      "flags": 0,
+      "package_md5": "31750b30877cafaf0f85df55ebb1f511",
+      "actual_md5": "31750b30877cafaf0f85df55ebb1f511",
+      "sha256": "db6c212402680e55405edda50276a11d556e093d2fe53d5dac72d8ff8e6ce3fc",
+      "baked_source_sha256": "db6c212402680e55405edda50276a11d556e093d2fe53d5dac72d8ff8e6ce3fc"
+    },
+    ".godot/shader_cache/SdfgiIntegrateShaderRD/f1f33412fb1229e3cdd01c3b71b61fe7a1d5a249dcc129b1379647bb81bf13c3/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2907936,
+      "bytes": 12808,
+      "flags": 0,
+      "package_md5": "a30351736fa69a12e58e5bc308d69427",
+      "actual_md5": "a30351736fa69a12e58e5bc308d69427",
+      "sha256": "97b836e4067e7619891e187867dd4c58c367fcfb7f140582eb2361d533899f10",
+      "baked_source_sha256": "97b836e4067e7619891e187867dd4c58c367fcfb7f140582eb2361d533899f10"
+    },
+    ".godot/shader_cache/SdfgiPreprocessShaderRD/8fe3aad3675e28f1b075d739fa7b7e02fa00b9298284a00734829240dad82f8d/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2876336,
+      "bytes": 14652,
+      "flags": 0,
+      "package_md5": "42746a66bf4220cf4ed2858b679418ce",
+      "actual_md5": "42746a66bf4220cf4ed2858b679418ce",
+      "sha256": "d7214ed860460b2a4979539d4be1c007495e13fc89c1c4c7a20fc1dfb6a1eb2d",
+      "baked_source_sha256": "d7214ed860460b2a4979539d4be1c007495e13fc89c1c4c7a20fc1dfb6a1eb2d"
+    },
+    ".godot/shader_cache/ShadowFrustumShaderRD/8b9baffca86c4576055a58a672a68820465a02dbb15a529db45952b8f50c788c/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3096752,
+      "bytes": 696,
+      "flags": 0,
+      "package_md5": "6cb005d4112d57b7cc2a63c83c610da2",
+      "actual_md5": "6cb005d4112d57b7cc2a63c83c610da2",
+      "sha256": "e3bb1943d9152c4efac4a839c07898576fa8f451aea7266d45229e2e4097e207",
+      "baked_source_sha256": "e3bb1943d9152c4efac4a839c07898576fa8f451aea7266d45229e2e4097e207"
+    },
+    ".godot/shader_cache/SkeletonShaderRD/7acb87c78b142b1d1cddd28fc51e3494024c632af33aafe327e4b860b89716c4/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2407792,
+      "bytes": 5276,
+      "flags": 0,
+      "package_md5": "233c3d9f35b3336b9b5b35ea857f3e63",
+      "actual_md5": "233c3d9f35b3336b9b5b35ea857f3e63",
+      "sha256": "c60c341896cbe6d2cab1d203e7b1e55ae705b7a90924122c27a0a80b22ecf600",
+      "baked_source_sha256": "c60c341896cbe6d2cab1d203e7b1e55ae705b7a90924122c27a0a80b22ecf600"
+    },
+    ".godot/shader_cache/SkyShaderRD/e6be56ff06c60730a90aa0fcc5edad72375b20627ca771a394aeefe6626c01e8/0fa1946a11e1cca806ebfe4b3b4ac7f723d8b701.vulkan.cache": {
+      "offset": 2814976,
+      "bytes": 16728,
+      "flags": 0,
+      "package_md5": "bbf467bc5f968810ea8d415d6ff03481",
+      "actual_md5": "bbf467bc5f968810ea8d415d6ff03481",
+      "sha256": "2eb5c4400fe57f3492fd8de16f38707417ddc0277b9051054e6656ed6360b5f2",
+      "baked_source_sha256": "2eb5c4400fe57f3492fd8de16f38707417ddc0277b9051054e6656ed6360b5f2"
+    },
+    ".godot/shader_cache/SkyShaderRD/e6be56ff06c60730a90aa0fcc5edad72375b20627ca771a394aeefe6626c01e8/9247dd7bf98483a15ebb05f8c580a398614a07d8.vulkan.cache": {
+      "offset": 3158304,
+      "bytes": 21648,
+      "flags": 0,
+      "package_md5": "8421696fad3d4da4f48a0f41bb70798f",
+      "actual_md5": "8421696fad3d4da4f48a0f41bb70798f",
+      "sha256": "4e17790e49c8db965985fa733e79b8b6d3d3edc2a15c57363a50eeb7cca42fc3",
+      "baked_source_sha256": "4e17790e49c8db965985fa733e79b8b6d3d3edc2a15c57363a50eeb7cca42fc3"
+    },
+    ".godot/shader_cache/SkyShaderRD/e6be56ff06c60730a90aa0fcc5edad72375b20627ca771a394aeefe6626c01e8/d7d7b98c36a8d3a2f21f0aa98936e605ade9ea42.vulkan.cache": {
+      "offset": 3179952,
+      "bytes": 23196,
+      "flags": 0,
+      "package_md5": "a46404907653149ef3914c927cc886bf",
+      "actual_md5": "a46404907653149ef3914c927cc886bf",
+      "sha256": "b1716406bf530e1066af6f2b886bc6f4289cac96f9d725f175b8cf38688c143e",
+      "baked_source_sha256": "b1716406bf530e1066af6f2b886bc6f4289cac96f9d725f175b8cf38688c143e"
+    },
+    ".godot/shader_cache/SkyShaderRD/e6be56ff06c60730a90aa0fcc5edad72375b20627ca771a394aeefe6626c01e8/ff1961ca0c4c55a79eb12f819a7b6345801bbbaf.vulkan.cache": {
+      "offset": 2831712,
+      "bytes": 17112,
+      "flags": 0,
+      "package_md5": "adc2a413947cbb960696e563c98a6eb3",
+      "actual_md5": "adc2a413947cbb960696e563c98a6eb3",
+      "sha256": "5cd84a8cef31c6c8e124cc8cf749766d984a8767eb958a93707847301acd9ae8",
+      "baked_source_sha256": "5cd84a8cef31c6c8e124cc8cf749766d984a8767eb958a93707847301acd9ae8"
+    },
+    ".godot/shader_cache/SmaaBlendingShaderRD/0daf337982e573e463b1ad2f753b74465b7fca85cdb98f4705f3d4316fd234fa/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3107952,
+      "bytes": 1960,
+      "flags": 0,
+      "package_md5": "283c6c63cedca88bc0683eca186e949e",
+      "actual_md5": "283c6c63cedca88bc0683eca186e949e",
+      "sha256": "65ba2b0ca10afd2b8af4a9140e9bc739e91e4c6215b1c5e5dc163499acb1145e",
+      "baked_source_sha256": "65ba2b0ca10afd2b8af4a9140e9bc739e91e4c6215b1c5e5dc163499acb1145e"
+    },
+    ".godot/shader_cache/SmaaEdgeDetectionShaderRD/3bebfbe6d3fc3e0558c177a511c1427d156736bdfc383b93b9fbe072331e0569/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3101984,
+      "bytes": 1412,
+      "flags": 0,
+      "package_md5": "c319e6efa33109d2b59bd78b25922f91",
+      "actual_md5": "c319e6efa33109d2b59bd78b25922f91",
+      "sha256": "1dd556f1d0163c4a0aa5c062865abd7a659db176bd12008c94fefc1ea134e1c9",
+      "baked_source_sha256": "1dd556f1d0163c4a0aa5c062865abd7a659db176bd12008c94fefc1ea134e1c9"
+    },
+    ".godot/shader_cache/SmaaWeightCalculationShaderRD/f4eafe9edce05742c1bbb685ac6f370109f83ddc8b5e8768e4b152d23fa24ca6/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3103408,
+      "bytes": 4532,
+      "flags": 0,
+      "package_md5": "93c61d544f34d7d1eefaa2d195f84836",
+      "actual_md5": "93c61d544f34d7d1eefaa2d195f84836",
+      "sha256": "c6bbb3b2cfe12bd1be1a351aa69c504fed06b955ed4106a09dd2818143f2e86e",
+      "baked_source_sha256": "c6bbb3b2cfe12bd1be1a351aa69c504fed06b955ed4106a09dd2818143f2e86e"
+    },
+    ".godot/shader_cache/SortShaderRD/4283abbe579a67aaea0bd785d6a778182a50a3c7ecca98368c2fbb19579ae68d/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2413072,
+      "bytes": 3044,
+      "flags": 0,
+      "package_md5": "7a146b47b4edf8f9dfaf7f934c493263",
+      "actual_md5": "7a146b47b4edf8f9dfaf7f934c493263",
+      "sha256": "94cb764418215fecadd963cf4268811f6391c4c850580be73a43ff9094c086af",
+      "baked_source_sha256": "94cb764418215fecadd963cf4268811f6391c4c850580be73a43ff9094c086af"
+    },
+    ".godot/shader_cache/SpecularMergeShaderRD/48c0bfb8f1909be6d3d6fc8fa919ba0ea2a4c151bf8257838d9f8954f72eb098/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3091920,
+      "bytes": 3364,
+      "flags": 0,
+      "package_md5": "ca7c1d91b71e24ae8514fbc36d15033e",
+      "actual_md5": "ca7c1d91b71e24ae8514fbc36d15033e",
+      "sha256": "003dc64e98f5bd13bba8005a48b61c4491103bb1bb45b9743c1eed561551d2b9",
+      "baked_source_sha256": "003dc64e98f5bd13bba8005a48b61c4491103bb1bb45b9743c1eed561551d2b9"
+    },
+    ".godot/shader_cache/SsEffectsDownsampleShaderRD/c5f6326a47cd249aad0159e01116dbc84273a4dd944a23f1f9657685b87f3e4f/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2616224,
+      "bytes": 9864,
+      "flags": 0,
+      "package_md5": "def7f09f96389757fa084f8d180ba92f",
+      "actual_md5": "def7f09f96389757fa084f8d180ba92f",
+      "sha256": "4db7feb18137f37dde39f65133c00966d7767752f7a42183a55eaaaea044df69",
+      "baked_source_sha256": "4db7feb18137f37dde39f65133c00966d7767752f7a42183a55eaaaea044df69"
+    },
+    ".godot/shader_cache/SsaoBlurShaderRD/a775cdd8ae4f778e4b007b8035558af5cdb2f1c36348abb0f6f9ecf100fd8a95/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2666576,
+      "bytes": 3096,
+      "flags": 0,
+      "package_md5": "e7b385edddac716ef8e2b5c54c576734",
+      "actual_md5": "e7b385edddac716ef8e2b5c54c576734",
+      "sha256": "d37a69ad598b5ccef13c953a43ec6c2c7ebb2feb8aa53b6182491e2ba4893504",
+      "baked_source_sha256": "d37a69ad598b5ccef13c953a43ec6c2c7ebb2feb8aa53b6182491e2ba4893504"
+    },
+    ".godot/shader_cache/SsaoImportanceMapShaderRD/72711e348a90a08b7a4e79d356870bead923578c57e1bdfc70d09d7bc37457ab/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2663952,
+      "bytes": 2620,
+      "flags": 0,
+      "package_md5": "a4d3a83613c7a8f4dc8a2b83f7683835",
+      "actual_md5": "a4d3a83613c7a8f4dc8a2b83f7683835",
+      "sha256": "c4e51ab7e10c4ed3c340c5324d10fa6b80991c010bbe8802043aac5220aefe48",
+      "baked_source_sha256": "c4e51ab7e10c4ed3c340c5324d10fa6b80991c010bbe8802043aac5220aefe48"
+    },
+    ".godot/shader_cache/SsaoInterleaveShaderRD/9c6e1acc31079db6b886b1750be12f5b0a26cf36afbc029c1a41305203ca8f61/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2669680,
+      "bytes": 2780,
+      "flags": 0,
+      "package_md5": "ce111fb96c4b75ed690acc1e82260059",
+      "actual_md5": "ce111fb96c4b75ed690acc1e82260059",
+      "sha256": "31107a1ff273aac76dc249fd1dc00499fa1f1b6020e6147d457dcc2d7cdc1d3a",
+      "baked_source_sha256": "31107a1ff273aac76dc249fd1dc00499fa1f1b6020e6147d457dcc2d7cdc1d3a"
+    },
+    ".godot/shader_cache/SsaoShaderRD/1f748b9a4a1266a7e3c6393492c4c6a182534822dd13ddb4a2ee9df1d7b1f34f/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2649408,
+      "bytes": 14532,
+      "flags": 0,
+      "package_md5": "3813fb1e6ac50e2e7d200e9fe62aeb99",
+      "actual_md5": "3813fb1e6ac50e2e7d200e9fe62aeb99",
+      "sha256": "814e3cbd4d59c2b1ac635236a908e1e211093a23aa6f6694ac7138df99f3d4da",
+      "baked_source_sha256": "814e3cbd4d59c2b1ac635236a908e1e211093a23aa6f6694ac7138df99f3d4da"
+    },
+    ".godot/shader_cache/SsilBlurShaderRD/9f14f14d947865ec8d3b421d6421c94568c26725cf19307a3e0f8eef080b2f9b/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2643232,
+      "bytes": 3204,
+      "flags": 0,
+      "package_md5": "bcf7e044c69f2963ae4ac8bee192c9a2",
+      "actual_md5": "bcf7e044c69f2963ae4ac8bee192c9a2",
+      "sha256": "9b59f9b3b91a43e1392537228816b2561fc0e65b4b473895f5d80ff96945e162",
+      "baked_source_sha256": "9b59f9b3b91a43e1392537228816b2561fc0e65b4b473895f5d80ff96945e162"
+    },
+    ".godot/shader_cache/SsilImportanceMapShaderRD/f4c8d79984b5c4d5e72d9ac1b91237526962030b95bae62410c5442014ae96f0/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2640560,
+      "bytes": 2664,
+      "flags": 0,
+      "package_md5": "54e29a23a3127cfa1375a9844e473b03",
+      "actual_md5": "54e29a23a3127cfa1375a9844e473b03",
+      "sha256": "564cd8ca9fe77594a01fb0fb7c1f0e1ff5f5c2e097a9a1208aa3a4b5db25e1e1",
+      "baked_source_sha256": "564cd8ca9fe77594a01fb0fb7c1f0e1ff5f5c2e097a9a1208aa3a4b5db25e1e1"
+    },
+    ".godot/shader_cache/SsilInterleaveShaderRD/88986cfcfcba59434af4e622d0e389dbc9d41f4dfc909b9c5b5fc042ab8cb7eb/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2646448,
+      "bytes": 2948,
+      "flags": 0,
+      "package_md5": "e2cb974b3cfcba30de6d6865c30999d6",
+      "actual_md5": "e2cb974b3cfcba30de6d6865c30999d6",
+      "sha256": "4673a8eec0b02e0cc8769f024d17dfc1171be3946aaf5e33a2a31730f0431e16",
+      "baked_source_sha256": "4673a8eec0b02e0cc8769f024d17dfc1171be3946aaf5e33a2a31730f0431e16"
+    },
+    ".godot/shader_cache/SsilShaderRD/d866c0038e29074096f70ce364bf6f0035df9aa4edc2a1bbc15434f334b706fa/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2626096,
+      "bytes": 14456,
+      "flags": 0,
+      "package_md5": "c2b66f266b6cb2e6364414beae66552e",
+      "actual_md5": "c2b66f266b6cb2e6364414beae66552e",
+      "sha256": "b7cf13269a82110eed8e61de35e56574dbfcc68d5f85e12ed24a974d062f914d",
+      "baked_source_sha256": "b7cf13269a82110eed8e61de35e56574dbfcc68d5f85e12ed24a974d062f914d"
+    },
+    ".godot/shader_cache/SubsurfaceScatteringShaderRD/286b68be05f746fc0ad50c423184a9d8bf3abae7634546ab3abc28ded30d259a/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2686656,
+      "bytes": 5216,
+      "flags": 0,
+      "package_md5": "a3d3dd37e717619d0aa3f00f656906bf",
+      "actual_md5": "a3d3dd37e717619d0aa3f00f656906bf",
+      "sha256": "f1e5d9510cc7fed525cd22cee67957f0d978b422228b20f0d0a8c4836f7da5f8",
+      "baked_source_sha256": "f1e5d9510cc7fed525cd22cee67957f0d978b422228b20f0d0a8c4836f7da5f8"
+    },
+    ".godot/shader_cache/TaaResolveShaderRD/45d01312a8769fd67435af28a49be1339ad403f9ffd4a3f6eb60b8b0e6b889ec/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2528816,
+      "bytes": 3736,
+      "flags": 0,
+      "package_md5": "9cc6aa55b3a0493e6cab59e9edaaf544",
+      "actual_md5": "9cc6aa55b3a0493e6cab59e9edaaf544",
+      "sha256": "fdfee9b5876600adc49ce05458faa18f672651f0071973f7919a2d06d9050486",
+      "baked_source_sha256": "fdfee9b5876600adc49ce05458faa18f672651f0071973f7919a2d06d9050486"
+    },
+    ".godot/shader_cache/TexBlitShaderRD/0e81f6628df79f09b22d4093ca1b9ef87b792ae35cd534b725cdd47492bd85e1/1e8995c9eb0e9b0b053035999de68595c521a33e.vulkan.cache": {
+      "offset": 2512688,
+      "bytes": 7068,
+      "flags": 0,
+      "package_md5": "12c1a15ac75d79006d6e83dddd05d87b",
+      "actual_md5": "12c1a15ac75d79006d6e83dddd05d87b",
+      "sha256": "5bf499eb9eb7c74392c2d45fb4ed3304495d40418e0171ec812df00ce7f8ce76",
+      "baked_source_sha256": "5bf499eb9eb7c74392c2d45fb4ed3304495d40418e0171ec812df00ce7f8ce76"
+    },
+    ".godot/shader_cache/TonemapShaderRD/5590becb9fdcd11a1652c983a245f9da460b333b0f2e9b7f8580f08e487c6f6b/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3109920,
+      "bytes": 23660,
+      "flags": 0,
+      "package_md5": "3c0a48714f553d69a363b470a4633d5a",
+      "actual_md5": "3c0a48714f553d69a363b470a4633d5a",
+      "sha256": "91e70d18f5ff324357902bd6b0ad31e7228f9b3212455cb3ad26f0c9f4dc7a80",
+      "baked_source_sha256": "91e70d18f5ff324357902bd6b0ad31e7228f9b3212455cb3ad26f0c9f4dc7a80"
+    },
+    ".godot/shader_cache/VolumetricFogProcessShaderRD/e46091ff64ffd438ba425ca3894f71a5a7fd8e6d1530a379a180a1500ca49fab/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3000976,
+      "bytes": 29592,
+      "flags": 0,
+      "package_md5": "2c541358f7c379daf5590387285f8dbf",
+      "actual_md5": "2c541358f7c379daf5590387285f8dbf",
+      "sha256": "65df6285177c1c84e8169acf053553bdfae13130ecafa7f124cab8609361a9c9",
+      "baked_source_sha256": "65df6285177c1c84e8169acf053553bdfae13130ecafa7f124cab8609361a9c9"
+    },
+    ".godot/shader_cache/VolumetricFogShaderRD/2720a92ce025a8ce583df3ad015dc0567e56f54b2f6119755c1bc5dc362709f0/3377d4ca9d0fc2e16f62596ee37d619e8e7e3f54.vulkan.cache": {
+      "offset": 2997600,
+      "bytes": 3376,
+      "flags": 0,
+      "package_md5": "8217ab54673abb0f9920cc362d6c3c1e",
+      "actual_md5": "8217ab54673abb0f9920cc362d6c3c1e",
+      "sha256": "e4153c58bb61ee3781aafd9a2d8dc5c84a3d7240f6920ea7af2c5718ccd3202f",
+      "baked_source_sha256": "e4153c58bb61ee3781aafd9a2d8dc5c84a3d7240f6920ea7af2c5718ccd3202f"
+    },
+    ".godot/shader_cache/VoxelGiDebugShaderRD/a422cf2f686dc319e3d214d4e124e5b0288df2f98a9413b09548885679559d3d/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2871392,
+      "bytes": 4936,
+      "flags": 0,
+      "package_md5": "ffe07c7cddbc67f79a6e9911ef58d974",
+      "actual_md5": "ffe07c7cddbc67f79a6e9911ef58d974",
+      "sha256": "464c1abd49296def6609d5affce948c307c5e0b4f74e6276ce5abac9d49e1096",
+      "baked_source_sha256": "464c1abd49296def6609d5affce948c307c5e0b4f74e6276ce5abac9d49e1096"
+    },
+    ".godot/shader_cache/VoxelGiShaderRD/5ee401bf4a8169e1993b13d15de547cdeead70879b4c21ae4d0d35aaeda4cb78/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 2848832,
+      "bytes": 22548,
+      "flags": 0,
+      "package_md5": "53316448ba749215454848bb5c9cc70d",
+      "actual_md5": "53316448ba749215454848bb5c9cc70d",
+      "sha256": "f5b1481aaad313e2bd5ef9e61b57b5ea7e73f8e116cd8debb39941000874a3af",
+      "baked_source_sha256": "f5b1481aaad313e2bd5ef9e61b57b5ea7e73f8e116cd8debb39941000874a3af"
+    },
+    ".godot/shader_cache/VrsShaderRD/ba5d91c9d0b39961e86e1b58a94ac36922313b2f0a3b4bec085a5cc1f5f58705/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.vulkan.cache": {
+      "offset": 3133584,
+      "bytes": 2584,
+      "flags": 0,
+      "package_md5": "e17844a5245d0634f62f8cb086555950",
+      "actual_md5": "e17844a5245d0634f62f8cb086555950",
+      "sha256": "0f50e4dffa792ad14e45cf33acd445f9da092c14ea5643eb01350c042ea6d2e6",
+      "baked_source_sha256": "0f50e4dffa792ad14e45cf33acd445f9da092c14ea5643eb01350c042ea6d2e6"
+    }
+  }
+}

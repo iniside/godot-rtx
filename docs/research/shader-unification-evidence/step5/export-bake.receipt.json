@@ -1,0 +1,23 @@
+{
+  "argv": [
+    "G:/Projects/godot-rtx/bin/godot.windows.editor.x86_64.exe",
+    "--editor",
+    "--path",
+    "C:/Users/lukas/AppData/Local/Temp/godot-shader-unification-20260907/step5/project",
+    "--rendering-method",
+    "forward_plus",
+    "--rendering-driver",
+    "vulkan",
+    "--verbose",
+    "--export-debug",
+    "Windows STEP5",
+    "C:/Users/lukas/AppData/Local/Temp/godot-shader-unification-20260907/step5/export/manual.exe"
+  ],
+  "cwd": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5",
+  "started": "2026-09-07T14:56:54.037617+00:00",
+  "executable_sha256": "2ab863e4372a41b990b2fbdebbdd6421afe81ca3723eebb807b0d3c09b00c414",
+  "removed_environment": {},
+  "pid": 94360,
+  "finished": "2026-09-07T14:57:38.974512+00:00",
+  "exit": 3221225477
+}

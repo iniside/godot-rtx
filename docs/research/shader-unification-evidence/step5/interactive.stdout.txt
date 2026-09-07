@@ -1,0 +1,47 @@
+Godot Engine v4.8.dev.custom_build.99c67e1f7 (2026-09-07 14:29:09 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Streamline - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+
+MANUAL_DEMO preset=gallery light=all binary={ "major": 4, "minor": 8, "patch": 0, "hex": 264192, "status": "dev", "build": "custom_build", "hash": "99c67e1f78e67f9fcc4d6a3858b0415f6658d8b2", "timestamp": 1788791349, "string": "4.8-dev (custom_build)" } renderer=forward_plus driver=vulkan size=(1280.0, 720.0)
+MANUAL_ACTION key=4194343 frame=925 lights=4 size=(1280, 720)
+MANUAL_CAPTURE path=C:/Users/lukas/AppData/Roaming/Godot/app_userdata/Shader unification STEP5 export 1457/manual-1788793328.png result=0 frame=925 gpu_ms=1.86600005626678
+MANUAL_MEMORY total=413084800.0 textures=344933376.0 buffers=52832766.0
+MANUAL_ACTION key=67 frame=1518 lights=4 size=(1280, 720)
+MANUAL_ACTION key=90 frame=2057 lights=4 size=(1024, 640)
+MANUAL_ACTION key=4194343 frame=2532 lights=4 size=(1024, 640)
+MANUAL_CAPTURE path=C:/Users/lukas/AppData/Roaming/Godot/app_userdata/Shader unification STEP5 export 1457/manual-1788793355.png result=0 frame=2532 gpu_ms=1.65100002288818
+MANUAL_MEMORY total=359900688.0 textures=302633984.0 buffers=41948046.0
+MANUAL_ACTION key=76 frame=3324 lights=3 size=(1024, 640)
+MANUAL_ACTION key=82 frame=3335 lights=3 size=(1024, 640)
+MANUAL_ACTION key=66 frame=4027 lights=3 size=(1024, 640)
+MANUAL_ACTION key=4194312 frame=4039 lights=3 size=(1024, 640)
+MANUAL_ACTION key=86 frame=4051 lights=3 size=(1024, 640)
+MANUAL_ACTION key=4194343 frame=4621 lights=3 size=(1024, 640)
+MANUAL_CAPTURE path=C:/Users/lukas/AppData/Roaming/Godot/app_userdata/Shader unification STEP5 export 1457/manual-1788793390.png result=0 frame=4621 gpu_ms=1.40100002288818
+MANUAL_MEMORY total=307849136.0 textures=258166784.0 buffers=34447854.0
+MANUAL_ACTION key=4194305 frame=5382 lights=3 size=(1024, 640)
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_common_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_pcl_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_reflex_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_g_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_d_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_nis_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_pcl_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_pcl_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.common.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_common_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.deepdvc.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.directsr.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.dlss.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.dlss_d.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_d_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.dlss_g.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_g_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.nis.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_nis_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.nvperf.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.pcl.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_pcl_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.reflex.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_reflex_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.

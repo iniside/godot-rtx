@@ -1,0 +1,26 @@
+{
+  "argv": [
+    "G:/Projects/godot-rtx/bin/godot.windows.editor.double.x86_64.exe",
+    "--path",
+    "C:/Users/lukas/AppData/Local/Temp/godot-shader-unification-20260907/step5/project",
+    "res://main.tscn",
+    "--rendering-method",
+    "forward_plus",
+    "--rendering-driver",
+    "vulkan",
+    "--max-fps",
+    "60",
+    "--verbose",
+    "--",
+    "--still",
+    "--delay=8",
+    "--capture=C:/Users/lukas/AppData/Local/Temp/godot-shader-unification-20260907/step5/double-warm.png"
+  ],
+  "cwd": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5",
+  "started": "2026-09-07T14:56:08.823615+00:00",
+  "executable_sha256": "ab8e60b551f3534345ba72c5ba7b4f4930ee8e4b7c3d2afe4ebbbee614b25fc1",
+  "removed_environment": {},
+  "pid": 93912,
+  "finished": "2026-09-07T14:56:22.497950+00:00",
+  "exit": 0
+}

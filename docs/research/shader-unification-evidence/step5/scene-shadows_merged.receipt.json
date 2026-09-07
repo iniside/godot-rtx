@@ -1,0 +1,25 @@
+{
+  "argv": [
+    "G:/Projects/godot-rtx/bin/godot.windows.editor.x86_64.exe",
+    "--path",
+    "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\project",
+    "res://shadows_merged.tscn",
+    "--rendering-method",
+    "forward_plus",
+    "--rendering-driver",
+    "vulkan",
+    "--max-fps",
+    "60",
+    "--",
+    "--still",
+    "--delay=8",
+    "--capture=C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-shadows_merged.png"
+  ],
+  "cwd": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5",
+  "started": "2026-09-07T14:59:28.760377+00:00",
+  "executable_sha256": "2ab863e4372a41b990b2fbdebbdd6421afe81ca3723eebb807b0d3c09b00c414",
+  "removed_environment": {},
+  "pid": 96600,
+  "finished": "2026-09-07T14:59:47.085065+00:00",
+  "exit": 0
+}

@@ -1,0 +1,27 @@
+{
+  "argv": [
+    "G:/Projects/godot-rtx/bin/godot.windows.editor.x86_64.exe",
+    "--editor",
+    "--path",
+    "C:/Users/lukas/AppData/Local/Temp/godot-shader-unification-20260907/step5/canvas_project",
+    "res://consumers_manual.tscn",
+    "--rendering-method",
+    "forward_plus",
+    "--rendering-driver",
+    "vulkan",
+    "--max-fps",
+    "60"
+  ],
+  "cwd": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5",
+  "started": "2026-09-07T15:16:07.134403+00:00",
+  "executable_sha256": "2ab863e4372a41b990b2fbdebbdd6421afe81ca3723eebb807b0d3c09b00c414",
+  "removed_environment": {},
+  "project_inputs": {
+    "consumers_manual.gd": "08d5faea724f2dba7e3a6c1c059001d57e5280201172ac52785e8b23ceeeebf8",
+    "consumers_manual.tscn": "2fff5aa329f8cbd04a187dc683871f2742234c2748128c32f8c759d293801d48",
+    "project.godot": "68c5346ec5a7448fbac214d5a6dd3d5d3d53a5519ad4e37d2aab5d9b4aca7469"
+  },
+  "pid": 101972,
+  "finished": "2026-09-07T15:17:32.890434+00:00",
+  "exit": 0
+}

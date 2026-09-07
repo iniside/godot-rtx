@@ -1,0 +1,118 @@
+WorkerThreadPool: 48 threads, 14 max low-priority.
+Godot Engine v4.8.dev.custom_build.129244703 (2026-09-07 14:39:52 UTC) - https://godotengine.org
+TextServer: Added interface "Dummy"
+TextServer: Added interface "ICU / HarfBuzz / Graphite (Built-in)"
+Devices:
+  #0: NVIDIA NVIDIA GeForce RTX 4090 - Supported, Discrete
+Optional Vulkan device extension VK_EXT_fragment_density_map not found
+Optional Vulkan device extension VK_EXT_fragment_density_map2 not found
+Optional Vulkan device extension VK_QCOM_fragment_density_map_offset not found
+Optional Vulkan device extension VK_EXT_astc_decode_mode not found
+Optional Vulkan device extension VK_EXT_texture_compression_astc_hdr not found
+Optional Vulkan device extension VK_KHR_external_memory_fd not found
+Optional Vulkan device extension VK_EXT_debug_marker not found
+- Vulkan Fragment Shading Rate supported:
+  Pipeline fragment shading rate
+  Primitive fragment shading rate
+  Attachment fragment shading rate, min texel size: (16, 16), max texel size: (16, 16), max fragment size: (4, 4)
+- Vulkan Fragment Density Map not supported
+- Vulkan multiview supported:
+  max view count: 32
+  max instances: 134217727
+- Vulkan subgroup:
+  size: 32
+  min size: 32
+  max size: 32
+  stages: STAGE_VERTEX, STAGE_TESSELLATION_CONTROL, STAGE_TESSELLATION_EVALUATION, STAGE_GEOMETRY, STAGE_FRAGMENT, STAGE_COMPUTE, STAGE_RAYGEN_KHR, STAGE_ANY_HIT_KHR, STAGE_CLOSEST_HIT_KHR, STAGE_MISS_KHR, STAGE_INTERSECTION_KHR, STAGE_CALLABLE_KHR, STAGE_TASK_NV, STAGE_MESH_NV
+  supported ops: FEATURE_BASIC, FEATURE_VOTE, FEATURE_ARITHMETIC, FEATURE_BALLOT, FEATURE_SHUFFLE, FEATURE_SHUFFLE_RELATIVE, FEATURE_CLUSTERED, FEATURE_QUAD, FEATURE_PARTITIONED_NV
+  quad operations in all stages
+- Vulkan Acceleration Structure supported
+  min acceleration structure scratch offset alignment: 128
+- Vulkan Raytracing supported
+  shader group handle size: 32
+  shader group handle alignment: 32
+  shader group handle size aligned: 32
+  shader group base alignment: 64
+- Vulkan Cluster Acceleration Structure supported
+  max vertices per cluster: 256
+  max triangles per cluster: 256
+  max cluster geometry index: 16777215
+  cluster scratch byte alignment: 256
+  cluster byte alignment: 128
+  cluster bottom level byte alignment: 256
+Vulkan 1.4.351 - Forward+ - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+Startup PSO cache (6.4 MiB)
+SDL: Init OK!
+Using "winink" pen tablet driver...
+Creating VMA small objects pool for memory type index 1
+WASAPI: Activated output_device using IAudioClient3 interface
+WASAPI: wFormatTag = 65534
+WASAPI: nChannels = 2
+WASAPI: nSamplesPerSec = 48000
+WASAPI: nAvgBytesPerSec = 384000
+WASAPI: nBlockAlign = 8
+WASAPI: wBitsPerSample = 32
+WASAPI: cbSize = 22
+WASAPI: mix_rate = 48000
+WASAPI: fundamental_period_frames = 480
+WASAPI: min_period_frames = 480
+WASAPI: max_period_frames = 480
+WASAPI: selected a period frame size of 480
+WASAPI: detected 2 channels
+WASAPI: audio buffer frames: 480 calculated latency: 10ms
+
+TextServer: Primary interface set to: "ICU / HarfBuzz / Graphite (Built-in)".
+CORE API HASH: 3149173064
+EDITOR API HASH: 3568104361
+SceneTreeFTI: traversal method DEFAULT
+Loaded system CA certificates
+Loading resource: res://.godot/exported/4119599170/export-3070c538c03ee49b7677ff960a3f5195-main.scn remapped: res://.godot/exported/4119599170/export-3070c538c03ee49b7677ff960a3f5195-main.scn
+Loading resource: res://main.gdc remapped: res://main.gdc
+Completed load for: 'res://main.gd' remapped 'res://main.gdc' at thread -1
+Loading resource: res://.godot/exported/4119599170/export-c2795f0007d5c8d8609fe7df6a0a8c4f-cube.scn remapped: res://.godot/exported/4119599170/export-c2795f0007d5c8d8609fe7df6a0a8c4f-cube.scn
+Loading resource: res://geometry.gltf remapped: res://geometry.gltf
+Loading resource: res://.godot/imported/geometry.gltf-0ac33f4b86ee737ce983357aaf0b3395.scn remapped: res://.godot/imported/geometry.gltf-0ac33f4b86ee737ce983357aaf0b3395.scn
+Completed load for: 'res://geometry.gltf' remapped 'res://geometry.gltf' at thread -1
+Completed load for: 'res://geometry_parts/cube.tscn' remapped 'res://.godot/exported/4119599170/export-c2795f0007d5c8d8609fe7df6a0a8c4f-cube.scn' at thread -1
+Loading resource: res://.godot/exported/4119599170/export-e92a58c107b94f06f13ff7d2c5c13853-sphere.scn remapped: res://.godot/exported/4119599170/export-e92a58c107b94f06f13ff7d2c5c13853-sphere.scn
+Completed load for: 'res://geometry_parts/sphere.tscn' remapped 'res://.godot/exported/4119599170/export-e92a58c107b94f06f13ff7d2c5c13853-sphere.scn' at thread -1
+Loading resource: res://.godot/exported/4119599170/export-0fae01e85ecc717ee05218c22a3dfc27-plane.scn remapped: res://.godot/exported/4119599170/export-0fae01e85ecc717ee05218c22a3dfc27-plane.scn
+Completed load for: 'res://geometry_parts/plane.tscn' remapped 'res://.godot/exported/4119599170/export-0fae01e85ecc717ee05218c22a3dfc27-plane.scn' at thread -1
+Loading resource: res://textures/masked_checker.svg remapped: res://textures/masked_checker.svg
+Loading resource: res://.godot/imported/masked_checker.svg-6747ea2abd378a293e74c8b46905e412.s3tc.ctex remapped: res://.godot/imported/masked_checker.svg-6747ea2abd378a293e74c8b46905e412.s3tc.ctex
+Completed load for: 'res://textures/masked_checker.svg' remapped 'res://textures/masked_checker.svg' at thread -1
+Loading resource: res://textures/emission_checker.svg remapped: res://textures/emission_checker.svg
+Loading resource: res://.godot/imported/emission_checker.svg-b8aacb6940468ddb3bc4d829e3c24b28.s3tc.ctex remapped: res://.godot/imported/emission_checker.svg-b8aacb6940468ddb3bc4d829e3c24b28.s3tc.ctex
+Completed load for: 'res://textures/emission_checker.svg' remapped 'res://textures/emission_checker.svg' at thread -1
+Loading resource: res://.godot/exported/4119599170/export-fa9c34375b30738c2f98999666736afe-deformer.scn remapped: res://.godot/exported/4119599170/export-fa9c34375b30738c2f98999666736afe-deformer.scn
+Completed load for: 'res://geometry_parts/deformer.tscn' remapped 'res://.godot/exported/4119599170/export-fa9c34375b30738c2f98999666736afe-deformer.scn' at thread -1
+Completed load for: 'res://main.tscn' remapped 'res://.godot/exported/4119599170/export-3070c538c03ee49b7677ff960a3f5195-main.scn' at thread -1
+MANUAL_DEMO preset=gallery light=all binary={ "major": 4, "minor": 8, "patch": 0, "hex": 264192, "status": "dev", "build": "custom_build", "hash": "12924470328a540ee9b5822212bc688f21e42cdd", "timestamp": 1788791992, "string": "4.8-dev (custom_build)" } renderer=forward_plus driver=vulkan size=(1280.0, 720.0)
+MultiUmaBuffer 'RENDER_LIST_OPAQUE' used a total of 0 buffers. A large number may indicate a waste of VRAM and can be brought down by tweaking MAX_EXTRA_BUFFERS for this buffer.
+MultiUmaBuffer 'RENDER_LIST_SECONDARY' used a total of 0 buffers. A large number may indicate a waste of VRAM and can be brought down by tweaking MAX_EXTRA_BUFFERS for this buffer.
+MANUAL_ACTION key=4194343 frame=820 lights=4 size=(1280, 720)
+MANUAL_CAPTURE path=C:/Users/lukas/AppData/Roaming/Godot/app_userdata/Shader unification STEP5 baked cold 1525/manual-1788794881.png result=0 frame=820 gpu_ms=3.12100005149841
+MANUAL_MEMORY total=455148384.0 textures=358057984.0 buffers=84143630.0
+MANUAL_ACTION key=4194305 frame=2149 lights=4 size=(1280, 720)
+XR: Clearing primary interface
+XR: Removed interface "Native mobile"
+XR: Removed interface "OpenXR"
+Freeing Default Tex_Blit Shader
+MultiUmaBuffer 'RENDER_LIST_OPAQUE' used a total of 1 buffers. A large number may indicate a waste of VRAM and can be brought down by tweaking MAX_EXTRA_BUFFERS for this buffer.
+MultiUmaBuffer 'RENDER_LIST_MOTION' used a total of 0 buffers. A large number may indicate a waste of VRAM and can be brought down by tweaking MAX_EXTRA_BUFFERS for this buffer.
+MultiUmaBuffer 'RENDER_LIST_ALPHA' used a total of 0 buffers. A large number may indicate a waste of VRAM and can be brought down by tweaking MAX_EXTRA_BUFFERS for this buffer.
+MultiUmaBuffer 'RENDER_LIST_SECONDARY' used a total of 2 buffers. A large number may indicate a waste of VRAM and can be brought down by tweaking MAX_EXTRA_BUFFERS for this buffer.
+MultiUmaBuffer 'CANVAS_INSTANCE_DATA' used a total of 1 buffers. A large number may indicate a waste of VRAM and can be brought down by tweaking MAX_EXTRA_BUFFERS for this buffer.
+Orphan StringName: motion_0 (static: 1, total: 2)
+Orphan StringName: motion_1 (static: 1, total: 2)
+Orphan StringName: classification_0 (static: 1, total: 2)
+Orphan StringName: classification_1 (static: 1, total: 2)
+Orphan StringName: base_0 (static: 2, total: 3)
+Orphan StringName: base_1 (static: 1, total: 2)
+Orphan StringName: geometry_0 (static: 1, total: 2)
+Orphan StringName: geometry_1 (static: 1, total: 2)
+Orphan StringName: shading_0 (static: 1, total: 2)
+Orphan StringName: shading_1 (static: 1, total: 2)
+Orphan StringName: emission_0 (static: 1, total: 2)
+Orphan StringName: emission_1 (static: 1, total: 2)
+StringName: 12 unclaimed string names at exit.

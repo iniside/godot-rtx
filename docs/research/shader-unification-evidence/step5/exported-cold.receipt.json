@@ -1,0 +1,26 @@
+{
+  "argv": [
+    "C:/Users/lukas/AppData/Local/Temp/godot-shader-unification-20260907/step5/export/manual.exe",
+    "--rendering-method",
+    "forward_plus",
+    "--rendering-driver",
+    "vulkan",
+    "--verbose",
+    "--max-fps",
+    "60",
+    "--",
+    "--still"
+  ],
+  "cwd": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5",
+  "started": "2026-09-07T15:24:03.465242+00:00",
+  "executable_sha256": "003ddb63e7f9b26b310fc92dc8e6d772d907073bdf540f149928e3a2de0651db",
+  "removed_environment": {
+    "VULKAN_SDK": "C:\\VulkanSDK\\1.4.357.0",
+    "PATH_entries": [
+      "C:\\VulkanSDK\\1.4.357.0\\Bin"
+    ]
+  },
+  "pid": 55052,
+  "finished": "2026-09-07T15:24:59.463322+00:00",
+  "exit": 0
+}

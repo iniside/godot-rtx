@@ -1,0 +1,244 @@
+WARNING: GENERAL - Message Id Number: 0 | Message Id Name: Loader Message
+	Layer name GalaxyOverlayVkLayer does not conform to naming standard (Policy #LLP_LAYER_3)
+	Objects - 1
+		Object[0] - VK_OBJECT_TYPE_INSTANCE, Handle 2367212724320
+WARNING: GENERAL - Message Id Number: 0 | Message Id Name: Loader Message
+	Layer name GalaxyOverlayVkLayer_VERBOSE does not conform to naming standard (Policy #LLP_LAYER_3)
+	Objects - 1
+		Object[0] - VK_OBJECT_TYPE_INSTANCE, Handle 2367212724320
+WARNING: GENERAL - Message Id Number: 0 | Message Id Name: Loader Message
+	Layer name GalaxyOverlayVkLayer_DEBUG does not conform to naming standard (Policy #LLP_LAYER_3)
+	Objects - 1
+		Object[0] - VK_OBJECT_TYPE_INSTANCE, Handle 2367212724320
+WARNING: GENERAL - Message Id Number: 0 | Message Id Name: Loader Message
+	Removing layer VK_LAYER_WEOBS_HOOK (C:\ProgramData\obs-studio-hook\we-obs-vulkan32.json) because it is a duplicate of VK_LAYER_WEOBS_HOOK (C:\ProgramData\obs-studio-hook\we-obs-vulkan64.json)
+	Objects - 1
+		Object[0] - VK_OBJECT_TYPE_INSTANCE, Handle 2367212724320
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpTypeAccelerationStructureKHR is not supported yet.
+OpTypeAccelerationStructureKHR is not supported yet.
+OpTypeAccelerationStructureKHR is not supported yet.
+OpTypeAccelerationStructureKHR is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+WARNING: Forward Clustered RTXDI surface: material using shader <inline> cannot be represented consistently by the raster surface and ray-traced material contracts; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::RenderForwardClustered::_geometry_instance_add_surface_with_material (servers\rendering\renderer_rd\forward_clustered\render_forward_clustered.cpp:3775)
+OpDemoteToHelperInvocation is not supported yet.

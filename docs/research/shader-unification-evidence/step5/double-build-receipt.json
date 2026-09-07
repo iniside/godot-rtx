@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "scons",
+    "platform=windows",
+    "target=editor",
+    "precision=double",
+    "accesskit=no",
+    "d3d12=no",
+    "-j16"
+  ],
+  "start": "2026-09-07T14:42:26.290598+00:00",
+  "end": "2026-09-07T14:45:50.102360+00:00",
+  "exit": 0
+}

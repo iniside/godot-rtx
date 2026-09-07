@@ -1,0 +1,833 @@
+{
+  "note": "STEP5 observations before and after the separately owned optimizer fix; each run receipt records its actual executable identity. Final closure and limits are described in the STEP5 report.",
+  "artifacts": {
+    "cold-gallery.png": {
+      "bytes": 410335,
+      "sha256": "94e6bc8b15363340b9abbc7c76c36e840aac7f53a6e65edae9a02e46f368dc89",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\cold-gallery.png",
+      "retained_sha256": "94e6bc8b15363340b9abbc7c76c36e840aac7f53a6e65edae9a02e46f368dc89"
+    },
+    "warm-gallery.png": {
+      "bytes": 411331,
+      "sha256": "ba4c6a8926cba34dfbd2c0ecebb972d6d8e58c4c9e40d2f5f44c8380283db4a5",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\warm-gallery.png",
+      "retained_sha256": "ba4c6a8926cba34dfbd2c0ecebb972d6d8e58c4c9e40d2f5f44c8380283db4a5"
+    },
+    "double-cold.png": {
+      "bytes": 410876,
+      "sha256": "bd7f4fb5d2c6ef23090895107101ccf6da7b5dab0f3017742aeae1c4152f5e42",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-cold.png",
+      "retained_sha256": "bd7f4fb5d2c6ef23090895107101ccf6da7b5dab0f3017742aeae1c4152f5e42"
+    },
+    "double-warm.png": {
+      "bytes": 411842,
+      "sha256": "a3b62bff8f13e22da0c60e48fe619a644ed1e36d7294ad2769503bc5c44da4df",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-warm.png",
+      "retained_sha256": "a3b62bff8f13e22da0c60e48fe619a644ed1e36d7294ad2769503bc5c44da4df"
+    },
+    "double-translation-before.png": {
+      "bytes": 411943,
+      "sha256": "d28a066bd39a6487862c4ee34e05ca68b6bb69ddfe768e39d2154738bbb6fd10",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-translation-before.png",
+      "retained_sha256": "d28a066bd39a6487862c4ee34e05ca68b6bb69ddfe768e39d2154738bbb6fd10"
+    },
+    "double-translation-after.png": {
+      "bytes": 324308,
+      "sha256": "33702e41b9b08875bafbd2bcd11a4e24fbfb7d5784c2d8c874038c705f721e62",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-translation-after.png",
+      "retained_sha256": "33702e41b9b08875bafbd2bcd11a4e24fbfb7d5784c2d8c874038c705f721e62"
+    },
+    "scene-shadows_merged.png": {
+      "bytes": 103860,
+      "sha256": "dd2d3e372bf2ab2e8e4aad085d46c5d6f5af6b5a454cfe40dec2ba78c6621cca",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-shadows_merged.png",
+      "retained_sha256": "dd2d3e372bf2ab2e8e4aad085d46c5d6f5af6b5a454cfe40dec2ba78c6621cca"
+    },
+    "scene-shadows_expanded.png": {
+      "bytes": 103686,
+      "sha256": "b4309829bb3f0fd39926555da81b0c22efba7e6dc389ffe10361fb821c7a745b",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-shadows_expanded.png",
+      "retained_sha256": "b4309829bb3f0fd39926555da81b0c22efba7e6dc389ffe10361fb821c7a745b"
+    },
+    "scene-energy_directional.png": {
+      "bytes": 36843,
+      "sha256": "6c6863f0cb06400d5cfecf9b5fe3269e7c06c63411afc2fb2db308d99a8b6a1a",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-energy_directional.png",
+      "retained_sha256": "6c6863f0cb06400d5cfecf9b5fe3269e7c06c63411afc2fb2db308d99a8b6a1a"
+    },
+    "scene-energy_emission.png": {
+      "bytes": 38243,
+      "sha256": "da227b9fe15a52d2682e51407be3020cc424a1258dfd98e056e0f49fad45352e",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-energy_emission.png",
+      "retained_sha256": "da227b9fe15a52d2682e51407be3020cc424a1258dfd98e056e0f49fad45352e"
+    },
+    "scene-unsupported.png": {
+      "bytes": 384768,
+      "sha256": "00bfbdd5d53470535d605710b3a7fbdb65061acb3bd26326caa6d0c10d5a888f",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-unsupported.png",
+      "retained_sha256": "00bfbdd5d53470535d605710b3a7fbdb65061acb3bd26326caa6d0c10d5a888f"
+    },
+    "scene-test.png": {
+      "bytes": 248739,
+      "sha256": "7d7abbb1dace3f021a090626902e1fd330cd34c239b3914739a55ab89b98cd10",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-test.png",
+      "retained_sha256": "7d7abbb1dace3f021a090626902e1fd330cd34c239b3914739a55ab89b98cd10"
+    },
+    "interactive-dual-fog-fsr2.png": {
+      "bytes": 976234,
+      "sha256": "cc60e223b44db610b38477cb91aa9fadd1fba093ade38b1d5a4165b9c19d82eb",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\interactive-dual-fog-fsr2.png",
+      "retained_sha256": "cc60e223b44db610b38477cb91aa9fadd1fba093ade38b1d5a4165b9c19d82eb"
+    },
+    "interactive-camera-cut-resize.png": {
+      "bytes": 670392,
+      "sha256": "ffe3388161dd0031e309f1110e6a2adcc59f0517ffc0b54ef8fe2ff822b1ba5f",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\interactive-camera-cut-resize.png",
+      "retained_sha256": "ffe3388161dd0031e309f1110e6a2adcc59f0517ffc0b54ef8fe2ff822b1ba5f"
+    },
+    "interactive-release-lights.png": {
+      "bytes": 788837,
+      "sha256": "eb8ab70747c4c4cd2125758ab2a3e58a197043c94f15fc2876c544ef26b334f6",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\interactive-release-lights.png",
+      "retained_sha256": "eb8ab70747c4c4cd2125758ab2a3e58a197043c94f15fc2876c544ef26b334f6"
+    },
+    "material-initial.png": {
+      "bytes": 151756,
+      "sha256": "27953a7f711218aea39e521ea229f85dae7adf530c69e7835f204e04dab755ec",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\material-initial.png",
+      "retained_sha256": "27953a7f711218aea39e521ea229f85dae7adf530c69e7835f204e04dab755ec"
+    },
+    "material-local-uniform.png": {
+      "bytes": 163125,
+      "sha256": "9be405834c980fd9817d83ebeb622c750009e708cd5e73f3bb5650110f3c9e8a",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\material-local-uniform.png",
+      "retained_sha256": "9be405834c980fd9817d83ebeb622c750009e708cd5e73f3bb5650110f3c9e8a"
+    },
+    "material-global-uniform.png": {
+      "bytes": 176921,
+      "sha256": "286f132a802b735e9153ef6cb06f7e8f5b2f6739898151ade0e7ca58bd36b27c",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\material-global-uniform.png",
+      "retained_sha256": "286f132a802b735e9153ef6cb06f7e8f5b2f6739898151ade0e7ca58bd36b27c"
+    },
+    "material-instance-uniform.png": {
+      "bytes": 175854,
+      "sha256": "64d3f9ad6fbc4e4c0ee6d984bd9ba4c890f3f4ba253b16f9a9c7e1b91ec78428",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\material-instance-uniform.png",
+      "retained_sha256": "64d3f9ad6fbc4e4c0ee6d984bd9ba4c890f3f4ba253b16f9a9c7e1b91ec78428"
+    },
+    "material-source-reload-layout.png": {
+      "bytes": 180743,
+      "sha256": "8a2907c23666f2395658f81538dd1c85cb74a39c76885c5765d8b91f3d5f4544",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\material-source-reload-layout.png",
+      "retained_sha256": "8a2907c23666f2395658f81538dd1c85cb74a39c76885c5765d8b91f3d5f4544"
+    },
+    "material-include-reload.png": {
+      "bytes": 170685,
+      "sha256": "7d956e6fd84e960d5ef0c737da5b48ed4d48d92f420bb962e39ef3ffdc085e27",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\material-include-reload.png",
+      "retained_sha256": "7d956e6fd84e960d5ef0c737da5b48ed4d48d92f420bb962e39ef3ffdc085e27"
+    },
+    "material-visual-shader.png": {
+      "bytes": 74821,
+      "sha256": "f6a07a7ff1418dd79a6dfa3dc2525362428a43c7d9e5cbdd42ca5dbf5e3bd85e",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\material-visual-shader.png",
+      "retained_sha256": "f6a07a7ff1418dd79a6dfa3dc2525362428a43c7d9e5cbdd42ca5dbf5e3bd85e"
+    },
+    "material-visual-shader-edited.png": {
+      "bytes": 70614,
+      "sha256": "a9feb870187db139e14cfa057192074657df015ad4ac2f4c000e1d24650b4abc",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\material-visual-shader-edited.png",
+      "retained_sha256": "a9feb870187db139e14cfa057192074657df015ad4ac2f4c000e1d24650b4abc"
+    },
+    "consumers-particles-canvas.png": {
+      "bytes": 28090,
+      "sha256": "765d9e9e9c376eba9d20172fd2ac1f038a24618640cd184632237924e7901c53",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\consumers-particles-canvas.png",
+      "retained_sha256": "765d9e9e9c376eba9d20172fd2ac1f038a24618640cd184632237924e7901c53"
+    },
+    "exported-gallery.png": {
+      "bytes": 411447,
+      "sha256": "2a24c115c59f3873912d4fec855705e6bde4ecb4615cd196d5ec4f0cf23e9517",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\exported-gallery.png",
+      "retained_sha256": "2a24c115c59f3873912d4fec855705e6bde4ecb4615cd196d5ec4f0cf23e9517"
+    },
+    "exported-fresh.png": {
+      "bytes": 409796,
+      "sha256": "c7eb1c755c7f77640a9e01f7ec279af3973ee10e437e9f21eacaa09c53798aba",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\exported-fresh.png",
+      "retained_sha256": "c7eb1c755c7f77640a9e01f7ec279af3973ee10e437e9f21eacaa09c53798aba"
+    },
+    "exported-warm.png": {
+      "bytes": 411478,
+      "sha256": "2df7dae0f64c92d97be181d73f58f0b94bfd3c87f44600dca823d1adbcd44063",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\exported-warm.png",
+      "retained_sha256": "2df7dae0f64c92d97be181d73f58f0b94bfd3c87f44600dca823d1adbcd44063"
+    },
+    "exported-runtime-compile.png": {
+      "bytes": 411212,
+      "sha256": "264e08b456c39cf9356f60cd9bdc374df9ed2e8e70fb120c2cfe40343adc94e7",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\exported-runtime-compile.png",
+      "retained_sha256": "264e08b456c39cf9356f60cd9bdc374df9ed2e8e70fb120c2cfe40343adc94e7"
+    },
+    "editor-canvas-final.png": {
+      "bytes": 2567622,
+      "sha256": "a0d7e3996bd07113642fe613e9d6081eac640d59221c0793de4b5b40fe9c6ad9",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\editor-canvas-final.png",
+      "retained_sha256": "a0d7e3996bd07113642fe613e9d6081eac640d59221c0793de4b5b40fe9c6ad9"
+    },
+    "editor-2d.png": {
+      "bytes": 157016,
+      "sha256": "72983386577d16bc8778b51902c31752812c2b838c0ed8b56f50add300b0458b",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\editor-2d.png",
+      "retained_sha256": "72983386577d16bc8778b51902c31752812c2b838c0ed8b56f50add300b0458b"
+    },
+    "editor-3d.png": {
+      "bytes": 3853757,
+      "sha256": "f58a5c10a922eb659e6d3d6df824ce0e208049abcf7c4a0825cf35465fc51f8d",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\editor-3d.png",
+      "retained_sha256": "f58a5c10a922eb659e6d3d6df824ce0e208049abcf7c4a0825cf35465fc51f8d"
+    },
+    "double-final.png": {
+      "bytes": 411842,
+      "sha256": "a3b62bff8f13e22da0c60e48fe619a644ed1e36d7294ad2769503bc5c44da4df",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-final.png",
+      "retained_sha256": "a3b62bff8f13e22da0c60e48fe619a644ed1e36d7294ad2769503bc5c44da4df"
+    },
+    "import.receipt.json": {
+      "bytes": 577,
+      "sha256": "3fef2b95985a5a50d83b8a8c2eec8a91dc3a8da55030a65ac2dce150198d924d",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\import.receipt.json",
+      "retained_sha256": "dcbc7c98419b8f9c834bbc5a1690393127c71f627f5d7aae233d5716c1890790"
+    },
+    "import.stdout.txt": {
+      "bytes": 6606,
+      "sha256": "ded21305be659a585669f3174e165d90bf1b3149b5a51a3b1c0fc58382c71adc",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\import.stdout.log",
+      "retained_sha256": "cbfcce5c582ecbd8213df150dd0434bd2ea44cc7c48d50b32f974d3741d34a7c"
+    },
+    "import.stderr.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\import.stderr.log",
+      "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "cold-gallery.receipt.json": {
+      "bytes": 830,
+      "sha256": "83162c879a81745cef48e26e2a190fee836b0cad8c0d7e85ac944ef9ad6287f5",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\cold-gallery.receipt.json",
+      "retained_sha256": "cab6022c746109e8698d2774be50817790766cb960d64cc25986fe2293b8e524"
+    },
+    "cold-gallery.stdout.txt": {
+      "bytes": 32689,
+      "sha256": "b9b81f5cc52cbc8a68db7d329110420b1a4793b0d5b4373a84167c7ebba08393",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\cold-gallery.stdout.log",
+      "retained_sha256": "96d624d29177ec8a8ccdc2378c6962ee3a72ea4e7aa563b7068afd0062a717be"
+    },
+    "cold-gallery.stderr.txt": {
+      "bytes": 3351,
+      "sha256": "52a1f10f476d7dd3365965fb0575c70912383fc1c00188cbc6862b350b28152c",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\cold-gallery.stderr.log",
+      "retained_sha256": "7ff3685bc1862aae877cac3d162fed98afefc485f8b66475620226ad0dc1bc72"
+    },
+    "warm-gallery.receipt.json": {
+      "bytes": 831,
+      "sha256": "eb1ebdf4fab5e90eb727213798739ddf5ba5386ec981fc01559c084c05ccbeb8",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\warm-gallery.receipt.json",
+      "retained_sha256": "b78c272a5f16fb03ba57efaf6809ceecce8e0a0acdc7fb898644bb0c7c4956bd"
+    },
+    "warm-gallery.stdout.txt": {
+      "bytes": 21021,
+      "sha256": "3719909058911fbbac04c6af00f4672e34de8c6bd3b8a5bfea7684d575660790",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\warm-gallery.stdout.log",
+      "retained_sha256": "210213d9a2649f24e82e620d274822726b3a339d2835ec87f4e1c65c1e3e4edc"
+    },
+    "warm-gallery.stderr.txt": {
+      "bytes": 3351,
+      "sha256": "1e6671cf181cdf9a3ebe35706b70bf7afa701462c77dd29dde069b625901abc1",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\warm-gallery.stderr.log",
+      "retained_sha256": "d1cbacc3e893a4ded4097561d82e2e9f21953acc4d05a2b2c5e2c15f6526a608"
+    },
+    "double-cold.receipt.json": {
+      "bytes": 837,
+      "sha256": "27cba45db40ead328752569d94ce1b5dfc8de30f7176df9142e76f6117874b25",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-cold.receipt.json",
+      "retained_sha256": "47271378ab553766fa91073d6f33bff4878c0f38a93d9c4b7a523e430ffbc974"
+    },
+    "double-cold.stdout.txt": {
+      "bytes": 32779,
+      "sha256": "b622dfa435b6a2a35b295ed14473c9c13d42c3e8dff357b70394aeb267dbe0a5",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-cold.stdout.log",
+      "retained_sha256": "2e2dfb0f50f72c76e3bf14a5978dcce0df00ab1d1bd2208a93995d94667a9363"
+    },
+    "double-cold.stderr.txt": {
+      "bytes": 3351,
+      "sha256": "dcf7e077d2fbf3594fd39746a38218c411800850895aca10d4d21821bfe58276",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-cold.stderr.log",
+      "retained_sha256": "39bbb155bf34ae69e19bc3fee5cea8e50b51c9c3ccb1ac26f62d88b8ad9360aa"
+    },
+    "double-warm.receipt.json": {
+      "bytes": 836,
+      "sha256": "0ae7097da11a4fd52f0834f368c0e0b3ad5a68207720b31bb963d32387125e6b",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-warm.receipt.json",
+      "retained_sha256": "39f3396dc2192f1c0e2dab250f0eb23b4427367379e001b612b4a834be952a4f"
+    },
+    "double-warm.stdout.txt": {
+      "bytes": 21028,
+      "sha256": "06904c8fb63bfa6f117b665e5cf4983aa984c7a1e065c6534e037ff4c801f7a6",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-warm.stdout.log",
+      "retained_sha256": "dec448f9ef43fcee24585fce1aa17c459e292e844c8e3056b93e71c98fca5c29"
+    },
+    "double-warm.stderr.txt": {
+      "bytes": 3351,
+      "sha256": "14148ef9c1e9fd3b059e79a4e7dbf81e70b688771f359adf066dacf81722e9ee",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-warm.stderr.log",
+      "retained_sha256": "22d6d909cf63658b6316cc22aceb7090cad2c8f89ee2bd94e0186fc83cb58596"
+    },
+    "double-translation.receipt.json": {
+      "bytes": 709,
+      "sha256": "11e63cc606268131996d2837003ea4744646acabe62130a358468d6743259fbe",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-translation.receipt.json",
+      "retained_sha256": "4cfb0421629bc40feace47b6e31eae041a4dba51d127ec466dbe2f13b9ad584e"
+    },
+    "double-translation.stdout.txt": {
+      "bytes": 4593,
+      "sha256": "8628890bbcdbf97168977c53ba27fa3782d85e6d78f7bd6534c5089923b2694c",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-translation.stdout.log",
+      "retained_sha256": "b27177501d2ac7dc9c2a10cc4609373546498ec4c7e842ceede0f75ce3926f18"
+    },
+    "double-translation.stderr.txt": {
+      "bytes": 2283,
+      "sha256": "a958ff056dac2264d8b2e1dadf4364166bcc749526f6d5ee85b905fc146dde2a",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-translation.stderr.log",
+      "retained_sha256": "18307451e49a1f4404497de5a36c5d153e212d8f626464ba8632c101e5ee4082"
+    },
+    "scene-shadows_merged.receipt.json": {
+      "bytes": 847,
+      "sha256": "beacbed8f03e7362e495fd324baf536df36822bd28872965fa10220562dcf915",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-shadows_merged.receipt.json",
+      "retained_sha256": "b773ea72d1a5d165267e94d812d90b1bdf3ecb6b7e7ffbd328fd11eb9e3fd700"
+    },
+    "scene-shadows_merged.stdout.txt": {
+      "bytes": 4107,
+      "sha256": "6be49e5a63828a4a080b074d2f54c3358e5193556097357a9b4d28d4edade156",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-shadows_merged.stdout.log",
+      "retained_sha256": "4901075d9247a129994154cda1affbc2672ec2f5c4e444d821ead3ccac33379e"
+    },
+    "scene-shadows_merged.stderr.txt": {
+      "bytes": 2136,
+      "sha256": "91ed1bdf69e584d3094da10239fcd02d2bfcbde1b526c479222d036f8dac951c",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-shadows_merged.stderr.log",
+      "retained_sha256": "aae9a48b5d630f7b52e7792fe6dc4854024bf9ea053396499b47b8da5fa5dd82"
+    },
+    "scene-shadows_expanded.receipt.json": {
+      "bytes": 851,
+      "sha256": "b96c083d0d89a322f14626e64efd421249d0267c73ec9f43b874b7461f4e3b0e",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-shadows_expanded.receipt.json",
+      "retained_sha256": "0052479411275ac64b3761de1a94544b946ef09d00960e52abbe9e59ed5c78a2"
+    },
+    "scene-shadows_expanded.stdout.txt": {
+      "bytes": 4106,
+      "sha256": "c38b81d2971c20dd136efa9a65324a7774ec4ecf23aafa4d7dd363a41b54d377",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-shadows_expanded.stdout.log",
+      "retained_sha256": "fc5fc6fa63cf5b54309188b0f947ba636b6866de29ee910758cadca62e5eb573"
+    },
+    "scene-shadows_expanded.stderr.txt": {
+      "bytes": 2136,
+      "sha256": "91ed1bdf69e584d3094da10239fcd02d2bfcbde1b526c479222d036f8dac951c",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-shadows_expanded.stderr.log",
+      "retained_sha256": "aae9a48b5d630f7b52e7792fe6dc4854024bf9ea053396499b47b8da5fa5dd82"
+    },
+    "scene-energy_directional.receipt.json": {
+      "bytes": 855,
+      "sha256": "688f907acfb0b0dc18f82d80c1b92f73887071d48ec7e17901d78663dab687ad",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-energy_directional.receipt.json",
+      "retained_sha256": "a770c845a90692011effff61a4493f72c897ae3f3629745caf452190e1cc9a8c"
+    },
+    "scene-energy_directional.stdout.txt": {
+      "bytes": 3989,
+      "sha256": "a4f5ff0a779b018bb15332761b57d31d06ce2d691d03f0f27fa2eae1ba596171",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-energy_directional.stdout.log",
+      "retained_sha256": "2072fde8050d76863751d62790d7cc4780998fefa9ad10eb308ba9aae4a1a9e7"
+    },
+    "scene-energy_directional.stderr.txt": {
+      "bytes": 1646,
+      "sha256": "ed0d9827a428e0a04312dc20524d9b8934d9e1bb39e0009a05e51aa3509f6108",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-energy_directional.stderr.log",
+      "retained_sha256": "45e5972daa02a4ca3c16849139f2616482adc8269cd9a7fc73f1aaabc18d71f1"
+    },
+    "scene-energy_emission.receipt.json": {
+      "bytes": 849,
+      "sha256": "98a1a23cbe754ab7184ff5e0c7193340ccf595609a63aa088f6ac50c0524f116",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-energy_emission.receipt.json",
+      "retained_sha256": "0cd9bc8202b9294ac057ca8a4165044b95cff90d12e2ba11b8c74e10fd623839"
+    },
+    "scene-energy_emission.stdout.txt": {
+      "bytes": 3983,
+      "sha256": "60694b5e2b3cd09455c48041d9be23439ba381a5736a7a9a073876dd998e5ac5",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-energy_emission.stdout.log",
+      "retained_sha256": "cedf77eba896faa2a8a4ab15ca1103a916644ba516422dae449b963819d1cdf6"
+    },
+    "scene-energy_emission.stderr.txt": {
+      "bytes": 1891,
+      "sha256": "1fbd4a4d84504aeb6be71a8aab66b5757895385c725efb6cf5a3a643af27be9a",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-energy_emission.stderr.log",
+      "retained_sha256": "490651fc2b94ad0497fefe5aa541f9ed31748fffd43e6e3bacd4da34e6c5914b"
+    },
+    "scene-unsupported.receipt.json": {
+      "bytes": 841,
+      "sha256": "40cdb44e4f1c4a617debef7517d585d75500b427eba3205bac61bde2f48c838d",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-unsupported.receipt.json",
+      "retained_sha256": "63cd896b3ad8cf7cf2d5608f7af3fdb7eaf060e88232f309b6a8677f2f62814e"
+    },
+    "scene-unsupported.stdout.txt": {
+      "bytes": 3979,
+      "sha256": "f1fa448a87ad1e5b46cd6b02999ac985b4852780bb21b039178bc4121f62057e",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-unsupported.stdout.log",
+      "retained_sha256": "0e0a6f90a0379709594af57dbdb1f759e5131d5e3b774f6d941d6bdb818bf97b"
+    },
+    "scene-unsupported.stderr.txt": {
+      "bytes": 5042,
+      "sha256": "565e2ce8e3967c541083fbc8a31a3261ca145039ed4ff4bd6f4235ba70e2f72c",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-unsupported.stderr.log",
+      "retained_sha256": "dd7f155bc7d83fcbb91b89e4a439ddee45164bb6c31575d58e874ad08da02097"
+    },
+    "scene-test.receipt.json": {
+      "bytes": 827,
+      "sha256": "72eef63fd8c103011010da2dd1b8dc8e4744357ce97e3d43640510f7d4aa3da7",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-test.receipt.json",
+      "retained_sha256": "563cf0310c1d5b6dc927fdf793084af6a680658e861546afd8847a650528b89e"
+    },
+    "scene-test.stdout.txt": {
+      "bytes": 3691,
+      "sha256": "3114deb74eae98a6d3a46130ec1255a385c4f50e53a9b493662b6fd036648e0a",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-test.stdout.log",
+      "retained_sha256": "51b9ab3b09aadb4472840f9f565c89c0acc60492418ac7431c9ad591de90fafb"
+    },
+    "scene-test.stderr.txt": {
+      "bytes": 1891,
+      "sha256": "1fbd4a4d84504aeb6be71a8aab66b5757895385c725efb6cf5a3a643af27be9a",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\scene-test.stderr.log",
+      "retained_sha256": "490651fc2b94ad0497fefe5aa541f9ed31748fffd43e6e3bacd4da34e6c5914b"
+    },
+    "interactive.receipt.json": {
+      "bytes": 717,
+      "sha256": "74eba88d30292d291d48b527be8e15f43fc3dac5b00a240c37781402791d350e",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\interactive.receipt.json",
+      "retained_sha256": "b7b678f642a7fc69a44b49036e7522d0a225e66b0b3c9f3960ff98c5be3335ab"
+    },
+    "interactive.stdout.txt": {
+      "bytes": 5140,
+      "sha256": "b21487a7d5fb66ef1a5fa98fb2c76014e9fec40adfa6bb92de4c0a2a33f9a021",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\interactive.stdout.log",
+      "retained_sha256": "7bc404aa3a656223f6d0040308b71f87680ae546b76bdbf5c56fc8d784003f31"
+    },
+    "interactive.stderr.txt": {
+      "bytes": 2283,
+      "sha256": "1be9f0fd046c29f99e8ae7ca092f1035a0027b28be8c5a6d49aeeb874a44b962",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\interactive.stderr.log",
+      "retained_sha256": "77a359ca453aa94679a15ea09132fbd14c17dd0d4a4464243c4f205a26c29f8e"
+    },
+    "material.receipt.json": {
+      "bytes": 715,
+      "sha256": "72cf533c973263dba142762959fd9b21f78f823edf7785ea1b7936817aa3d167",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\material.receipt.json",
+      "retained_sha256": "d5296f509a27f08f5b94dc3bbf8af79d3a10e10cccdc0cad48b9b45c50c4f2e1"
+    },
+    "material.stdout.txt": {
+      "bytes": 31868,
+      "sha256": "1b2b17e32f971da094af168ad7a43d62ebf099e24852ebefc11fe003ca662a84",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\material.stdout.log",
+      "retained_sha256": "db555fbc8d93684d06b98a3e30c4db675d2365e287ac23631760bb925428edcc"
+    },
+    "material.stderr.txt": {
+      "bytes": 3636,
+      "sha256": "41f2eb1cbd15c64db724703bbef96ed4af95ba0b2c2d7a9ac93ec56488fcfa96",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\material.stderr.log",
+      "retained_sha256": "0658c017690bec9dd1123d29e5de963fceb79bfaec5962a936cce01ebcde914a"
+    },
+    "material-supported.receipt.json": {
+      "bytes": 716,
+      "sha256": "ca831988d446a947a6020efcea5e343477149c6373c724613f185155bb4814d6",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\material-supported.receipt.json",
+      "retained_sha256": "e23310fb607ee8c992346a33b023a47bad4933b417a0e07fbf06d7b99722f226"
+    },
+    "material-supported.stdout.txt": {
+      "bytes": 25425,
+      "sha256": "a6138febe067f1827fd8704a79eb38ca70649528a830515ae53788c0b2a1a7ae",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\material-supported.stdout.log",
+      "retained_sha256": "a6609cc81988d8ad558f84541cedcd4e1c77a4b1fad2dadf5329752778913e8b"
+    },
+    "material-supported.stderr.txt": {
+      "bytes": 3939,
+      "sha256": "9ca155be84514056762b07862770d3d693d9631a6ed6ccc8a17ad10ea58030c5",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\material-supported.stderr.log",
+      "retained_sha256": "fabf406b426f774be1976880f3504c9dc154ea3b710abd14e85520c6b690965b"
+    },
+    "consumers.receipt.json": {
+      "bytes": 4993,
+      "sha256": "d9a516be43027899041d375f2830f3cb0342d0814f0391436a2b69f202cc4b6e",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\consumers.receipt.json",
+      "retained_sha256": "3f9fa89f50891f3ea4e2c9f1509c6e0a4dde7d997cc2a8b043cde4e17ded6f71"
+    },
+    "consumers.stdout.txt": {
+      "bytes": 18185,
+      "sha256": "634b578e5b21df86c0b181709755ed02a5975a44f95d642672c34cf67004c9f2",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\consumers.stdout.log",
+      "retained_sha256": "0a7b1f23f334114a14caf3c7f14dae91bc3d9e816fbdb411969ca00d7cf22836"
+    },
+    "consumers.stderr.txt": {
+      "bytes": 2469,
+      "sha256": "17024118916795de02fea4565a37fa60d7f63781adecb91637f7ff53a4f31838",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\consumers.stderr.log",
+      "retained_sha256": "eade0bc16c52e3364a3f350f033f262178857ab18cb70763732629fa68232c09"
+    },
+    "editor-canvas.receipt.json": {
+      "bytes": 1006,
+      "sha256": "982a320beebe9877860ae30cedc466d901dfcefe51751d9d18fbfd89409e5cf1",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\editor-canvas.receipt.json",
+      "retained_sha256": "1d425b95193e6a3a8775c5c196ccbb70f86fac1f0fef3443929725777667879c"
+    },
+    "editor-canvas.stdout.txt": {
+      "bytes": 2693,
+      "sha256": "6b0bcaf9317c6b4ff66e97f1dc69545e43f0f3039dc1306465f3ea4418475a08",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\editor-canvas.stdout.log",
+      "retained_sha256": "3163bd9b35212933d418ac95773d462ad7f2b93715013373d80a9601b97e1bbf"
+    },
+    "editor-canvas.stderr.txt": {
+      "bytes": 25137,
+      "sha256": "4fd8ca5791acf11a5057dda438cb3b0f3231facf2748442ce2d0b1f93de633d6",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\editor-canvas.stderr.log",
+      "retained_sha256": "0f1465d55222e6de902768d241d7bc6e283c7e7e1cea6d81d9f2d39557f1db5b"
+    },
+    "export-bake.receipt.json": {
+      "bytes": 797,
+      "sha256": "25ee80517d0525aefa028713b060b9ac0d2c4731ea704492ef6974af4e08c11a",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\export-bake.receipt.json",
+      "retained_sha256": "753dcba08aefa0d3f7ce4be36e7feabe2bca41119440bedd0c0ab02a9e14e724"
+    },
+    "export-bake.stdout.txt": {
+      "bytes": 33620,
+      "sha256": "e05955f17cab2867755daaf3573f507d302ada676bc98a3163651bf67b9b81c7",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\export-bake.stdout.log",
+      "retained_sha256": "bfa95308382ff341e31a15ca9e3563ba009a48770a23ccba2bc387896fcbf2dd"
+    },
+    "export-bake.stderr.txt": {
+      "bytes": 26254,
+      "sha256": "c8def214b6008418f399ca70852dc251b10140ff6f0ad932169ed416c3183c38",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\export-bake.stderr.log",
+      "retained_sha256": "8d352dcc0f3ff03ca7f32660f5d43db7affedf6e3283e7088d31940dbc6152a5"
+    },
+    "template-gallery.receipt.json": {
+      "bytes": 5126,
+      "sha256": "c051bfc1c9b67c245e49c97056236b986bc70d0eaf14e847c0331d3207bf8ff1",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\template-gallery.receipt.json",
+      "retained_sha256": "c333aaed8e97f2e078e6f9a84727fc7179f73ab0c91f0464d3d2589ca722470c"
+    },
+    "template-gallery.stdout.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\template-gallery.stdout.log",
+      "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "template-gallery.stderr.txt": {
+      "bytes": 266,
+      "sha256": "f94225f6c53e2a2f1363accb7191c88ace0e7bab0007ac8a2582477fc604c013",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\template-gallery.stderr.log",
+      "retained_sha256": "e2f9079400b756dee76c7507c79bc0ddc43dd1798e17279e1ccdf518f2c4e634"
+    },
+    "exported-cold.receipt.json": {
+      "bytes": 728,
+      "sha256": "944ad934f5316e8dc5e3a04f2cc4575c365c028cce3ebb8efcf580115944836d",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\exported-cold.receipt.json",
+      "retained_sha256": "2034d2b3526e280b63ebbb6498f9facc57a7694e8235a7b8d92ec038cc6c209e"
+    },
+    "exported-cold.stdout.txt": {
+      "bytes": 18722,
+      "sha256": "e94af7ee5b5e7f9bd8c94f0f0be98f693104b200d20c14834e285b20b7432c11",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\exported-cold.stdout.log",
+      "retained_sha256": "db05f8a11b2d77dd213299937af3a1e4105f0174d82875b5b78f99832ff082ea"
+    },
+    "exported-cold.stderr.txt": {
+      "bytes": 3351,
+      "sha256": "c914df3d28f1a7c8e60e5b831af53c9296a8118a1a318b7c5bb91923043b07a0",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\exported-cold.stderr.log",
+      "retained_sha256": "f823fd00c191181108043c412f996710a77a65efd22d552245cceb458afb03c0"
+    },
+    "exported-fresh.receipt.json": {
+      "bytes": 856,
+      "sha256": "6d74fa1a2892686ab6d1bac5e451719b9cfe08174b71b355fa858ccd27fdb9c5",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\exported-fresh.receipt.json",
+      "retained_sha256": "bb9a1561176863a0d587952ddd4f6b1cdb33173749c29c7353eeeea969818b3e"
+    },
+    "exported-fresh.stdout.txt": {
+      "bytes": 18635,
+      "sha256": "bcecbde86793d7fc982302458819be3c950a69812ae5029f02910795dc2d5c76",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\exported-fresh.stdout.log",
+      "retained_sha256": "fdc413b34d2ee08df1d14afc31d674d3761ae14faf552381283fd01e7317d0cb"
+    },
+    "exported-fresh.stderr.txt": {
+      "bytes": 3351,
+      "sha256": "aa48d63e15060a0e8f96764dfe51ced8b876382cdec859bad6eb47dce2a14fbb",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\exported-fresh.stderr.log",
+      "retained_sha256": "e1cea0187cbd5da87b33928362dddb99a93af43e6a83d3aeba6730c742648a4f"
+    },
+    "exported-warm.receipt.json": {
+      "bytes": 855,
+      "sha256": "2e64f44db966285ad9b1179c0fb71d3703d935d35cf6e7b990d8250dfadfcb44",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\exported-warm.receipt.json",
+      "retained_sha256": "b40fdb1d4016e4fcdd6d1c2943a69b872ceb484b2b7702191d978fbd9eea63d8"
+    },
+    "exported-warm.stdout.txt": {
+      "bytes": 18578,
+      "sha256": "3fd65a1b2fb6ffa474163e425d1e8b279e0dfc1ce608d861e0d0e0cc873fca33",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\exported-warm.stdout.log",
+      "retained_sha256": "de9032e923b63d39c44e82c0709ade8fd0234a8942748100a6bf8ef6416081be"
+    },
+    "exported-warm.stderr.txt": {
+      "bytes": 3351,
+      "sha256": "3bd267d3d49cffc230d6657b57aa18ca458f193c2191b84e890c6bf316de361e",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\exported-warm.stderr.log",
+      "retained_sha256": "3d5e61635ced598d35ef353cd7e8f3b386da80f468fd38ec8285d47554e041eb"
+    },
+    "exported-runtime-compile.receipt.json": {
+      "bytes": 729,
+      "sha256": "46419ce51bb6a95cb22f10f6e64b66293eb1e87955439b25a6bbfb3ccdf1c67f",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\exported-runtime-compile.receipt.json",
+      "retained_sha256": "9875eb678984c5ca5ffa0d4b7e3e801d48485c7bafd32ddb4fcc139c591792dc"
+    },
+    "exported-runtime-compile.stdout.txt": {
+      "bytes": 8962,
+      "sha256": "7efd0f230494701d7e6d869b578f041ed6835654dd9bf20659082084432d2332",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\exported-runtime-compile.stdout.log",
+      "retained_sha256": "d3d914932b848b518972648fce848a47dab9886e211de5cc7402d479ccbf13ee"
+    },
+    "exported-runtime-compile.stderr.txt": {
+      "bytes": 3351,
+      "sha256": "8607589ca560f031e6c37d9fcbaa0255772d0596368b3d2c10295515ab8c8806",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\exported-runtime-compile.stderr.log",
+      "retained_sha256": "1b524db6b5077acd98e144f7c3263b45af40314bbc566d417d47ab7092321576"
+    },
+    "editor-canvas-forced.receipt.json": {
+      "bytes": 1538,
+      "sha256": "64abab7a2bc388fce20af57b0914c1212f43c004eb543663ba633b5c01a997d9",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\editor-canvas-forced.receipt.json",
+      "retained_sha256": "713eb14c365f620bbb6c417ee174abaed0fd2973f290b44c14e584771cea763c"
+    },
+    "editor-canvas-forced.stdout.txt": {
+      "bytes": 3211,
+      "sha256": "d0ecc55c1856471c22d0336d9ef12527dd56d665f8f3d6f39d6efe105343134d",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\editor-canvas-forced.stdout.log",
+      "retained_sha256": "7ea9db5eaa4d23b2bc055a7ff49b1ffb6dc3f49d5b61e0b10bda10466ef5aac1"
+    },
+    "editor-canvas-forced.stderr.txt": {
+      "bytes": 25137,
+      "sha256": "32b652cdc18c3b1490fadab8343673bba5db57dee9079ec9ccad65c3a3b268e1",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\editor-canvas-forced.stderr.log",
+      "retained_sha256": "a9593c5882f98cb42bd50f9c706e8f85456164cf5478ec1fece36bb310eb1d21"
+    },
+    "editor-2d.receipt.json": {
+      "bytes": 1538,
+      "sha256": "eda3556094e6d131ecbf98b070a16ed26e5f4e4524d9cf79690a18accdfb488c",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\editor-2d.receipt.json",
+      "retained_sha256": "dd5b3a3093639a80d8851a7ebe9fa0d3463b7c5dca842c99ecdefe13de3e90f2"
+    },
+    "editor-2d.stdout.txt": {
+      "bytes": 2989,
+      "sha256": "5f90de26afc173b957b093684cb57d60a79d977c4d91cb2779805916346d003c",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\editor-2d.stdout.log",
+      "retained_sha256": "61c0c993056f785c9ebc64ba12650e19388637485deb8b885ccd9c8f98343343"
+    },
+    "editor-2d.stderr.txt": {
+      "bytes": 25137,
+      "sha256": "78ca2eda75fafad00571252009965f2eaba247e1c364352abe98f091390e9246",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\editor-2d.stderr.log",
+      "retained_sha256": "850b329db57e7b6bcc47d064bb73b1381d9579e8a20de3ae8858aeb43b6fc46e"
+    },
+    "editor-3d.receipt.json": {
+      "bytes": 5298,
+      "sha256": "70d9513c1204415f787d6dbe583a5c5f2e372efe99a9aacf96da586157a13822",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\editor-3d.receipt.json",
+      "retained_sha256": "829d4e4b31e84e45b35b489ec992449c4f5cd553d1ea4630287c9a0a29f05918"
+    },
+    "editor-3d.stdout.txt": {
+      "bytes": 2987,
+      "sha256": "58b4f546adccf6aea4e27106375c99782b75a6d76d3b84b7bd4ff177c873b50a",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\editor-3d.stdout.log",
+      "retained_sha256": "7ced4772ed51041cb598d64974b2fc77b757af8189e97d794a095cc5f94f146d"
+    },
+    "editor-3d.stderr.txt": {
+      "bytes": 30858,
+      "sha256": "acd1c9633dc044395799d2fd52fc8958d84d1a5fa550d6481930c139b042dfb4",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\editor-3d.stderr.log",
+      "retained_sha256": "907c9e745000c1acadaa62811ace3b21608f05cf1c8d5200183f90b0a55ba5ee"
+    },
+    "double-final.receipt.json": {
+      "bytes": 5671,
+      "sha256": "79db38bb1d7f5e73aee82bf75a61b1a980a81ce665458441cac7c0643bfba664",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-final.receipt.json",
+      "retained_sha256": "36e359124683f936a2bbe87ff9ef7bfca349be32b4873a73edcc057f18130206"
+    },
+    "double-final.stdout.txt": {
+      "bytes": 21028,
+      "sha256": "dc67d4830594694da51c937e5fde62bea44dfc02f40e18e792aeeb9ad67b209a",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-final.stdout.log",
+      "retained_sha256": "d6758190a61d42eadcb594039e17265ff86dd789571f1d9c7a21ada6043c5137"
+    },
+    "double-final.stderr.txt": {
+      "bytes": 3351,
+      "sha256": "1191232e05382aca26219335c72d93faf7b9117349658ac025a4b05c9f120da4",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-final.stderr.log",
+      "retained_sha256": "23a6414a8f3fba639edc4d8b88ee090b062e71273f4360ac031f4c71ecea7d98"
+    },
+    "editor-build.txt": {
+      "bytes": 936,
+      "sha256": "63c5ad02743617ea1b682c079e74fdaae8bee2b4b86fdb70d524632732534aa4",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\editor-build.log",
+      "retained_sha256": "27f8ca936dcf23fdced1e897084a980f8e4010efef9386cae44d63b72c65412e"
+    },
+    "template-build.txt": {
+      "bytes": 6731,
+      "sha256": "a9cc704f8c2540d42e2ac5c6910d1984f1939bfecc1f798f3de9b04caf23529c",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\template-build.log",
+      "retained_sha256": "7026849bd1b9da5d24d5a16a0aebbb6258198fac28728c7cb9778563e5e23ef3"
+    },
+    "template-build-receipt.json": {
+      "bytes": 237,
+      "sha256": "25e26dcb354470992f41a8f1c63d692775e6ec43dbe5537db26e5533415d8e9f",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\template-build-receipt.json",
+      "retained_sha256": "32d56bc484a55381e5366af0cfc7e7ea25e7bfd07690e434c4d1706a70031825"
+    },
+    "double-build.txt": {
+      "bytes": 53305,
+      "sha256": "5e6193dfcb8db7a8e8a2c9866536521850d9c9c458f99752c2329973849f04e0",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-build.log",
+      "retained_sha256": "bb680cd02482d60f72d47349bc46dbe038173efd9f9df5c1580aaf5ad866c1c6"
+    },
+    "double-build-receipt.json": {
+      "bytes": 253,
+      "sha256": "f238b351cfb3c26d1f7f5b25e9d369638a878f2da9afd4b537dbb36c2685fac7",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-build-receipt.json",
+      "retained_sha256": "1e96816326aa359c9e87ec203153d9d6689f6aea11c462b374e8d06bc99cdafe"
+    },
+    "final-build-provenance.json": {
+      "bytes": 8809,
+      "sha256": "eda2e496098f89fde818507e5664be666f74a2f3e926b35bf3fc66d1635ea743",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\final-build-provenance.json",
+      "retained_sha256": "9874b226732c88833d91de8f4b7950582c7a8832ff055c9c5b0d08c6db8bdd49"
+    },
+    "copied-inputs.json": {
+      "bytes": 3502,
+      "sha256": "9ab1777321e47f14509f6070587772f5c971679bd39fb1bbc4ce625bd3487918",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\copied-inputs.json",
+      "retained_sha256": "6be0f12bdff4bf20b5eb2b3e51cbe812205c199ee78f51cd1299aa0517620fd6"
+    },
+    "double-cold-cache-before.json": {
+      "bytes": 219,
+      "sha256": "0183df188d5f2afe844bbc4a10468eebc4c063f6477711d745868a3488cf254a",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-cold-cache-before.json",
+      "retained_sha256": "542c5704ac9d06efa1573d82593dd1b3ff9e55e16039579dd5b14de57944f117"
+    },
+    "double-cache-after-cold.json": {
+      "bytes": 20646,
+      "sha256": "5cbf80274dc8eaf2309d59c8ea39f6f1277925fdc2e5cf8c0dc632093d3d90f5",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-cache-after-cold.json",
+      "retained_sha256": "191d382e7b693982e361935f6817dd2f5e1dc51dc4515f5a182f893a3f552db6"
+    },
+    "double-cache-after-warm.json": {
+      "bytes": 20646,
+      "sha256": "5cbf80274dc8eaf2309d59c8ea39f6f1277925fdc2e5cf8c0dc632093d3d90f5",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\double-cache-after-warm.json",
+      "retained_sha256": "191d382e7b693982e361935f6817dd2f5e1dc51dc4515f5a182f893a3f552db6"
+    },
+    "matrix-reference.json": {
+      "bytes": 1122,
+      "sha256": "e8ba1ee87332197788f32cb4a1e1df23cd3235bdc2be5eb2cf0eaa16123dbf70",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\matrix-reference.json",
+      "retained_sha256": "c7e47ba807604bafe0f84fca2c4701e0c761d7c528d78ff78a0bb49233f3a058"
+    },
+    "matrix-pixel-observations.json": {
+      "bytes": 2428,
+      "sha256": "8c898df4e2b3f420841516d5ee590c7ab7322cf552f6eaf75295e7d08793a384",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\matrix-pixel-observations.json",
+      "retained_sha256": "4769769632771d062ec4cef41f0e925c0dda173eaba1d69fc96c3bec118b948f"
+    },
+    "input-actions.jsonl": {
+      "bytes": 9603,
+      "sha256": "2d281abf1776a8d3238582d33c702ce3ed5d47100ceaec1271a3d928c06f2676",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\input-actions.jsonl",
+      "retained_sha256": "75d6561d3f6621850f89f87b890650aaa68ffdf69e96747f002e7072a74968d0"
+    },
+    "headers-tools.command.txt": {
+      "bytes": 1260,
+      "sha256": "f2488a9e807b21ebf1ce570bdfa4c8427b07650f82787ae7c94f97150b793a7d",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\headers-tools.command.txt",
+      "retained_sha256": "f2488a9e807b21ebf1ce570bdfa4c8427b07650f82787ae7c94f97150b793a7d"
+    },
+    "headers-tools.txt": {
+      "bytes": 27,
+      "sha256": "c74e7e0c86d2c645aa7567e5ca6f4b1981cf77ae848229dc5eca7c0caed20ec8",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\headers-tools.log",
+      "retained_sha256": "1a7036d6eb5477a4ba88b1edd1b5d2e74b1a998ac9dff3b1a6930e7fb3149ee6"
+    },
+    "headers-tools.receipt.json": {
+      "bytes": 1587,
+      "sha256": "3926a10d90dddcb082650529417f44dbb264a1c0b92e6ad98ffca84284b60ff7",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\headers-tools.receipt.json",
+      "retained_sha256": "0372d4a1b712c144f798d6a94e96b1c102ce54ef01860ebccf8864356f6d70c0"
+    },
+    "headers-no-tools.command.txt": {
+      "bytes": 1248,
+      "sha256": "badd68ccd36176c7c8415225ba4a7e5fc4b1b92d6ebfbe799ae6d2bca7218090",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\headers-no-tools.command.txt",
+      "retained_sha256": "badd68ccd36176c7c8415225ba4a7e5fc4b1b92d6ebfbe799ae6d2bca7218090"
+    },
+    "headers-no-tools.txt": {
+      "bytes": 27,
+      "sha256": "c74e7e0c86d2c645aa7567e5ca6f4b1981cf77ae848229dc5eca7c0caed20ec8",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\headers-no-tools.log",
+      "retained_sha256": "1a7036d6eb5477a4ba88b1edd1b5d2e74b1a998ac9dff3b1a6930e7fb3149ee6"
+    },
+    "headers-no-tools.receipt.json": {
+      "bytes": 1575,
+      "sha256": "f06e693ef871d1759a59dd9aab58068d99349a2adc670ebb8c94cbeb7f14ca01",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\headers-no-tools.receipt.json",
+      "retained_sha256": "02d17e36e640a637bdcbb2697af12f3fdb79b3dcfda3ab707c138ab20193f50e"
+    },
+    "exported-fresh-before.json": {
+      "bytes": 223,
+      "sha256": "3f0af5f2511a0247c9b36f6a4eca9425b1f30f723277b70bc7bf6fdd2777321d",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\exported-fresh-before.json",
+      "retained_sha256": "daa0ae9be452276e4a46d10ad79df6013b960c2d1a6e025eb1db3ca6b4e771a4"
+    },
+    "exported-cache-after-fresh.json": {
+      "bytes": 160,
+      "sha256": "ef5bcca99112db76cf740c8675c08f1177c8bb4478efb52e8cd5b0372627dc39",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\exported-cache-after-fresh.json",
+      "retained_sha256": "57e58339db1691ae5de4deb7b32c46d3f250648085dcc22b0908176fc43329e2"
+    },
+    "exported-cache-after-warm.json": {
+      "bytes": 160,
+      "sha256": "ef5bcca99112db76cf740c8675c08f1177c8bb4478efb52e8cd5b0372627dc39",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\exported-cache-after-warm.json",
+      "retained_sha256": "57e58339db1691ae5de4deb7b32c46d3f250648085dcc22b0908176fc43329e2"
+    },
+    "exported-package-identity.json": {
+      "bytes": 56677,
+      "sha256": "32933b1e6a92849010f6f9da9a314eaf18efc3d500bef175854b0f71e5e6f03b",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\exported-package-identity.json",
+      "retained_sha256": "823fe2dacbb2d80b914768c6bc3688ec274b70509230d4a482ed3dcb1ad1f707"
+    },
+    "exported-loaded-compiler.json": {
+      "bytes": 481,
+      "sha256": "9fba1083e1ca4a43f93268b2a03b31f83aceda937ae709f25ba851a60fd59c47",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\exported-loaded-compiler.json",
+      "retained_sha256": "9fb22071a39eae3886d8d3e748670ab3682dacca55dcffabb9fadaf1ad49481e"
+    },
+    "final-source-provenance.json": {
+      "bytes": 10553,
+      "sha256": "a4ea0339398974bdb4559290e7f886eeb67db469604f0a221acf4de8c8001d8c",
+      "retained_source": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\final-source-provenance.json",
+      "retained_sha256": "f90cc1922c66969c1da5071549633f250d3e4952addd0aa21fb4319042fd8527"
+    }
+  }
+}

@@ -1,0 +1,227 @@
+WorkerThreadPool: 48 threads, 14 max low-priority.
+Godot Engine v4.8.dev.custom_build.99c67e1f7 (2026-09-07 14:29:09 UTC) - https://godotengine.org
+TextServer: Added interface "Dummy"
+TextServer: Added interface "ICU / HarfBuzz / Graphite (Built-in)"
+Devices:
+  #0: NVIDIA NVIDIA GeForce RTX 4090 - Supported, Discrete
+Optional Vulkan device extension VK_EXT_fragment_density_map not found
+Optional Vulkan device extension VK_EXT_fragment_density_map2 not found
+Optional Vulkan device extension VK_QCOM_fragment_density_map_offset not found
+Optional Vulkan device extension VK_EXT_astc_decode_mode not found
+Optional Vulkan device extension VK_EXT_texture_compression_astc_hdr not found
+Optional Vulkan device extension VK_KHR_external_memory_fd not found
+Optional Vulkan device extension VK_EXT_debug_marker not found
+- Vulkan Fragment Shading Rate supported:
+  Pipeline fragment shading rate
+  Primitive fragment shading rate
+  Attachment fragment shading rate, min texel size: (16, 16), max texel size: (16, 16), max fragment size: (4, 4)
+- Vulkan Fragment Density Map not supported
+- Vulkan multiview supported:
+  max view count: 32
+  max instances: 134217727
+- Vulkan subgroup:
+  size: 32
+  min size: 32
+  max size: 32
+  stages: STAGE_VERTEX, STAGE_TESSELLATION_CONTROL, STAGE_TESSELLATION_EVALUATION, STAGE_GEOMETRY, STAGE_FRAGMENT, STAGE_COMPUTE, STAGE_RAYGEN_KHR, STAGE_ANY_HIT_KHR, STAGE_CLOSEST_HIT_KHR, STAGE_MISS_KHR, STAGE_INTERSECTION_KHR, STAGE_CALLABLE_KHR, STAGE_TASK_NV, STAGE_MESH_NV
+  supported ops: FEATURE_BASIC, FEATURE_VOTE, FEATURE_ARITHMETIC, FEATURE_BALLOT, FEATURE_SHUFFLE, FEATURE_SHUFFLE_RELATIVE, FEATURE_CLUSTERED, FEATURE_QUAD, FEATURE_PARTITIONED_NV
+  quad operations in all stages
+- Vulkan Acceleration Structure supported
+  min acceleration structure scratch offset alignment: 128
+- Vulkan Raytracing supported
+  shader group handle size: 32
+  shader group handle alignment: 32
+  shader group handle size aligned: 32
+  shader group base alignment: 64
+- Vulkan Cluster Acceleration Structure supported
+  max vertices per cluster: 256
+  max triangles per cluster: 256
+  max cluster geometry index: 16777215
+  cluster scratch byte alignment: 256
+  cluster byte alignment: 128
+  cluster bottom level byte alignment: 256
+Vulkan 1.4.351 - Forward+ - Streamline - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+Startup PSO cache (27.0 MiB)
+SDL: Init OK!
+Using "winink" pen tablet driver...
+Creating VMA small objects pool for memory type index 1
+Shader 'CanvasSdfShaderRD' (group 0) SHA256: 8ea525b6f2d964cab877166b9747e4605d73a35a7e4a17007c0f6c2ef805ecab
+Shader 'SkeletonShaderRD' (group 0) SHA256: 5121935c35b9a4bd259e625dcb1425c5eecfcb58c8102bbaed8b39cd4bb9d07d
+Shader 'SortShaderRD' (group 0) SHA256: b57eeb736d744e0046071919070590c5ecd618bd187f8012e256dadab0b39d44
+Shader 'ParticlesShaderRD' (group 0) SHA256: 5dc2596a2a2a420c793c46182b12b6930382dcb455944e19a44ff106da6d68bc
+Shader 'ParticlesCopyShaderRD' (group 0) SHA256: 377084a148b8dce3b0a38b50167ea027180c8e70ce7afc13a95e691319516d5e
+Shader 'CanvasShaderRD' (group 0) SHA256: 3d67514db6bbe1b1028e23fd77e98c58e3d6c6fd33e98d1d3fe19d58fbef3b0a
+Shader 'CanvasOcclusionShaderRD' (group 0) SHA256: bfeb679e62d44d3fc09e7c4dba54fbcd76878e2fb7cc5d429504fdc5dace2e12
+Shader 'TexBlitShaderRD' (group 0) SHA256: 600f518557224db1937674f1636f8662919c65839937172dbea82d06c12ac2e7
+Shader 'ClusterRenderShaderRD' (group 0) SHA256: d18cca93938ff9e109523ac94046a8a53acff6d0e344459868e0699d3e3e31c9
+Shader 'ClusterStoreShaderRD' (group 0) SHA256: a59d153c38fe985b6d062bead0fb30b08a493d783b73d663698210ede8b1440f
+Shader 'ClusterDebugShaderRD' (group 0) SHA256: 87d8c2afce216666720298c615dbf31742919d776224cb5a883fcb75f5f4b9b3
+Shader 'SceneForwardClusteredShaderRD' (group 0) SHA256: a81aacee143debd33ffe4f197975afe1fc852110534c5faa57d4e65e2694a275
+Shader 'SceneForwardClusteredShaderRD' (group 1) SHA256: 2c2c8a77daa3ef00dcc5339421943c19b647284b365c708b1ae28f30aa9590cc
+Shader 'SceneForwardClusteredShaderRD' (group 2) SHA256: 32f382f0a444fe8f12e61adcaa28329573f23afd7901967ad60a0e84e9d1f951
+Shader 'SceneForwardClusteredShaderRD' (group 3) SHA256: 7ea75ba177d87eafa89efc49c45cbb31c7b6915f3ddac141c17084240754fa8f
+Shader 'BestFitNormalShaderRD' (group 0) SHA256: 909ab383c54107a1bcdbdf3c4e91e732a510f4dfb00ee25efc3ee3e12cd33a3c
+Shader 'IntegrateDfgShaderRD' (group 0) SHA256: 4f8467b60a8142ae94ca8e4f67b8e0edf56c1fd5e5835ff617b3774e91f972f5
+Shader 'TaaResolveShaderRD' (group 0) SHA256: ef88bd4067466b372414165976881d0769d87dd86b0b4ba8e98688a1cf8e94a5
+Shader 'Fsr2DepthClipPassShaderRD' (group 0) SHA256: 80b40a623d8aad6ddbf390074199e2a18a86c95bee1f0b78c55283d25a7ead46
+Shader 'Fsr2ReconstructPreviousDepthPassShaderRD' (group 0) SHA256: 7cc9fa36046b5ac0400f75d103a96f2dc0421d90f6f7547f2fb4a2f1ab796867
+Shader 'Fsr2LockPassShaderRD' (group 0) SHA256: 6e52e3380c7919c1dd1557ea9764dc64e6dd62f90e5f8b4ccad9463d37ef2085
+Shader 'Fsr2AccumulatePassShaderRD' (group 0) SHA256: f5d6f4f3ec7f35f341cd2b3bafc21dfe7cfe14c24fab9cd95e665537f81992b8
+Shader 'Fsr2RcasPassShaderRD' (group 0) SHA256: 664df66271f146b56a87afcb3254be1d43d692ae4d49da61aab0e9fb807055f7
+Shader 'Fsr2ComputeLuminancePyramidPassShaderRD' (group 0) SHA256: 41cc6084cad2f135cf57c2ae337651ef60a76d6cdbdc362de5ada40848498fca
+Shader 'Fsr2AutogenReactivePassShaderRD' (group 0) SHA256: beef5219e23518925dc67c0d560e19810fc38e20095cd910a2b462baeb8b3b32
+Shader 'Fsr2TcrAutogenPassShaderRD' (group 0) SHA256: 95b1046f2969b810d6a6916796e258c2d5302e42157560a27913e3d672c23272
+Shader 'MotionVectorDecodeShaderRD' (group 0) SHA256: ee66da382dc517ccef24cbf43f2be1d0ce69fea7e8d01ae286c56567f281044e
+Shader 'SsEffectsDownsampleShaderRD' (group 0) SHA256: db99af504625901a693daf114ea3426ea11009d9fa8792627a74ee2be5017bfd
+Shader 'SsilShaderRD' (group 0) SHA256: c5641b22aa02ca62da13b6e8116254492c95518c1c355670bdc7c6e3d86a28ec
+Shader 'SsilImportanceMapShaderRD' (group 0) SHA256: a1c1755be68046a27d05865e111f7f738474455aace5b6b447f0c47153fa49ed
+Shader 'SsilBlurShaderRD' (group 0) SHA256: 41bb2be83582004ed02200ccd1902291d686f584695034bce7cff0ce35a47904
+Shader 'SsilInterleaveShaderRD' (group 0) SHA256: 4f37c185ffc4b64328db7487a06131d1df927999b276bcfebd56ad40df19e083
+Shader 'SsaoShaderRD' (group 0) SHA256: 96ef1f0d57f35630b2c37d965d5f3b5655b6acd764d10f79dcd842fb54fd001e
+Shader 'SsaoImportanceMapShaderRD' (group 0) SHA256: 1cb0a3be2d1ac07659ec65c250907fdc8d65605d84d1f755f680828b97dc6468
+Shader 'SsaoBlurShaderRD' (group 0) SHA256: 21bfe188c83c5017f72bf4938138e946eda3b3035d68879c8d1f21bb63717a4a
+Shader 'SsaoInterleaveShaderRD' (group 0) SHA256: c1d5af089b24120fdd77160df4077bd6b55d0ba748de95f3f11f8d14452f81e6
+Shader 'ScreenSpaceReflectionDownsampleShaderRD' (group 0) SHA256: 2129691f95f2792f1b7e6712c69b166d6945020af538eb81a90ead474137a239
+Shader 'ScreenSpaceReflectionHizShaderRD' (group 0) SHA256: 8104478be0882df1080dce33052b2a89175d8bfe3b3bb63f97e372ab5fe267b7
+Shader 'ScreenSpaceReflectionShaderRD' (group 0) SHA256: 487694b24ad2fd4b7979c9ed73b1dc9dd744319d3ce65b9cb26503c603ff4659
+Shader 'ScreenSpaceReflectionFilterShaderRD' (group 0) SHA256: 6efd08939f9de33fb82b261ae5f638ff145a308c50cd8b69e1e9ca21b37704b7
+Shader 'ScreenSpaceReflectionResolveShaderRD' (group 0) SHA256: 97ce727c72188cbc5ea0e9d31dd36a79f34b3d7e00ffbea1c8ba70d3153c3e6c
+Shader 'SubsurfaceScatteringShaderRD' (group 0) SHA256: 072f4bc7e087a10cd1d54f0d3c32c76a8492d401c048f14f27044d935814c6e6
+Shader 'MotionVectorsStoreShaderRD' (group 0) SHA256: 5e7c5f9e4b58a4ae918411c590834121661efff35c4cddaf948e0e447a7baa99
+Shader 'MultimeshMergeShaderRD' (group 0) SHA256: 9c4d76a60a608525f4a7e0b73f9d677b200457604146aa3bb71b690a5ac6d4b8
+Shader 'RtxdiDiShaderRD' (group 0) SHA256: 36b545222d654470d85113a105c56d9cd04d149c2c8ae76c00cd23fef84c78e4
+Shader 'RtxdiFrameShaderRD' (group 0) SHA256: 3dc64fe60eb6c3e9ce850c37d741f46867cedb6d9467a29d52c47f59c6caa452
+Shader 'SkyShaderRD' (group 0) SHA256: 6d9ffc1ae29e585bafe60ac5252f281ecc8464c1d88421bad84c8700908e3737
+Shader 'VoxelGiShaderRD' (group 0) SHA256: 7971465ac71a0be61144b198acd9405b9d6dc2d8ccf5fd2ea7805df8ca3e2e34
+Shader 'VoxelGiDebugShaderRD' (group 0) SHA256: 6ef186ffac0e98b93f36d5c845c42a81648dca194c0523c9c6728dddb439f50f
+Shader 'SdfgiPreprocessShaderRD' (group 0) SHA256: 3a15be99d4a879d6ae4dc80ce9534cf89af93c672f512f0ed95b18d980ccd896
+Shader 'SdfgiDirectLightShaderRD' (group 0) SHA256: 6a7cae2b1a1e2323c248a19fc2f3dbc5dec41daf2427a8cb11799acfc891275a
+Shader 'SdfgiIntegrateShaderRD' (group 0) SHA256: e28ff26d1a309eba52a5c92666b7dc928b8b7784fa8d9669aecef75cbc1bbd0c
+Shader 'GiShaderRD' (group 0) SHA256: 17ae89a5d7fb6b839a8d359263aeb47aa484d391b5af860086e17734126da1f2
+Shader 'GiShaderRD' (group 1) SHA256: a72041c619d0e90cf2523bcfaf089e48322060aff459a0f4d8cf09d8f2dc5f5e
+Shader 'SdfgiDebugShaderRD' (group 0) SHA256: debca1b49001d0122700cd09385b6f469164639ee16f39c1756d7a8f75a01575
+Shader 'SdfgiDebugProbesShaderRD' (group 0) SHA256: bdb9b3793fb2aa49f93da85a62a6e05d1790063706603cec8f39fdc64ec1a38a
+Shader 'VolumetricFogShaderRD' (group 0) SHA256: 56362456c732494552c4d73e55109e803dca0eaea68eb05e5f3b9fafb3dbee20
+Shader 'VolumetricFogShaderRD' (group 1) SHA256: 6dc7e5e24af4b6f5bfddb0d9da1e6893bc32d59e05e26727c1c4270ffc2e6d1c
+Shader 'VolumetricFogShaderRD' (group 2) SHA256: 5bb848c70499604809463339fa761216882bce67296767320c53741f02c386fd
+Shader 'VolumetricFogShaderRD' (group 3) SHA256: c876d027f9c7be4c114dfcd067fc70408adaf91b141002c9fdca1825dcb008f6
+Shader 'VolumetricFogProcessShaderRD' (group 0) SHA256: 551b40a65d60efbdc001b1f7f8b0f64187b2cff27dc5bfc3e98744e5597d8252
+Shader 'VolumetricFogProcessShaderRD' (group 1) SHA256: 3556e1d91af9ebbaa4a86dbb430b19e625ecdd206acc4c6ead4d006374f22c56
+Shader 'VolumetricFogProcessShaderRD' (group 2) SHA256: 3f0b1c7bdf884f0f00756b1d742c346af0a50548d1e839c305b533a33d11d7e1
+Shader 'VolumetricFogProcessShaderRD' (group 3) SHA256: 49bc17bc3b59a10e8f3f0cd0db8b5c422b8a7f9c5ecf874937f35b0584e8eae9
+Shader 'BokehDofShaderRD' (group 0) SHA256: e8c3df8b5c0e10afe33b1cc43b2bd5344a9ec222d7b7225513f2548477b64e19
+Shader 'CopyShaderRD' (group 0) SHA256: 403b9c11037d2067448ad62cabe0ddf6d472ee3ab337846fbcf456717cbb5dbf
+Shader 'CopyToFbShaderRD' (group 0) SHA256: 545f0e230aaa600d30e71f29a7aa0d31870d6916fb33574efa72f58cf7b672fb
+Shader 'CubeToDpShaderRD' (group 0) SHA256: 9f08cc271c6936e8375e93f741b7797fd759d88facbaa61ba1d8f3c6bc2b8960
+Shader 'CubeToOctmapShaderRD' (group 0) SHA256: bffea9df67ace28ccc36017db41758b37af62634e5b7a855781f709d6a6d0b6f
+Shader 'OctmapDownsamplerShaderRD' (group 0) SHA256: 9d3d8675cadee2a66f2076672f2bdcd8a7fefb925853e760dfd42fe5a7db9826
+Shader 'OctmapFilterShaderRD' (group 0) SHA256: e43327f6fa685ffc990dce74f984ae20940e5cffc7bc6b5c81a8334d9a32c284
+Shader 'OctmapRoughnessShaderRD' (group 0) SHA256: 1420fc97ccae73e3df6aa0985d6d5537e7a5d2d4129964314709fdd035cc7961
+Shader 'SpecularMergeShaderRD' (group 0) SHA256: cee08426b5e487e06928d5116d2b46612c0b0796f34cab95628156addce7d24f
+Shader 'DepthReconstructShaderRD' (group 0) SHA256: eede00395a98953ed3345562abeb2ab6fadbc903577c390ea2d59e3b46b45dcc
+Shader 'ShadowFrustumShaderRD' (group 0) SHA256: e2e1ce8f4ed0690e6a296d23e3c0a99ce14c0ec47a8b29fccf6688e135f3343b
+Shader 'MotionVectorsShaderRD' (group 0) SHA256: 14d9259d71ff97a1e98217c9c3c66a17677aea788b72732d7231d9addfca8fe0
+Shader 'LuminanceReduceShaderRD' (group 0) SHA256: 9f05079c68e5c231f927194be5637c379ad9f6410574124b0d678164bc08d9d0
+Shader 'SmaaEdgeDetectionShaderRD' (group 0) SHA256: 49e89635f089e94120670d58c7845eab1bb5ae6041289afe94a316e879f97a1b
+Shader 'SmaaWeightCalculationShaderRD' (group 0) SHA256: 8bc51d94c2db7f69430f6bad1f15e94adfde69e77f38a7d9a5840dd4fcdf3519
+Shader 'SmaaBlendingShaderRD' (group 0) SHA256: ba2718c6d4b6fab9c02e35a922a940524c1964c22b386f99d2dc0fb4eadc923f
+Shader 'TonemapShaderRD' (group 0) SHA256: 99d67699a1772c786c5897f1a28f8cf2f4e27898dd234405ff3ba8fe6488a8a5
+Shader 'VrsShaderRD' (group 0) SHA256: f4065f8d96986fe17cba003a47e44afc827bfcae46223775052a4ebbe25cc860
+Shader 'FsrUpscaleShaderRD' (group 0) SHA256: 37c2c50cbb519f6e763157f54612d9fc8c3d73b437171712f1f1781747f967f0
+Shader 'ResolveShaderRD' (group 0) SHA256: 110e67b0e1fdbf967fae96c8104dde4abed23d4d25c8436af55beeb2380b0a6c
+Shader 'BlitShaderRD' (group 0) SHA256: 5244a645ade7ebbe18a8e9c44212be83b02032f31a00ddce64400f7850274980
+WASAPI: Activated output_device using IAudioClient3 interface
+WASAPI: wFormatTag = 65534
+WASAPI: nChannels = 2
+WASAPI: nSamplesPerSec = 48000
+WASAPI: nAvgBytesPerSec = 384000
+WASAPI: nBlockAlign = 8
+WASAPI: wBitsPerSample = 32
+WASAPI: cbSize = 22
+WASAPI: mix_rate = 48000
+WASAPI: fundamental_period_frames = 480
+WASAPI: min_period_frames = 480
+WASAPI: max_period_frames = 480
+WASAPI: selected a period frame size of 480
+WASAPI: detected 2 channels
+WASAPI: audio buffer frames: 480 calculated latency: 10ms
+
+TextServer: Primary interface set to: "ICU / HarfBuzz / Graphite (Built-in)".
+CORE API HASH: 2493272729
+EDITOR API HASH: 641102666
+SceneTreeFTI: traversal method DEFAULT
+Loaded system CA certificates
+Loading resource: res://main.tscn remapped: res://main.tscn
+Loading resource: res://main.gd remapped: res://main.gd
+Completed load for: 'res://main.gd' remapped 'res://main.gd' at thread -1
+Loading resource: res://geometry_parts/cube.tscn remapped: res://geometry_parts/cube.tscn
+Loading resource: res://geometry.gltf remapped: res://geometry.gltf
+Loading resource: res://.godot/imported/geometry.gltf-0ac33f4b86ee737ce983357aaf0b3395.scn remapped: res://.godot/imported/geometry.gltf-0ac33f4b86ee737ce983357aaf0b3395.scn
+Completed load for: 'res://geometry.gltf' remapped 'res://geometry.gltf' at thread -1
+Completed load for: 'res://geometry_parts/cube.tscn' remapped 'res://geometry_parts/cube.tscn' at thread -1
+Loading resource: res://geometry_parts/sphere.tscn remapped: res://geometry_parts/sphere.tscn
+Completed load for: 'res://geometry_parts/sphere.tscn' remapped 'res://geometry_parts/sphere.tscn' at thread -1
+Loading resource: res://geometry_parts/plane.tscn remapped: res://geometry_parts/plane.tscn
+Completed load for: 'res://geometry_parts/plane.tscn' remapped 'res://geometry_parts/plane.tscn' at thread -1
+Loading resource: res://geometry_parts/deformer.tscn remapped: res://geometry_parts/deformer.tscn
+Completed load for: 'res://geometry_parts/deformer.tscn' remapped 'res://geometry_parts/deformer.tscn' at thread -1
+Loading resource: res://textures/masked_checker.svg remapped: res://textures/masked_checker.svg
+Loading resource: res://.godot/imported/masked_checker.svg-6747ea2abd378a293e74c8b46905e412.s3tc.ctex remapped: res://.godot/imported/masked_checker.svg-6747ea2abd378a293e74c8b46905e412.s3tc.ctex
+Completed load for: 'res://textures/masked_checker.svg' remapped 'res://textures/masked_checker.svg' at thread -1
+Loading resource: res://textures/emission_checker.svg remapped: res://textures/emission_checker.svg
+Loading resource: res://.godot/imported/emission_checker.svg-b8aacb6940468ddb3bc4d829e3c24b28.s3tc.ctex remapped: res://.godot/imported/emission_checker.svg-b8aacb6940468ddb3bc4d829e3c24b28.s3tc.ctex
+Completed load for: 'res://textures/emission_checker.svg' remapped 'res://textures/emission_checker.svg' at thread -1
+Completed load for: 'res://main.tscn' remapped 'res://main.tscn' at thread -1
+MANUAL_DEMO preset=gallery light=all binary={ "major": 4, "minor": 8, "patch": 0, "hex": 264192, "status": "dev", "build": "custom_build", "hash": "99c67e1f78e67f9fcc4d6a3858b0415f6658d8b2", "timestamp": 1788791349, "string": "4.8-dev (custom_build)" } renderer=forward_plus driver=vulkan size=(1280.0, 720.0)
+MultiUmaBuffer 'RENDER_LIST_OPAQUE' used a total of 0 buffers. A large number may indicate a waste of VRAM and can be brought down by tweaking MAX_EXTRA_BUFFERS for this buffer.
+MultiUmaBuffer 'RENDER_LIST_SECONDARY' used a total of 0 buffers. A large number may indicate a waste of VRAM and can be brought down by tweaking MAX_EXTRA_BUFFERS for this buffer.
+MANUAL_CAPTURE path=C:/Users/lukas/AppData/Local/Temp/godot-shader-unification-20260907/step5/warm-gallery.png result=0 frame=475 gpu_ms=3.2739999294281
+MANUAL_MEMORY total=455148384.0 textures=358057984.0 buffers=84143630.0
+XR: Clearing primary interface
+XR: Removed interface "Native mobile"
+XR: Removed interface "OpenXR"
+Freeing Default Tex_Blit Shader
+MultiUmaBuffer 'RENDER_LIST_OPAQUE' used a total of 1 buffers. A large number may indicate a waste of VRAM and can be brought down by tweaking MAX_EXTRA_BUFFERS for this buffer.
+MultiUmaBuffer 'RENDER_LIST_MOTION' used a total of 0 buffers. A large number may indicate a waste of VRAM and can be brought down by tweaking MAX_EXTRA_BUFFERS for this buffer.
+MultiUmaBuffer 'RENDER_LIST_ALPHA' used a total of 0 buffers. A large number may indicate a waste of VRAM and can be brought down by tweaking MAX_EXTRA_BUFFERS for this buffer.
+MultiUmaBuffer 'RENDER_LIST_SECONDARY' used a total of 2 buffers. A large number may indicate a waste of VRAM and can be brought down by tweaking MAX_EXTRA_BUFFERS for this buffer.
+MultiUmaBuffer 'CANVAS_INSTANCE_DATA' used a total of 1 buffers. A large number may indicate a waste of VRAM and can be brought down by tweaking MAX_EXTRA_BUFFERS for this buffer.
+Orphan StringName: motion_0 (static: 1, total: 2)
+Orphan StringName: motion_1 (static: 1, total: 2)
+Orphan StringName: classification_0 (static: 1, total: 2)
+Orphan StringName: classification_1 (static: 1, total: 2)
+Orphan StringName: base_0 (static: 2, total: 3)
+Orphan StringName: base_1 (static: 1, total: 2)
+Orphan StringName: geometry_0 (static: 1, total: 2)
+Orphan StringName: geometry_1 (static: 1, total: 2)
+Orphan StringName: shading_0 (static: 1, total: 2)
+Orphan StringName: shading_1 (static: 1, total: 2)
+Orphan StringName: emission_0 (static: 1, total: 2)
+Orphan StringName: emission_1 (static: 1, total: 2)
+StringName: 12 unclaimed string names at exit.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_common_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_pcl_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_reflex_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_g_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_d_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_nis_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_pcl_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_pcl_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.common.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_common_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.deepdvc.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.directsr.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.dlss.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.dlss_d.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_d_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.dlss_g.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_g_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.nis.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_nis_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.nvperf.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.pcl.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_pcl_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.reflex.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_reflex_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.

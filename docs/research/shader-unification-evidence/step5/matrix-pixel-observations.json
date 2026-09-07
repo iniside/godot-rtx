@@ -1,0 +1,174 @@
+{
+  "image_sha256": "27953a7f711218aea39e521ea229f85dae7adf530c69e7835f204e04dab755ec",
+  "note": "Manual presentation pixel observations from screenshot; no automated assertions",
+  "samples": [
+    {
+      "column": 0,
+      "xy_computed": [
+        298,
+        250
+      ],
+      "computed": [
+        100,
+        117,
+        155
+      ],
+      "xy_reference": [
+        298,
+        500
+      ],
+      "reference": [
+        100,
+        117,
+        155
+      ]
+    },
+    {
+      "column": 1,
+      "xy_computed": [
+        396,
+        250
+      ],
+      "computed": [
+        93,
+        129,
+        151
+      ],
+      "xy_reference": [
+        396,
+        500
+      ],
+      "reference": [
+        93,
+        129,
+        151
+      ]
+    },
+    {
+      "column": 2,
+      "xy_computed": [
+        494,
+        250
+      ],
+      "computed": [
+        71,
+        96,
+        100
+      ],
+      "xy_reference": [
+        494,
+        500
+      ],
+      "reference": [
+        71,
+        96,
+        100
+      ]
+    },
+    {
+      "column": 3,
+      "xy_computed": [
+        592,
+        250
+      ],
+      "computed": [
+        81,
+        100,
+        94
+      ],
+      "xy_reference": [
+        592,
+        500
+      ],
+      "reference": [
+        81,
+        100,
+        94
+      ]
+    },
+    {
+      "column": 4,
+      "xy_computed": [
+        690,
+        250
+      ],
+      "computed": [
+        84,
+        90,
+        99
+      ],
+      "xy_reference": [
+        690,
+        500
+      ],
+      "reference": [
+        84,
+        90,
+        99
+      ]
+    },
+    {
+      "column": 5,
+      "xy_computed": [
+        788,
+        250
+      ],
+      "computed": [
+        79,
+        105,
+        105
+      ],
+      "xy_reference": [
+        788,
+        500
+      ],
+      "reference": [
+        79,
+        105,
+        105
+      ]
+    },
+    {
+      "column": 6,
+      "xy_computed": [
+        886,
+        250
+      ],
+      "computed": [
+        100,
+        118,
+        155
+      ],
+      "xy_reference": [
+        886,
+        500
+      ],
+      "reference": [
+        100,
+        117,
+        155
+      ]
+    },
+    {
+      "column": 7,
+      "xy_computed": [
+        984,
+        250
+      ],
+      "computed": [
+        42,
+        148,
+        123
+      ],
+      "xy_reference": [
+        984,
+        500
+      ],
+      "reference": [
+        42,
+        148,
+        123
+      ]
+    }
+  ]
+}

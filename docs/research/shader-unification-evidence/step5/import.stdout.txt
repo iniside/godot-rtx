@@ -1,0 +1,92 @@
+Godot Engine v4.8.dev.custom_build.99c67e1f7 (2026-09-07 14:29:09 UTC) - https://godotengine.org
+
+[   0% ] [90m[1mfirst_scan_filesystem[22m | Started Project initialization (5 steps)[39m[0m
+[   0% ] [90m[1mfirst_scan_filesystem[22m | Scanning file structure...[39m[0m
+[  16% ] [90m[1mfirst_scan_filesystem[22m | Loading global class names...[39m[0m
+[  33% ] [90m[1mfirst_scan_filesystem[22m | Verifying GDExtensions...[39m[0m
+[  50% ] [90m[1mfirst_scan_filesystem[22m | Creating autoload scripts...[39m[0m
+[  66% ] [90m[1mfirst_scan_filesystem[22m | Initializing plugins...[39m[0m
+[  83% ] [90m[1mfirst_scan_filesystem[22m | Starting file scan...[39m[0m
+[92m[ DONE ][39m [1mfirst_scan_filesystem[22m
+[0m
+[   0% ] [90m[1mupdate_scripts_classes[22m | Started Registering global classes... (3 steps)[39m[0m
+[   0% ] [90m[1mupdate_scripts_classes[22m | [39m[0m
+[  25% ] [90m[1mupdate_scripts_classes[22m | [39m[0m
+[  50% ] [90m[1mupdate_scripts_classes[22m | [39m[0m
+[92m[ DONE ][39m [1mupdate_scripts_classes[22m
+[0m
+[   0% ] [90m[1m_update_scan_actions[22m | Started Scanning actions... (5 steps)[39m[0m
+[   0% ] [90m[1m_update_scan_actions[22m | cube.glb[39m[0m
+[  16% ] [90m[1m_update_scan_actions[22m | zdm2.glb[39m[0m
+[  33% ] [90m[1m_update_scan_actions[22m | emission_checker.svg[39m[0m
+[  50% ] [90m[1m_update_scan_actions[22m | masked_checker.svg[39m[0m
+[  66% ] [90m[1m_update_scan_actions[22m | geometry.gltf[39m[0m
+[92m[ DONE ][39m [1m_update_scan_actions[22m
+[0m
+[   0% ] [90m[1mreimport[22m | Started (Re)Importing Assets (5 steps)[39m[0m
+[   0% ] [90m[1mreimport[22m | Preparing files to reimport...[39m[0m
+[  16% ] [90m[1mreimport[22m | Preparing files to reimport...[39m[0m
+[  33% ] [90m[1mreimport[22m | Preparing files to reimport...[39m[0m
+[  50% ] [90m[1mreimport[22m | Preparing files to reimport...[39m[0m
+[  66% ] [90m[1mreimport[22m | Preparing files to reimport...[39m[0m
+[   0% ] [90m[1mreimport[22m | Executing pre-reimport operations...[39m[0m
+[   0% ] [90m[1mpreload_reimporting_scene[22m | Started Preparing scenes for reload (1 steps)[39m[0m
+[   0% ] [90m[1mpreload_reimporting_scene[22m | Analyzing scene [empty][39m[0m
+[  50% ] [90m[1mpreload_reimporting_scene[22m | Preparation done.[39m[0m
+[92m[ DONE ][39m [1mpreload_reimporting_scene[22m
+[0m
+[   0% ] [90m[1mreimport[22m | emission_checker.svg[39m[0m
+[  16% ] [90m[1mreimport[22m | masked_checker.svg[39m[0m
+[  33% ] [90m[1mreimport[22m | cube.glb[39m[0m
+[   0% ] [90m[1mimport[22m | Started Import Scene (104 steps)[39m[0m
+[   0% ] [90m[1mimport[22m | Importing Scene...[39m[0m
+[   1% ] [90m[1mimport[22m | Running Custom Script...[39m[0m
+[  99% ] [90m[1mimport[22m | Saving...[39m[0m
+[92m[ DONE ][39m [1mimport[22m
+[0m
+[  50% ] [90m[1mreimport[22m | zdm2.glb[39m[0m
+[   0% ] [90m[1mimport[22m | Started Import Scene (104 steps)[39m[0m
+[   0% ] [90m[1mimport[22m | Importing Scene...[39m[0m
+[   1% ] [90m[1mimport[22m | Running Custom Script...[39m[0m
+[  99% ] [90m[1mimport[22m | Saving...[39m[0m
+[92m[ DONE ][39m [1mimport[22m
+[0m
+[  66% ] [90m[1mreimport[22m | geometry.gltf[39m[0m
+[   0% ] [90m[1mimport[22m | Started Import Scene (104 steps)[39m[0m
+[   0% ] [90m[1mimport[22m | Importing Scene...[39m[0m
+[   1% ] [90m[1mimport[22m | Running Custom Script...[39m[0m
+[  99% ] [90m[1mimport[22m | Saving...[39m[0m
+[92m[ DONE ][39m [1mimport[22m
+[0m
+[  83% ] [90m[1mreimport[22m | Finalizing Asset Import...[39m[0m
+[92m[ DONE ][39m [1mreimport[22m
+[0m
+[   0% ] [90m[1mreimport[22m | Started (Re)Importing Assets (5 steps)[39m[0m
+[   0% ] [90m[1mreimport[22m | Executing post-reimport operations...[39m[0m
+[92m[ DONE ][39m [1mreimport[22m
+[0m
+[   0% ] [90m[1mloading_editor_layout[22m | Started Loading editor (5 steps)[39m[0m
+[   0% ] [90m[1mloading_editor_layout[22m | Loading editor layout...[39m[0m
+[  16% ] [90m[1mloading_editor_layout[22m | Loading docks...[39m[0m
+[92m[ DONE ][39m [1mloading_editor_layout[22m
+[0m
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_common_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_d_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_nis_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_pcl_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.common.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_common_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.deepdvc.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.directsr.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.dlss.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.dlss_d.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_d_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.dlss_g.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.nis.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_nis_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.nvperf.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.pcl.dll' is signed by NVIDIA and the signature was verified.
+File 'C:\ProgramData\NVIDIA/NGX/models/sl_pcl_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+File 'G:\Projects\godot-rtx\bin\/sl.reflex.dll' is signed by NVIDIA and the signature was verified.

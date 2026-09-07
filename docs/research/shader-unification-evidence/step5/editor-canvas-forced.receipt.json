@@ -1,0 +1,32 @@
+{
+  "argv": [
+    "G:/Projects/godot-rtx/bin/godot.windows.editor.x86_64.exe",
+    "--editor",
+    "--path",
+    "C:/Users/lukas/AppData/Local/Temp/godot-shader-unification-20260907/step5/canvas_project",
+    "res://consumers_manual.tscn",
+    "--rendering-method",
+    "forward_plus",
+    "--rendering-driver",
+    "vulkan",
+    "--max-fps",
+    "60"
+  ],
+  "cwd": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5",
+  "started": "2026-09-07T15:33:33.589641+00:00",
+  "executable_sha256": "32e0b1b2a811e18adf9f7a91e9304423bcddf6889df3c90fae71cd1551aac69d",
+  "removed_environment": {},
+  "project_inputs": {
+    "consumers_manual.gd": "08d5faea724f2dba7e3a6c1c059001d57e5280201172ac52785e8b23ceeeebf8",
+    "consumers_manual.gd.uid": "2fd24ed813b2f8a0a5e820ab1c28f3a858089a51ba9741ed3dc37861dc1e9a90",
+    "consumers_manual.tscn": "2fff5aa329f8cbd04a187dc683871f2742234c2748128c32f8c759d293801d48",
+    "editor-capture-request.txt": "13c6ad6a83bdf072ab49ca90c5b582e063c230c703f1f02c50285268dc954b6a",
+    "project.godot": "a2ef8bb4661bcd90027a82a59f937d3ec64d362cb09ff8ad8e88380df2f2b4e5",
+    "addons\\manual_capture\\plugin.cfg": "b3bb058aed1f52f17938e92978fc816acbd412c46fd6ce4c8fc4ddf8409d7792",
+    "addons\\manual_capture\\plugin.gd": "fa75c6a7c959c5ba0d9f922a64ba45f180b15b72c0a4071844d72c705355ce37",
+    "addons\\manual_capture\\plugin.gd.uid": "f6de325701415a6972e585d1e84fea0cf444e6464981be5fe86d30c70643453c"
+  },
+  "pid": 41352,
+  "finished": "2026-09-07T15:34:49.444829+00:00",
+  "exit": 0
+}

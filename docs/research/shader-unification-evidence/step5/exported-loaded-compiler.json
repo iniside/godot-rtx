@@ -1,0 +1,11 @@
+{
+  "override": "[application]\nconfig/name=\"Shader unification STEP5 baked cold 1525\"\n\n[rendering]\nshader_compiler/shader_cache/enabled=false\n",
+  "pid": 103060,
+  "modules": [
+    {
+      "path": "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\export\\slang-compiler.2026.13.1.x86_64.dll",
+      "sha256": "6cd4e6bee3ee8a1f8349f77c838ac711a3d217465771b114f461075b77b71b40",
+      "name": "slang-compiler.2026.13.1.x86_64.dll"
+    }
+  ]
+}
