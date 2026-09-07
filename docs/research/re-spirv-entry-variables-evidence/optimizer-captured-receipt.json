@@ -1,0 +1,87 @@
+{
+  "time_utc": "2026-09-07T15:19:17.349345+00:00",
+  "commands": [
+    {
+      "argv": [
+        "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\optimizer-captured-diagnostic.exe",
+        "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\debug-export-input.spv",
+        "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\optimizer-captured-inlined.spv",
+        "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\optimizer-captured-optimized.spv"
+      ],
+      "exit": 0,
+      "stdout": "input_bytes=12096 inlined_bytes=12124 optimized_bytes=12108\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "C:/VulkanSDK/1.4.357.0/Bin/spirv-val.exe",
+        "--target-env",
+        "vulkan1.3",
+        "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\debug-export-input.spv"
+      ],
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "C:/VulkanSDK/1.4.357.0/Bin/spirv-val.exe",
+        "--target-env",
+        "vulkan1.3",
+        "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\optimizer-captured-inlined.spv"
+      ],
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "C:/VulkanSDK/1.4.357.0/Bin/spirv-val.exe",
+        "--target-env",
+        "vulkan1.3",
+        "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\optimizer-captured-optimized.spv"
+      ],
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "artifacts": {
+    "debug-export-input.spv": {
+      "bytes": 12096,
+      "sha256": "b15e97709376a1a8d2ba5c3fd0f3bf73201112b033a1fd3ddbcd30f3c6f312cf"
+    },
+    "optimizer-captured-inlined.spv": {
+      "bytes": 12124,
+      "sha256": "817ec1137ae1e997dd25e41eeff489ccea6c87eb6f801388b4f1cfe8ce2d529b"
+    },
+    "optimizer-captured-optimized.spv": {
+      "bytes": 12108,
+      "sha256": "d36938bd0281bb20f358eca39d3aa573b5402ac6683179171e25a3cc86896a04"
+    },
+    "optimizer-captured-diagnostic.cpp": {
+      "bytes": 1020,
+      "sha256": "570829b4b3e505afd1c0e467cfa1c6c8347c120162037cb343e862c3c25f0887"
+    },
+    "optimizer-captured-diagnostic.exe": {
+      "bytes": 420864,
+      "sha256": "3163eb8babef6042abb8050e5d57cc2aed9ff8522a1249106806dfbe6cf4ea83"
+    }
+  },
+  "compile": {
+    "argv": [
+      "C:/Program Files (x86)/Microsoft Visual Studio/18/BuildTools/VC/Tools/Llvm/x64/bin/clang++.exe",
+      "-std=c++17",
+      "-O2",
+      "-DNDEBUG",
+      "-I.",
+      "-Ithirdparty/spirv-headers/include",
+      "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\optimizer-captured-diagnostic.cpp",
+      "thirdparty/re-spirv/re-spirv.cpp",
+      "-o",
+      "C:\\Users\\lukas\\AppData\\Local\\Temp\\godot-shader-unification-20260907\\step5\\optimizer-captured-diagnostic.exe"
+    ],
+    "exit": 0,
+    "log": "optimizer-captured-build.log"
+  }
+}

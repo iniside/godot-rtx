@@ -1,0 +1,36 @@
+{
+  "upstream_import": "076f30c19d",
+  "pinned_revision": "29a77fca357567d00aa37b8ffde19c19cfe477c4",
+  "commands": [
+    {
+      "argv": [
+        "git",
+        "apply",
+        "G:\\Projects\\godot-rtx\\thirdparty\\re-spirv\\patches\\0001-preserve-loop-phi-operand-liveness.patch"
+      ],
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "G:\\Projects\\godot-rtx\\thirdparty\\re-spirv\\patches\\0002-reserve-inlined-variables-at-entry-label.patch"
+      ],
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "lf_normalized_sha256": {
+    "re-spirv.cpp": {
+      "reconstructed": "c8b97a3750a8de8eaccaf2e61aa58179865a859ae47a583b9ecdb250f80c50f8",
+      "working": "7510a818fd85969cfd33996b32204b50fa38f4682f9b579df3382d112a6ffadb"
+    },
+    "re-spirv.h": {
+      "reconstructed": "1d239b964e302b1594873aa895a51891fa906fba1e9fa99c7e39be15477e3071",
+      "working": "1d239b964e302b1594873aa895a51891fa906fba1e9fa99c7e39be15477e3071"
+    }
+  }
+}

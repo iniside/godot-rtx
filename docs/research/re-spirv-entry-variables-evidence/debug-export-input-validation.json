@@ -1,0 +1,11 @@
+{
+  "time_utc": "2026-09-07T15:15:34.4324638Z",
+  "argv": [
+    "C:/VulkanSDK/1.4.357.0/Bin/spirv-val.exe",
+    "--target-env",
+    "vulkan1.3",
+    "C:/Users/lukas/AppData/Local/Temp/godot-shader-unification-20260907/step5/debug-export-input.spv"
+  ],
+  "exit_code": 0,
+  "input_sha256": "B15E97709376A1A8D2BA5C3FD0F3BF73201112B033A1FD3DDBCD30F3C6F312CF"
+}

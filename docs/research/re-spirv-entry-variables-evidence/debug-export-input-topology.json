@@ -1,0 +1,107 @@
+{
+  "input": "debug-export-input.spv",
+  "input_sha256": "b15e97709376a1a8d2ba5c3fd0f3bf73201112b033a1fd3ddbcd30f3c6f312cf",
+  "memory_address": "0x2adbf503038",
+  "bytes": 12096,
+  "words": 3024,
+  "parsed_through_words": 3024,
+  "header": [
+    119734787,
+    67072,
+    2621440,
+    432,
+    0
+  ],
+  "functions": [
+    {
+      "id": 93,
+      "start_word": 1811,
+      "variables": [],
+      "calls": [
+        {
+          "id": 103,
+          "target": 104,
+          "word_index": 1832
+        }
+      ],
+      "end_word": 1837
+    },
+    {
+      "id": 104,
+      "start_word": 1838,
+      "variables": [
+        {
+          "id": 107,
+          "storage_class": 7,
+          "word_index": 1845
+        },
+        {
+          "id": 109,
+          "storage_class": 7,
+          "word_index": 1849
+        },
+        {
+          "id": 110,
+          "storage_class": 7,
+          "word_index": 1853
+        },
+        {
+          "id": 114,
+          "storage_class": 7,
+          "word_index": 1857
+        },
+        {
+          "id": 117,
+          "storage_class": 7,
+          "word_index": 1861
+        },
+        {
+          "id": 119,
+          "storage_class": 7,
+          "word_index": 1865
+        },
+        {
+          "id": 121,
+          "storage_class": 7,
+          "word_index": 1869
+        },
+        {
+          "id": 122,
+          "storage_class": 7,
+          "word_index": 1873
+        },
+        {
+          "id": 123,
+          "storage_class": 7,
+          "word_index": 1877
+        },
+        {
+          "id": 125,
+          "storage_class": 7,
+          "word_index": 1881
+        },
+        {
+          "id": 126,
+          "storage_class": 7,
+          "word_index": 1885
+        }
+      ],
+      "calls": [],
+      "end_word": 3023
+    }
+  ],
+  "fault_source_instruction": {
+    "word_index": 1845,
+    "byte_offset": "0x1cd4",
+    "opcode": 59,
+    "words": [
+      262203,
+      106,
+      107,
+      7
+    ],
+    "function_id": 104
+  },
+  "size_evidence": "0x2f40 appears immediately before input pointer as allocated vector length and in saved caller frame; full disassembly consumes all3024 words and ends with OpFunctionEnd",
+  "validation_boundary": "spirv-dis succeeded. No spirv-val run in this subtask; no SPIR-V edits, engine edits, rebuild or GPU launch."
+}

@@ -1,0 +1,29 @@
+{
+  "object": "G:\\Projects\\godot-rtx\\bin\\obj\\thirdparty\\re-spirv\\re-spirv.windows.editor.x86_64.obj",
+  "fault_function_rva": "0x19ab980",
+  "fault_offset": "0x7f",
+  "matched_bytes": "48895c24184c894c242055565741544155415641574883ec70488bb424d000000041bcffffffff8bda4d8bf9410fb6e84489a424b0000000488bf9448926488b014c8b10458b2c9a4533d2450fb7f541c1ed1044896c24604585ed742a0f1f00488b07458d0c1a418b174103d241ffc24c8b00488b4708488b4810438b048889",
+  "matches": [
+    [
+      836,
+      0,
+      ".text$mn"
+    ]
+  ],
+  "symbols": [
+    {
+      "name": ".text$mn",
+      "value": "0x0",
+      "section": 836,
+      "offset": "0x0",
+      "symbol_index": 1674
+    },
+    {
+      "name": "??R<lambda_1>@?1??inlineData@Shader@respv@@QEAA_NPEBX_K@Z@QEBA@I_NAEAI3@Z",
+      "value": "0x0",
+      "section": 836,
+      "offset": "0x0",
+      "symbol_index": 3183
+    }
+  ]
+}

@@ -1,0 +1,1302 @@
+{
+  "debug-export-input.spv": {
+    "words": 3024,
+    "globals": [
+      {
+        "id": 21,
+        "word_index": 1663,
+        "storage": 2
+      },
+      {
+        "id": 26,
+        "word_index": 1667,
+        "storage": 12
+      },
+      {
+        "id": 31,
+        "word_index": 1671,
+        "storage": 2
+      },
+      {
+        "id": 34,
+        "word_index": 1675,
+        "storage": 0
+      },
+      {
+        "id": 37,
+        "word_index": 1679,
+        "storage": 0
+      },
+      {
+        "id": 38,
+        "word_index": 1683,
+        "storage": 0
+      },
+      {
+        "id": 39,
+        "word_index": 1687,
+        "storage": 0
+      },
+      {
+        "id": 41,
+        "word_index": 1691,
+        "storage": 1
+      },
+      {
+        "id": 44,
+        "word_index": 1695,
+        "storage": 1
+      },
+      {
+        "id": 46,
+        "word_index": 1699,
+        "storage": 1
+      },
+      {
+        "id": 47,
+        "word_index": 1703,
+        "storage": 1
+      },
+      {
+        "id": 49,
+        "word_index": 1707,
+        "storage": 1
+      },
+      {
+        "id": 52,
+        "word_index": 1711,
+        "storage": 9
+      },
+      {
+        "id": 58,
+        "word_index": 1715,
+        "storage": 0
+      },
+      {
+        "id": 59,
+        "word_index": 1719,
+        "storage": 0
+      },
+      {
+        "id": 64,
+        "word_index": 1723,
+        "storage": 12
+      },
+      {
+        "id": 68,
+        "word_index": 1727,
+        "storage": 12
+      },
+      {
+        "id": 71,
+        "word_index": 1731,
+        "storage": 0
+      },
+      {
+        "id": 72,
+        "word_index": 1735,
+        "storage": 0
+      },
+      {
+        "id": 73,
+        "word_index": 1739,
+        "storage": 0
+      },
+      {
+        "id": 77,
+        "word_index": 1743,
+        "storage": 12
+      },
+      {
+        "id": 78,
+        "word_index": 1747,
+        "storage": 0
+      },
+      {
+        "id": 79,
+        "word_index": 1751,
+        "storage": 0
+      },
+      {
+        "id": 80,
+        "word_index": 1755,
+        "storage": 0
+      },
+      {
+        "id": 81,
+        "word_index": 1759,
+        "storage": 0
+      },
+      {
+        "id": 82,
+        "word_index": 1763,
+        "storage": 0
+      },
+      {
+        "id": 83,
+        "word_index": 1767,
+        "storage": 0
+      },
+      {
+        "id": 84,
+        "word_index": 1771,
+        "storage": 0
+      },
+      {
+        "id": 85,
+        "word_index": 1775,
+        "storage": 0
+      },
+      {
+        "id": 86,
+        "word_index": 1779,
+        "storage": 0
+      },
+      {
+        "id": 87,
+        "word_index": 1783,
+        "storage": 0
+      },
+      {
+        "id": 88,
+        "word_index": 1787,
+        "storage": 0
+      },
+      {
+        "id": 89,
+        "word_index": 1791,
+        "storage": 0
+      },
+      {
+        "id": 90,
+        "word_index": 1795,
+        "storage": 0
+      },
+      {
+        "id": 91,
+        "word_index": 1799,
+        "storage": 12
+      },
+      {
+        "id": 98,
+        "word_index": 1803,
+        "storage": 6
+      },
+      {
+        "id": 101,
+        "word_index": 1807,
+        "storage": 6
+      }
+    ],
+    "functions": [
+      {
+        "id": 93,
+        "labels": [
+          {
+            "id": 95,
+            "word_index": 1816
+          }
+        ],
+        "variables": [],
+        "calls": [
+          {
+            "target": 104,
+            "word_index": 1832
+          }
+        ]
+      },
+      {
+        "id": 104,
+        "labels": [
+          {
+            "id": 105,
+            "word_index": 1843
+          },
+          {
+            "id": 127,
+            "word_index": 2143
+          },
+          {
+            "id": 128,
+            "word_index": 2151
+          },
+          {
+            "id": 129,
+            "word_index": 2155
+          },
+          {
+            "id": 130,
+            "word_index": 2163
+          },
+          {
+            "id": 131,
+            "word_index": 2181
+          },
+          {
+            "id": 132,
+            "word_index": 2220
+          },
+          {
+            "id": 133,
+            "word_index": 2243
+          },
+          {
+            "id": 134,
+            "word_index": 2247
+          },
+          {
+            "id": 135,
+            "word_index": 2251
+          },
+          {
+            "id": 136,
+            "word_index": 2267
+          },
+          {
+            "id": 137,
+            "word_index": 2271
+          },
+          {
+            "id": 138,
+            "word_index": 2275
+          },
+          {
+            "id": 139,
+            "word_index": 2312
+          },
+          {
+            "id": 140,
+            "word_index": 2326
+          },
+          {
+            "id": 141,
+            "word_index": 2334
+          },
+          {
+            "id": 142,
+            "word_index": 2338
+          },
+          {
+            "id": 143,
+            "word_index": 2346
+          },
+          {
+            "id": 144,
+            "word_index": 2364
+          },
+          {
+            "id": 145,
+            "word_index": 2451
+          },
+          {
+            "id": 146,
+            "word_index": 2455
+          },
+          {
+            "id": 147,
+            "word_index": 2474
+          },
+          {
+            "id": 148,
+            "word_index": 2478
+          },
+          {
+            "id": 149,
+            "word_index": 2482
+          },
+          {
+            "id": 150,
+            "word_index": 2533
+          },
+          {
+            "id": 151,
+            "word_index": 2541
+          },
+          {
+            "id": 152,
+            "word_index": 2545
+          },
+          {
+            "id": 153,
+            "word_index": 2553
+          },
+          {
+            "id": 154,
+            "word_index": 2571
+          },
+          {
+            "id": 155,
+            "word_index": 2632
+          },
+          {
+            "id": 156,
+            "word_index": 2636
+          },
+          {
+            "id": 157,
+            "word_index": 2655
+          },
+          {
+            "id": 158,
+            "word_index": 2659
+          },
+          {
+            "id": 159,
+            "word_index": 2663
+          },
+          {
+            "id": 160,
+            "word_index": 2787
+          },
+          {
+            "id": 161,
+            "word_index": 2799
+          },
+          {
+            "id": 162,
+            "word_index": 2806
+          },
+          {
+            "id": 163,
+            "word_index": 2819
+          },
+          {
+            "id": 164,
+            "word_index": 2826
+          },
+          {
+            "id": 165,
+            "word_index": 2833
+          },
+          {
+            "id": 166,
+            "word_index": 3020
+          }
+        ],
+        "variables": [
+          {
+            "id": 107,
+            "word_index": 1845,
+            "storage": 7
+          },
+          {
+            "id": 109,
+            "word_index": 1849,
+            "storage": 7
+          },
+          {
+            "id": 110,
+            "word_index": 1853,
+            "storage": 7
+          },
+          {
+            "id": 114,
+            "word_index": 1857,
+            "storage": 7
+          },
+          {
+            "id": 117,
+            "word_index": 1861,
+            "storage": 7
+          },
+          {
+            "id": 119,
+            "word_index": 1865,
+            "storage": 7
+          },
+          {
+            "id": 121,
+            "word_index": 1869,
+            "storage": 7
+          },
+          {
+            "id": 122,
+            "word_index": 1873,
+            "storage": 7
+          },
+          {
+            "id": 123,
+            "word_index": 1877,
+            "storage": 7
+          },
+          {
+            "id": 125,
+            "word_index": 1881,
+            "storage": 7
+          },
+          {
+            "id": 126,
+            "word_index": 1885,
+            "storage": 7
+          }
+        ],
+        "calls": []
+      }
+    ]
+  },
+  "optimizer-captured-inlined.spv": {
+    "words": 3031,
+    "globals": [
+      {
+        "id": 21,
+        "word_index": 1663,
+        "storage": 2
+      },
+      {
+        "id": 26,
+        "word_index": 1667,
+        "storage": 12
+      },
+      {
+        "id": 31,
+        "word_index": 1671,
+        "storage": 2
+      },
+      {
+        "id": 34,
+        "word_index": 1675,
+        "storage": 0
+      },
+      {
+        "id": 37,
+        "word_index": 1679,
+        "storage": 0
+      },
+      {
+        "id": 38,
+        "word_index": 1683,
+        "storage": 0
+      },
+      {
+        "id": 39,
+        "word_index": 1687,
+        "storage": 0
+      },
+      {
+        "id": 41,
+        "word_index": 1691,
+        "storage": 1
+      },
+      {
+        "id": 44,
+        "word_index": 1695,
+        "storage": 1
+      },
+      {
+        "id": 46,
+        "word_index": 1699,
+        "storage": 1
+      },
+      {
+        "id": 47,
+        "word_index": 1703,
+        "storage": 1
+      },
+      {
+        "id": 49,
+        "word_index": 1707,
+        "storage": 1
+      },
+      {
+        "id": 52,
+        "word_index": 1711,
+        "storage": 9
+      },
+      {
+        "id": 58,
+        "word_index": 1715,
+        "storage": 0
+      },
+      {
+        "id": 59,
+        "word_index": 1719,
+        "storage": 0
+      },
+      {
+        "id": 64,
+        "word_index": 1723,
+        "storage": 12
+      },
+      {
+        "id": 68,
+        "word_index": 1727,
+        "storage": 12
+      },
+      {
+        "id": 71,
+        "word_index": 1731,
+        "storage": 0
+      },
+      {
+        "id": 72,
+        "word_index": 1735,
+        "storage": 0
+      },
+      {
+        "id": 73,
+        "word_index": 1739,
+        "storage": 0
+      },
+      {
+        "id": 77,
+        "word_index": 1743,
+        "storage": 12
+      },
+      {
+        "id": 78,
+        "word_index": 1747,
+        "storage": 0
+      },
+      {
+        "id": 79,
+        "word_index": 1751,
+        "storage": 0
+      },
+      {
+        "id": 80,
+        "word_index": 1755,
+        "storage": 0
+      },
+      {
+        "id": 81,
+        "word_index": 1759,
+        "storage": 0
+      },
+      {
+        "id": 82,
+        "word_index": 1763,
+        "storage": 0
+      },
+      {
+        "id": 83,
+        "word_index": 1767,
+        "storage": 0
+      },
+      {
+        "id": 84,
+        "word_index": 1771,
+        "storage": 0
+      },
+      {
+        "id": 85,
+        "word_index": 1775,
+        "storage": 0
+      },
+      {
+        "id": 86,
+        "word_index": 1779,
+        "storage": 0
+      },
+      {
+        "id": 87,
+        "word_index": 1783,
+        "storage": 0
+      },
+      {
+        "id": 88,
+        "word_index": 1787,
+        "storage": 0
+      },
+      {
+        "id": 89,
+        "word_index": 1791,
+        "storage": 0
+      },
+      {
+        "id": 90,
+        "word_index": 1795,
+        "storage": 0
+      },
+      {
+        "id": 91,
+        "word_index": 1799,
+        "storage": 12
+      },
+      {
+        "id": 98,
+        "word_index": 1803,
+        "storage": 6
+      },
+      {
+        "id": 101,
+        "word_index": 1807,
+        "storage": 6
+      }
+    ],
+    "functions": [
+      {
+        "id": 93,
+        "labels": [
+          {
+            "id": 95,
+            "word_index": 1816
+          },
+          {
+            "id": 432,
+            "word_index": 1878
+          },
+          {
+            "id": 433,
+            "word_index": 1886
+          },
+          {
+            "id": 493,
+            "word_index": 2142
+          },
+          {
+            "id": 494,
+            "word_index": 2150
+          },
+          {
+            "id": 495,
+            "word_index": 2154
+          },
+          {
+            "id": 496,
+            "word_index": 2162
+          },
+          {
+            "id": 499,
+            "word_index": 2180
+          },
+          {
+            "id": 506,
+            "word_index": 2219
+          },
+          {
+            "id": 510,
+            "word_index": 2242
+          },
+          {
+            "id": 511,
+            "word_index": 2246
+          },
+          {
+            "id": 512,
+            "word_index": 2250
+          },
+          {
+            "id": 515,
+            "word_index": 2266
+          },
+          {
+            "id": 516,
+            "word_index": 2270
+          },
+          {
+            "id": 517,
+            "word_index": 2274
+          },
+          {
+            "id": 523,
+            "word_index": 2311
+          },
+          {
+            "id": 525,
+            "word_index": 2325
+          },
+          {
+            "id": 526,
+            "word_index": 2333
+          },
+          {
+            "id": 527,
+            "word_index": 2337
+          },
+          {
+            "id": 528,
+            "word_index": 2345
+          },
+          {
+            "id": 531,
+            "word_index": 2363
+          },
+          {
+            "id": 547,
+            "word_index": 2450
+          },
+          {
+            "id": 548,
+            "word_index": 2454
+          },
+          {
+            "id": 551,
+            "word_index": 2473
+          },
+          {
+            "id": 552,
+            "word_index": 2477
+          },
+          {
+            "id": 553,
+            "word_index": 2481
+          },
+          {
+            "id": 562,
+            "word_index": 2532
+          },
+          {
+            "id": 563,
+            "word_index": 2540
+          },
+          {
+            "id": 564,
+            "word_index": 2544
+          },
+          {
+            "id": 565,
+            "word_index": 2552
+          },
+          {
+            "id": 568,
+            "word_index": 2570
+          },
+          {
+            "id": 581,
+            "word_index": 2631
+          },
+          {
+            "id": 582,
+            "word_index": 2635
+          },
+          {
+            "id": 585,
+            "word_index": 2654
+          },
+          {
+            "id": 586,
+            "word_index": 2658
+          },
+          {
+            "id": 587,
+            "word_index": 2662
+          },
+          {
+            "id": 607,
+            "word_index": 2786
+          },
+          {
+            "id": 609,
+            "word_index": 2798
+          },
+          {
+            "id": 610,
+            "word_index": 2805
+          },
+          {
+            "id": 612,
+            "word_index": 2818
+          },
+          {
+            "id": 613,
+            "word_index": 2825
+          },
+          {
+            "id": 614,
+            "word_index": 2832
+          },
+          {
+            "id": 650,
+            "word_index": 3019
+          },
+          {
+            "id": 434,
+            "word_index": 3023
+          },
+          {
+            "id": 435,
+            "word_index": 3027
+          }
+        ],
+        "variables": [
+          {
+            "id": 436,
+            "word_index": 1818,
+            "storage": 7
+          },
+          {
+            "id": 437,
+            "word_index": 1822,
+            "storage": 7
+          },
+          {
+            "id": 438,
+            "word_index": 1826,
+            "storage": 7
+          },
+          {
+            "id": 439,
+            "word_index": 1830,
+            "storage": 7
+          },
+          {
+            "id": 440,
+            "word_index": 1834,
+            "storage": 7
+          },
+          {
+            "id": 441,
+            "word_index": 1838,
+            "storage": 7
+          },
+          {
+            "id": 442,
+            "word_index": 1842,
+            "storage": 7
+          },
+          {
+            "id": 443,
+            "word_index": 1846,
+            "storage": 7
+          },
+          {
+            "id": 444,
+            "word_index": 1850,
+            "storage": 7
+          },
+          {
+            "id": 445,
+            "word_index": 1854,
+            "storage": 7
+          },
+          {
+            "id": 446,
+            "word_index": 1858,
+            "storage": 7
+          }
+        ],
+        "calls": []
+      }
+    ]
+  },
+  "optimizer-captured-optimized.spv": {
+    "words": 3027,
+    "globals": [
+      {
+        "id": 21,
+        "word_index": 1663,
+        "storage": 2
+      },
+      {
+        "id": 26,
+        "word_index": 1667,
+        "storage": 12
+      },
+      {
+        "id": 31,
+        "word_index": 1671,
+        "storage": 2
+      },
+      {
+        "id": 34,
+        "word_index": 1675,
+        "storage": 0
+      },
+      {
+        "id": 37,
+        "word_index": 1679,
+        "storage": 0
+      },
+      {
+        "id": 38,
+        "word_index": 1683,
+        "storage": 0
+      },
+      {
+        "id": 39,
+        "word_index": 1687,
+        "storage": 0
+      },
+      {
+        "id": 41,
+        "word_index": 1691,
+        "storage": 1
+      },
+      {
+        "id": 44,
+        "word_index": 1695,
+        "storage": 1
+      },
+      {
+        "id": 46,
+        "word_index": 1699,
+        "storage": 1
+      },
+      {
+        "id": 47,
+        "word_index": 1703,
+        "storage": 1
+      },
+      {
+        "id": 49,
+        "word_index": 1707,
+        "storage": 1
+      },
+      {
+        "id": 58,
+        "word_index": 1711,
+        "storage": 0
+      },
+      {
+        "id": 59,
+        "word_index": 1715,
+        "storage": 0
+      },
+      {
+        "id": 64,
+        "word_index": 1719,
+        "storage": 12
+      },
+      {
+        "id": 68,
+        "word_index": 1723,
+        "storage": 12
+      },
+      {
+        "id": 71,
+        "word_index": 1727,
+        "storage": 0
+      },
+      {
+        "id": 72,
+        "word_index": 1731,
+        "storage": 0
+      },
+      {
+        "id": 73,
+        "word_index": 1735,
+        "storage": 0
+      },
+      {
+        "id": 77,
+        "word_index": 1739,
+        "storage": 12
+      },
+      {
+        "id": 78,
+        "word_index": 1743,
+        "storage": 0
+      },
+      {
+        "id": 79,
+        "word_index": 1747,
+        "storage": 0
+      },
+      {
+        "id": 80,
+        "word_index": 1751,
+        "storage": 0
+      },
+      {
+        "id": 81,
+        "word_index": 1755,
+        "storage": 0
+      },
+      {
+        "id": 82,
+        "word_index": 1759,
+        "storage": 0
+      },
+      {
+        "id": 83,
+        "word_index": 1763,
+        "storage": 0
+      },
+      {
+        "id": 84,
+        "word_index": 1767,
+        "storage": 0
+      },
+      {
+        "id": 85,
+        "word_index": 1771,
+        "storage": 0
+      },
+      {
+        "id": 86,
+        "word_index": 1775,
+        "storage": 0
+      },
+      {
+        "id": 87,
+        "word_index": 1779,
+        "storage": 0
+      },
+      {
+        "id": 88,
+        "word_index": 1783,
+        "storage": 0
+      },
+      {
+        "id": 89,
+        "word_index": 1787,
+        "storage": 0
+      },
+      {
+        "id": 90,
+        "word_index": 1791,
+        "storage": 0
+      },
+      {
+        "id": 91,
+        "word_index": 1795,
+        "storage": 12
+      },
+      {
+        "id": 98,
+        "word_index": 1799,
+        "storage": 6
+      },
+      {
+        "id": 101,
+        "word_index": 1803,
+        "storage": 6
+      }
+    ],
+    "functions": [
+      {
+        "id": 93,
+        "labels": [
+          {
+            "id": 95,
+            "word_index": 1812
+          },
+          {
+            "id": 432,
+            "word_index": 1874
+          },
+          {
+            "id": 433,
+            "word_index": 1882
+          },
+          {
+            "id": 493,
+            "word_index": 2138
+          },
+          {
+            "id": 494,
+            "word_index": 2146
+          },
+          {
+            "id": 495,
+            "word_index": 2150
+          },
+          {
+            "id": 496,
+            "word_index": 2158
+          },
+          {
+            "id": 499,
+            "word_index": 2176
+          },
+          {
+            "id": 506,
+            "word_index": 2215
+          },
+          {
+            "id": 510,
+            "word_index": 2238
+          },
+          {
+            "id": 511,
+            "word_index": 2242
+          },
+          {
+            "id": 512,
+            "word_index": 2246
+          },
+          {
+            "id": 515,
+            "word_index": 2262
+          },
+          {
+            "id": 516,
+            "word_index": 2266
+          },
+          {
+            "id": 517,
+            "word_index": 2270
+          },
+          {
+            "id": 523,
+            "word_index": 2307
+          },
+          {
+            "id": 525,
+            "word_index": 2321
+          },
+          {
+            "id": 526,
+            "word_index": 2329
+          },
+          {
+            "id": 527,
+            "word_index": 2333
+          },
+          {
+            "id": 528,
+            "word_index": 2341
+          },
+          {
+            "id": 531,
+            "word_index": 2359
+          },
+          {
+            "id": 547,
+            "word_index": 2446
+          },
+          {
+            "id": 548,
+            "word_index": 2450
+          },
+          {
+            "id": 551,
+            "word_index": 2469
+          },
+          {
+            "id": 552,
+            "word_index": 2473
+          },
+          {
+            "id": 553,
+            "word_index": 2477
+          },
+          {
+            "id": 562,
+            "word_index": 2528
+          },
+          {
+            "id": 563,
+            "word_index": 2536
+          },
+          {
+            "id": 564,
+            "word_index": 2540
+          },
+          {
+            "id": 565,
+            "word_index": 2548
+          },
+          {
+            "id": 568,
+            "word_index": 2566
+          },
+          {
+            "id": 581,
+            "word_index": 2627
+          },
+          {
+            "id": 582,
+            "word_index": 2631
+          },
+          {
+            "id": 585,
+            "word_index": 2650
+          },
+          {
+            "id": 586,
+            "word_index": 2654
+          },
+          {
+            "id": 587,
+            "word_index": 2658
+          },
+          {
+            "id": 607,
+            "word_index": 2782
+          },
+          {
+            "id": 609,
+            "word_index": 2794
+          },
+          {
+            "id": 610,
+            "word_index": 2801
+          },
+          {
+            "id": 612,
+            "word_index": 2814
+          },
+          {
+            "id": 613,
+            "word_index": 2821
+          },
+          {
+            "id": 614,
+            "word_index": 2828
+          },
+          {
+            "id": 650,
+            "word_index": 3015
+          },
+          {
+            "id": 434,
+            "word_index": 3019
+          },
+          {
+            "id": 435,
+            "word_index": 3023
+          }
+        ],
+        "variables": [
+          {
+            "id": 436,
+            "word_index": 1814,
+            "storage": 7
+          },
+          {
+            "id": 437,
+            "word_index": 1818,
+            "storage": 7
+          },
+          {
+            "id": 438,
+            "word_index": 1822,
+            "storage": 7
+          },
+          {
+            "id": 439,
+            "word_index": 1826,
+            "storage": 7
+          },
+          {
+            "id": 440,
+            "word_index": 1830,
+            "storage": 7
+          },
+          {
+            "id": 441,
+            "word_index": 1834,
+            "storage": 7
+          },
+          {
+            "id": 442,
+            "word_index": 1838,
+            "storage": 7
+          },
+          {
+            "id": 443,
+            "word_index": 1842,
+            "storage": 7
+          },
+          {
+            "id": 444,
+            "word_index": 1846,
+            "storage": 7
+          },
+          {
+            "id": 445,
+            "word_index": 1850,
+            "storage": 7
+          },
+          {
+            "id": 446,
+            "word_index": 1854,
+            "storage": 7
+          }
+        ],
+        "calls": []
+      }
+    ]
+  }
+}

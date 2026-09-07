@@ -1,0 +1,47 @@
+--- a/thirdparty/re-spirv/re-spirv.cpp
++++ b/thirdparty/re-spirv/re-spirv.cpp
+@@ -1596,26 +1596,7 @@
+                 break;
+             }
+             case SpvOpVariable:
+-                if ((callStack.back().functionId < UINT32_MAX) && !callStack.back().functionInlined) {
+-                    // As soon as we find a variable local to the function, reserve the space to insert all
+-                    // inlined function variables that we encounter.
+-                    if (dstInlinedVariableWordIndex == UINT32_MAX) {
+-                        FunctionDefinitionIterator functionIt = std::lower_bound(functionDefinitions.begin(), functionDefinitions.end(), callStack.back().functionId);
+-                        if (functionIt == functionDefinitions.end()) {
+-                            fprintf(stderr, "Unable to find function %d.\n", callStack.back().functionId);
+-                            return false;
+-                        }
+-
+-                        dstInlinedVariableWordIndex = dstWordIndex;
+-                        dstWordIndex += functionIt->inlinedVariableWordCount;
+-                        dstInlinedVariableWordIndexMax = dstWordIndex;
+-                    }
+-                }
+-                else {
+-                    // Copy the variables into the entry point function's variables.
+-                    copyWordsToVariables = (callStack.back().functionId != UINT32_MAX);
+-                }
+-
++                copyWordsToVariables = (callStack.back().functionId != UINT32_MAX) && callStack.back().functionInlined;
+                 copyWords = true;
+                 break;
+             case SpvOpReturn:
+@@ -1718,4 +1699,16 @@
+                 uint32_t &copyWordIndex = copyWordsToVariables ? dstInlinedVariableWordIndex : dstWordIndex;
+                 copyInstruction(callWordIndex, callStack.back().functionInlined, copyWordIndex, copyDecorationIndex);
+                 copyDecorations(copyDecorationIndex, dstInlinedDecorationWordIndex);
++
++                if ((opCode == SpvOpLabel) && !callStack.back().functionInlined && (dstInlinedVariableWordIndex == UINT32_MAX)) {
++                    FunctionDefinitionIterator functionIt = std::lower_bound(functionDefinitions.begin(), functionDefinitions.end(), callStack.back().functionId);
++                    if (functionIt == functionDefinitions.end()) {
++                        fprintf(stderr, "Unable to find function %d.\n", callStack.back().functionId);
++                        return false;
++                    }
++
++                    dstInlinedVariableWordIndex = dstWordIndex;
++                    dstWordIndex += functionIt->inlinedVariableWordCount;
++                    dstInlinedVariableWordIndexMax = dstWordIndex;
++                }
+             }

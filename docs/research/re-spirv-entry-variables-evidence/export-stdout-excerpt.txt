@@ -1,0 +1,109 @@
+1: WorkerThreadPool: 48 threads, 36 max low-priority.
+2: Godot Engine v4.8.dev.custom_build.129244703 (2026-09-07 14:39:52 UTC) - https://godotengine.org
+3: TextServer: Added interface "Dummy"
+4: TextServer: Added interface "ICU / HarfBuzz / Graphite (Built-in)"
+5: Devices:
+6:   #0: NVIDIA NVIDIA GeForce RTX 4090 - Supported, Discrete
+7: Optional Vulkan device extension VK_EXT_fragment_density_map not found
+8: Optional Vulkan device extension VK_EXT_fragment_density_map2 not found
+9: Optional Vulkan device extension VK_QCOM_fragment_density_map_offset not found
+10: Optional Vulkan device extension VK_EXT_astc_decode_mode not found
+11: Optional Vulkan device extension VK_EXT_texture_compression_astc_hdr not found
+12: Optional Vulkan device extension VK_KHR_external_memory_fd not found
+13: Optional Vulkan device extension VK_EXT_debug_marker not found
+14: - Vulkan Fragment Shading Rate supported:
+15:   Pipeline fragment shading rate
+16:   Primitive fragment shading rate
+17:   Attachment fragment shading rate, min texel size: (16, 16), max texel size: (16, 16), max fragment size: (4, 4)
+18: - Vulkan Fragment Density Map not supported
+19: - Vulkan multiview supported:
+20:   max view count: 32
+21:   max instances: 134217727
+22: - Vulkan subgroup:
+23:   size: 32
+24:   min size: 32
+25:   max size: 32
+26:   stages: STAGE_VERTEX, STAGE_TESSELLATION_CONTROL, STAGE_TESSELLATION_EVALUATION, STAGE_GEOMETRY, STAGE_FRAGMENT, STAGE_COMPUTE, STAGE_RAYGEN_KHR, STAGE_ANY_HIT_KHR, STAGE_CLOSEST_HIT_KHR, STAGE_MISS_KHR, STAGE_INTERSECTION_KHR, STAGE_CALLABLE_KHR, STAGE_TASK_NV, STAGE_MESH_NV
+27:   supported ops: FEATURE_BASIC, FEATURE_VOTE, FEATURE_ARITHMETIC, FEATURE_BALLOT, FEATURE_SHUFFLE, FEATURE_SHUFFLE_RELATIVE, FEATURE_CLUSTERED, FEATURE_QUAD, FEATURE_PARTITIONED_NV
+28:   quad operations in all stages
+29: - Vulkan Acceleration Structure supported
+30:   min acceleration structure scratch offset alignment: 128
+648: Class 'ShaderBakerExportPluginPlatform' is not exposed, skipping.
+649: Class 'ShaderBakerExportPluginPlatformVulkan' is not exposed, skipping.
+738: [92m[ DONE ][39m [1mfirst_scan_filesystem[22m
+911: [   0% ] [90m[1mbaking_shaders[22m | Started Baking shaders (435 steps)[39m[0m
+912: [   0% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+913: [  90% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+914: [  90% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+915: [  90% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+916: [  91% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+917: [  91% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+918: [  91% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+919: [  91% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+920: [  91% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+921: [  92% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+922: [  92% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+923: [  92% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+924: [  92% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+925: [  93% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+926: [  93% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+927: [  93% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+928: [  93% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+929: [  94% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+930: [  94% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+931: [  94% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+932: [  94% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+933: [  94% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+934: [  95% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+935: [  95% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+936: [  95% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+937: [  95% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+938: [  96% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+939: [  96% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+940: [  96% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+941: [  96% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+942: [  97% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+943: [  97% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+944: [  97% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+945: [  97% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+946: [  97% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+947: [  98% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+948: [  98% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+949: [  98% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+950: [  98% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+951: [  99% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+952: [  99% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+953: [  99% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+954: [  99% ] [90m[1mbaking_shaders[22m | Baking...[39m[0m
+955: [92m[ DONE ][39m [1mbaking_shaders[22m
+1085: [92m[ DONE ][39m [1msavepack[22m
+1103: Orphan StringName: base_0 (static: 2, total: 3)
+1104: Orphan StringName: base_1 (static: 1, total: 2)
+1105: Orphan StringName: geometry_0 (static: 1, total: 2)
+1106: Orphan StringName: geometry_1 (static: 1, total: 2)
+1107: Orphan StringName: shading_0 (static: 1, total: 2)
+1108: Orphan StringName: shading_1 (static: 1, total: 2)
+1109: Orphan StringName: emission_0 (static: 1, total: 2)
+1110: Orphan StringName: emission_1 (static: 1, total: 2)
+1111: StringName: 12 unclaimed string names at exit.
+1112: File 'C:\ProgramData\NVIDIA/NGX/models/sl_common_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+1113: File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+1114: File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_d_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+1115: File 'C:\ProgramData\NVIDIA/NGX/models/sl_nis_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+1116: File 'C:\ProgramData\NVIDIA/NGX/models/sl_pcl_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+1117: File 'G:\Projects\godot-rtx\bin\/sl.common.dll' is signed by NVIDIA and the signature was verified.
+1118: File 'C:\ProgramData\NVIDIA/NGX/models/sl_common_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+1119: File 'G:\Projects\godot-rtx\bin\/sl.deepdvc.dll' is signed by NVIDIA and the signature was verified.
+1120: File 'G:\Projects\godot-rtx\bin\/sl.directsr.dll' is signed by NVIDIA and the signature was verified.
+1121: File 'G:\Projects\godot-rtx\bin\/sl.dlss.dll' is signed by NVIDIA and the signature was verified.
+1122: File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+1123: File 'G:\Projects\godot-rtx\bin\/sl.dlss_d.dll' is signed by NVIDIA and the signature was verified.
+1124: File 'C:\ProgramData\NVIDIA/NGX/models/sl_dlss_d_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+1125: File 'G:\Projects\godot-rtx\bin\/sl.dlss_g.dll' is signed by NVIDIA and the signature was verified.
+1126: File 'G:\Projects\godot-rtx\bin\/sl.nis.dll' is signed by NVIDIA and the signature was verified.
+1127: File 'C:\ProgramData\NVIDIA/NGX/models/sl_nis_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+1128: File 'G:\Projects\godot-rtx\bin\/sl.nvperf.dll' is signed by NVIDIA and the signature was verified.
+1129: File 'G:\Projects\godot-rtx\bin\/sl.pcl.dll' is signed by NVIDIA and the signature was verified.
+1130: File 'C:\ProgramData\NVIDIA/NGX/models/sl_pcl_0\versions\134656\files\190_E658703.dll' is signed by NVIDIA and the signature was verified.
+1131: File 'G:\Projects\godot-rtx\bin\/sl.reflex.dll' is signed by NVIDIA and the signature was verified.
+1132: File 'G:\Projects\godot-rtx\bin\/NvLowLatencyVk.dll' is signed by NVIDIA and the signature was verified.

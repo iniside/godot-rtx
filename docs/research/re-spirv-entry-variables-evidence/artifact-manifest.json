@@ -1,0 +1,30 @@
+{
+  "export/manual.exe": {
+    "bytes": 88488960,
+    "sha256": "003ddb63e7f9b26b310fc92dc8e6d772d907073bdf540f149928e3a2de0651db"
+  },
+  "export/manual.pck": {
+    "bytes": 4299488,
+    "sha256": "716c47567e60ca05477b1d61773c7da8c61125c675cdfe883be3436b71e1ae5d"
+  },
+  "optimizer-fix-export.stdout.log": {
+    "bytes": 110710,
+    "sha256": "1f33749e33a245e526feadec38aa46109622d863c11033a24b02f383287e5075"
+  },
+  "optimizer-fix-export.stderr.log": {
+    "bytes": 35287,
+    "sha256": "0e2498cd76c4715f09f96282a947d9d11afa7ad5bc6a38236608aee5f17feddf"
+  },
+  "debug-export-input.spv": {
+    "bytes": 12096,
+    "sha256": "b15e97709376a1a8d2ba5c3fd0f3bf73201112b033a1fd3ddbcd30f3c6f312cf"
+  },
+  "optimizer-captured-inlined.spv": {
+    "bytes": 12124,
+    "sha256": "817ec1137ae1e997dd25e41eeff489ccea6c87eb6f801388b4f1cfe8ce2d529b"
+  },
+  "optimizer-captured-optimized.spv": {
+    "bytes": 12108,
+    "sha256": "d36938bd0281bb20f358eca39d3aa573b5402ac6683179171e25a3cc86896a04"
+  }
+}
