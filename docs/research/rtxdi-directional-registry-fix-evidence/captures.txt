@@ -1,0 +1,59 @@
+Capture: fixed-1
+Godot Engine v4.8.dev.custom_build.b01c5849a (2026-09-07 09:37:44 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Streamline - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+
+DIRECTIONAL_MANUAL count=1 energy_each=1.0 binary={ "major": 4, "minor": 8, "patch": 0, "hex": 264192, "status": "dev", "build": "custom_build", "hash": "b01c5849a8d10397be3e977347b0a49f45c90db5", "timestamp": 1788773864, "string": "4.8-dev (custom_build)" } backend=vulkan
+DIRECTIONAL_CAPTURE file=C:\Users\lukas\AppData\Local\Temp\rtxdi-directional-registry-fix/fixed-1.png result=0 center=(0.502, 0.502, 0.502, 1.0) frame=1168
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+
+Capture: fixed-9
+Godot Engine v4.8.dev.custom_build.b01c5849a (2026-09-07 09:37:44 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Streamline - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+
+DIRECTIONAL_MANUAL count=9 energy_each=0.0625 binary={ "major": 4, "minor": 8, "patch": 0, "hex": 264192, "status": "dev", "build": "custom_build", "hash": "b01c5849a8d10397be3e977347b0a49f45c90db5", "timestamp": 1788773864, "string": "4.8-dev (custom_build)" } backend=vulkan
+DIRECTIONAL_CAPTURE file=C:\Users\lukas\AppData\Local\Temp\rtxdi-directional-registry-fix/fixed-9.png result=0 center=(0.3804, 0.3804, 0.3804, 1.0) frame=1174
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+
+Capture: fixed-16
+Godot Engine v4.8.dev.custom_build.b01c5849a (2026-09-07 09:37:44 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Streamline - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+
+DIRECTIONAL_MANUAL count=16 energy_each=0.0625 binary={ "major": 4, "minor": 8, "patch": 0, "hex": 264192, "status": "dev", "build": "custom_build", "hash": "b01c5849a8d10397be3e977347b0a49f45c90db5", "timestamp": 1788773864, "string": "4.8-dev (custom_build)" } backend=vulkan
+DIRECTIONAL_CAPTURE file=C:\Users\lukas\AppData\Local\Temp\rtxdi-directional-registry-fix/fixed-16.png result=0 center=(0.502, 0.502, 0.502, 1.0) frame=1198
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+
+Capture: baseline-16
+Godot Engine v4.8.dev.custom_build.eeed72b42 (2026-09-07 07:43:31 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Streamline - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+
+DIRECTIONAL_MANUAL count=16 energy_each=0.0625 binary={ "major": 4, "minor": 8, "patch": 0, "hex": 264192, "status": "dev", "build": "custom_build", "hash": "eeed72b42987b2d29f9e1a99e2dd57cc5ff91172", "timestamp": 1788767011, "string": "4.8-dev (custom_build)" } backend=vulkan
+DIRECTIONAL_CAPTURE file=C:\Users\lukas\AppData\Local\Temp\rtxdi-directional-registry-fix/baseline-16.png result=0 center=(0.3608, 0.3608, 0.3608, 1.0) frame=1187
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
