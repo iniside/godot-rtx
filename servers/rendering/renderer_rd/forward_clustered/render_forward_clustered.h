@@ -212,7 +212,6 @@ public:
 #endif
 
 		RID get_color_only_fb();
-		RID get_color_pass_fb(uint32_t p_color_pass_flags);
 		RID get_depth_fb(DepthFrameBufferType p_type = DEPTH_FB);
 		RID get_specular_only_fb();
 		RID get_velocity_only_fb();
@@ -276,7 +275,6 @@ protected:
 	} ltc;
 
 	enum PassMode {
-		PASS_MODE_COLOR,
 		PASS_MODE_SHADOW,
 		PASS_MODE_SHADOW_DP,
 		PASS_MODE_DEPTH,
@@ -288,13 +286,6 @@ protected:
 		PASS_MODE_MAX
 	};
 
-	enum ColorPassFlags {
-		COLOR_PASS_FLAG_TRANSPARENT = 1 << 0,
-		COLOR_PASS_FLAG_SEPARATE_SPECULAR = 1 << 1,
-		COLOR_PASS_FLAG_MULTIVIEW = 1 << 2,
-		COLOR_PASS_FLAG_MOTION_VECTORS = 1 << 3,
-	};
-
 	struct RenderElementInfo;
 
 	struct RenderListParameters {
@@ -302,8 +293,7 @@ protected:
 		RenderElementInfo *element_info = nullptr;
 		int element_count = 0;
 		bool reverse_cull = false;
-		PassMode pass_mode = PASS_MODE_COLOR;
-		uint32_t color_pass_flags = 0;
+		PassMode pass_mode;
 		bool no_gi = false;
 		uint32_t view_count = 1;
 		RID render_pass_uniform_set;
@@ -316,13 +306,12 @@ protected:
 		bool use_directional_soft_shadow = false;
 		SceneShaderForwardClustered::ShaderSpecialization base_specialization = {};
 
-		RenderListParameters(GeometryInstanceSurfaceDataCache **p_elements, RenderElementInfo *p_element_info, int p_element_count, bool p_reverse_cull, PassMode p_pass_mode, uint32_t p_color_pass_flags, bool p_no_gi, bool p_use_directional_soft_shadows, RID p_render_pass_uniform_set, bool p_force_wireframe = false, const Vector2 &p_uv_offset = Vector2(), float p_lod_distance_multiplier = 0.0, float p_screen_mesh_lod_threshold = 0.0, uint32_t p_view_count = 1, uint32_t p_element_offset = 0, SceneShaderForwardClustered::ShaderSpecialization p_base_specialization = {}) {
+		RenderListParameters(GeometryInstanceSurfaceDataCache **p_elements, RenderElementInfo *p_element_info, int p_element_count, bool p_reverse_cull, PassMode p_pass_mode, bool p_no_gi, bool p_use_directional_soft_shadows, RID p_render_pass_uniform_set, bool p_force_wireframe = false, const Vector2 &p_uv_offset = Vector2(), float p_lod_distance_multiplier = 0.0, float p_screen_mesh_lod_threshold = 0.0, uint32_t p_view_count = 1, uint32_t p_element_offset = 0, SceneShaderForwardClustered::ShaderSpecialization p_base_specialization = {}) {
 			elements = p_elements;
 			element_info = p_element_info;
 			element_count = p_element_count;
 			reverse_cull = p_reverse_cull;
 			pass_mode = p_pass_mode;
-			color_pass_flags = p_color_pass_flags;
 			no_gi = p_no_gi;
 			view_count = p_view_count;
 			render_pass_uniform_set = p_render_pass_uniform_set;
@@ -552,13 +541,13 @@ protected:
 	static_assert(std::is_trivially_destructible_v<RenderElementInfo>);
 	static_assert(std::is_trivially_constructible_v<RenderElementInfo>);
 
-	template <PassMode p_pass_mode, uint32_t p_color_pass_flags = 0>
+	template <PassMode p_pass_mode>
 	_FORCE_INLINE_ void _render_list_template(RenderingDevice::DrawListID p_draw_list, RenderingDevice::FramebufferFormatID p_framebuffer_Format, RenderListParameters *p_params, uint32_t p_from_element, uint32_t p_to_element);
 	void _render_list(RenderingDevice::DrawListID p_draw_list, RenderingDevice::FramebufferFormatID p_framebuffer_Format, RenderListParameters *p_params, uint32_t p_from_element, uint32_t p_to_element);
 	void _render_list_with_draw_list(RenderListParameters *p_params, RID p_framebuffer, BitField<RD::DrawFlags> p_draw_flags = RD::DRAW_DEFAULT_ALL, const Vector<Color> &p_clear_color_values = Vector<Color>(), float p_clear_depth_value = 0.0, uint32_t p_clear_stencil_value = 0, const Rect2 &p_region = Rect2());
 
 	void _fill_instance_data(RenderListType p_render_list, int *p_render_info = nullptr, uint32_t p_offset = 0, int32_t p_max_elements = -1, bool p_update_buffer = true);
-	void _fill_render_list(RenderListType p_render_list, const RenderDataRD *p_render_data, PassMode p_pass_mode, bool p_using_sdfgi = false, bool p_using_opaque_gi = false, bool p_using_motion_pass = false, bool p_append = false, bool p_alpha_only = false);
+	void _fill_render_list(RenderListType p_render_list, const RenderDataRD *p_render_data, PassMode p_pass_mode, bool p_using_sdfgi = false, bool p_using_opaque_gi = false, bool p_append = false, bool p_alpha_only = false);
 
 	HashMap<Size2i, RID> sdfgi_framebuffer_size_cache;
 
@@ -627,7 +616,6 @@ protected:
 		uint32_t flags = 0;
 		uint32_t rt_pass_flags = 0;
 		uint32_t surface_index = 0;
-		uint32_t color_pass_inclusion_mask = 0;
 		uint32_t rtxdi_material_flags = 0;
 
 		void *surface = nullptr;
@@ -736,10 +724,7 @@ protected:
 		SceneShaderForwardClustered::ShaderData *shader = nullptr;
 		SceneShaderForwardClustered::ShaderData *shader_shadow = nullptr;
 		bool instanced = false;
-		bool uses_opaque = false;
-		bool uses_transparent = false;
 		bool uses_depth = false;
-		bool can_use_lightmap = false;
 	};
 
 	struct GlobalPipelineData {

@@ -235,6 +235,7 @@ void RenderingDevice::_free_dependencies(RID p_id) {
 
 String RenderingShaderCompileRequest::get_identity() const {
 	String result = vformat("%d/%d/%d/%s/%d/%d/%d/%d/%s", language, target, spirv_version, compiler_identity, int(column_major), int(gl_layout), int(debug_info), optimization_level, source_path.sha256_text());
+	result += vformat("/%d/%d/%d", int(preserve_parameters), int(precise_float), int(invariant_position));
 	for (const String &entry : entry_points) {
 		result += "/" + entry.sha256_text();
 	}
@@ -258,6 +259,9 @@ RenderingShaderCompileRequest RenderingDevice::shader_get_compile_request(Render
 		entry = "main";
 	}
 	if (p_language == RenderingShaderCompileRequest::SLANG) {
+		request.preserve_parameters = true;
+		request.precise_float = true;
+		request.optimization_level = 0;
 		request.target = SHADER_LANGUAGE_VULKAN_VERSION_1_3;
 		request.spirv_version = SHADER_SPIRV_VERSION_1_6;
 #ifdef MODULE_SLANG_ENABLED

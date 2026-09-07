@@ -284,7 +284,7 @@ public:
 	// is created slightly differently and they're bound differently.
 	// On D3D12 the Root Layout is also different.
 	void initialize(const Vector<String> &p_variant_defines, const String &p_general_defines = "", const Vector<RD::PipelineImmutableSampler> &p_immutable_samplers = Vector<RD::PipelineImmutableSampler>(), const Vector<uint64_t> &p_dynamic_buffers = Vector<uint64_t>());
-	void initialize(const Vector<VariantDefine> &p_variant_defines, const String &p_general_defines = "", const Vector<RD::PipelineImmutableSampler> &p_immutable_samplers = Vector<RD::PipelineImmutableSampler>(), const Vector<uint64_t> &p_dynamic_buffers = Vector<uint64_t>());
+	void initialize(const Vector<VariantDefine> &p_variant_defines, const String &p_general_defines = "", const Vector<RD::PipelineImmutableSampler> &p_immutable_samplers = Vector<RD::PipelineImmutableSampler>(), const Vector<uint64_t> &p_dynamic_buffers = Vector<uint64_t>(), bool p_invariant_position = false, bool p_column_major = true);
 
 	virtual ~ShaderRD();
 };

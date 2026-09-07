@@ -1084,9 +1084,12 @@ void ShaderRD::_initialize_cache() {
 }
 
 // Same as above, but allows specifying shader compilation groups.
-void ShaderRD::initialize(const Vector<VariantDefine> &p_variant_defines, const String &p_general_defines, const Vector<RD::PipelineImmutableSampler> &p_immutable_samplers, const Vector<uint64_t> &p_dynamic_buffers) {
+void ShaderRD::initialize(const Vector<VariantDefine> &p_variant_defines, const String &p_general_defines, const Vector<RD::PipelineImmutableSampler> &p_immutable_samplers, const Vector<uint64_t> &p_dynamic_buffers, bool p_invariant_position, bool p_column_major) {
 	ERR_FAIL_COND(variant_defines.size());
 	ERR_FAIL_COND(p_variant_defines.is_empty());
+	ERR_FAIL_COND(p_invariant_position && compile_request.language != RenderingShaderCompileRequest::SLANG);
+	compile_request.invariant_position = p_invariant_position;
+	compile_request.column_major = p_column_major;
 
 	general_defines = p_general_defines.utf8();
 	immutable_samplers = p_immutable_samplers;
@@ -1121,7 +1124,7 @@ void ShaderRD::initialize(const Vector<VariantDefine> &p_variant_defines, const 
 		}
 	}
 
-	if (!shader_cache_user_dir.is_empty()) {
+	if (!shader_cache_user_dir.is_empty() || !shader_cache_res_dir.is_empty()) {
 		group_sha256.resize(max_group_id + 1);
 		_initialize_cache();
 	}

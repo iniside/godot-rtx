@@ -50,6 +50,15 @@ using namespace RendererSceneRenderImplementation;
 
 #define FADE_ALPHA_PASS_THRESHOLD 0.999
 
+static const RD::DataFormat rtxdi_surface_formats[RenderForwardClustered::RenderBufferDataForwardClustered::RTXDI_SURFACE_ATTACHMENT_COUNT] = {
+	RD::DATA_FORMAT_R8G8B8A8_UNORM,
+	RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
+	RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
+	RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
+	RD::DATA_FORMAT_R32_UINT,
+	RD::DATA_FORMAT_R32G32_UINT,
+};
+
 StringName RenderForwardClustered::RenderBufferDataForwardClustered::_get_rtxdi_surface_texture_name(uint32_t p_set, uint32_t p_attachment) const {
 	static const StringName names[2][6] = {
 		{ RB_TEX_RTXDI_BASE_0, RB_TEX_RTXDI_SHADING_0, RB_TEX_RTXDI_EMISSION_0, RB_TEX_RTXDI_MOTION_0, RB_TEX_RTXDI_GEOMETRY_0, RB_TEX_RTXDI_CLASSIFICATION_0 },
@@ -67,17 +76,9 @@ void RenderForwardClustered::RenderBufferDataForwardClustered::_ensure_rtxdi_sur
 	}
 
 	const uint32_t usage = RD::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT | RD::TEXTURE_USAGE_SAMPLING_BIT;
-	static const RD::DataFormat formats[6] = {
-		RD::DATA_FORMAT_R8G8B8A8_UNORM,
-		RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
-		RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
-		RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
-		RD::DATA_FORMAT_R32_UINT,
-		RD::DATA_FORMAT_R32G32_UINT,
-	};
 	for (uint32_t set = 0; set < 2; set++) {
 		for (uint32_t attachment = 0; attachment < 6; attachment++) {
-			render_buffers->create_texture(RB_SCOPE_RTXDI_SURFACE, _get_rtxdi_surface_texture_name(set, attachment), formats[attachment], usage);
+			render_buffers->create_texture(RB_SCOPE_RTXDI_SURFACE, _get_rtxdi_surface_texture_name(set, attachment), rtxdi_surface_formats[attachment], usage);
 		}
 		RD::TextureFormat depth_format = render_buffers->get_texture_format(RB_SCOPE_BUFFERS, RB_TEX_DEPTH);
 		depth_format.usage_bits |= RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_CAN_COPY_TO_BIT;
@@ -298,35 +299,6 @@ RID RenderForwardClustered::RenderBufferDataForwardClustered::get_color_only_fb(
 	}
 }
 
-RID RenderForwardClustered::RenderBufferDataForwardClustered::get_color_pass_fb(uint32_t p_color_pass_flags) {
-	ERR_FAIL_NULL_V(render_buffers, RID());
-	bool use_msaa = render_buffers->get_msaa_3d() != RSE::VIEWPORT_MSAA_DISABLED;
-
-	int v_count = (p_color_pass_flags & COLOR_PASS_FLAG_MULTIVIEW) ? render_buffers->get_view_count() : 1;
-	RID color = use_msaa ? render_buffers->get_texture(RB_SCOPE_BUFFERS, RB_TEX_COLOR_MSAA) : render_buffers->get_internal_texture();
-
-	RID specular;
-	if (p_color_pass_flags & COLOR_PASS_FLAG_SEPARATE_SPECULAR) {
-		ensure_specular();
-		specular = render_buffers->get_texture(RB_SCOPE_FORWARD_CLUSTERED, use_msaa ? RB_TEX_SPECULAR_MSAA : RB_TEX_SPECULAR);
-	}
-
-	RID velocity_buffer;
-	if (p_color_pass_flags & COLOR_PASS_FLAG_MOTION_VECTORS) {
-		render_buffers->ensure_velocity();
-		velocity_buffer = render_buffers->get_velocity_buffer(use_msaa);
-	}
-
-	RID depth = use_msaa ? render_buffers->get_texture(RB_SCOPE_BUFFERS, RB_TEX_DEPTH_MSAA) : render_buffers->get_depth_texture();
-
-	if (render_buffers->has_texture(RB_SCOPE_VRS, RB_TEXTURE)) {
-		RID vrs_texture = render_buffers->get_texture(RB_SCOPE_VRS, RB_TEXTURE);
-		return FramebufferCacheRD::get_singleton()->get_cache_multiview(v_count, color, specular, velocity_buffer, depth, vrs_texture);
-	} else {
-		return FramebufferCacheRD::get_singleton()->get_cache_multiview(v_count, color, specular, velocity_buffer, depth);
-	}
-}
-
 RID RenderForwardClustered::RenderBufferDataForwardClustered::get_depth_fb(DepthFrameBufferType p_type) {
 	ERR_FAIL_NULL_V(render_buffers, RID());
 	bool use_msaa = render_buffers->get_msaa_3d() != RSE::VIEWPORT_MSAA_DISABLED;
@@ -420,7 +392,7 @@ void RenderForwardClustered::update() {
 
 /// RENDERING ///
 
-template <RenderForwardClustered::PassMode p_pass_mode, uint32_t p_color_pass_flags>
+template <RenderForwardClustered::PassMode p_pass_mode>
 void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p_draw_list, RenderingDevice::FramebufferFormatID p_framebuffer_Format, RenderListParameters *p_params, uint32_t p_from_element, uint32_t p_to_element) {
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
 	RendererRD::ParticlesStorage *particles_storage = RendererRD::ParticlesStorage::get_singleton();
@@ -460,12 +432,6 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 	for (uint32_t i = p_from_element; i < p_to_element; i++) {
 		const GeometryInstanceSurfaceDataCache *surf = p_params->elements[i];
 		const RenderElementInfo &element_info = p_params->element_info[i];
-
-		if (p_pass_mode == PASS_MODE_COLOR && surf->color_pass_inclusion_mask && (p_color_pass_flags & surf->color_pass_inclusion_mask) == 0) {
-			// Some surfaces can be repeated in multiple render lists. We exclude them from being rendered on the color pass based on the
-			// features supported by the pass compared to the exclusion mask.
-			continue;
-		}
 
 		if (surf->owner->instance_count == 0) {
 			continue;
@@ -543,40 +509,7 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 		pipeline_specialization.multimesh_has_color = bool(surf->owner->base_flags & INSTANCE_DATA_FLAG_MULTIMESH_HAS_COLOR);
 		pipeline_specialization.multimesh_has_custom_data = bool(surf->owner->base_flags & INSTANCE_DATA_FLAG_MULTIMESH_HAS_CUSTOM_DATA);
 
-		if constexpr (p_pass_mode == PASS_MODE_COLOR) {
-			pipeline_specialization.use_light_soft_shadows = element_info.uses_softshadow;
-			pipeline_specialization.use_light_projector = element_info.uses_projector;
-			pipeline_specialization.use_directional_soft_shadows = p_params->use_directional_soft_shadow;
-		}
-
-		pipeline_key.color_pass_flags = 0;
-
 		switch (p_pass_mode) {
-			case PASS_MODE_COLOR: {
-				if (element_info.uses_lightmap) {
-					pipeline_key.color_pass_flags |= SceneShaderForwardClustered::PIPELINE_COLOR_PASS_FLAG_LIGHTMAP;
-				} else {
-					pipeline_specialization.use_forward_gi = element_info.uses_forward_gi;
-				}
-
-				if constexpr ((p_color_pass_flags & COLOR_PASS_FLAG_SEPARATE_SPECULAR) != 0) {
-					pipeline_key.color_pass_flags |= SceneShaderForwardClustered::PIPELINE_COLOR_PASS_FLAG_SEPARATE_SPECULAR;
-				}
-
-				if constexpr ((p_color_pass_flags & COLOR_PASS_FLAG_MOTION_VECTORS) != 0) {
-					pipeline_key.color_pass_flags |= SceneShaderForwardClustered::PIPELINE_COLOR_PASS_FLAG_MOTION_VECTORS;
-				}
-
-				if constexpr ((p_color_pass_flags & COLOR_PASS_FLAG_TRANSPARENT) != 0) {
-					pipeline_key.color_pass_flags |= SceneShaderForwardClustered::PIPELINE_COLOR_PASS_FLAG_TRANSPARENT;
-				}
-
-				if constexpr ((p_color_pass_flags & COLOR_PASS_FLAG_MULTIVIEW) != 0) {
-					pipeline_key.color_pass_flags |= SceneShaderForwardClustered::PIPELINE_COLOR_PASS_FLAG_MULTIVIEW;
-				}
-
-				pipeline_key.version = SceneShaderForwardClustered::PIPELINE_VERSION_COLOR_PASS;
-			} break;
 			case PASS_MODE_SHADOW:
 			case PASS_MODE_DEPTH: {
 				pipeline_key.version = p_params->view_count > 1 ? SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS_MULTIVIEW : SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS;
@@ -621,8 +554,8 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 		while (pipeline_key.ubershader < ubershader_iterations) {
 			// Skeleton and blend shape.
 			RD::VertexFormatID vertex_format = -1;
-			bool pipeline_motion_vectors = p_pass_mode == PASS_MODE_RTXDI_SURFACE || (pipeline_key.color_pass_flags & SceneShaderForwardClustered::PIPELINE_COLOR_PASS_FLAG_MOTION_VECTORS);
-			uint64_t input_mask = shader->get_vertex_input_mask(pipeline_key.version, pipeline_key.color_pass_flags, pipeline_key.ubershader);
+			bool pipeline_motion_vectors = p_pass_mode == PASS_MODE_RTXDI_SURFACE;
+			uint64_t input_mask = shader->get_vertex_input_mask(pipeline_key.version, pipeline_key.ubershader);
 			if (surf->owner->mesh_instance.is_valid()) {
 				mesh_storage->mesh_instance_surface_get_vertex_arrays_and_format(surf->owner->mesh_instance, surf->surface_index, input_mask, pipeline_motion_vectors, emulate_point_size, vertex_array_rd, vertex_format);
 			} else {
@@ -750,31 +683,6 @@ void RenderForwardClustered::_render_list(RenderingDevice::DrawListID p_draw_lis
 	//use template for faster performance (pass mode comparisons are inlined)
 
 	switch (p_params->pass_mode) {
-#define VALID_FLAG_COMBINATION(f) \
-	case f: { \
-		_render_list_template<PASS_MODE_COLOR, f>(p_draw_list, p_framebuffer_Format, p_params, p_from_element, p_to_element); \
-	} break;
-
-		case PASS_MODE_COLOR: {
-			switch (p_params->color_pass_flags) {
-				VALID_FLAG_COMBINATION(0);
-				VALID_FLAG_COMBINATION(COLOR_PASS_FLAG_TRANSPARENT);
-				VALID_FLAG_COMBINATION(COLOR_PASS_FLAG_TRANSPARENT | COLOR_PASS_FLAG_MULTIVIEW);
-				VALID_FLAG_COMBINATION(COLOR_PASS_FLAG_TRANSPARENT | COLOR_PASS_FLAG_MOTION_VECTORS);
-				VALID_FLAG_COMBINATION(COLOR_PASS_FLAG_SEPARATE_SPECULAR);
-				VALID_FLAG_COMBINATION(COLOR_PASS_FLAG_SEPARATE_SPECULAR | COLOR_PASS_FLAG_MULTIVIEW);
-				VALID_FLAG_COMBINATION(COLOR_PASS_FLAG_SEPARATE_SPECULAR | COLOR_PASS_FLAG_MOTION_VECTORS);
-				VALID_FLAG_COMBINATION(COLOR_PASS_FLAG_MULTIVIEW);
-				VALID_FLAG_COMBINATION(COLOR_PASS_FLAG_MULTIVIEW | COLOR_PASS_FLAG_MOTION_VECTORS);
-				VALID_FLAG_COMBINATION(COLOR_PASS_FLAG_MOTION_VECTORS);
-				VALID_FLAG_COMBINATION(COLOR_PASS_FLAG_SEPARATE_SPECULAR | COLOR_PASS_FLAG_MULTIVIEW | COLOR_PASS_FLAG_MOTION_VECTORS);
-				VALID_FLAG_COMBINATION(COLOR_PASS_FLAG_TRANSPARENT | COLOR_PASS_FLAG_MULTIVIEW | COLOR_PASS_FLAG_MOTION_VECTORS);
-				default: {
-					ERR_FAIL_MSG("Invalid color pass flag combination " + itos(p_params->color_pass_flags));
-				}
-			}
-
-		} break;
 		case PASS_MODE_SHADOW: {
 			_render_list_template<PASS_MODE_SHADOW>(p_draw_list, p_framebuffer_Format, p_params, p_from_element, p_to_element);
 		} break;
@@ -1052,7 +960,7 @@ _FORCE_INLINE_ static uint32_t _indices_to_primitives(RSE::PrimitiveType p_primi
 	static const uint32_t subtractor[RSE::PRIMITIVE_MAX] = { 0, 0, 1, 0, 2 };
 	return (p_indices - subtractor[p_primitive]) / divisor[p_primitive];
 }
-void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, const RenderDataRD *p_render_data, PassMode p_pass_mode, bool p_using_sdfgi, bool p_using_opaque_gi, bool p_using_motion_pass, bool p_append, bool p_alpha_only) {
+void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, const RenderDataRD *p_render_data, PassMode p_pass_mode, bool p_using_sdfgi, bool p_using_opaque_gi, bool p_append, bool p_alpha_only) {
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
 
 	if (p_render_list == RENDER_LIST_OPAQUE) {
@@ -1105,9 +1013,6 @@ void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, con
 		if (inst->non_uniform_scale) {
 			flags |= INSTANCE_DATA_FLAGS_NON_UNIFORM_SCALE;
 		}
-		bool uses_lightmap = false;
-		bool uses_gi = false;
-		bool uses_motion = false;
 		float fade_alpha = 1.0;
 
 		if (inst->fade_near || inst->fade_far) {
@@ -1126,15 +1031,13 @@ void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, con
 
 		if (p_render_list == RENDER_LIST_OPAQUE) {
 			// Detect if object moved since last frame.
-			if (p_pass_mode == PASS_MODE_DEPTH_NORMAL_ROUGHNESS || p_pass_mode == PASS_MODE_DEPTH_NORMAL_ROUGHNESS_VOXEL_GI || p_pass_mode == PASS_MODE_COLOR || p_pass_mode == PASS_MODE_RTXDI_SURFACE) {
+			if (p_pass_mode == PASS_MODE_DEPTH_NORMAL_ROUGHNESS || p_pass_mode == PASS_MODE_DEPTH_NORMAL_ROUGHNESS_VOXEL_GI || p_pass_mode == PASS_MODE_RTXDI_SURFACE) {
 				bool transform_changed = inst->transform_status == GeometryInstanceForwardClustered::TransformStatus::MOVED;
 				bool has_mesh_instance = inst->mesh_instance.is_valid();
 				bool uses_particles = inst->base_flags & INSTANCE_DATA_FLAG_PARTICLES;
 				bool is_multimesh_with_motion = !uses_particles && (inst->base_flags & INSTANCE_DATA_FLAG_MULTIMESH) && mesh_storage->_multimesh_uses_motion_vectors_offsets(inst->data->base);
 				bool is_dynamic = transform_changed || has_mesh_instance || uses_particles || is_multimesh_with_motion;
-				if (p_pass_mode == PASS_MODE_COLOR && p_using_motion_pass) {
-					uses_motion = is_dynamic;
-				} else if (is_dynamic) {
+				if (is_dynamic) {
 					flags |= INSTANCE_DATA_FLAGS_DYNAMIC;
 				}
 			}
@@ -1174,7 +1077,6 @@ void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, con
 					if (scene_state.lightmap_has_sh[lightmap_cull_index]) {
 						flags |= INSTANCE_DATA_FLAG_USE_SH_LIGHTMAP;
 					}
-					uses_lightmap = true;
 				} else {
 					inst->gi_offset_cache = 0xFFFFFFFF;
 				}
@@ -1192,7 +1094,6 @@ void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, con
 					flags |= INSTANCE_DATA_FLAG_USE_LIGHTMAP_CAPTURE;
 					inst->gi_offset_cache = lightmap_captures_used;
 					lightmap_captures_used++;
-					uses_lightmap = true;
 				}
 
 			} else {
@@ -1219,11 +1120,9 @@ void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, con
 
 					inst->gi_offset_cache = probe0_index | (probe1_index << 16);
 					flags |= INSTANCE_DATA_FLAG_USE_VOXEL_GI;
-					uses_gi = true;
 				} else {
 					if (p_using_sdfgi && inst->can_sdfgi) {
 						flags |= INSTANCE_DATA_FLAG_USE_SDFGI;
-						uses_gi = true;
 					}
 					inst->gi_offset_cache = 0xFFFFFFFF;
 				}
@@ -1280,58 +1179,6 @@ void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, con
 			// ADD Element
 			if (p_pass_mode == PASS_MODE_RTXDI_SURFACE) {
 				rl->add_element(surf);
-			} else if (p_pass_mode == PASS_MODE_COLOR) {
-#ifdef DEBUG_ENABLED
-				bool force_alpha = unlikely(get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_OVERDRAW);
-#else
-				bool force_alpha = false;
-#endif
-
-				if (fade_alpha < FADE_ALPHA_PASS_THRESHOLD) {
-					force_alpha = true;
-				}
-
-				// Alpha-only (RT) routes via rt_pass_flags so RT-overridden
-				// surfaces stay out of the raster overlay; raster path uses flags.
-				const uint32_t pass_flags = p_alpha_only ? surf->rt_pass_flags : surf->flags;
-
-				if (!p_alpha_only && !force_alpha && (pass_flags & (GeometryInstanceSurfaceDataCache::FLAG_PASS_DEPTH | GeometryInstanceSurfaceDataCache::FLAG_PASS_OPAQUE))) {
-					rl->add_element(surf);
-				}
-
-				if (force_alpha || (pass_flags & GeometryInstanceSurfaceDataCache::FLAG_PASS_ALPHA)) {
-					surf->color_pass_inclusion_mask = COLOR_PASS_FLAG_TRANSPARENT;
-					render_list[RENDER_LIST_ALPHA].add_element(surf);
-					if (uses_gi) {
-						surf->sort.uses_forward_gi = 1;
-					}
-				} else if (p_using_motion_pass && (uses_motion || (surf->flags & GeometryInstanceSurfaceDataCache::FLAG_USES_MOTION_VECTOR))) {
-					surf->color_pass_inclusion_mask = COLOR_PASS_FLAG_MOTION_VECTORS;
-					render_list[RENDER_LIST_MOTION].add_element(surf);
-				} else {
-					surf->color_pass_inclusion_mask = 0;
-				}
-
-				if (uses_lightmap) {
-					surf->sort.uses_lightmap = 1;
-					scene_state.used_lightmap = true;
-				}
-
-				if (surf->flags & GeometryInstanceSurfaceDataCache::FLAG_USES_SUBSURFACE_SCATTERING) {
-					scene_state.used_sss = true;
-				}
-				if (surf->flags & GeometryInstanceSurfaceDataCache::FLAG_USES_SCREEN_TEXTURE) {
-					scene_state.used_screen_texture = true;
-				}
-				if (surf->flags & GeometryInstanceSurfaceDataCache::FLAG_USES_NORMAL_TEXTURE) {
-					scene_state.used_normal_texture = true;
-				}
-				if (surf->flags & GeometryInstanceSurfaceDataCache::FLAG_USES_DEPTH_TEXTURE) {
-					scene_state.used_depth_texture = true;
-				}
-				if ((surf->flags & GeometryInstanceSurfaceDataCache::FLAG_USES_STENCIL) && !force_alpha && (surf->flags & (GeometryInstanceSurfaceDataCache::FLAG_PASS_DEPTH | GeometryInstanceSurfaceDataCache::FLAG_PASS_OPAQUE))) {
-					scene_state.used_opaque_stencil = true;
-				}
 			} else if (p_pass_mode == PASS_MODE_SHADOW || p_pass_mode == PASS_MODE_SHADOW_DP) {
 				if (surf->flags & GeometryInstanceSurfaceDataCache::FLAG_PASS_SHADOW) {
 					rl->add_element(surf);
@@ -2005,7 +1852,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	}
 	_setup_environment(p_render_data, false, screen_size, screen_size, p_default_bg_color, false);
 	_update_render_base_uniform_set();
-	_fill_render_list(RENDER_LIST_OPAQUE, p_render_data, PASS_MODE_RTXDI_SURFACE, false, false, false);
+	_fill_render_list(RENDER_LIST_OPAQUE, p_render_data, PASS_MODE_RTXDI_SURFACE, false, false);
 	render_list[RENDER_LIST_OPAQUE].sort_by_key();
 	int *render_info = p_render_data->render_info ? p_render_data->render_info->info[RSE::VIEWPORT_RENDER_INFO_TYPE_VISIBLE] : nullptr;
 	_fill_instance_data(RENDER_LIST_OPAQUE, render_info);
@@ -2133,7 +1980,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	for (uint32_t i = 0; i < 6; i++) {
 		surface_clear.push_back(Color(0, 0, 0, 0));
 	}
-	RenderListParameters render_list_params(render_list[RENDER_LIST_OPAQUE].elements.ptr(), render_list[RENDER_LIST_OPAQUE].element_info.ptr(), render_list[RENDER_LIST_OPAQUE].elements.size(), reverse_cull, PASS_MODE_RTXDI_SURFACE, 0, true, p_render_data->directional_light_soft_shadows, rp_uniform_set, get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_WIREFRAME, Vector2(), p_render_data->scene_data->lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, 1, 0, base_specialization);
+	RenderListParameters render_list_params(render_list[RENDER_LIST_OPAQUE].elements.ptr(), render_list[RENDER_LIST_OPAQUE].element_info.ptr(), render_list[RENDER_LIST_OPAQUE].elements.size(), reverse_cull, PASS_MODE_RTXDI_SURFACE, true, p_render_data->directional_light_soft_shadows, rp_uniform_set, get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_WIREFRAME, Vector2(), p_render_data->scene_data->lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, 1, 0, base_specialization);
 	_render_list_with_draw_list(&render_list_params, color_framebuffer, RD::DRAW_CLEAR_ALL, surface_clear, 0.0f, 0u, p_render_data->render_region);
 	rb_data->commit_rtxdi_surface();
 	RD::get_singleton()->draw_command_end_label();
@@ -2530,7 +2377,7 @@ void RenderForwardClustered::_render_shadow_append(RID p_framebuffer, const Page
 	PassMode pass_mode = p_use_dp ? PASS_MODE_SHADOW_DP : PASS_MODE_SHADOW;
 
 	uint32_t render_list_from = render_list[RENDER_LIST_SECONDARY].elements.size();
-	_fill_render_list(RENDER_LIST_SECONDARY, &render_data, pass_mode, false, false, false, true);
+	_fill_render_list(RENDER_LIST_SECONDARY, &render_data, pass_mode, false, false, true);
 	uint32_t render_list_size = render_list[RENDER_LIST_SECONDARY].elements.size() - render_list_from;
 	render_list[RENDER_LIST_SECONDARY].sort_by_key_range(render_list_from, render_list_size);
 	_fill_instance_data(RENDER_LIST_SECONDARY, p_render_info ? p_render_info->info[RSE::VIEWPORT_RENDER_INFO_TYPE_SHADOW] : (int *)nullptr, render_list_from, render_list_size, false);
@@ -2585,7 +2432,7 @@ void RenderForwardClustered::_render_shadow_end() {
 	RD::get_singleton()->draw_command_begin_label("Shadow Render");
 
 	for (SceneState::ShadowPass &shadow_pass : scene_state.shadow_passes) {
-		RenderListParameters render_list_parameters(render_list[RENDER_LIST_SECONDARY].elements.ptr() + shadow_pass.element_from, render_list[RENDER_LIST_SECONDARY].element_info.ptr() + shadow_pass.element_from, shadow_pass.element_count, shadow_pass.flip_cull, shadow_pass.pass_mode, 0, true, false, shadow_pass.rp_uniform_set, false, Vector2(), shadow_pass.lod_distance_multiplier, shadow_pass.screen_mesh_lod_threshold, 1, shadow_pass.element_from);
+		RenderListParameters render_list_parameters(render_list[RENDER_LIST_SECONDARY].elements.ptr() + shadow_pass.element_from, render_list[RENDER_LIST_SECONDARY].element_info.ptr() + shadow_pass.element_from, shadow_pass.element_count, shadow_pass.flip_cull, shadow_pass.pass_mode, true, false, shadow_pass.rp_uniform_set, false, Vector2(), shadow_pass.lod_distance_multiplier, shadow_pass.screen_mesh_lod_threshold, 1, shadow_pass.element_from);
 		_render_list_with_draw_list(&render_list_parameters, shadow_pass.framebuffer, shadow_pass.clear_depth ? RD::DRAW_CLEAR_DEPTH : RD::DRAW_DEFAULT_ALL, Vector<Color>(), 0.0f, 0, shadow_pass.rect);
 	}
 
@@ -2634,7 +2481,7 @@ void RenderForwardClustered::_render_particle_collider_heightfield(RID p_fb, con
 
 	{
 		//regular forward for now
-		RenderListParameters render_list_params(render_list[RENDER_LIST_SECONDARY].elements.ptr(), render_list[RENDER_LIST_SECONDARY].element_info.ptr(), render_list[RENDER_LIST_SECONDARY].elements.size(), false, pass_mode, 0, true, false, rp_uniform_set);
+		RenderListParameters render_list_params(render_list[RENDER_LIST_SECONDARY].elements.ptr(), render_list[RENDER_LIST_SECONDARY].element_info.ptr(), render_list[RENDER_LIST_SECONDARY].elements.size(), false, pass_mode, true, false, rp_uniform_set);
 		_render_list_with_draw_list(&render_list_params, p_fb, RD::DRAW_CLEAR_ALL);
 	}
 	RD::get_singleton()->draw_command_end_label();
@@ -2684,7 +2531,7 @@ void RenderForwardClustered::_render_material(const Transform3D &p_cam_transform
 	RENDER_TIMESTAMP("Render 3D Material");
 
 	{
-		RenderListParameters render_list_params(render_list[RENDER_LIST_SECONDARY].elements.ptr(), render_list[RENDER_LIST_SECONDARY].element_info.ptr(), render_list[RENDER_LIST_SECONDARY].elements.size(), true, pass_mode, 0, true, false, rp_uniform_set);
+		RenderListParameters render_list_params(render_list[RENDER_LIST_SECONDARY].elements.ptr(), render_list[RENDER_LIST_SECONDARY].element_info.ptr(), render_list[RENDER_LIST_SECONDARY].elements.size(), true, pass_mode, true, false, rp_uniform_set);
 		//regular forward for now
 		Vector<Color> clear = {
 			Color(0, 0, 0, 0),
@@ -2740,7 +2587,7 @@ void RenderForwardClustered::_render_uv2(const PagedArray<RenderGeometryInstance
 	RENDER_TIMESTAMP("Render 3D Material");
 
 	{
-		RenderListParameters render_list_params(render_list[RENDER_LIST_SECONDARY].elements.ptr(), render_list[RENDER_LIST_SECONDARY].element_info.ptr(), render_list[RENDER_LIST_SECONDARY].elements.size(), true, pass_mode, 0, true, false, rp_uniform_set, true);
+		RenderListParameters render_list_params(render_list[RENDER_LIST_SECONDARY].elements.ptr(), render_list[RENDER_LIST_SECONDARY].element_info.ptr(), render_list[RENDER_LIST_SECONDARY].elements.size(), true, pass_mode, true, false, rp_uniform_set, true);
 		//regular forward for now
 		Vector<Color> clear = {
 			Color(0, 0, 0, 0),
@@ -2857,7 +2704,7 @@ void RenderForwardClustered::_render_sdfgi(Ref<RenderSceneBuffersRD> p_render_bu
 			E = sdfgi_framebuffer_size_cache.insert(fb_size, fb);
 		}
 
-		RenderListParameters render_list_params(render_list[RENDER_LIST_SECONDARY].elements.ptr(), render_list[RENDER_LIST_SECONDARY].element_info.ptr(), render_list[RENDER_LIST_SECONDARY].elements.size(), true, pass_mode, 0, true, false, rp_uniform_set, false);
+		RenderListParameters render_list_params(render_list[RENDER_LIST_SECONDARY].elements.ptr(), render_list[RENDER_LIST_SECONDARY].element_info.ptr(), render_list[RENDER_LIST_SECONDARY].elements.size(), true, pass_mode, true, false, rp_uniform_set, false);
 		_render_list_with_draw_list(&render_list_params, E->value);
 	}
 
@@ -3658,7 +3505,7 @@ RID RenderForwardClustered::_setup_sdfgi_render_pass_uniform_set(RID p_albedo_te
 		// The variant for SDF from the default material should only be retrieved when SDFGI is required.
 		ERR_FAIL_NULL_V(scene_shader.default_material_shader_ptr, RID());
 		scene_shader.enable_advanced_shader_group();
-		scene_shader.default_shader_sdfgi_rd = scene_shader.default_material_shader_ptr->get_shader_variant(SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS_WITH_SDF, 0, true);
+		scene_shader.default_shader_sdfgi_rd = scene_shader.default_material_shader_ptr->get_shader_variant(SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS_WITH_SDF, true);
 		ERR_FAIL_COND_V(scene_shader.default_shader_sdfgi_rd.is_null(), RID());
 	}
 
@@ -4205,70 +4052,17 @@ void RenderForwardClustered::_geometry_instance_update(RenderGeometryInstance *p
 	ginstance->dirty_list_element.remove_from_list();
 }
 
-static RD::FramebufferFormatID _get_color_framebuffer_format_for_pipeline(RD::DataFormat p_color_format, bool p_can_be_storage, RD::TextureSamples p_samples, bool p_specular, bool p_velocity, uint32_t p_view_count) {
-	const bool multisampling = p_samples > RD::TEXTURE_SAMPLES_1;
+static RD::FramebufferFormatID _get_rtxdi_surface_framebuffer_format_for_pipeline(bool p_can_be_storage) {
+	Vector<RD::AttachmentFormat> attachments;
 	RD::AttachmentFormat attachment;
-	attachment.samples = p_samples;
-
-	RD::AttachmentFormat unused_attachment;
-	unused_attachment.usage_flags = RD::AttachmentFormat::UNUSED_ATTACHMENT;
-
-	thread_local Vector<RD::AttachmentFormat> attachments;
-	attachments.clear();
-
-	// Color attachment.
-	attachment.format = p_color_format;
-	attachment.usage_flags = RenderSceneBuffersRD::get_color_usage_bits(false, multisampling, p_can_be_storage);
-	attachments.push_back(attachment);
-
-	if (p_specular) {
-		attachment.format = RenderForwardClustered::RenderBufferDataForwardClustered::get_specular_format();
-		attachment.usage_flags = RenderForwardClustered::RenderBufferDataForwardClustered::get_specular_usage_bits(false, multisampling, p_can_be_storage);
+	attachment.usage_flags = RD::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT | RD::TEXTURE_USAGE_SAMPLING_BIT;
+	for (RD::DataFormat format : rtxdi_surface_formats) {
+		attachment.format = format;
 		attachments.push_back(attachment);
-	} else {
-		attachments.push_back(unused_attachment);
 	}
-
-	if (p_velocity) {
-		attachment.format = RenderSceneBuffersRD::get_velocity_format();
-		attachment.usage_flags = RenderSceneBuffersRD::get_velocity_usage_bits(false, multisampling, p_can_be_storage);
-		attachments.push_back(attachment);
-	} else {
-		attachments.push_back(unused_attachment);
-	}
-
-	// Depth attachment.
-	attachment.format = RenderSceneBuffersRD::get_depth_format(false, multisampling, p_can_be_storage);
-	attachment.usage_flags = RenderSceneBuffersRD::get_depth_usage_bits(false, multisampling, p_can_be_storage);
+	attachment.format = RenderSceneBuffersRD::get_depth_format(false, false, p_can_be_storage);
+	attachment.usage_flags = RenderSceneBuffersRD::get_depth_usage_bits(false, false, p_can_be_storage);
 	attachments.push_back(attachment);
-
-	thread_local Vector<RD::FramebufferPass> passes;
-	passes.resize(1);
-	passes.ptrw()[0].color_attachments.resize(attachments.size() - 1);
-
-	int *color_attachments = passes.ptrw()[0].color_attachments.ptrw();
-	for (int64_t i = 0; i < attachments.size() - 1; i++) {
-		color_attachments[i] = (attachments[i].usage_flags == RD::AttachmentFormat::UNUSED_ATTACHMENT) ? RD::ATTACHMENT_UNUSED : i;
-	}
-
-	passes.ptrw()[0].depth_attachment = attachments.size() - 1;
-
-	return RD::get_singleton()->framebuffer_format_create_multipass(attachments, passes, p_view_count);
-}
-
-static RD::FramebufferFormatID _get_reflection_probe_color_framebuffer_format_for_pipeline(bool p_storage) {
-	RD::AttachmentFormat attachment;
-	thread_local Vector<RD::AttachmentFormat> attachments;
-	attachments.clear();
-
-	attachment.format = RendererRD::LightStorage::get_reflection_probe_color_format();
-	attachment.usage_flags = RendererRD::LightStorage::get_reflection_probe_color_usage_bits(p_storage);
-	attachments.push_back(attachment);
-
-	attachment.format = RendererRD::LightStorage::get_reflection_probe_depth_format();
-	attachment.usage_flags = RendererRD::LightStorage::get_reflection_probe_depth_usage_bits();
-	attachments.push_back(attachment);
-
 	return RD::get_singleton()->framebuffer_format_create(attachments);
 }
 
@@ -4348,8 +4142,8 @@ static RD::FramebufferFormatID _get_reflection_probe_depth_framebuffer_format_fo
 
 void RenderForwardClustered::_mesh_compile_pipeline_for_surface(SceneShaderForwardClustered::ShaderData *p_shader, void *p_mesh_surface, bool p_ubershader, bool p_instanced_surface, RSE::PipelineSource p_source, SceneShaderForwardClustered::ShaderData::PipelineKey &r_pipeline_key, Vector<ShaderPipelinePair> *r_pipeline_pairs) {
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
-	uint64_t input_mask = p_shader->get_vertex_input_mask(r_pipeline_key.version, r_pipeline_key.color_pass_flags, p_ubershader);
-	bool pipeline_motion_vectors = r_pipeline_key.color_pass_flags & SceneShaderForwardClustered::PIPELINE_COLOR_PASS_FLAG_MOTION_VECTORS;
+	uint64_t input_mask = p_shader->get_vertex_input_mask(r_pipeline_key.version, p_ubershader);
+	bool pipeline_motion_vectors = r_pipeline_key.version == SceneShaderForwardClustered::PIPELINE_VERSION_RTXDI_SURFACE;
 	bool emulate_point_size = p_shader->uses_point_size && scene_shader.emulate_point_size;
 	r_pipeline_key.vertex_format_id = mesh_storage->mesh_surface_get_vertex_format(p_mesh_surface, input_mask, p_instanced_surface, pipeline_motion_vectors, emulate_point_size);
 	r_pipeline_key.ubershader = p_ubershader;
@@ -4363,11 +4157,7 @@ void RenderForwardClustered::_mesh_compile_pipeline_for_surface(SceneShaderForwa
 
 void RenderForwardClustered::_mesh_compile_pipelines_for_surface(const SurfacePipelineData &p_surface, const GlobalPipelineData &p_global, RSE::PipelineSource p_source, Vector<ShaderPipelinePair> *r_pipeline_pairs) {
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
-	bool octmap_use_storage = !copy_effects->get_raster_effects().has_flag(RendererRD::CopyEffects::RASTER_EFFECT_OCTMAP);
 
-	// Retrieve from the scene shader which groups are currently enabled.
-	const bool multiview_enabled = p_global.use_multiview && scene_shader.is_multiview_shader_group_enabled();
-	const RD::DataFormat buffers_color_format = _render_buffers_get_preferred_color_format();
 	const bool buffers_can_be_storage = _render_buffers_can_be_storage();
 
 	// Set the attributes common to all pipelines.
@@ -4376,73 +4166,13 @@ void RenderForwardClustered::_mesh_compile_pipelines_for_surface(const SurfacePi
 	pipeline_key.primitive_type = mesh_storage->mesh_surface_get_primitive(p_surface.mesh_surface);
 	pipeline_key.wireframe = false;
 
-	// Grab the shader and surface used for most passes.
-	const uint32_t multiview_iterations = multiview_enabled ? 2 : 1;
-	const uint32_t lightmap_iterations = p_global.use_lightmaps && p_surface.can_use_lightmap ? 2 : 1;
-	const uint32_t alpha_iterations = p_surface.uses_transparent ? 2 : 1;
-	for (uint32_t multiview = 0; multiview < multiview_iterations; multiview++) {
-		for (uint32_t lightmap = 0; lightmap < lightmap_iterations; lightmap++) {
-			for (uint32_t alpha = p_surface.uses_opaque ? 0 : 1; alpha < alpha_iterations; alpha++) {
-				// Generate all the possible variants used during the color pass.
-				pipeline_key.version = SceneShaderForwardClustered::PIPELINE_VERSION_COLOR_PASS;
-				pipeline_key.color_pass_flags = 0;
-
-				if (lightmap) {
-					pipeline_key.color_pass_flags |= SceneShaderForwardClustered::PIPELINE_COLOR_PASS_FLAG_LIGHTMAP;
-				}
-
-				if (alpha) {
-					pipeline_key.color_pass_flags |= SceneShaderForwardClustered::PIPELINE_COLOR_PASS_FLAG_TRANSPARENT;
-				}
-
-				if (multiview) {
-					pipeline_key.color_pass_flags |= SceneShaderForwardClustered::PIPELINE_COLOR_PASS_FLAG_MULTIVIEW;
-				} else if (p_global.use_reflection_probes) {
-					// Reflection probe can't be rendered in multiview.
-					pipeline_key.framebuffer_format_id = _get_reflection_probe_color_framebuffer_format_for_pipeline(octmap_use_storage);
-					_mesh_compile_pipeline_for_surface(p_surface.shader, p_surface.mesh_surface, true, p_surface.instanced, p_source, pipeline_key, r_pipeline_pairs);
-				}
-
-				// View count is assumed to be 2 as the configuration is dependent on the viewport. It's likely a safe assumption for stereo rendering.
-				uint32_t view_count = multiview ? 2 : 1;
-				pipeline_key.framebuffer_format_id = _get_color_framebuffer_format_for_pipeline(buffers_color_format, buffers_can_be_storage, RD::TextureSamples(p_global.texture_samples), false, false, view_count);
-				_mesh_compile_pipeline_for_surface(p_surface.shader, p_surface.mesh_surface, true, p_surface.instanced, p_source, pipeline_key, r_pipeline_pairs);
-
-				// Generate all the possible variants used during the advanced color passes.
-				const uint32_t separate_specular_iterations = p_global.use_separate_specular ? 2 : 1;
-				const uint32_t motion_vectors_iterations = p_global.use_motion_vectors ? 2 : 1;
-				uint32_t base_color_pass_flags = pipeline_key.color_pass_flags;
-				for (uint32_t separate_specular = 0; separate_specular < separate_specular_iterations; separate_specular++) {
-					for (uint32_t motion_vectors = 0; motion_vectors < motion_vectors_iterations; motion_vectors++) {
-						if (!separate_specular && !motion_vectors) {
-							// This case was already generated.
-							continue;
-						}
-
-						pipeline_key.color_pass_flags = base_color_pass_flags;
-
-						if (separate_specular) {
-							pipeline_key.color_pass_flags |= SceneShaderForwardClustered::PIPELINE_COLOR_PASS_FLAG_SEPARATE_SPECULAR;
-						}
-
-						if (motion_vectors) {
-							pipeline_key.color_pass_flags |= SceneShaderForwardClustered::PIPELINE_COLOR_PASS_FLAG_MOTION_VECTORS;
-						}
-
-						pipeline_key.framebuffer_format_id = _get_color_framebuffer_format_for_pipeline(buffers_color_format, buffers_can_be_storage, RD::TextureSamples(p_global.texture_samples), separate_specular, motion_vectors, view_count);
-						_mesh_compile_pipeline_for_surface(p_surface.shader, p_surface.mesh_surface, true, p_surface.instanced, p_source, pipeline_key, r_pipeline_pairs);
-					}
-				}
-			}
-		}
-	}
+	pipeline_key.version = SceneShaderForwardClustered::PIPELINE_VERSION_RTXDI_SURFACE;
+	pipeline_key.framebuffer_format_id = _get_rtxdi_surface_framebuffer_format_for_pipeline(buffers_can_be_storage);
+	_mesh_compile_pipeline_for_surface(p_surface.shader, p_surface.mesh_surface, true, p_surface.instanced, p_source, pipeline_key, r_pipeline_pairs);
 
 	if (!p_surface.uses_depth) {
 		return;
 	}
-
-	// Generate the depth pipelines if the material supports depth or it must be part of the shadow pass.
-	pipeline_key.color_pass_flags = 0;
 
 	if (p_global.use_normal_and_roughness) {
 		// A lot of different effects rely on normal and roughness being written to during the depth pass.
@@ -4509,19 +4239,13 @@ void RenderForwardClustered::_mesh_compile_pipelines_for_surface(const SurfacePi
 }
 
 void RenderForwardClustered::_mesh_generate_all_pipelines_for_surface_cache(GeometryInstanceSurfaceDataCache *p_surface_cache, const GlobalPipelineData &p_global) {
-	bool uses_alpha_pass = (p_surface_cache->flags & GeometryInstanceSurfaceDataCache::FLAG_PASS_ALPHA) != 0;
-	float multiplied_fade_alpha = p_surface_cache->owner->force_alpha * p_surface_cache->owner->parent_fade_alpha;
-	bool uses_fade = (multiplied_fade_alpha < FADE_ALPHA_PASS_THRESHOLD) || p_surface_cache->owner->fade_near || p_surface_cache->owner->fade_far;
 	SurfacePipelineData surface;
 	surface.mesh_surface = p_surface_cache->surface;
 	surface.mesh_surface_shadow = p_surface_cache->surface_shadow;
 	surface.shader = p_surface_cache->shader;
 	surface.shader_shadow = p_surface_cache->shader_shadow;
 	surface.instanced = p_surface_cache->owner->mesh_instance.is_valid();
-	surface.uses_opaque = !uses_alpha_pass;
-	surface.uses_transparent = uses_alpha_pass || uses_fade;
 	surface.uses_depth = (p_surface_cache->flags & (GeometryInstanceSurfaceDataCache::FLAG_PASS_DEPTH | GeometryInstanceSurfaceDataCache::FLAG_PASS_OPAQUE | GeometryInstanceSurfaceDataCache::FLAG_PASS_SHADOW)) != 0;
-	surface.can_use_lightmap = p_surface_cache->owner->lightmap_instance.is_valid() || p_surface_cache->owner->lightmap_sh;
 	_mesh_compile_pipelines_for_surface(surface, p_global, RSE::PIPELINE_SOURCE_SURFACE);
 }
 
@@ -4766,10 +4490,7 @@ void RenderForwardClustered::mesh_generate_pipelines(RID p_mesh, bool p_backgrou
 		surface.shader = shader;
 		surface.shader_shadow = shader_shadow;
 		surface.instanced = mesh_storage->mesh_needs_instance(p_mesh, true);
-		surface.uses_opaque = !material->shader_data->uses_alpha_pass();
-		surface.uses_transparent = material->shader_data->uses_alpha_pass();
-		surface.uses_depth = surface.uses_opaque || (surface.uses_transparent && material->shader_data->uses_depth_in_alpha_pass());
-		surface.can_use_lightmap = mesh_storage->mesh_surface_get_format(mesh_surface) & RSE::ARRAY_FORMAT_TEX_UV2;
+		surface.uses_depth = !shader->uses_alpha_pass() || shader->uses_depth_in_alpha_pass();
 		_mesh_compile_pipelines_for_surface(surface, global_pipeline_data_required, RSE::PIPELINE_SOURCE_MESH, &pipeline_pairs);
 	}
 

@@ -6,6 +6,7 @@
 
 #include <slang-com-ptr.h>
 #include <slang.h>
+#include <thirdparty/spirv-headers/include/spirv/unified1/spirv.h>
 
 static Mutex compiler_mutex;
 static void *compiler_library = nullptr;
@@ -150,19 +151,22 @@ Vector<uint8_t> compile_slang_shader(RenderingDeviceCommons::ShaderStage p_stage
 		{ slang::CompilerOptionName::EmitSpirvDirectly, { slang::CompilerOptionValueKind::Int, 1 } },
 		{ slang::CompilerOptionName::VulkanUseGLLayout, { slang::CompilerOptionValueKind::Int, p_request.gl_layout } },
 		{ slang::CompilerOptionName::VulkanUseEntryPointName, { slang::CompilerOptionValueKind::Int, 0 } },
+		{ slang::CompilerOptionName::PreserveParameters, { slang::CompilerOptionValueKind::Int, p_request.preserve_parameters } },
+		{ slang::CompilerOptionName::FloatingPointMode, { slang::CompilerOptionValueKind::Int, int32_t(p_request.precise_float ? SLANG_FLOATING_POINT_MODE_PRECISE : SLANG_FLOATING_POINT_MODE_DEFAULT) } },
 		{ slang::CompilerOptionName::Optimization, { slang::CompilerOptionValueKind::Int, p_request.optimization_level } },
 		{ slang::CompilerOptionName::DebugInformation, { slang::CompilerOptionValueKind::Int, int32_t(p_request.debug_info ? SLANG_DEBUG_INFO_LEVEL_STANDARD : SLANG_DEBUG_INFO_LEVEL_NONE) } },
 	};
 	slang::TargetDesc target;
 	target.format = SLANG_SPIRV;
 	target.profile = global_session->findProfile("spirv_1_6");
-	target.compilerOptionEntries = options;
-	target.compilerOptionEntryCount = sizeof(options) / sizeof(options[0]);
+	target.floatingPointMode = p_request.precise_float ? SLANG_FLOATING_POINT_MODE_PRECISE : SLANG_FLOATING_POINT_MODE_DEFAULT;
 	Slang::ComPtr<ISlangFileSystem> filesystem;
 	filesystem.attach(memnew(EmbeddedShaderFileSystem(p_request.includes)));
 	slang::SessionDesc descriptor;
 	descriptor.targets = &target;
 	descriptor.targetCount = 1;
+	descriptor.compilerOptionEntries = options;
+	descriptor.compilerOptionEntryCount = sizeof(options) / sizeof(options[0]);
 	descriptor.defaultMatrixLayoutMode = p_request.column_major ? SLANG_MATRIX_LAYOUT_COLUMN_MAJOR : SLANG_MATRIX_LAYOUT_ROW_MAJOR;
 	descriptor.fileSystem = filesystem;
 	Slang::ComPtr<slang::ISession> session;
@@ -202,6 +206,50 @@ Vector<uint8_t> compile_slang_shader(RenderingDeviceCommons::ShaderStage p_stage
 	Vector<uint8_t> result;
 	result.resize(code->getBufferSize());
 	memcpy(result.ptrw(), code->getBufferPointer(), result.size());
+	if (p_stage == RenderingDeviceCommons::SHADER_STAGE_VERTEX && p_request.invariant_position) {
+		const uint32_t *words = reinterpret_cast<const uint32_t *>(result.ptr());
+		size_t word_count = result.size() / sizeof(uint32_t);
+		size_t position_offset = 0;
+		uint32_t position_id = 0;
+		if (result.size() % sizeof(uint32_t) != 0 || word_count < 5 || words[0] != SpvMagicNumber) {
+			if (r_error) {
+				*r_error = "Invalid Slang vertex SPIR-V header.";
+			}
+			return {};
+		}
+		for (size_t offset = 5; offset < word_count;) {
+			uint32_t count = words[offset] >> 16;
+			uint32_t opcode = words[offset] & 0xffffu;
+			if (count == 0 || count > word_count - offset) {
+				if (r_error) {
+					*r_error = "Invalid Slang vertex SPIR-V instruction length.";
+				}
+				return {};
+			}
+			if (opcode == SpvOpDecorate && count == 4 && words[offset + 2] == SpvDecorationBuiltIn && words[offset + 3] == SpvBuiltInPosition) {
+				position_offset = offset;
+				position_id = words[offset + 1];
+			}
+			offset += count;
+		}
+		if (position_id == 0) {
+			if (r_error) {
+				*r_error = "Slang vertex output has no direct BuiltIn Position decoration for the required invariant contract.";
+			}
+			return {};
+		}
+		for (size_t offset = 5; offset < word_count; offset += words[offset] >> 16) {
+			if (words[offset] == ((3u << 16) | SpvOpDecorate) && words[offset + 1] == position_id && words[offset + 2] == SpvDecorationInvariant) {
+				return result;
+			}
+		}
+		result.resize(result.size() + 3 * sizeof(uint32_t));
+		uint32_t *output = reinterpret_cast<uint32_t *>(result.ptrw());
+		memmove(output + position_offset + 3, output + position_offset, (word_count - position_offset) * sizeof(uint32_t));
+		output[position_offset] = (3u << 16) | SpvOpDecorate;
+		output[position_offset + 1] = position_id;
+		output[position_offset + 2] = SpvDecorationInvariant;
+	}
 	return result;
 }
 

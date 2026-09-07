@@ -36,6 +36,11 @@
 
 class ShaderCompiler {
 public:
+	enum Target {
+		TARGET_GLSL,
+		TARGET_SLANG,
+	};
+
 	enum Stage {
 		STAGE_VERTEX,
 		STAGE_FRAGMENT,
@@ -93,6 +98,7 @@ public:
 	};
 
 	struct DefaultIdentifierActions {
+		Target target = TARGET_GLSL;
 		HashMap<StringName, String> renames;
 		HashMap<StringName, String> render_mode_defines;
 		HashMap<StringName, String> usage_defines;
@@ -112,6 +118,15 @@ public:
 
 private:
 	ShaderLanguage parser;
+	HashSet<String> slang_helper_signatures;
+	String slang_helpers;
+	String _slang_inverse(ShaderLanguage::DataType p_type);
+	String _slang_helper(const String &p_return_type, const String &p_name, const Vector<String> &p_argument_types, const String &p_body);
+	String _typestr(ShaderLanguage::DataType p_type) const;
+	String _prestr(ShaderLanguage::DataPrecision p_precision, bool p_force_highp = false) const;
+	String _constant_text(ShaderLanguage::DataType p_type, const Vector<ShaderLanguage::Scalar> &p_values) const;
+	String _global_uniform(const String &p_buffer, const String &p_index, ShaderLanguage::DataType p_type) const;
+	String _dump_slang_call(const ShaderLanguage::OperatorNode *p_node, int p_level, GeneratedCode &r_gen_code, IdentifierActions &p_actions, const DefaultIdentifierActions &p_default_actions, bool p_assigning);
 
 	String _get_sampler_name(ShaderLanguage::TextureFilter p_filter, ShaderLanguage::TextureRepeat p_repeat);
 

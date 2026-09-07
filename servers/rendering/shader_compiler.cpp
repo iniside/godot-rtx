@@ -40,7 +40,20 @@ static String _mktab(int p_level) {
 	return String("\t").repeat(p_level);
 }
 
-static String _typestr(SL::DataType p_type) {
+String ShaderCompiler::_typestr(SL::DataType p_type) const {
+	if (actions.target == TARGET_SLANG) {
+		static const char *types[] = {
+			"void", "bool", "bool2", "bool3", "bool4",
+			"int", "int2", "int3", "int4", "uint", "uint2", "uint3", "uint4",
+			"float", "float2", "float3", "float4", "float2x2", "float3x3", "float4x4",
+			"Texture2D<float4>", "Texture2D<int4>", "Texture2D<uint4>",
+			"Texture2DArray<float4>", "Texture2DArray<int4>", "Texture2DArray<uint4>",
+			"Texture3D<float4>", "Texture3D<int4>", "Texture3D<uint4>",
+			"TextureCube<float4>", "TextureCubeArray<float4>", "Texture2D<float4>",
+		};
+		ERR_FAIL_INDEX_V(p_type, int(sizeof(types) / sizeof(types[0])), String());
+		return types[p_type];
+	}
 	String type = ShaderLanguage::get_datatype_name(p_type);
 	if (!RS::get_singleton()->is_low_end() && ShaderLanguage::is_sampler_type(p_type)) {
 		type = type.replace("sampler", "texture"); //we use textures instead of samplers in Vulkan GLSL
@@ -136,7 +149,10 @@ static String _interpstr(SL::DataInterpolation p_interp) {
 	return "";
 }
 
-static String _prestr(SL::DataPrecision p_pres, bool p_force_highp = false) {
+String ShaderCompiler::_prestr(SL::DataPrecision p_pres, bool p_force_highp) const {
+	if (actions.target == TARGET_SLANG) {
+		return String();
+	}
 	switch (p_pres) {
 		case SL::PRECISION_LOWP:
 			return "lowp ";
@@ -186,14 +202,14 @@ static String f2sp0(float p_float) {
 	return num;
 }
 
-static String get_constant_text(SL::DataType p_type, const Vector<SL::Scalar> &p_values) {
+String ShaderCompiler::_constant_text(SL::DataType p_type, const Vector<SL::Scalar> &p_values) const {
 	switch (p_type) {
 		case SL::TYPE_BOOL:
 			return p_values[0].boolean ? "true" : "false";
 		case SL::TYPE_BVEC2:
 		case SL::TYPE_BVEC3:
 		case SL::TYPE_BVEC4: {
-			String text = "bvec" + itos(p_type - SL::TYPE_BOOL + 1) + "(";
+			String text = _typestr(p_type) + "(";
 			for (int i = 0; i < p_values.size(); i++) {
 				if (i > 0) {
 					text += ",";
@@ -210,7 +226,7 @@ static String get_constant_text(SL::DataType p_type, const Vector<SL::Scalar> &p
 		case SL::TYPE_IVEC2:
 		case SL::TYPE_IVEC3:
 		case SL::TYPE_IVEC4: {
-			String text = "ivec" + itos(p_type - SL::TYPE_INT + 1) + "(";
+			String text = _typestr(p_type) + "(";
 			for (int i = 0; i < p_values.size(); i++) {
 				if (i > 0) {
 					text += ",";
@@ -227,7 +243,7 @@ static String get_constant_text(SL::DataType p_type, const Vector<SL::Scalar> &p
 		case SL::TYPE_UVEC2:
 		case SL::TYPE_UVEC3:
 		case SL::TYPE_UVEC4: {
-			String text = "uvec" + itos(p_type - SL::TYPE_UINT + 1) + "(";
+			String text = _typestr(p_type) + "(";
 			for (int i = 0; i < p_values.size(); i++) {
 				if (i > 0) {
 					text += ",";
@@ -243,7 +259,7 @@ static String get_constant_text(SL::DataType p_type, const Vector<SL::Scalar> &p
 		case SL::TYPE_VEC2:
 		case SL::TYPE_VEC3:
 		case SL::TYPE_VEC4: {
-			String text = "vec" + itos(p_type - SL::TYPE_FLOAT + 1) + "(";
+			String text = _typestr(p_type) + "(";
 			for (int i = 0; i < p_values.size(); i++) {
 				if (i > 0) {
 					text += ",";
@@ -258,7 +274,7 @@ static String get_constant_text(SL::DataType p_type, const Vector<SL::Scalar> &p
 		case SL::TYPE_MAT2:
 		case SL::TYPE_MAT3:
 		case SL::TYPE_MAT4: {
-			String text = "mat" + itos(p_type - SL::TYPE_MAT2 + 2) + "(";
+			String text = _typestr(p_type) + "(";
 			for (int i = 0; i < p_values.size(); i++) {
 				if (i > 0) {
 					text += ",";
@@ -382,7 +398,36 @@ void ShaderCompiler::_dump_function_deps(const SL::ShaderNode *p_node, const Str
 	}
 }
 
-static String _get_global_shader_uniform_from_type_and_index(const String &p_buffer, const String &p_index, ShaderLanguage::DataType p_type) {
+String ShaderCompiler::_global_uniform(const String &p_buffer, const String &p_index, ShaderLanguage::DataType p_type) const {
+	if (actions.target == TARGET_SLANG) {
+		String value = p_buffer + "[" + p_index + "]";
+		if (p_type >= SL::TYPE_MAT2 && p_type <= SL::TYPE_MAT4) {
+			int size = p_type - SL::TYPE_MAT2 + 2;
+			String result = _typestr(p_type) + "(";
+			for (int i = 0; i < size; i++) {
+				if (i) {
+					result += ", ";
+				}
+				result += p_buffer + "[" + p_index + "+" + itos(i) + "u]." + String("xyzw").substr(0, size);
+			}
+			return result + ")";
+		}
+		int size = 1;
+		if (p_type >= SL::TYPE_BOOL && p_type <= SL::TYPE_VEC4) {
+			size = (p_type - SL::TYPE_BOOL) % 4 + 1;
+		}
+		value += "." + String("xyzw").substr(0, size);
+		if (p_type >= SL::TYPE_BOOL && p_type <= SL::TYPE_BVEC4) {
+			return _typestr(p_type) + "(asuint(" + value + "))";
+		}
+		if (p_type >= SL::TYPE_INT && p_type <= SL::TYPE_IVEC4) {
+			return "asint(" + value + ")";
+		}
+		if (p_type >= SL::TYPE_UINT && p_type <= SL::TYPE_UVEC4) {
+			return "asuint(" + value + ")";
+		}
+		return "(" + value + ")";
+	}
 	switch (p_type) {
 		case ShaderLanguage::TYPE_BOOL: {
 			return "bool(floatBitsToUint(" + p_buffer + "[" + p_index + "].x))";
@@ -445,6 +490,302 @@ static String _get_global_shader_uniform_from_type_and_index(const String &p_buf
 			ERR_FAIL_V("void");
 		}
 	}
+}
+
+String ShaderCompiler::_slang_inverse(SL::DataType p_type) {
+	String result_type = _typestr(p_type);
+	int size = p_type - SL::TYPE_MAT2 + 2;
+	String body = result_type + " result; ";
+	for (int row = 0; row < size; row++) {
+		for (int column = 0; column < size; column++) {
+			Vector<String> minor;
+			for (int i = 0; i < size; i++) {
+				for (int j = 0; j < size; j++) {
+					if (i != column && j != row) {
+						minor.push_back("a0[" + itos(i) + "][" + itos(j) + "]");
+					}
+				}
+			}
+			String cofactor = size == 2 ? minor[0] : "determinant(float" + itos(size - 1) + "x" + itos(size - 1) + "(" + String(", ").join(minor) + "))";
+			body += "result[" + itos(row) + "][" + itos(column) + "] = " + ((row + column) % 2 ? "-" : "") + cofactor + "; ";
+		}
+	}
+	return _slang_helper(result_type, "godot_inverse", { result_type }, body + "return result / determinant(a0);");
+
+}
+
+String ShaderCompiler::_slang_helper(const String &p_return_type, const String &p_name, const Vector<String> &p_argument_types, const String &p_body) {
+	String signature = p_return_type + " " + p_name + "(";
+	for (int i = 0; i < p_argument_types.size(); i++) {
+		if (i) {
+			signature += ", ";
+		}
+		signature += p_argument_types[i] + " a" + itos(i);
+	}
+	signature += ")";
+	if (!slang_helper_signatures.has(signature)) {
+		slang_helper_signatures.insert(signature);
+		slang_helpers += signature + " { " + p_body + " }\n";
+	}
+	return p_name;
+}
+
+String ShaderCompiler::_dump_slang_call(const SL::OperatorNode *p_node, int p_level, GeneratedCode &r_gen_code, IdentifierActions &p_actions, const DefaultIdentifierActions &p_default_actions, bool p_assigning) {
+	const SL::VariableNode *callee = static_cast<const SL::VariableNode *>(p_node->arguments[0]);
+	String name = callee->name;
+	bool builtin = internal_functions.has(callee->name);
+	const SL::FunctionNode *callee_function = nullptr;
+	for (const SL::ShaderNode::Function &candidate : shader->vfunctions) {
+		if (candidate.name == callee->name) {
+			callee_function = candidate.function;
+			break;
+		}
+	}
+	if (p_actions.usage_flag_pointers.has(callee->name)) {
+		*p_actions.usage_flag_pointers[callee->name] = true;
+		used_flag_pointers.insert(callee->name);
+	}
+	Vector<String> arguments;
+	Vector<String> types;
+	for (int i = 1; i < p_node->arguments.size(); i++) {
+		bool assigning = p_assigning;
+		if (builtin) {
+			assigning |= SL::is_builtin_func_out_parameter(callee->name, i - 1);
+		} else if (callee_function) {
+			assigning |= callee_function->arguments[i - 1].qualifier != SL::ARGUMENT_QUALIFIER_IN;
+		}
+		arguments.push_back(_dump_node_code(p_node->arguments[i], p_level, r_gen_code, p_actions, p_default_actions, assigning));
+		types.push_back(p_node->arguments[i]->get_datatype() == SL::TYPE_STRUCT ? String() : _typestr(p_node->arguments[i]->get_datatype()));
+	}
+	String result_type = p_node->get_datatype() == SL::TYPE_STRUCT ? String() : _typestr(p_node->get_datatype());
+	if (p_node->op == SL::OP_CONSTRUCT) {
+		name = result_type;
+		bool matrix = p_node->get_datatype() >= SL::TYPE_MAT2 && p_node->get_datatype() <= SL::TYPE_MAT4;
+		if (matrix && arguments.size() == 1) {
+			int size = p_node->get_datatype() - SL::TYPE_MAT2 + 2;
+			SL::DataType argument_type = p_node->arguments[1]->get_datatype();
+			bool source_matrix = argument_type >= SL::TYPE_MAT2 && argument_type <= SL::TYPE_MAT4;
+			int source_size = source_matrix ? argument_type - SL::TYPE_MAT2 + 2 : 0;
+			String body = "return " + result_type + "(";
+			for (int row = 0; row < size; row++) {
+				for (int column = 0; column < size; column++) {
+					if (row || column) {
+						body += ", ";
+					}
+					if (source_matrix && row < source_size && column < source_size) {
+						body += "a0[" + itos(row) + "][" + itos(column) + "]";
+					} else if (row == column) {
+						body += source_matrix ? "1.0" : "a0";
+					} else {
+						body += "0.0";
+					}
+				}
+			}
+			name = _slang_helper(result_type, "godot_construct_" + result_type, types, body + ");");
+		}
+	} else if (p_node->op == SL::OP_STRUCT) {
+		return _mkid(callee->name) + "(" + String(", ").join(arguments) + ")";
+	} else if (texture_functions.has(callee->name)) {
+		StringName texture_name;
+		const SL::Node *texture_node = p_node->arguments[1];
+		if (texture_node->type == SL::Node::NODE_TYPE_VARIABLE) {
+			texture_name = static_cast<const SL::VariableNode *>(texture_node)->name;
+		} else if (texture_node->type == SL::Node::NODE_TYPE_ARRAY) {
+			texture_name = static_cast<const SL::ArrayNode *>(texture_node)->name;
+		}
+		String sampler = _get_sampler_name(SL::FILTER_DEFAULT, SL::REPEAT_DEFAULT);
+		SL::ShaderNode::Uniform::Hint hint = SL::ShaderNode::Uniform::HINT_NONE;
+		if (actions.custom_samplers.has(texture_name)) {
+			sampler = actions.custom_samplers[texture_name];
+		} else if (shader->uniforms.has(texture_name)) {
+			const SL::ShaderNode::Uniform &uniform = shader->uniforms[texture_name];
+			sampler = _get_sampler_name(uniform.filter, uniform.repeat);
+			hint = uniform.hint;
+		} else if (function) {
+			for (const SL::FunctionNode::Argument &argument : function->arguments) {
+				if (argument.name == texture_name) {
+					if (argument.tex_builtin_check && actions.custom_samplers.has(argument.tex_builtin)) {
+						sampler = actions.custom_samplers[argument.tex_builtin];
+					} else if (argument.tex_argument_check) {
+						sampler = _get_sampler_name(argument.tex_argument_filter, argument.tex_argument_repeat);
+						hint = argument.tex_hint;
+					}
+					break;
+				}
+			}
+		}
+		bool screen = hint == SL::ShaderNode::Uniform::HINT_SCREEN_TEXTURE;
+		bool normal = hint == SL::ShaderNode::Uniform::HINT_NORMAL_ROUGHNESS_TEXTURE;
+		bool multiview = actions.check_multiview_samplers && (screen || normal || hint == SL::ShaderNode::Uniform::HINT_DEPTH_TEXTURE);
+		bool dimensions = name == "textureSize" || name == "textureQueryLevels";
+		if (name.begins_with("textureProj")) {
+			int size = p_node->arguments[2]->get_datatype() - SL::TYPE_FLOAT + 1;
+			int coordinate_size = texture_node->get_datatype() == SL::TYPE_SAMPLER3D ? 3 : 2;
+			String coordinate_type = "float" + itos(coordinate_size);
+			String project = _slang_helper(coordinate_type, "godot_project_coordinate", { types[1] }, "return a0." + String("xyz").substr(0, coordinate_size) + " / a0." + String("xyzw").substr(size - 1, 1) + ";");
+			arguments.write[1] = project + "(" + arguments[1] + ")";
+			types.write[1] = coordinate_type;
+			name = name.replace_first("Proj", "");
+		}
+		String sample_coordinate = arguments.size() > 1 ? arguments[1] : String();
+		if (multiview && !dimensions) {
+			arguments.write[1] = "multiview_uv(" + arguments[1] + ".xy)";
+		}
+		String expression;
+		if (dimensions) {
+			int size = (texture_node->get_datatype() >= SL::TYPE_SAMPLER2DARRAY && texture_node->get_datatype() <= SL::TYPE_USAMPLER3D) || texture_node->get_datatype() == SL::TYPE_SAMPLERCUBEARRAY ? 3 : 2;
+			if (multiview) {
+				types.write[0] = "GodotMultiviewTexture";
+			}
+			String body = "uint width, height, levels; ";
+			if (size == 3 || multiview) {
+				body += "uint depth; ";
+			}
+			body += "a0.GetDimensions(" + String(name == "textureSize" ? "a1" : "0") + ", width, height, ";
+			if (multiview) {
+				body += "\n#ifdef USE_MULTIVIEW\ndepth,\n#endif\n";
+			} else if (size == 3) {
+				body += "depth, ";
+			}
+			body += "levels); return ";
+			body += name == "textureQueryLevels" ? "int(levels);" : (size == 3 ? "int3(width, height, depth);" : "int2(width, height);");
+			name = _slang_helper(result_type, "godot_" + name + (multiview ? "_multiview" : ""), types, body);
+			expression = name + "(" + String(", ").join(arguments) + ")";
+		} else if (name == "textureQueryLod") {
+			expression = "float2(" + arguments[0] + ".CalculateLevelOfDetail(" + sampler + ", " + arguments[1] + "), " + arguments[0] + ".CalculateLevelOfDetailUnclamped(" + sampler + ", " + arguments[1] + "))";
+		} else if (name == "texelFetch") {
+			int size = texture_node->get_datatype() >= SL::TYPE_SAMPLER2DARRAY && texture_node->get_datatype() <= SL::TYPE_USAMPLER3D ? 4 : 3;
+			expression = arguments[0] + ".Load(" + (multiview ? "godot_multiview_load_coord" : "int" + itos(size)) + "(" + arguments[1] + ", " + arguments[2] + "))";
+		} else {
+			String method;
+			if (name == "textureGather") {
+				String component = arguments.size() > 2 ? arguments[2] : "0";
+				String methods[] = { "GatherRed", "GatherGreen", "GatherBlue", "GatherAlpha" };
+				for (int i = 3; i >= 0; i--) {
+					String gather = arguments[0] + "." + methods[i] + "(" + sampler + ", " + arguments[1] + ")";
+					expression = i == 3 ? gather : "(" + component + " == " + itos(i) + " ? " + gather + " : " + expression + ")";
+				}
+			} else {
+				method = name == "textureGrad" ? "SampleGrad" : name == "textureLod" ? "SampleLevel" : arguments.size() > 2 ? "SampleBias" : "Sample";
+				if (method == "Sample" || method == "SampleBias") {
+					Vector<String> helper_types = types;
+					Vector<String> helper_arguments = arguments;
+					helper_types.insert(1, "SamplerState");
+					helper_arguments.insert(1, sampler);
+					String coordinate = "a2";
+					if (multiview) {
+						helper_types.write[0] = "GodotMultiviewTexture";
+						helper_arguments.write[2] = sample_coordinate;
+						coordinate = "multiview_uv(a2)";
+					}
+					String body = "\n#ifdef GODOT_VERTEX_STAGE\nreturn a0.SampleLevel(a1, " + coordinate + ", 0.0);\n#else\nreturn a0." + method + "(a1, " + coordinate;
+					if (method == "SampleBias") {
+						body += ", a3";
+					}
+					body += ");\n#endif\n";
+					name = _slang_helper(result_type, "godot_" + method + (multiview ? "_multiview" : ""), helper_types, body);
+					expression = name + "(" + String(", ").join(helper_arguments) + ")";
+				} else {
+					expression = arguments[0] + "." + method + "(" + sampler;
+					for (int i = 1; i < arguments.size(); i++) {
+						expression += ", " + arguments[i];
+					}
+					expression += ")";
+				}
+			}
+		}
+		if (normal && !dimensions && name != "textureQueryLod") {
+			expression = "normal_roughness_compatibility(" + expression + ")";
+		}
+		return expression;
+	} else if (builtin) {
+		if (name == "length" && arguments.is_empty()) {
+			name = "getCount";
+		} else if (name == "atan" && arguments.size() == 2) {
+			name = "atan2";
+		} else if (name == "inverse") {
+			name = _slang_inverse(p_node->get_datatype());
+		} else if (name == "outerProduct") {
+			int size = p_node->get_datatype() - SL::TYPE_MAT2 + 2;
+			String body = "return " + result_type + "(";
+			for (int i = 0; i < size; i++) {
+				if (i) {
+					body += ", ";
+				}
+				body += "a0 * a1[" + itos(i) + "]";
+			}
+			name = _slang_helper(result_type, "godot_outer_product", types, body + ");");
+		} else if (name == "fwidthCoarse" || name == "fwidthFine") {
+			String suffix = name == "fwidthCoarse" ? "_coarse" : "_fine";
+			name = _slang_helper(result_type, "godot_" + name, types, "return abs(ddx" + suffix + "(a0)) + abs(ddy" + suffix + "(a0));");
+		} else if (name == "bitfieldExtract") {
+			name = _slang_helper(result_type, "godot_bitfield_extract", types, "return a2 == 0 ? 0 : (a0 << (32 - a1 - a2)) >> (32 - a2);");
+		} else if (name == "bitfieldInsert") {
+			name = _slang_helper(result_type, "godot_bitfield_insert", types, "uint mask = a3 == 32 ? 0xffffffffu : ((1u << a3) - 1u) << a2; return (a0 & ~mask) | ((a1 << a2) & mask);");
+		} else if (name == "packHalf2x16") {
+			name = _slang_helper(result_type, "godot_pack_half", types, "uint2 bits = f32tof16(a0); return bits.x | (bits.y << 16);");
+		} else if (name == "unpackHalf2x16") {
+			name = _slang_helper(result_type, "godot_unpack_half", types, "return f16tof32(uint2(a0 & 0xffffu, a0 >> 16));");
+		} else if (name.begins_with("packUnorm") || name.begins_with("packSnorm")) {
+			int count = name.ends_with("4x8") ? 4 : 2;
+			int width = 32 / count;
+			bool sign = name.begins_with("packSnorm");
+			String scale = itos((1 << (width - int(sign))) - 1);
+			String body = "int" + itos(count) + " bits = int" + itos(count) + "(round(clamp(a0, " + (sign ? "-1.0" : "0.0") + ", 1.0) * " + scale + ".0)); return ";
+			for (int i = 0; i < count; i++) {
+				if (i) {
+					body += " | ";
+				}
+				body += "((uint(bits[" + itos(i) + "]) & " + itos((1 << width) - 1) + "u) << " + itos(i * width) + ")";
+			}
+			name = _slang_helper(result_type, "godot_" + name, types, body + ";");
+		} else if (name.begins_with("unpackUnorm") || name.begins_with("unpackSnorm")) {
+			int count = name.ends_with("4x8") ? 4 : 2;
+			int width = 32 / count;
+			bool sign = name.begins_with("unpackSnorm");
+			String body = "return clamp(" + result_type + "(";
+			for (int i = 0; i < count; i++) {
+				if (i) {
+					body += ", ";
+				}
+				body += sign ? "(int(a0 << " + itos(32 - (i + 1) * width) + ") >> " + itos(32 - width) + ")" : "((a0 >> " + itos(i * width) + ") & " + itos((1 << width) - 1) + "u)";
+			}
+			body += ") / " + itos((1 << (width - int(sign))) - 1) + ".0, " + (sign ? "-1.0" : "0.0") + ", 1.0);";
+			name = _slang_helper(result_type, "godot_" + name, types, body);
+		} else if (name == "mod") {
+			name = _slang_helper(result_type, "godot_mod", types, "return a0 - a1 * floor(a0 / a1);");
+		} else if (name == "mix") {
+			if (p_node->arguments[3]->get_datatype() >= SL::TYPE_BOOL && p_node->arguments[3]->get_datatype() <= SL::TYPE_BVEC4) {
+				return "select(" + arguments[2] + ", " + arguments[1] + ", " + arguments[0] + ")";
+			}
+			name = "lerp";
+		} else if (name == "matrixCompMult") {
+			return "(" + arguments[0] + " * " + arguments[1] + ")";
+		} else if (name == "not") {
+			return "(!" + arguments[0] + ")";
+		} else {
+			static const char *from[] = { "fract", "inversesqrt", "roundEven", "floatBitsToInt", "floatBitsToUint", "intBitsToFloat", "uintBitsToFloat", "dFdx", "dFdy", "dFdxCoarse", "dFdyCoarse", "dFdxFine", "dFdyFine", "bitfieldReverse", "bitCount", "findLSB", "findMSB" };
+			static const char *to[] = { "frac", "rsqrt", "round", "asint", "asuint", "asfloat", "asfloat", "ddx", "ddy", "ddx_coarse", "ddy_coarse", "ddx_fine", "ddy_fine", "reversebits", "countbits", "firstbitlow", "firstbithigh" };
+			for (uint32_t i = 0; i < sizeof(from) / sizeof(from[0]); i++) {
+				if (name == from[i]) {
+					name = to[i];
+					break;
+				}
+			}
+			static const char *comparisons[] = { "lessThan", "lessThanEqual", "greaterThan", "greaterThanEqual", "equal", "notEqual" };
+			static const char *operators[] = { "<", "<=", ">", ">=", "==", "!=" };
+			for (uint32_t i = 0; i < sizeof(comparisons) / sizeof(comparisons[0]); i++) {
+				if (name == comparisons[i]) {
+					return "(" + arguments[0] + " " + operators[i] + " " + arguments[1] + ")";
+				}
+			}
+		}
+	} else if (p_default_actions.renames.has(callee->name)) {
+		name = p_default_actions.renames[callee->name];
+	} else {
+		name = _mkid(callee->rname);
+	}
+	return name + "(" + String(", ").join(arguments) + ")";
 }
 
 String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, GeneratedCode &r_gen_code, IdentifierActions &p_actions, const DefaultIdentifierActions &p_default_actions, bool p_assigning, bool p_use_scope) {
@@ -587,10 +928,14 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 
 				if (SL::is_sampler_type(uniform.type)) {
 					// Texture layouts are different for OpenGL GLSL and Vulkan GLSL
-					if (!RS::get_singleton()->is_low_end()) {
+					if (actions.target == TARGET_SLANG) {
+						ucode = "[[vk::binding(" + itos(actions.base_texture_binding_index + uniform.texture_binding) + ", " + itos(actions.texture_layout_set) + ")]] ";
+					} else if (!RS::get_singleton()->is_low_end()) {
 						ucode = "layout(set = " + itos(actions.texture_layout_set) + ", binding = " + itos(actions.base_texture_binding_index + uniform.texture_binding) + ") ";
 					}
-					ucode += "uniform ";
+					if (actions.target == TARGET_GLSL) {
+						ucode += "uniform ";
+					}
 				}
 
 				bool is_buffer_global = !SL::is_sampler_type(uniform.type) && uniform.scope == SL::ShaderNode::Uniform::SCOPE_GLOBAL;
@@ -600,6 +945,9 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 					ucode += _typestr(ShaderLanguage::TYPE_UINT);
 				} else {
 					ucode += _prestr(uniform.precision, ShaderLanguage::is_float_type(uniform.type));
+					if (actions.target == TARGET_SLANG && uniform.type >= SL::TYPE_MAT2 && uniform.type <= SL::TYPE_MAT4) {
+						ucode += "row_major ";
+					}
 					ucode += _typestr(uniform.type);
 				}
 
@@ -658,9 +1006,6 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 				p_actions.uniforms->insert(uniform_name, uniform);
 			}
 
-			for (int i = 0; i < max_uniforms; i++) {
-				r_gen_code.uniforms += uniform_defines[i];
-			}
 
 			// add up
 			int offset = 0;
@@ -672,6 +1017,10 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 				}
 
 				r_gen_code.uniform_offsets.push_back(offset);
+				if (actions.target == TARGET_SLANG) {
+					r_gen_code.uniforms += "[[vk::offset(" + itos(offset) + ")]] ";
+				}
+				r_gen_code.uniforms += uniform_defines[i];
 
 				offset += uniform_sizes[i];
 			}
@@ -711,7 +1060,19 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 				String name_str = _mkid(varying_name);
 				uint32_t inc = varying.get_size();
 
-				if (p_default_actions.suppress_varying_io) {
+				if (actions.target == TARGET_SLANG && !p_default_actions.suppress_varying_io) {
+					String declaration = type_str + " " + name_str;
+					if (varying.array_size > 0) {
+						declaration += "[" + itos(varying.array_size) + "]";
+					}
+					declaration += ";\n";
+					String interpolation = varying.interpolation == SL::INTERPOLATION_FLAT ? "nointerpolation " : "";
+					r_gen_code.code["varyings"] += "[[vk::location(" + itos(index) + ")]] " + interpolation + declaration;
+					r_gen_code.stage_globals[STAGE_VERTEX] += "static " + declaration;
+					r_gen_code.stage_globals[STAGE_FRAGMENT] += "static " + declaration;
+					r_gen_code.code["varyings_vertex"] += "stage_output." + name_str + " = " + name_str + ";\n";
+					r_gen_code.code["varyings_fragment"] += name_str + " = stage_input." + name_str + ";\n";
+				} else if (p_default_actions.suppress_varying_io) {
 					// No vertex stage (e.g. RT shaders): emit zero-initialized
 					// globals instead of in/out IO declarations.
 					String decl = type_str + " " + name_str;
@@ -747,7 +1108,7 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 			}
 
 			if (!p_default_actions.suppress_varying_io && var_frag_to_light.size() > 0) {
-				String gcode = "\n\nstruct {\n";
+				String gcode = actions.target == TARGET_SLANG ? "\nstruct GodotFragmentVaryings {\n" : "\n\nstruct {\n";
 				for (const Pair<StringName, SL::ShaderNode::Varying> &E : var_frag_to_light) {
 					gcode += "\t" + _prestr(E.second.precision) + _typestr(E.second.type) + " " + _mkid(E.first);
 					if (E.second.array_size > 0) {
@@ -757,13 +1118,16 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 					}
 					gcode += ";\n";
 				}
-				gcode += "} frag_to_light;\n";
+				gcode += actions.target == TARGET_SLANG ? "};\nstatic GodotFragmentVaryings frag_to_light;\n" : "} frag_to_light;\n";
 				r_gen_code.stage_globals[STAGE_FRAGMENT] += gcode;
 			}
 
 			for (int i = 0; i < pnode->vconstants.size(); i++) {
 				const SL::ShaderNode::Constant &cnode = pnode->vconstants[i];
 				String gcode;
+				if (actions.target == TARGET_SLANG) {
+					gcode += "static ";
+				}
 				gcode += _constr(true);
 				gcode += _prestr(cnode.precision, ShaderLanguage::is_float_type(cnode.type));
 				if (cnode.type == SL::TYPE_STRUCT) {
@@ -988,11 +1352,11 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 						if (u.scope == ShaderLanguage::ShaderNode::Uniform::SCOPE_GLOBAL) {
 							code = actions.base_uniform_string + _mkid(vnode->name); //texture, use as is
 							//global variable, this means the code points to an index to the global table
-							code = _get_global_shader_uniform_from_type_and_index(p_default_actions.global_buffer_array_variable, code, u.type);
+							code = _global_uniform(p_default_actions.global_buffer_array_variable, code, u.type);
 						} else if (u.scope == ShaderLanguage::ShaderNode::Uniform::SCOPE_INSTANCE) {
 							//instance variable, index it as such
 							code = "(" + p_default_actions.instance_uniform_index_variable + "+" + itos(u.instance_index) + "u)";
-							code = _get_global_shader_uniform_from_type_and_index(p_default_actions.global_buffer_array_variable, code, u.type);
+							code = _global_uniform(p_default_actions.global_buffer_array_variable, code, u.type);
 						} else {
 							//regular uniform, index from UBO
 							code = actions.base_uniform_string + _mkid(vnode->name);
@@ -1097,11 +1461,11 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 						if (u.scope == ShaderLanguage::ShaderNode::Uniform::SCOPE_GLOBAL) {
 							code = actions.base_uniform_string + _mkid(anode->name); //texture, use as is
 							//global variable, this means the code points to an index to the global table
-							code = _get_global_shader_uniform_from_type_and_index(p_default_actions.global_buffer_array_variable, code, u.type);
+							code = _global_uniform(p_default_actions.global_buffer_array_variable, code, u.type);
 						} else if (u.scope == ShaderLanguage::ShaderNode::Uniform::SCOPE_INSTANCE) {
 							//instance variable, index it as such
 							code = "(" + p_default_actions.instance_uniform_index_variable + "+" + itos(u.instance_index) + "u)";
-							code = _get_global_shader_uniform_from_type_and_index(p_default_actions.global_buffer_array_variable, code, u.type);
+							code = _global_uniform(p_default_actions.global_buffer_array_variable, code, u.type);
 						} else {
 							//regular uniform, index from UBO
 							code = actions.base_uniform_string + _mkid(anode->name);
@@ -1141,7 +1505,7 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 			SL::ConstantNode *cnode = (SL::ConstantNode *)p_node;
 
 			if (cnode->array_size == 0) {
-				return get_constant_text(cnode->datatype, cnode->values);
+				return _constant_text(cnode->datatype, cnode->values);
 			} else {
 				if (cnode->get_datatype() == SL::TYPE_STRUCT) {
 					code += _mkid(cnode->struct_name);
@@ -1166,6 +1530,46 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 		} break;
 		case SL::Node::NODE_TYPE_OPERATOR: {
 			SL::OperatorNode *onode = (SL::OperatorNode *)p_node;
+			if (actions.target == TARGET_SLANG && (onode->op == SL::OP_CALL || onode->op == SL::OP_CONSTRUCT || onode->op == SL::OP_STRUCT)) {
+				return _dump_slang_call(onode, p_level, r_gen_code, p_actions, p_default_actions, p_assigning);
+			}
+			if (actions.target == TARGET_SLANG && (onode->op == SL::OP_EQUAL || onode->op == SL::OP_NOT_EQUAL) && onode->get_datatype() == SL::TYPE_BOOL) {
+				SL::DataType type = onode->arguments[0]->get_datatype();
+				bool matrix = type >= SL::TYPE_MAT2 && type <= SL::TYPE_MAT4;
+				bool vector = type >= SL::TYPE_BOOL && type <= SL::TYPE_VEC4 && (type - SL::TYPE_BOOL) % 4 != 0;
+				if (matrix || vector) {
+					String left = _dump_node_code(onode->arguments[0], p_level, r_gen_code, p_actions, p_default_actions, false);
+					String right = _dump_node_code(onode->arguments[1], p_level, r_gen_code, p_actions, p_default_actions, false);
+					String result;
+					if (matrix) {
+						String body = "return ";
+						for (int i = 0; i < type - SL::TYPE_MAT2 + 2; i++) {
+							if (i) { body += " && "; }
+							body += "all(a0[" + itos(i) + "] == a1[" + itos(i) + "])";
+						}
+						String helper = _slang_helper("bool", "godot_matrix_equal", { _typestr(type), _typestr(type) }, body + ";");
+						result = helper + "(" + left + ", " + right + ")";
+					} else {
+						result = "all(" + left + " == " + right + ")";
+					}
+					return onode->op == SL::OP_NOT_EQUAL ? "(!" + result + ")" : result;
+				}
+			}
+			if (actions.target == TARGET_SLANG && (onode->op == SL::OP_MUL || onode->op == SL::OP_ASSIGN_MUL)) {
+				SL::DataType left_type = onode->arguments[0]->get_datatype();
+				SL::DataType right_type = onode->arguments[1]->get_datatype();
+				bool left_matrix = left_type >= SL::TYPE_MAT2 && left_type <= SL::TYPE_MAT4;
+				bool right_matrix = right_type >= SL::TYPE_MAT2 && right_type <= SL::TYPE_MAT4;
+				if ((left_matrix || right_matrix) && left_type != SL::TYPE_FLOAT && right_type != SL::TYPE_FLOAT) {
+					String left = _dump_node_code(onode->arguments[0], p_level, r_gen_code, p_actions, p_default_actions, onode->op == SL::OP_ASSIGN_MUL || p_assigning);
+					String right = _dump_node_code(onode->arguments[1], p_level, r_gen_code, p_actions, p_default_actions, p_assigning);
+					if (onode->op == SL::OP_ASSIGN_MUL) {
+						String helper = _slang_helper(_typestr(left_type), "godot_matrix_assign_mul", { "inout " + _typestr(left_type), _typestr(right_type) }, "a0 = mul(a1, a0); return a0;");
+						return helper + "(" + left + ", " + right + ")";
+					}
+					return "mul(" + right + ", " + left + ")";
+				}
+			}
 
 			switch (onode->op) {
 				case SL::OP_ASSIGN:
@@ -1660,6 +2064,13 @@ Error ShaderCompiler::compile(RSE::ShaderMode p_mode, const String &p_code, Iden
 	r_gen_code.uses_depth_texture = false;
 	r_gen_code.uses_normal_roughness_texture = false;
 
+	slang_helper_signatures.clear();
+	slang_helpers = String();
+	if (actions.target == TARGET_SLANG) {
+		_ALLOW_DISCARD_ _slang_inverse(SL::TYPE_MAT2);
+		_ALLOW_DISCARD_ _slang_inverse(SL::TYPE_MAT3);
+		_ALLOW_DISCARD_ _slang_inverse(SL::TYPE_MAT4);
+	}
 	used_name_defines.clear();
 	used_rmode_defines.clear();
 	used_flag_pointers.clear();
@@ -1669,6 +2080,11 @@ Error ShaderCompiler::compile(RSE::ShaderMode p_mode, const String &p_code, Iden
 	function = nullptr;
 	// Return value only relevant within nested calls.
 	_ALLOW_DISCARD_ _dump_node_code(shader, 1, r_gen_code, *p_actions, actions, false);
+	if (actions.target == TARGET_SLANG) {
+		for (int i = 0; i < STAGE_MAX; i++) {
+			r_gen_code.stage_globals[i] = slang_helpers + r_gen_code.stage_globals[i];
+		}
+	}
 
 	return OK;
 }

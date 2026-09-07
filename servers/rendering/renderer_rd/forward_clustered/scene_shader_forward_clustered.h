@@ -31,7 +31,7 @@
 #pragma once
 
 #include "servers/rendering/renderer_rd/pipeline_hash_map_rd.h"
-#include "servers/rendering/renderer_rd/shaders/forward_clustered/scene_forward_clustered.glsl.gen.h"
+#include "servers/rendering/renderer_rd/shaders/forward_clustered/scene_forward_clustered.slang.gen.h"
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
 #include "servers/rendering/rendering_server_types.h"
 
@@ -63,17 +63,9 @@ public:
 		constexpr static uint16_t SHADER_VERSION_DEPTH_PASS_WITH_MATERIAL = 7;
 		constexpr static uint16_t SHADER_VERSION_DEPTH_PASS_WITH_SDF = 8;
 		constexpr static uint16_t SHADER_VERSION_RTXDI_SURFACE = 9;
-		constexpr static uint16_t SHADER_VERSION_COLOR_PASS = 10;
+		constexpr static uint16_t SHADER_VERSION_COUNT = 10;
 	};
 
-	enum ShaderColorPassFlags {
-		SHADER_COLOR_PASS_FLAG_UBERSHADER = 1 << 0,
-		SHADER_COLOR_PASS_FLAG_SEPARATE_SPECULAR = 1 << 1,
-		SHADER_COLOR_PASS_FLAG_LIGHTMAP = 1 << 2,
-		SHADER_COLOR_PASS_FLAG_MULTIVIEW = 1 << 3,
-		SHADER_COLOR_PASS_FLAG_MOTION_VECTORS = 1 << 4,
-		SHADER_COLOR_PASS_FLAG_COUNT = 1 << 5
-	};
 
 	enum PipelineVersion {
 		PIPELINE_VERSION_DEPTH_PASS,
@@ -86,19 +78,9 @@ public:
 		PIPELINE_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_MULTIVIEW,
 		PIPELINE_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_AND_VOXEL_GI_MULTIVIEW,
 		PIPELINE_VERSION_RTXDI_SURFACE,
-		PIPELINE_VERSION_COLOR_PASS,
 		PIPELINE_VERSION_MAX
 	};
 
-	enum PipelineColorPassFlags {
-		PIPELINE_COLOR_PASS_FLAG_TRANSPARENT = 1 << 0, // Can't combine with SEPARATE_SPECULAR.
-		PIPELINE_COLOR_PASS_FLAG_SEPARATE_SPECULAR = 1 << 1, // Can't combine with TRANSPARENT.
-		PIPELINE_COLOR_PASS_FLAG_LIGHTMAP = 1 << 2,
-		PIPELINE_COLOR_PASS_FLAG_MULTIVIEW = 1 << 3,
-		PIPELINE_COLOR_PASS_FLAG_MOTION_VECTORS = 1 << 4,
-		PIPELINE_COLOR_PASS_FLAG_OPTIONS = 5,
-		PIPELINE_COLOR_PASS_FLAG_COMBINATIONS = 1 << PIPELINE_COLOR_PASS_FLAG_OPTIONS,
-	};
 
 	struct ShaderSpecialization {
 		union {
@@ -196,7 +178,6 @@ public:
 			RD::PolygonCullMode cull_mode = RD::POLYGON_CULL_MAX;
 			RSE::PrimitiveType primitive_type = RSE::PRIMITIVE_MAX;
 			PipelineVersion version = PipelineVersion::PIPELINE_VERSION_MAX;
-			uint32_t color_pass_flags = 0;
 			ShaderSpecialization shader_specialization = {};
 			uint32_t wireframe = false;
 			uint32_t ubershader = false;
@@ -207,7 +188,6 @@ public:
 				h = hash_murmur3_one_32(cull_mode, h);
 				h = hash_murmur3_one_32(primitive_type, h);
 				h = hash_murmur3_one_32(version, h);
-				h = hash_murmur3_one_32(color_pass_flags, h);
 				h = hash_murmur3_one_32(shader_specialization.packed_0, h);
 				h = hash_murmur3_one_32(shader_specialization.packed_1, h);
 				h = hash_murmur3_one_32(shader_specialization.packed_2, h);
@@ -222,7 +202,7 @@ public:
 
 		RID version;
 
-		static const uint32_t VERTEX_INPUT_MASKS_SIZE = ShaderVersion::SHADER_VERSION_COLOR_PASS * 2 + SHADER_COLOR_PASS_FLAG_COUNT;
+		static const uint32_t VERTEX_INPUT_MASKS_SIZE = ShaderVersion::SHADER_VERSION_COUNT * 2;
 		std::atomic<uint64_t> vertex_input_masks[VERTEX_INPUT_MASKS_SIZE] = {};
 
 		Vector<ShaderCompiler::GeneratedCode::Texture> texture_uniforms;
@@ -295,6 +275,10 @@ public:
 		// RT Classification. Lazily allocated only when the shader has `#if defined(RT)` divergence.
 		struct RTClassification {
 			String code;
+			HashMap<StringName, ShaderLanguage::ShaderNode::Uniform> uniforms;
+			Vector<uint32_t> uniform_offsets;
+			Vector<ShaderCompiler::GeneratedCode::Texture> texture_uniforms;
+			uint32_t uniform_total_size = 0;
 			DepthDraw depth_draw = DEPTH_DRAW_OPAQUE;
 			DepthTest depth_test = DEPTH_TEST_ENABLED;
 			int blend_mode = BLEND_MODE_MIX;
@@ -366,11 +350,11 @@ public:
 		virtual bool casts_shadows() const override;
 		virtual RenderingServerTypes::ShaderNativeSourceCode get_native_source_code() const override;
 		virtual Pair<ShaderRD *, RID> get_native_shader_and_version() const override;
-		uint16_t _get_shader_version(PipelineVersion p_pipeline_version, uint32_t p_color_pass_flags, bool p_ubershader) const;
+		uint16_t _get_shader_version(PipelineVersion p_pipeline_version, bool p_ubershader) const;
 		RID _get_shader_variant(uint16_t p_shader_version) const;
 		void _clear_vertex_input_mask_cache();
-		RID get_shader_variant(PipelineVersion p_pipeline_version, uint32_t p_color_pass_flags, bool p_ubershader) const;
-		uint64_t get_vertex_input_mask(PipelineVersion p_pipeline_version, uint32_t p_color_pass_flags, bool p_ubershader);
+		RID get_shader_variant(PipelineVersion p_pipeline_version, bool p_ubershader) const;
+		uint64_t get_vertex_input_mask(PipelineVersion p_pipeline_version, bool p_ubershader);
 		RD::PolygonCullMode get_cull_mode_from_cull_variant(CullVariant p_cull_variant);
 		bool is_valid() const;
 

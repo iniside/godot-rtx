@@ -1,0 +1,298 @@
+STEP2 evidence, recorded 2026-09-07 13:05 UTC
+Temporary root: C:\Users\lukas\AppData\Local\Temp\godot-shader-unification-20260907
+
+
+--- step2-editor-final-build.log ---
+scons: done reading SConscript files.
+scons: Building targets ...
+Compiling servers\rendering\shader_compiler.cpp ...
+Linking Static Library bin\obj\servers\servers.windows.editor.x86_64.lib ...
+Linking Program bin\godot.windows.editor.x86_64.exe ...
+Linking Program bin\godot.windows.editor.x86_64.console.exe ...
+scons: done building targets.
+INFO: Time elapsed: 00:00:26.22
+
+--- native-spatial-final-diagnostics.log ---
+native-surface-vertex compile 0
+validate 0
+native-surface-fragment compile 0
+validate 0
+native-surface_features-vertex compile 0
+validate 0
+native-surface_features-fragment compile 0
+validate 0
+native-surface_double_multiview-vertex compile 0
+validate 0
+native-surface_double_multiview-fragment compile 0
+validate 0
+native-surface_trails-vertex compile 0
+validate 0
+native-surface_trails-fragment compile 0
+validate 0
+native-surface_points-vertex compile 0
+validate 0
+native-surface_points-fragment compile 0
+validate 0
+native-surface_world-vertex compile 0
+validate 0
+native-surface_world-fragment compile 0
+validate 0
+native-surface_skip-vertex compile 0
+validate 0
+native-surface_skip-fragment compile 0
+validate 0
+native-depth-vertex compile 0
+validate 0
+native-depth-fragment compile 0
+validate 0
+native-depth_material-vertex compile 0
+validate 0
+native-depth_material-fragment compile 0
+validate 0
+native-depth_shadow-vertex compile 0
+validate 0
+native-depth_shadow-fragment compile 0
+validate 0
+native-depth_normal-vertex compile 0
+validate 0
+native-depth_normal-fragment compile 0
+validate 0
+native-depth_sdf-vertex compile 0
+validate 0
+native-depth_sdf-fragment compile 0
+validate 0
+native-depth_sdf_no_atomics-vertex compile 0
+validate 0
+native-depth_sdf_no_atomics-fragment compile 0
+validate 0
+native-depth_custom-vertex compile 0
+validate 0
+native-depth_custom-fragment compile 0
+validate 0
+
+
+--- step2-native-production-api-final.log ---
+Godot Engine v4.8.dev.custom_build.6f6214038 (2026-09-07 12:21:04 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpDemoteToHelperInvocation is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+
+DIAG identity 1/4206592/67072/slang/2026.13.1/fa1c9bcab2cdcd3626f7a1e250dd35d606c1b84745b64627f1dd63fca3746a70/embedded-spirv-v1/0/1/0/0/74f9d377ba30ec5df53f8e5ff0bbea1f31bbfa97ef9f27909b5076a067f31eef/1/1/1/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605
+DIAG stages 1
+DIAG bytes 38400
+
+
+--- step2-matrix-run.log ---
+Godot Engine v4.8.dev.custom_build.6f6214038 (2026-09-07 12:21:04 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+
+MATRIX compiler 0/4198400/66560/glslang/godot/1/1/0/2/0bca49dd42060ec02606d2c2eda5a2836fa811b155f862baae18e5f6b8f9b255/0/0/0/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605
+MATRIX stages 1
+MATRIX SPIRV 7872 container 1416
+MATRIX readback 400 input bytes 384
+MATRIX compiler 1/4206592/67072/slang/2026.13.1/fa1c9bcab2cdcd3626f7a1e250dd35d606c1b84745b64627f1dd63fca3746a70/embedded-spirv-v1/0/1/0/0/f79f5863681dd01201477136a819403fb448b53c8744fd319a4424904fc01a0a/1/1/0/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605/0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605
+MATRIX stages 1
+MATRIX SPIRV 11088 container 2100
+MATRIX readback 400 input bytes 384
+MATRIX GLSL model-vector 6.324999809 -8.574999809 15.437500000 1.000000000
+MATRIX SLANG model-vector 6.324999809 -8.574999809 15.437500000 1.000000000
+MATRIX GLSL vector-model 1.375000000 -3.925000191 7.574999809 26.250000000
+MATRIX SLANG vector-model 1.375000000 -3.925000191 7.574999809 26.250000000
+MATRIX GLSL view-model-vector 7.719999313 -13.886249542 5.831249237 1.000000000
+MATRIX SLANG view-model-vector 7.719999313 -13.886249542 5.831249237 1.000000000
+MATRIX GLSL projection-view-model-vector 9.119311333 -24.189748764 -6.149874210 -5.831249237
+MATRIX SLANG projection-view-model-vector 9.119311333 -24.189748764 -6.149874210 -5.831249237
+MATRIX GLSL composite-column0 2.118749857 1.379999995 -0.229499996 -0.224999994
+MATRIX SLANG composite-column0 2.118749857 1.379999995 -0.229499996 -0.224999994
+MATRIX GLSL composite-column1 -0.193000004 5.783000946 -1.009800076 -0.990000069
+MATRIX SLANG composite-column1 -0.193000004 5.783000946 -1.009800076 -0.990000069
+MATRIX GLSL composite-column2 1.506999969 -2.993000031 -3.825000048 -3.750000000
+MATRIX SLANG composite-column2 1.506999969 -2.993000031 -3.825000048 -3.750000000
+MATRIX GLSL composite-column3 4.275000095 -12.010001183 0.410000086 0.600000381
+MATRIX SLANG composite-column3 4.275000095 -12.010001183 0.410000086 0.600000381
+MATRIX GLSL inverse-model-roundtrip 0.750000477 -1.250000000 1.999999881 1.000000000
+MATRIX SLANG inverse-model-roundtrip 0.750000477 -1.250000000 1.999999881 1.000000000
+MATRIX GLSL inverse-composite-roundtrip 0.749998808 -1.250004172 2.000000238 0.999998391
+MATRIX SLANG inverse-composite-roundtrip 0.749998808 -1.250004172 2.000000238 0.999998391
+MATRIX GLSL normal-matrix 0.414167225 -0.422622859 0.531908095 0.000000000
+MATRIX SLANG normal-matrix 0.414167225 -0.422622859 0.531908095 0.000000000
+MATRIX GLSL basis-vector 1.325000048 -2.575000048 8.437500000 0.000000000
+MATRIX SLANG basis-vector 1.325000048 -2.575000048 8.437500000 0.000000000
+MATRIX GLSL transpose-model-vector 1.375000000 -3.925000191 7.574999809 26.250000000
+MATRIX SLANG transpose-model-vector 1.375000000 -3.925000191 7.574999809 26.250000000
+MATRIX GLSL constructed-model 6.324999809 -8.574999809 15.437500000 1.000000000
+MATRIX SLANG constructed-model 6.324999809 -8.574999809 15.437500000 1.000000000
+MATRIX GLSL scalar-diagonal 1.875000000 -3.125000000 5.000000000 2.500000000
+MATRIX SLANG scalar-diagonal 1.875000000 -3.125000000 5.000000000 2.500000000
+MATRIX GLSL array0-vector 6.324999809 -8.574999809 15.437500000 1.000000000
+MATRIX SLANG array0-vector 6.324999809 -8.574999809 15.437500000 1.000000000
+MATRIX GLSL array1-vector -1.625000000 -0.224999905 -2.775000095 1.000000000
+MATRIX SLANG array1-vector -1.625000000 -0.224999905 -2.775000095 1.000000000
+MATRIX GLSL array-product-vector 1.405000210 -8.597499847 -4.461250305 1.000000000
+MATRIX SLANG array-product-vector 1.405000210 -8.597499847 -4.461250305 1.000000000
+MATRIX GLSL inverse-basis-column0 0.513933241 -0.080833867 -0.036162522 0.000000000
+MATRIX SLANG inverse-basis-column0 0.513933241 -0.080833867 -0.036162522 0.000000000
+MATRIX GLSL inverse-basis-column1 -0.051903855 0.339289516 0.020208469 0.000000000
+MATRIX SLANG inverse-basis-column1 -0.051903855 0.339289516 0.020208469 0.000000000
+MATRIX GLSL inverse-basis-column2 -0.007657946 -0.031908106 0.248883218 0.000000000
+MATRIX SLANG inverse-basis-column2 -0.007657946 -0.031908106 0.248883218 0.000000000
+MATRIX GLSL mat2-vector 1.125000000 -3.375000000 0.000000000 0.000000000
+MATRIX SLANG mat2-vector 1.125000000 -3.375000000 0.000000000 0.000000000
+MATRIX GLSL vector-mat2 0.875000000 -3.525000095 0.000000000 0.000000000
+MATRIX SLANG vector-mat2 0.875000000 -3.525000095 0.000000000 0.000000000
+MATRIX GLSL basis-mat4-constructor 1.325000048 -2.575000048 8.437500000 1.000000000
+MATRIX SLANG basis-mat4-constructor 1.325000048 -2.575000048 8.437500000 1.000000000
+MATRIX GLSL packed-affine-reconstruction 6.324999809 -8.574999809 15.437500000 1.000000000
+MATRIX SLANG packed-affine-reconstruction 6.324999809 -8.574999809 15.437500000 1.000000000
+MATRIX observed maximum absolute difference 0.000000000
+
+
+--- step2-matrix-validation.log ---
+step2-matrix-original.glsl spirv-val exit 0
+
+OpDecorate %_arr_mat4v4float_uint_2 ArrayStride 64
+OpMemberDecorate %Inputs 0 ColMajor
+OpMemberDecorate %Inputs 0 MatrixStride 16
+OpMemberDecorate %Inputs 0 Offset 0
+OpMemberDecorate %Inputs 1 ColMajor
+OpMemberDecorate %Inputs 1 MatrixStride 16
+OpMemberDecorate %Inputs 1 Offset 64
+OpMemberDecorate %Inputs 2 ColMajor
+OpMemberDecorate %Inputs 2 MatrixStride 16
+OpMemberDecorate %Inputs 2 Offset 128
+OpMemberDecorate %Inputs 3 Offset 192
+OpMemberDecorate %Inputs 4 ColMajor
+OpMemberDecorate %Inputs 4 MatrixStride 16
+OpMemberDecorate %Inputs 4 Offset 208
+OpMemberDecorate %Inputs 5 ColMajor
+OpMemberDecorate %Inputs 5 MatrixStride 16
+OpMemberDecorate %Inputs 5 Offset 336
+OpDecorate %_runtimearr_v4float ArrayStride 16
+NoContraction 0
+step2-matrix-native.slang spirv-val exit 0
+
+OpDecorate %_arr_mat4v4float_int_2 ArrayStride 64
+OpMemberDecorate %_Array_std140_matrix_float_4_4_2 0 Offset 0
+OpMemberDecorate %_Array_std140_matrix_float_4_4_2 0 ColMajor
+OpMemberDecorate %_Array_std140_matrix_float_4_4_2 0 MatrixStride 16
+OpMemberDecorate %Inputs_std140 0 Offset 0
+OpMemberDecorate %Inputs_std140 0 ColMajor
+OpMemberDecorate %Inputs_std140 0 MatrixStride 16
+OpMemberDecorate %Inputs_std140 1 Offset 64
+OpMemberDecorate %Inputs_std140 1 ColMajor
+OpMemberDecorate %Inputs_std140 1 MatrixStride 16
+OpMemberDecorate %Inputs_std140 2 Offset 128
+OpMemberDecorate %Inputs_std140 2 ColMajor
+OpMemberDecorate %Inputs_std140 2 MatrixStride 16
+OpMemberDecorate %Inputs_std140 3 Offset 192
+OpMemberDecorate %Inputs_std140 4 Offset 208
+OpMemberDecorate %Inputs_std140 5 Offset 336
+OpMemberDecorate %Inputs_std140 5 ColMajor
+OpMemberDecorate %Inputs_std140 5 MatrixStride 16
+OpDecorate %_runtimearr_v4float ArrayStride 16
+OpDecorate %_ptr_StorageBuffer_v4float ArrayStride 16
+NoContraction 19
+READBACK SHA256 9f8563e6f8274997b8678ed20699cb83365944663127a03f0fab14b34f215951 9f8563e6f8274997b8678ed20699cb83365944663127a03f0fab14b34f215951
+
+
+--- step2-gallery-o0 ---
+Godot Engine v4.8.dev.custom_build.6f6214038 (2026-09-07 12:21:04 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Streamline - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+MANUAL_DEMO preset=gallery light=all binary={ "major": 4, "minor": 8, "patch": 0, "hex": 264192, "status": "dev", "build": "custom_build", "hash": "6f62140386d50bd120e133dd5ff2fa2f0ac619a7", "timestamp": 1788783664, "string": "4.8-dev (custom_build)" } renderer=forward_plus driver=vulkan size=(1280.0, 720.0)
+MANUAL_CAPTURE path=C:\Users\lukas\AppData\Local\Temp\godot-shader-unification-20260907/step2-gallery-o0.png result=0 frame=331 gpu_ms=0.74599999189377
+MANUAL_MEMORY total=455279712.0 textures=358057984.0 buffers=84274798.0
+ERROR diagnostics: 0
+
+
+--- step2-shadows ---
+Godot Engine v4.8.dev.custom_build.6f6214038 (2026-09-07 12:21:04 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Streamline - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+MANUAL_SHADOWS columns=back/front/disabled/double-sided/mirrored/negative-local-MultiMesh rows=up/down mm_threshold=65536
+MANUAL_DEMO preset=shadows light=directional binary={ "major": 4, "minor": 8, "patch": 0, "hex": 264192, "status": "dev", "build": "custom_build", "hash": "6f62140386d50bd120e133dd5ff2fa2f0ac619a7", "timestamp": 1788783664, "string": "4.8-dev (custom_build)" } renderer=forward_plus driver=vulkan size=(1280.0, 720.0)
+MANUAL_CAPTURE path=C:\Users\lukas\AppData\Local\Temp\godot-shader-unification-20260907/step2-shadows.png result=0 frame=338 gpu_ms=1.55099999904633
+MANUAL_MEMORY total=374515920.0 textures=279158784.0 buffers=83268676.0
+ERROR diagnostics: 0
+
+
+--- step2-emitter-final ---
+Godot Engine v4.8.dev.custom_build.6f6214038 (2026-09-07 12:21:04 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Streamline - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+MANUAL_DEMO preset=gallery light=all binary={ "major": 4, "minor": 8, "patch": 0, "hex": 264192, "status": "dev", "build": "custom_build", "hash": "6f62140386d50bd120e133dd5ff2fa2f0ac619a7", "timestamp": 1788783664, "string": "4.8-dev (custom_build)" } renderer=forward_plus driver=vulkan size=(1280.0, 720.0)
+STEP2_MATERIAL_RELOADED
+MANUAL_CAPTURE path=C:\Users\lukas\AppData\Local\Temp\godot-shader-unification-20260907/step2-emitter-final.png result=0 frame=439 gpu_ms=1.16100001335144
+MANUAL_MEMORY total=571490368.0 textures=358058496.0 buffers=135473946.0
+ERROR diagnostics: 0
+
+SHA256 step2-native-production.slang.api.spv 3bef3d0217ac6d45c497df7e875572688b96f6c260e04ca522d549270b733e4d
+
+SHA256 step2-native-production-api-final.spvasm 230d7cf5860d69e30267ff7ebb4daeeabbf3f27c1a4c54950dc51736bfd7bb3e
+
+SHA256 step2_diagnostic.exe f909e31c2f44077ecfd10c2eaafeec4685bc0b53839181c93cb6cc9449596c1f
+
+SHA256 step2-emitter.gd cdb871c762cd3c1918bbdbfd9f841978e066d5ef3218264a014b1cda8bc9ac68
+
+SHA256 step2-emitter.gdshader 521b5308316f0f26c62e1cf0f5b410163920c460285bd09dda612ceb21d59211
+
+SHA256 step2-gallery-o0.png 3ccda7a5e3e15dccafa5145e80d4d94589dd0321040ea6f886f99379f63c6cca
+
+SHA256 step2-shadows.png 359939df114b02164d9f1acf6e3338956f490b31e4fc3fd94b4d5d588e23e9eb
+
+SHA256 step2-emitter-final.png a41884cd6badc8672a3e794b2dc48b6c3e69fbe8191e825d59762890dceb0cf5
+
+SHA256 step2-matrix-artifacts.json 2e37ec02a58d5f875cd6157a61871df0fb86e51e6b45e3d0ef4eba78023de249
+
+Final editor executable SHA256 6c8156d0e6d41159fc813612090dfb545cf416ee5957a98bad117c59d62cd0d6
+
+--- step2-template-build.log ---
+Compiling thirdparty\msdfgen\core\shape-description.cpp ...
+Linking Static Library bin\obj\modules\msdfgen\msdfgen_builtin.windows.template_release.x86_64.lib ...
+Linking Static Library bin\obj\modules\freetype\freetype_builtin.windows.template_release.x86_64.lib ...
+Linking Static Library bin\obj\core\core.windows.template_release.x86_64.lib ...
+Linking Program bin\godot.windows.template_release.x86_64.exe ...
+Linking Program bin\godot.windows.template_release.x86_64.console.exe ...
+scons: done building targets.
+INFO: Time elapsed: 00:04:30.33
+Template executable SHA256 fd9436a0b761f3cb2e114dbb8668ce30301567feabee862240a89305704e06b0
+Source patch SHA256 d90019c4afa2d935792330a27c52f7b4659e63af235bf5bb04ad501b7b260dfd
+Source paths in patch:
+modules/slang/shader_compile.cpp
+servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.cpp
+servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h
+servers/rendering/renderer_rd/forward_clustered/scene_shader_forward_clustered.cpp
+servers/rendering/renderer_rd/forward_clustered/scene_shader_forward_clustered.h
+servers/rendering/renderer_rd/shader_rd.cpp
+servers/rendering/renderer_rd/shader_rd.h
+servers/rendering/renderer_rd/shaders/decal_data_inc.slang
+servers/rendering/renderer_rd/shaders/forward_clustered/scene_forward_clustered.glsl
+servers/rendering/renderer_rd/shaders/forward_clustered/scene_forward_clustered.slang
+servers/rendering/renderer_rd/shaders/forward_clustered/scene_forward_clustered_inc.glsl
+servers/rendering/renderer_rd/shaders/forward_clustered/scene_forward_clustered_inc.slang
+servers/rendering/renderer_rd/shaders/oct_inc.slang
+servers/rendering/renderer_rd/shaders/scene_data_inc.slang
+servers/rendering/renderer_rd/shaders/scene_forward_aa_inc.slang
+servers/rendering/renderer_rd/shaders/surface_data_inc.slang
+servers/rendering/rendering_device.cpp
+servers/rendering/rendering_shader_compile_request.h
+servers/rendering/shader_compiler.cpp
+servers/rendering/shader_compiler.h

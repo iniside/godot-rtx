@@ -17,6 +17,9 @@ struct RenderingShaderCompileRequest {
 	HashMap<String, String> includes;
 	bool column_major = true;
 	bool gl_layout = true;
+	bool preserve_parameters = false;
+	bool precise_float = false;
+	bool invariant_position = false;
 	bool debug_info = false;
 	int optimization_level = 2;
 
