@@ -1,83 +1,131 @@
 # DDGI / PT / RR implementation status
 
 Owner approval: "implementuj plan", 2026-09-07 UTC.
-Approved [plan](../plans/2026-09-07-1635-ddgi-pt-rr-plan.md) committed separately
-as `00f73fb82f52e6244124293b5061c7f36d035487` before implementation.
+Approved [plan](../plans/2026-09-07-1635-ddgi-pt-rr-plan.md), committed separately
+as `00f73fb82f52e6244124293b5061c7f36d035487`.
 Whole-task baseline: `381c36eec7d7e0d5c9111be366a3a0ae78cdadd3`.
-Research: [current integration summary](2026-09-07-1635-ddgi-pt-rr-integration-summary.md).
+[Integration research](2026-09-07-1635-ddgi-pt-rr-integration-summary.md).
 
 ## Required outcome
 
 Hybrid RTXDI + automatically created camera-following DDGI from its first
-working version; shared native Slang hit materials and RT scene; optional
-true camera-ray PT with raw progressive reference; NRD/RR selection and retained
-DLSS SR; complete settings, resource/history ownership, real Vulkan validation
-and effective DLSS model provenance. The approved exclusions and validation
-matrix remain in the plan. Automated tests are not authorized.
+working version; shared native Slang hit materials and RT scene; optional true
+camera-ray PT with raw progressive reference; NRD/RR selection and retained
+DLSS SR; scene settings, resource/history ownership, real Vulkan validation and
+DLSS model provenance. Preserve the full plan's exclusions and validation matrix.
+Automated tests are not authorized. The full implementation is not complete.
 
 ## Sequence
 
 | Step | Status | Commit / evidence |
 |---|---|---|
-| 1. Public settings and per-buffer ownership | Committed; fresh round 1 PASS | `8aa9a77747340a8581c0b655e1d67d7eda1b6f2d`; ordinary editor build passed |
-| 2. Common RT coordinates and temporal basis | Delegated implementation running | Starts at `8aa9a77747`; context `ddgi_step2` |
-| 3. Shared native RT hit materials | Pending | Depends on step 2 |
+| 1. Public settings and per-buffer ownership | Source review PASS | `8aa9a77747`; ordinary editor builds |
+| 2. Common RT coordinates and temporal basis | Final round 2 source PASS and proof PASS | `eecc668b45` + correction `28dbaa3dd2` |
+| 3. Shared native RT hit materials | Implementation running | Baseline `28dbaa3dd2`; context `ddgi_step3` |
 | 4. Pinned DDGI import and moving cascades | Pending | Depends on step 3 |
 | 5. DDGI lighting and hybrid composition | Pending | Depends on step 4 |
 | 6. True camera-ray PT | Pending | Depends on step 5 |
 | 7. RR / DLSS lifecycle and composition | Pending | Depends on camera producers |
 | 8. Integrated real-device validation and documentation | Pending | Full plan matrix |
 
-Step 1 was assigned to a fresh core-implementer context, Astra high selected for
-cross-file API and resource/history ownership. It owned only the step's source
-and ClassDB/XML surface; parent owns this status and maintained project index.
-An independent read-only context completed the official DLSS 4.5 package
-delivery investigation; provenance and the SR/RR model distinction are recorded
-in the linked integration research. No driver/App change or unofficial payload
-is authorized.
+## Step 1 evidence
 
-Step 1 commit contains 21 owned files, including explicit scenario-change
-render-buffer reconfiguration in `renderer_viewport.cpp`. No RenderDataRD
-signature change or shader/algorithm resource was added. XML parsing and
-`git diff --check` passed according to the writer; fresh source review passed.
-Both ordinary editor builds completed with exit 0 using
+Frozen `8aa9a77747340a8581c0b655e1d67d7eda1b6f2d`, baseline `00f73fb82f`:
+21 source/XML files add ten Environment controls, enum/server/storage closure,
+per-buffer history ownership and scenario-change render-buffer teardown.
+Fresh `ddgi_step1_review_r1` returned PASS against the exact commit and both
+step/whole cumulative ranges. Classes 1-9 were checked using clangd, source/XML,
+history and bounded textual inventories. No concrete defect was found.
+
+Ordinary editor/console builds completed with
 `scons platform=windows target=editor accesskit=no d3d12=no -j16`.
 Logs: `C:/Users/lukas/AppData/Local/Temp/ddgi-step1-editor-build.log` and
-`C:/Users/lukas/AppData/Local/Temp/ddgi-step1-editor-final-build.log`.
-The parent inspected the frozen commit and final log ending in successful
-target completion (elapsed 00:01:04.21). Fresh read-only reviewer
-`ddgi_step1_review_r1` reviewed the exact commit, step baseline `00f73fb82f`
-and whole-task baseline `381c36eec7`, returning PASS with no concrete defect.
-The reviewer checked all ten properties and enum/XML closure, shared nonvirtual
-server propagation, range validation, per-buffer epochs and scenario cleanup.
-Applicable classes 1-9 were examined using clangd, source/XML, history and bounded
-text inventories. Save/reload, separate rendering thread, template/double axes
-and GPU execution remain unverified; build logs do not independently establish
-the binary hash-to-commit relationship.
+`ddgi-step1-editor-final-build.log` in the same directory; final elapsed 1:04.21.
+Interactive save/reload, scenario switching and new GPU behavior were not proved.
 
-Step 2 is assigned to a fresh core-implementer, Astra high for coordinate
-precision and temporal contracts. It owns the complete RT-origin conversion,
-current/previous coordinate consumers and scene-mutation generation/invalidation
-work specified by the approved plan. Ordinary and double compiler validation
-are requested; no automated tests or new demonstration fixtures are authorized.
+## Step 2 implementation and review
 
-## Verification boundary
+Step baseline `8aa9a77747340a8581c0b655e1d67d7eda1b6f2d`.
+Initial commit `eecc668b454a2239165a1273e78b0e6f260b08e0` added RT-relative
+camera/AS/light/motion packing, previous MultiMesh positions and scene generations.
+Parent documentation commit `7db5d592e0` was interposed without source changes.
 
-Initial machine inspection on 2026-09-07: `nvidia-smi` reports RTX 4090,
-driver 616.64 and 24,564 MiB VRAM. Ordinary/double editors and template binaries
-exist from earlier work; they are not evidence of this implementation. No
-running Godot process was observed at that inspection. No driver was changed.
+Fresh round 1 source review rejected four concrete defects:
 
-The approved plan passed fresh final round 2 review. Step 1 passed its bounded
-source review; no new runtime result is claimed. Each completed
-step is committed and reviewed against its exact frozen commit plus cumulative
-task changes before dependent implementation continues. Final completion also
-requires the plan's real-device, export, history and mode validation.
+- Previous-position buffer capacity was coupled to the combined position/TBN
+  capacity. A 48-to-72-byte previous-position requirement could retain 48 bytes
+  while the combined allocation remained sufficient (`render_raytracing.cpp:2347`
+  at the rejected commit; merge shader writes at `multimesh_merge.glsl:134`).
+- Storage-wide material/texture generations invalidated unrelated worlds and
+  static viewports (`render_raytracing.cpp:3218`).
+- Blanket frame hashing invalidated frozen TextureRD/ViewportTexture producers
+  and projector/sky inputs (`:3227`, `:3360`, `sky.cpp:1001`).
+- Raster-only time metadata missed TIME used exclusively in an RT variant
+  (`render_raytracing.cpp:2917`, `scene_shader_forward_clustered.cpp:333`).
+
+Correction `28dbaa3dd258fc1b372d8fb83784988c8c27aa64` modifies 14 files;
+cumulative Step 2 covers 28 source files. Independent previous-position capacity,
+relevant material/uniform/texture snapshots, RDG backing-resource write stamps,
+and selected RT TIME/PREV_TIME metadata replace the defective paths. Root aliases
+share write identity; read/bind operations and descriptor rebuilds do not create
+content changes. CPU origin subtraction precedes float packing; raster SceneData
+and public shader world semantics remain intact. Ordinary camera motion preserves
+DDGI history; basis shifts explicitly invalidate screen history.
+
+Fresh final `ddgi_step2_review_r2` returned PASS, examining the correction,
+initial commit, step cumulative and whole-task cumulative ranges. Classes 1-9
+covered bindings, resource capacity/lifetime, RD command coverage, shader layout,
+precision/build wiring, threads, compatibility and removed obsolete paths.
+No concrete remaining source defect was found.
+
+## Step 2 proof
+
+Evidence directory:
+`C:/Users/lukas/AppData/Local/Temp/godot-ddgi-step2-20260907/round1-fix`.
+`provenance.json`, `correction.diff` and `step2-cumulative.diff` retain identity.
+Fresh `ddgi_step2_proof_r2` returned PASS after matching all 28 frozen source
+hashes, 93 artifact hashes, both diffs and generated shader inputs.
+
+| Validation | Retained result |
+|---|---|
+| Ordinary editor, `scons platform=windows target=editor accesskit=no d3d12=no -j16` | Exit 0; SCons 41.40 s; `editor-single.log` and receipt |
+| Same command with `precision=double` | Exit 0; SCons 44.13 s; `editor-double.log` and receipt |
+| Sixteen DI pass/precision/radiance-layout permutations | Nonempty SPIR-V/container pairs; valid RTX 4090 Vulkan shader/pipeline RIDs; `shaders/run.log` |
+| Sixteen DI SPIR-V validations | Individual commands/exits/stdout/stderr, all exit 0; `shaders/spirv-validation.json` |
+| Indexed/nonindexed merged-MultiMesh compiler and validator | Four exact command receipts, all exit 0; `merge-receipts.json` |
+| RT frame constant layout | All 16 artifacts: binding 45, set 0, offsets 0/48, float4[3] stride 16; CPU size 96/alignment 16 |
+
+Before/after build hashes match final sources. The initial corrective C2662
+const-getter failure remains archived separately and was fixed before successful
+builds. The first proof audit rejected missing independent merge-validator
+receipts; the fresh corrective receipts close that finding. The historical
+standalone-container exit alone is insufficient: actual nonempty artifacts and
+separate validator receipts were checked. Existing re-spirv unsupported-operation
+and material-envelope messages remain recorded; no error-free image is claimed.
+
+## Active step and remaining boundaries
+
+Step 3 has a fresh core-implementer, Astra high selected for native Slang
+hit-material generation, shared shading/decal parity and pipeline/SBT lifetime.
+It owns the complete approved Step 3 source/build surface. Disjoint helpers may
+assist under that owner's integration; parent owns status and maintained facts.
+No automated tests or unrelated features are authorized.
+
+Compiler diagnostics and pipeline creation do not establish dispatched images,
+moving-origin history, translated scenes near 1e8, the MultiMesh transition on
+GPU, lifecycle execution, template/export or final DDGI/PT/RR behavior. These
+remain obligations in Step 8. Native writes outside every RD command remain
+outside the observable resource-generation boundary; no per-frame fallback exists.
+
+Initial machine inspection: RTX 4090, driver 616.64, 24,564 MiB VRAM. No driver
+or NVIDIA App changes were made. Official DLSS delivery findings and the SR/RR
+model distinction are in the integration research; exact shipping model/runtime
+selection must still be verified during the later integration.
 
 ## Worktree preservation
 
-At task start the staged set was empty. Pre-existing owner changes include
-`demos/rtxdi_manual/project.godot`, maintained direction/project-state documents,
-the earlier DDGI research correction, and untracked game assets/older research.
-Only the approved plan was staged for the plan commit. Do not stage unrelated
-dirty documents or content wholesale in an implementation commit.
+Work remains on the current branch. Pre-existing changes in the demonstration
+project, project-state/direction documents, older research and untracked game
+assets remain separate. Each source writer stages only owned files; source
+staging was empty after both completed steps. No worktree, stash, discard/reset,
+generated cache or unrelated content staging is authorized.
