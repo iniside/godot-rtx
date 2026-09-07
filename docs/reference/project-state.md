@@ -80,8 +80,11 @@ fresh bounded review PASS at `6e539007f8`. The reported override defect is close
 Step 5 DI landed in `5f9177d425`, with four GLSL variants and the Windows editor
 compiled/linked. Fresh review returned REJECT for triangle geometric normal,
 material coverage sampler and temporal jitter defects; exact anchors and proposed
-corrections are in the status document. Work stopped after review on owner request,
-without fixing those findings or starting NRD. Dispatch is wired in code, but
+corrections are in the status document. On 2026-09-07 the owner resumed work with
+"popraw i kontynuuj": corrective commit `5a532d08b3` passed four DI and four
+surface shader compile diagnostics plus the editor build. Fresh final round 2
+review is active against that commit; NRD/HDR implementation has started.
+Dispatch is wired in code, but
 real-device DI execution, visual correctness and template build remain unverified.
 
 The [approved RTXDI replacement plan](../plans/2026-09-06-1854-rtxdi-renderer-plan.md)

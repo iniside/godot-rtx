@@ -47,8 +47,13 @@ this step combines ReSTIR algorithm integration with GPU resource lifetime and
 dispatch synchronization. Step 5 landed in
 `5f9177d425f4f1d8241c554bf4816bb12f523ff1`; fresh review returned REJECT on
 2026-09-06 UTC for three confirmed surface/coverage/reprojection defects listed
-below. Work stopped after this review on explicit owner instruction. No fixes
-were applied after its findings, and Steps 6–7 have not started.
+below. After the requested stop, the owner authorized "popraw i kontynuuj" on
+2026-09-07. Corrective commit `5a532d08b36a4d262a7d372dd50f4c81b151fefa`
+implements those fixes; a fresh final round 2 review is running against that
+frozen target. Step 6 NRD/HDR implementation has started from the corrective
+commit in a separate core-implementer context (`gpt-6-astra`, high effort for
+GPU resource lifetime, pinned SPIR-V integration and frame composition).
+Step 7 has not started.
 The frame dispatch is wired in code; real-device execution and rendered output
 remain unverified.
 
@@ -105,14 +110,14 @@ rewritten or that code validation covers commit-message formatting.
 ## Resume point
 
 Step 5 first review target: `5f9177d425f4f1d8241c554bf4816bb12f523ff1`.
-Required corrections before accepting this stage:
+Round 1 findings at that historical target:
 
 - P1: export an actual oriented triangle geometric normal. The gate at
-  `shaders/raytracing/rtxdi_application_bridge_inc.glsl:265` currently consumes
+  `shaders/raytracing/rtxdi_application_bridge_inc.glsl:265` consumed
   interpolated shading normal from `shaders/forward_clustered/scene_forward_clustered.glsl:1369,2905`.
   Smooth shading can admit light below the actual triangle plane.
 - P1: preserve material filter/repeat/coverage sampling semantics in ray visibility
-  and emissive coverage. `rtxdi_application_bridge_inc.glsl:328` uses linear,
+  and emissive coverage. `rtxdi_application_bridge_inc.glsl:328` used linear,
   repeat and LOD 0 regardless of the standard material; a clamped raster hole can
   therefore cast an opaque shadow. Raster authority: `scene/resources/material.cpp:702,732`.
 - P2: add jitter displacement to the motion passed to SDK temporal reprojection.
@@ -124,8 +129,27 @@ Required corrections before accepting this stage:
 The review confirmed reservoir rotation, descriptor/BDA dependencies, full masks,
 PDF measures, NRD factors and resource lifetime at the reviewed source boundary.
 It checked the linked-editor log and shader artifacts, but did not run GPU code.
-These findings were reported without implementation because the owner requested
-stopping once this review finished.
+These findings were initially reported without implementation at the owner's
+requested stop; the later "popraw i kontynuuj" instruction authorizes their fix
+and continuation through the remaining approved stages.
+
+Correction evidence, 2026-09-07 at `5a532d08b3`: the raster producer exports the
+oriented deformed triangle plane separately from the shading normal. Parsed
+material texture metadata selects the viewport's existing sampler palette at
+bindings 33–44; shared ray/emitter alpha coverage uses projected-triangle UV
+gradients. The 112-byte material layout is unchanged. Jitter displacement is
+added only at the RTXDI temporal consumer, preserving non-jittered NRD motion.
+The patch also excludes the surface variant from the legacy motion-output block
+after actual surface shader compilation exposed that collision.
+
+Four DI compute variants and specialized/UBERSHADER surface vertex/fragment
+variants compiled for Vulkan 1.3. The surface diagnostic used an empty material
+code scaffold; it is not coverage of all generated standard-material variants.
+The Windows editor and console linked in 34.81 seconds using
+`scons platform=windows target=editor accesskit=no d3d12=no -j16`.
+Evidence artifacts: `%TEMP%/rtxdi-step5-fix-glsl/compile.log` and
+`%TEMP%/rtxdi-step5-fix-build-final.log`. These are compilation results only;
+round 2 review and real-device execution remain unverified.
 
 Evidence date: 2026-09-06 UTC. Frozen Step 4 final review target:
 `5075e8b3fc3b19213744d0e9ac9f3648ca710359`.
@@ -171,9 +195,9 @@ visibility domain required by that proposal's MIS support assumption. Temporal
 correction uses current AS and can exhibit transient bias. Outputs are separate
 RGBA16F diffuse/specular radiance and linear hit distance, demodulated with pinned
 NRD material factors and sanitized/clamped for FP16. The next stages are NRD/HDR
-composition and final editor/template/real-Vulkan visual validation. They remain
-unstarted under the owner's stop-after-review instruction. No automated tests
-have been run.
+composition and final editor/template/real-Vulkan visual validation. NRD/HDR
+implementation is active after the Step 5 corrective commit; final real-device
+validation has not started. No automated tests have been run.
 
 Intermediate builds/rendering may fail by explicit owner authorization. Final
 completion requires the plan's real-device rendering gate. Automated tests are
