@@ -474,6 +474,7 @@ public:
 	bool texture_is_shared(RID p_texture);
 	bool texture_is_valid(RID p_texture);
 	TextureFormat texture_get_format(RID p_texture);
+	uint64_t texture_get_content_generation(RID p_texture);
 	Size2i texture_size(RID p_texture);
 #ifndef DISABLE_DEPRECATED
 	uint64_t texture_get_native_handle(RID p_texture);

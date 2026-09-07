@@ -866,7 +866,6 @@ MaterialStorage::MaterialData::~MaterialData() {
 
 void MaterialStorage::MaterialData::update_textures(const HashMap<StringName, Variant> &p_parameters, const HashMap<StringName, HashMap<int, RID>> &p_default_textures, const Vector<ShaderCompiler::GeneratedCode::Texture> &p_texture_uniforms, RID *p_textures, bool p_use_linear_color, bool p_3d_material) {
 	MaterialStorage *material_storage = MaterialStorage::get_singleton();
-	uses_external_content_updates = false;
 
 #ifdef TOOLS_ENABLED
 	TextureStorage::Texture *roughness_detect_texture = nullptr;
@@ -983,7 +982,6 @@ void MaterialStorage::MaterialData::update_textures(const HashMap<StringName, Va
 				RID rd_texture;
 
 				if (tex) {
-					uses_external_content_updates |= TextureStorage::get_singleton()->texture_has_external_content_updates(textures[j]);
 					rd_texture = (srgb && tex->rd_texture_srgb.is_valid()) ? tex->rd_texture_srgb : tex->rd_texture;
 #ifdef TOOLS_ENABLED
 					if (tex->detect_3d_callback && p_3d_material) {
@@ -1827,7 +1825,6 @@ void MaterialStorage::global_shader_parameter_add(const StringName &p_name, RSE:
 	}
 
 	global_shader_uniforms.variables[p_name] = gv;
-	rt_content_generation.increment();
 }
 
 void MaterialStorage::global_shader_parameter_remove(const StringName &p_name) {
@@ -1844,7 +1841,6 @@ void MaterialStorage::global_shader_parameter_remove(const StringName &p_name) {
 	}
 
 	global_shader_uniforms.variables.erase(p_name);
-	rt_content_generation.increment();
 }
 
 Vector<StringName> MaterialStorage::global_shader_parameter_get_list() const {
@@ -1863,9 +1859,6 @@ Vector<StringName> MaterialStorage::global_shader_parameter_get_list() const {
 void MaterialStorage::global_shader_parameter_set(const StringName &p_name, const Variant &p_value) {
 	ERR_FAIL_COND(!global_shader_uniforms.variables.has(p_name));
 	GlobalShaderUniforms::Variable &gv = global_shader_uniforms.variables[p_name];
-	if (gv.value != p_value && gv.override.get_type() == Variant::NIL) {
-		rt_content_generation.increment();
-	}
 	gv.value = p_value;
 	if (gv.override.get_type() == Variant::NIL) {
 		if (gv.buffer_index >= 0) {
@@ -1893,9 +1886,6 @@ void MaterialStorage::global_shader_parameter_set_override(const StringName &p_n
 
 	GlobalShaderUniforms::Variable &gv = global_shader_uniforms.variables[p_name];
 
-	if (gv.override != p_value) {
-		rt_content_generation.increment();
-	}
 	gv.override = p_value;
 
 	if (gv.buffer_index >= 0) {
@@ -2027,9 +2017,6 @@ void MaterialStorage::global_shader_parameters_load_settings(bool p_load_texture
 }
 
 void MaterialStorage::global_shader_parameters_clear() {
-	if (!global_shader_uniforms.variables.is_empty()) {
-		rt_content_generation.increment();
-	}
 	global_shader_uniforms.variables.clear(); //not right but for now enough
 }
 
@@ -2063,7 +2050,6 @@ int32_t MaterialStorage::global_shader_parameters_instance_allocate(RID p_instan
 	global_shader_uniforms.instance_buffer_pos[p_instance] = pos; //save anyway
 	ERR_FAIL_COND_V_MSG(pos < 0, -1, "Too many instances using shader instance variables. Increase buffer size in Project Settings.");
 	global_shader_uniforms.buffer_usage[pos].elements = ShaderLanguage::MAX_INSTANCE_UNIFORM_INDICES;
-	rt_content_generation.increment();
 	return pos;
 }
 
@@ -2074,7 +2060,6 @@ void MaterialStorage::global_shader_parameters_instance_free(RID p_instance) {
 		global_shader_uniforms.buffer_usage[pos].elements = 0;
 	}
 	global_shader_uniforms.instance_buffer_pos.erase(p_instance);
-	rt_content_generation.increment();
 }
 
 void MaterialStorage::global_shader_parameters_instance_update(RID p_instance, int p_index, const Variant &p_value, int p_flags_count) {
@@ -2135,11 +2120,7 @@ void MaterialStorage::global_shader_parameters_instance_update(RID p_instance, i
 
 	pos += p_index;
 
-	GlobalShaderUniforms::Value previous_value = global_shader_uniforms.buffer_values[pos];
 	_fill_std140_variant_ubo_value(datatype, 0, p_value, (uint8_t *)&global_shader_uniforms.buffer_values[pos], true); //instances always use linear color in this renderer
-	if (memcmp(&previous_value, &global_shader_uniforms.buffer_values[pos], sizeof(previous_value)) != 0) {
-		rt_content_generation.increment();
-	}
 	_global_shader_uniform_mark_buffer_dirty(pos, 1);
 }
 
@@ -2251,9 +2232,6 @@ void MaterialStorage::shader_set_code(RID p_shader, const String &p_code) {
 	MutexLock lock(*shader->mutex);
 
 	const bool code_changed = shader->code != p_code;
-	if (code_changed) {
-		rt_content_generation.increment();
-	}
 	shader->code = p_code;
 	String mode_string = ShaderLanguage::get_shader_type(p_code);
 
@@ -2330,6 +2308,7 @@ void MaterialStorage::shader_set_code(RID p_shader, const String &p_code) {
 		Material *material = E;
 		if (code_changed) {
 			material->rt_invalidation_counter++;
+			material->rt_content_generation.increment();
 		}
 		material->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MATERIAL);
 		_material_queue_update(material, true, true);
@@ -2373,10 +2352,10 @@ void MaterialStorage::shader_set_code_rt(RID p_shader, const String &p_code_rt) 
 	}
 
 	if (changed) {
-		rt_content_generation.increment();
 		for (Material *E : shader->owners) {
 			Material *material = E;
 			material->rt_invalidation_counter++;
+			material->rt_content_generation.increment();
 			material->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MATERIAL);
 			_material_queue_update(material, false, false);
 		}
@@ -2416,7 +2395,6 @@ void MaterialStorage::shader_set_default_texture_parameter(RID p_shader, const S
 	if ((previous_texture ? *previous_texture : RID()) == texture) {
 		return;
 	}
-	rt_content_generation.increment();
 
 	if (p_texture.is_valid() && TextureStorage::get_singleton()->owns_texture(p_texture)) {
 		if (!shader->default_texture_parameter.has(p_name)) {
@@ -2442,6 +2420,7 @@ void MaterialStorage::shader_set_default_texture_parameter(RID p_shader, const S
 		for (Material *E : shader->owners) {
 			Material *material = E;
 			material->rt_invalidation_counter++;
+			material->rt_content_generation.increment();
 			_material_queue_update(material, false, true);
 		}
 	}
@@ -2500,9 +2479,86 @@ void MaterialStorage::shader_embedded_set_unlock() {
 
 /* MATERIAL API */
 
-bool MaterialStorage::material_uses_external_content_updates(RID p_material) const {
+uint64_t MaterialStorage::material_get_rt_content_generation(RID p_material, int32_t p_instance_uniform_offset) const {
 	const Material *material = material_owner.get_or_null(p_material);
-	return material && material->data && material->data->uses_external_content_updates;
+	if (!material) {
+		return 0;
+	}
+	uint64_t generation = hash64_murmur3_64(p_material.get_id(), material->rt_content_generation.get());
+	if (!material->shader || !material->shader->data) {
+		return generation;
+	}
+	const Shader *shader = material->shader;
+	const HashMap<StringName, ShaderLanguage::ShaderNode::Uniform> &uniforms = shader->data->get_rt_uniforms();
+	TextureStorage *texture_storage = TextureStorage::get_singleton();
+	for (const KeyValue<StringName, ShaderLanguage::ShaderNode::Uniform> &E : uniforms) {
+		const ShaderLanguage::ShaderNode::Uniform &uniform = E.value;
+		generation = hash64_murmur3_64(E.key.hash(), generation);
+		if (uniform.scope == ShaderLanguage::ShaderNode::Uniform::SCOPE_INSTANCE) {
+			int64_t index = int64_t(p_instance_uniform_offset) + uniform.instance_index;
+			if (p_instance_uniform_offset >= 0 && index >= 0 && index < global_shader_uniforms.buffer_size) {
+				uint64_t values[2];
+				memcpy(values, &global_shader_uniforms.buffer_values[index], sizeof(values));
+				generation = hash64_murmur3_64(values[0], generation);
+				generation = hash64_murmur3_64(values[1], generation);
+			}
+			continue;
+		}
+		const GlobalShaderUniforms::Variable *global = uniform.scope == ShaderLanguage::ShaderNode::Uniform::SCOPE_GLOBAL ? global_shader_uniforms.variables.getptr(E.key) : nullptr;
+		if (uniform.scope == ShaderLanguage::ShaderNode::Uniform::SCOPE_GLOBAL) {
+			if (!global) {
+				generation = hash64_murmur3_64(UINT64_MAX, generation);
+				continue;
+			}
+			generation = hash64_murmur3_64(global->type, generation);
+			if (global->buffer_index >= 0) {
+				generation = hash64_murmur3_64(global->buffer_index, generation);
+				for (int32_t i = 0; i < global->buffer_elements; i++) {
+					uint64_t values[2];
+					memcpy(values, &global_shader_uniforms.buffer_values[global->buffer_index + i], sizeof(values));
+					generation = hash64_murmur3_64(values[0], generation);
+					generation = hash64_murmur3_64(values[1], generation);
+				}
+				continue;
+			}
+		}
+		if (!uniform.is_texture()) {
+			const Variant *value = material->params.getptr(E.key);
+			if (value) {
+				generation = hash64_murmur3_64(value->hash(), generation);
+			}
+			continue;
+		}
+		if (global) {
+			RID texture = global->override;
+			if (texture.is_null()) {
+				texture = global->value;
+			}
+			generation = hash64_murmur3_64(texture_storage->texture_get_content_generation(texture), generation);
+			continue;
+		}
+		const Variant *value = material->params.getptr(E.key);
+		Array textures;
+		if (value && value->is_array()) {
+			textures = *value;
+		}
+		const HashMap<int, RID> *defaults = shader->default_texture_parameter.getptr(E.key);
+		for (int i = 0; i < MAX(1, uniform.array_size); i++) {
+			RID texture;
+			if (i < textures.size()) {
+				texture = textures[i];
+			} else if (i == 0 && value && !value->is_array()) {
+				texture = *value;
+			} else if (defaults) {
+				const RID *default_texture = defaults->getptr(i);
+				if (default_texture) {
+					texture = *default_texture;
+				}
+			}
+			generation = hash64_murmur3_64(texture_storage->texture_get_content_generation(texture), generation);
+		}
+	}
+	return generation;
 }
 
 void MaterialStorage::_material_uniform_set_erased(void *p_material) {
@@ -2515,7 +2571,6 @@ void MaterialStorage::_material_uniform_set_erased(void *p_material) {
 			MaterialStorage::get_singleton()->_material_queue_update(material, false, true);
 		}
 		material->rt_invalidation_counter++;
-		MaterialStorage::get_singleton()->rt_content_generation.increment();
 		material->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MATERIAL);
 	}
 }
@@ -2599,7 +2654,7 @@ void MaterialStorage::material_set_shader(RID p_material, RID p_shader) {
 
 	// Invalidate RT cache for this material (shader change).
 	material->rt_invalidation_counter++;
-	rt_content_generation.increment();
+	material->rt_content_generation.increment();
 
 	if (material->data) {
 		memdelete(material->data);
@@ -2715,7 +2770,6 @@ void MaterialStorage::material_set_param(RID p_material, const StringName &p_par
 
 	// Invalidate RT cache for this material.
 	material->rt_invalidation_counter++;
-	rt_content_generation.increment();
 
 	if (material->shader && material->shader->data) { //shader is valid
 		bool is_texture = material->shader->data->is_parameter_texture(p_param);

@@ -1724,7 +1724,7 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
 	const uint64_t shader_hash = material_storage->material_get_shader_code_rt_hash(p_material_rid);
 	const uint64_t shader_hash_b = material_storage->material_get_shader_code_rt_hash_b(p_material_rid);
-	const uint64_t content_generation = material_storage->get_rt_content_generation();
+	const uint64_t content_generation = material_storage->material_get_rt_content_generation(p_material_rid);
 
 	uint32_t current_frame = RSG::rasterizer->get_frame_number();
 	const bool needs_refresh = !entry->ptr ||
@@ -2343,17 +2343,23 @@ bool RenderRaytracing::_build_merged_mm_blas(
 			RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT |
 			RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT;
 
+	const uint32_t previous_position_bytes = p_mm_count * vertex_count * 12;
+	if (!entry.previous_position_buffer.is_valid() || entry.previous_position_capacity_bytes < previous_position_bytes) {
+		if (entry.previous_position_buffer.is_valid()) {
+			rd->free_rid(entry.previous_position_buffer);
+		}
+		entry.previous_position_buffer = rd->storage_buffer_create(previous_position_bytes, {}, 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
+		ERR_FAIL_COND_V(!entry.previous_position_buffer.is_valid(), false);
+		entry.previous_position_capacity_bytes = previous_position_bytes;
+		entry.blas_built_once = false;
+	}
+
 	// --- Grow / allocate merged vertex buffer ---
 	if (!entry.merged_vtx_buffer.is_valid() || entry.vtx_capacity_bytes < merged_vtx_bytes) {
 		if (entry.merged_vtx_buffer.is_valid()) {
 			rd->free_rid(entry.merged_vtx_buffer);
 			entry.merged_vtx_buffer = RID();
 		}
-		if (entry.previous_position_buffer.is_valid()) {
-			rd->free_rid(entry.previous_position_buffer);
-		}
-		entry.previous_position_buffer = rd->storage_buffer_create(p_mm_count * vertex_count * 12, {}, 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
-		ERR_FAIL_COND_V(!entry.previous_position_buffer.is_valid(), false);
 		entry.vtx_capacity_bytes = merged_vtx_bytes;
 		entry.merged_vtx_buffer = rd->vertex_buffer_create(merged_vtx_bytes, {}, gpu_buf_flags);
 		ERR_FAIL_COND_V(!entry.merged_vtx_buffer.is_valid(), false);
@@ -2636,7 +2642,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 		scene_signature = _rt_scene_hash(&p_value, sizeof(p_value), scene_signature);
 	};
 	bool uses_time = false;
-	bool uses_external_content = false;
+	bool uses_previous_time = false;
 
 #ifdef TOOLS_ENABLED
 	uint32_t tlas_instance_count = 0;
@@ -2781,9 +2787,9 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 				// Material for procedural geometry (already validated above).
 				uint16_t proc_mat_counter = material_storage->material_get_rt_invalidation_counter(proc_material_rid);
 				hash_scene(proc_material_rid.get_id());
-				hash_scene(proc_mat_counter);
-				uses_time |= proc_material->shader_data->uses_time;
-				uses_external_content |= material_storage->material_uses_external_content_updates(proc_material_rid);
+				uses_time |= proc_material->shader_data->rt_uses_time();
+				uses_previous_time |= proc_material->shader_data->rt_uses_previous_time();
+				hash_scene(material_storage->material_get_rt_content_generation(proc_material_rid, inst->shader_uniforms_offset));
 				RTMaterialData *proc_mat_data = process_material(proc_material_rid, proc_mat_counter);
 				material_data.push_back(proc_mat_data->data);
 
@@ -2830,7 +2836,8 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 				uint32_t surface_counter = mesh_storage->mesh_surface_get_rt_invalidation_counter(mesh_surface);
 				hash_scene(mm_surf->surface_index);
 				hash_scene(surface_counter);
-				uses_time |= mm_surf->shader && mm_surf->shader->uses_time;
+				uses_time |= mm_surf->shader && mm_surf->shader->rt_uses_time();
+				uses_previous_time |= mm_surf->shader && mm_surf->shader->rt_uses_previous_time();
 
 				RID material_rid;
 				if (mm_surf->owner->data->material_override.is_valid()) {
@@ -2847,8 +2854,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 
 				uint16_t material_counter = material_storage->material_get_rt_invalidation_counter(material_rid);
 				hash_scene(material_rid.get_id());
-				hash_scene(material_counter);
-				uses_external_content |= material_storage->material_uses_external_content_updates(material_rid);
+				hash_scene(material_storage->material_get_rt_content_generation(material_rid, inst->shader_uniforms_offset));
 				RTMaterialData *mat_data = process_material(material_rid, material_counter);
 
 				uint32_t inst_flags = 0;
@@ -2914,7 +2920,8 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			uint32_t surface_counter = mesh_storage->mesh_surface_get_rt_invalidation_counter(mesh_surface);
 			hash_scene(surf->surface_index);
 			hash_scene(surface_counter);
-			uses_time |= surf->shader && surf->shader->uses_time;
+			uses_time |= surf->shader && surf->shader->rt_uses_time();
+			uses_previous_time |= surf->shader && surf->shader->rt_uses_previous_time();
 
 #ifdef TOOLS_ENABLED
 			uint32_t pre_build_size = dirty_blas_list.size();
@@ -2962,8 +2969,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 
 			uint16_t material_counter = material_storage->material_get_rt_invalidation_counter(material_rid);
 			hash_scene(material_rid.get_id());
-			hash_scene(material_counter);
-			uses_external_content |= material_storage->material_uses_external_content_updates(material_rid);
+			hash_scene(material_storage->material_get_rt_content_generation(material_rid, inst->shader_uniforms_offset));
 			RTMaterialData *mat_data = process_material(material_rid, material_counter);
 
 			Transform3D final_transform;
@@ -3215,8 +3221,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 	for (RID blas : blass) {
 		hash_scene(blas.get_id());
 	}
-	hash_scene(material_storage->get_rt_content_generation());
-	hash_scene(RendererRD::TextureStorage::get_singleton()->get_rt_content_generation());
 	hash_scene(RendererEnvironmentStorage::get_singleton()->environment_get_rt_generation(p_render_data->environment));
 	if (p_render_data->environment.is_valid()) {
 		hash_scene(owner->get_sky()->sky_get_content_generation(owner->environment_get_sky(p_render_data->environment)));
@@ -3224,8 +3228,9 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 	if (uses_time) {
 		hash_scene(p_render_data->scene_data->time);
 	}
-	if (uses_external_content) {
-		hash_scene(RSG::rasterizer->get_frame_number());
+	if (uses_previous_time) {
+		const float previous_time = p_render_data->scene_data->calculate_motion_vectors ? p_render_data->scene_data->time - p_render_data->scene_data->time_step : 0.0f;
+		hash_scene(previous_time);
 	}
 	if (state->scene_generation == 0 || state->scene_signature != scene_signature) {
 		state->scene_signature = scene_signature;
@@ -3357,10 +3362,8 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 			}
 
 			RID projected_texture = type == RSE::LIGHT_AREA ? ls->light_area_get_texture(base) : ls->light_get_projector(base);
-			if (ts->texture_has_external_content_updates(projected_texture)) {
-				const uint64_t frame = RSG::rasterizer->get_frame_number();
-				r_scene_signature = _rt_scene_hash(&frame, sizeof(frame), r_scene_signature);
-			}
+			const uint64_t texture_generation = ts->texture_get_content_generation(projected_texture);
+			r_scene_signature = _rt_scene_hash(&texture_generation, sizeof(texture_generation), r_scene_signature);
 			if (projected_texture.is_valid()) {
 				Rect2 rect;
 				RID atlas_texture;

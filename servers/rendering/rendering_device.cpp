@@ -3254,6 +3254,19 @@ RD::TextureFormat RenderingDevice::texture_get_format(RID p_texture) {
 	return tf;
 }
 
+uint64_t RenderingDevice::texture_get_content_generation(RID p_texture) {
+	ERR_RENDER_THREAD_GUARD_V(0);
+	const Texture *texture = texture_owner.get_or_null(p_texture);
+	if (!texture) {
+		return 0;
+	}
+	if (texture->owner.is_valid()) {
+		texture = texture_owner.get_or_null(texture->owner);
+		ERR_FAIL_NULL_V(texture, 0);
+	}
+	return texture->draw_tracker ? texture->draw_tracker->content_generation : 0;
+}
+
 Size2i RenderingDevice::texture_size(RID p_texture) {
 	ERR_RENDER_THREAD_GUARD_V(Size2i());
 

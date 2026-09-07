@@ -250,6 +250,7 @@ public:
 		bool unshaded = false;
 		bool uses_vertex = false;
 		bool uses_position = false;
+		bool uses_previous_time = false;
 		bool uses_sss = false;
 		bool uses_transmittance = false;
 		bool uses_screen_texture = false;
@@ -274,6 +275,8 @@ public:
 
 		// RT Classification. Lazily allocated only when the shader has `#if defined(RT)` divergence.
 		struct RTClassification {
+			bool uses_time = false;
+			bool uses_previous_time = false;
 			String code;
 			HashMap<StringName, ShaderLanguage::ShaderNode::Uniform> uniforms;
 			Vector<uint32_t> uniform_offsets;
@@ -336,6 +339,18 @@ public:
 
 		_FORCE_INLINE_ RSE::CullMode rt_cull_mode() const {
 			return rt ? rt->cull_mode : cull_mode;
+		}
+
+		_FORCE_INLINE_ bool rt_uses_time() const {
+			return rt ? rt->uses_time : uses_time;
+		}
+
+		_FORCE_INLINE_ bool rt_uses_previous_time() const {
+			return rt ? rt->uses_previous_time : uses_previous_time;
+		}
+
+		virtual const HashMap<StringName, ShaderLanguage::ShaderNode::Uniform> &get_rt_uniforms() const override {
+			return rt ? rt->uniforms : uniforms;
 		}
 
 		_FORCE_INLINE_ bool uses_shared_shadow_material() const {

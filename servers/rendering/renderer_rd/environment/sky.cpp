@@ -998,7 +998,9 @@ void SkyRD::setup_sky(const RenderDataRD *p_render_data, const Size2i p_screen_s
 	material->set_as_used();
 
 	if (sky) {
-		if (material_storage->material_uses_external_content_updates(sky_material)) {
+		uint64_t material_generation = material_storage->material_get_rt_content_generation(sky_material);
+		if (sky->prev_material_generation != material_generation) {
+			sky->prev_material_generation = material_generation;
 			sky->content_generation++;
 			sky->reflection.dirty = true;
 		}
@@ -1044,13 +1046,11 @@ void SkyRD::setup_sky(const RenderDataRD *p_render_data, const Size2i p_screen_s
 
 		if (material != sky->prev_material) {
 			sky->prev_material = material;
-			sky->content_generation++;
 			sky->reflection.dirty = true;
 		}
 
 		if (material->uniform_set_updated) {
 			material->uniform_set_updated = false;
-			sky->content_generation++;
 			sky->reflection.dirty = true;
 		}
 

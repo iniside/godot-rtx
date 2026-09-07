@@ -79,6 +79,7 @@ public:
 		virtual void get_shader_uniform_list(List<PropertyInfo> *p_param_list) const;
 		virtual void get_instance_param_list(List<RendererMaterialStorage::InstanceShaderParam> *p_param_list) const;
 		virtual bool is_parameter_texture(const StringName &p_param) const;
+		virtual const HashMap<StringName, ShaderLanguage::ShaderNode::Uniform> &get_rt_uniforms() const { return uniforms; }
 
 		virtual void set_code(const String &p_Code) = 0;
 		// Optional follow-up to `set_code` carrying the RT-preprocessed source.
@@ -125,7 +126,6 @@ public:
 		Vector<uint8_t> ubo_data[2]; // 0: linear buffer; 1: sRGB buffer.
 		RID uniform_buffer[2]; // 0: linear buffer; 1: sRGB buffer.
 		Vector<RID> texture_cache;
-		bool uses_external_content_updates = false;
 	};
 
 	struct Samplers {
@@ -314,6 +314,7 @@ private:
 		SelfList<Material> update_element;
 
 		uint16_t rt_invalidation_counter = 0; ///< Bump on param changes for RT cache invalidation.
+		SafeNumeric<uint64_t> rt_content_generation{ 1 };
 
 		Dependency dependency;
 
@@ -327,14 +328,12 @@ private:
 
 	SelfList<Material>::List material_update_list;
 	Mutex material_update_list_mutex;
-	SafeNumeric<uint64_t> rt_content_generation{ 1 };
 
 	static void _material_uniform_set_erased(void *p_material);
 
 public:
 	static MaterialStorage *get_singleton();
-	uint64_t get_rt_content_generation() const { return rt_content_generation.get(); }
-	bool material_uses_external_content_updates(RID p_material) const;
+	uint64_t material_get_rt_content_generation(RID p_material, int32_t p_instance_uniform_offset = -1) const;
 
 	MaterialStorage();
 	virtual ~MaterialStorage();

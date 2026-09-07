@@ -368,6 +368,7 @@ struct RTMergedMMEntry {
 	// The BLAS reads only the position section; the hit shader reads TBN via normal_byte_offset.
 	RID merged_vtx_buffer;
 	RID previous_position_buffer;
+	uint32_t previous_position_capacity_bytes = 0;
 	uint32_t vtx_capacity_bytes = 0;
 
 	// Merged attribute buffer: [UV + color × N*V] replicated per instance.

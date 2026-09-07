@@ -966,7 +966,6 @@ void TextureStorage::texture_free(RID p_texture) {
 	Texture *t = texture_owner.get_or_null(p_texture);
 	ERR_FAIL_NULL(t);
 	ERR_FAIL_COND(t->is_render_target);
-	rt_content_generation.increment();
 
 	t->cleanup();
 
@@ -1058,7 +1057,6 @@ void TextureStorage::texture_2d_initialize(RID p_texture, const Ref<Image> &p_im
 	texture.is_proxy = false;
 
 	texture_owner.initialize_rid(p_texture, texture);
-	rt_content_generation.increment();
 }
 
 void TextureStorage::texture_2d_layered_initialize(RID p_texture, const Vector<Ref<Image>> &p_layers, RSE::TextureLayeredType p_layered_type) {
@@ -1171,7 +1169,6 @@ void TextureStorage::texture_2d_layered_initialize(RID p_texture, const Vector<R
 	texture.is_proxy = false;
 
 	texture_owner.initialize_rid(p_texture, texture);
-	rt_content_generation.increment();
 }
 
 void TextureStorage::texture_3d_initialize(RID p_texture, Image::Format p_format, int p_width, int p_height, int p_depth, bool p_mipmaps, const Vector<Ref<Image>> &p_data) {
@@ -1289,7 +1286,6 @@ void TextureStorage::texture_3d_initialize(RID p_texture, Image::Format p_format
 	texture.is_proxy = false;
 
 	texture_owner.initialize_rid(p_texture, texture);
-	rt_content_generation.increment();
 }
 
 void TextureStorage::texture_external_initialize(RID p_texture, int p_width, int p_height, uint64_t p_external_buffer) {
@@ -1312,7 +1308,6 @@ void TextureStorage::texture_proxy_initialize(RID p_texture, RID p_base) {
 	proxy_tex.proxies.clear();
 
 	texture_owner.initialize_rid(p_texture, proxy_tex);
-	rt_content_generation.increment();
 
 	tex->proxies.push_back(p_texture);
 }
@@ -1416,7 +1411,6 @@ void TextureStorage::texture_drawable_initialize(RID p_texture, int p_width, int
 	texture.is_proxy = false;
 
 	texture_owner.initialize_rid(p_texture, texture);
-	rt_content_generation.increment();
 }
 
 // Note: We make some big assumptions about format and usage. If developers need more control,
@@ -1647,7 +1641,6 @@ void TextureStorage::_texture_2d_update(RID p_texture, const Ref<Image> &p_image
 	Ref<Image> validated = _validate_texture_format(p_image, f);
 
 	RD::get_singleton()->texture_update(tex->rd_texture, p_layer, validated->get_data());
-	rt_content_generation.increment();
 }
 
 void TextureStorage::texture_2d_update(RID p_texture, const Ref<Image> &p_image, int p_layer) {
@@ -1690,7 +1683,6 @@ void TextureStorage::texture_3d_update(RID p_texture, const Vector<Ref<Image>> &
 	}
 
 	RD::get_singleton()->texture_update(tex->rd_texture, 0, all_data);
-	rt_content_generation.increment();
 }
 
 void TextureStorage::texture_external_update(RID p_texture, int p_width, int p_height, uint64_t p_external_buffer) {
@@ -1703,7 +1695,6 @@ void TextureStorage::texture_proxy_update(RID p_texture, RID p_proxy_to) {
 	Texture *proxy_to = texture_owner.get_or_null(p_proxy_to);
 	ERR_FAIL_NULL(proxy_to);
 	ERR_FAIL_COND(proxy_to->is_proxy);
-	rt_content_generation.increment();
 
 	if (tex->proxy_to.is_valid()) {
 		//unlink proxy
@@ -1877,7 +1868,6 @@ void TextureStorage::texture_drawable_blit_rect(const TypedArray<RID> &p_texture
 
 	RD::get_singleton()->draw_list_end();
 	RD::get_singleton()->draw_command_end_label();
-	rt_content_generation.increment();
 }
 
 //these two APIs can be used together or in combination with the others.
@@ -2011,9 +2001,6 @@ void TextureStorage::texture_drawable_generate_mipmaps(RID p_texture) {
 	ERR_FAIL_NULL(copy_effects);
 
 	uint32_t mipmaps = tex->mipmaps;
-	if (mipmaps > 1) {
-		rt_content_generation.increment();
-	}
 	int width = tex->width;
 	int height = tex->height;
 
@@ -2051,7 +2038,6 @@ void TextureStorage::texture_replace(RID p_texture, RID p_by_texture) {
 	if (tex == by_tex) {
 		return;
 	}
-	rt_content_generation.increment();
 
 	if (tex->rd_texture_srgb.is_valid()) {
 		RD::get_singleton()->free_rid(tex->rd_texture_srgb);
@@ -2196,7 +2182,6 @@ void TextureStorage::texture_rd_initialize(RID p_texture, const RID &p_rd_textur
 	ERR_FAIL_COND(imfmt.image_format == Image::FORMAT_MAX);
 
 	Texture texture;
-	texture.has_external_content_updates = true;
 
 	switch (tf.texture_type) {
 		case RD::TEXTURE_TYPE_2D: {
@@ -2264,12 +2249,14 @@ void TextureStorage::texture_rd_initialize(RID p_texture, const RID &p_rd_textur
 	texture.is_proxy = false;
 
 	texture_owner.initialize_rid(p_texture, texture);
-	rt_content_generation.increment();
 }
 
-bool TextureStorage::texture_has_external_content_updates(RID p_texture) const {
+uint64_t TextureStorage::texture_get_content_generation(RID p_texture) const {
 	const Texture *texture = texture_owner.get_or_null(p_texture);
-	return texture && (texture->has_external_content_updates || texture->render_target != nullptr);
+	if (!texture || !RD::get_singleton()->texture_is_valid(texture->rd_texture)) {
+		return 0;
+	}
+	return hash64_murmur3_64(texture->rd_texture.get_id(), RD::get_singleton()->texture_get_content_generation(texture->rd_texture));
 }
 
 RID TextureStorage::texture_get_rd_texture(RID p_texture, bool p_srgb) const {

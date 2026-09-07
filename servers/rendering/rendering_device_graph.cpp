@@ -412,6 +412,10 @@ void RenderingDeviceGraph::_add_command_to_graph(ResourceTracker **p_resource_tr
 
 		ResourceUsage new_resource_usage = p_resource_usages[i];
 		bool write_usage = _is_write_usage(new_resource_usage);
+		if (write_usage && resource_tracker->texture_driver_id.id != 0) {
+			ResourceTracker *content_tracker = resource_tracker->parent ? resource_tracker->parent : resource_tracker;
+			content_tracker->content_generation++;
+		}
 		BitField<RDD::BarrierAccessBits> new_usage_access = _usage_to_access_bits(new_resource_usage);
 		bool is_resource_a_slice = resource_tracker->parent != nullptr;
 		if (is_resource_a_slice) {

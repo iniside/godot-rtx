@@ -32,7 +32,6 @@
 
 #include "core/templates/paged_array.h"
 #include "core/templates/rid_owner.h"
-#include "core/templates/safe_refcount.h"
 #include "servers/rendering/renderer_rd/shaders/canvas_sdf.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/tex_blit.glsl.gen.h"
 #include "servers/rendering/renderer_rd/storage_rd/forward_id_storage.h"
@@ -105,7 +104,6 @@ private:
 	friend class MaterialStorage;
 
 	static TextureStorage *singleton;
-	SafeNumeric<uint64_t> rt_content_generation{ 1 };
 
 	RID default_rd_textures[DEFAULT_RD_TEXTURE_MAX];
 
@@ -184,7 +182,6 @@ private:
 		RenderTarget *render_target = nullptr;
 		bool is_render_target;
 		bool is_proxy;
-		bool has_external_content_updates = false;
 
 		Ref<Image> image_cache_2d;
 		String path;
@@ -554,8 +551,7 @@ private:
 
 public:
 	static TextureStorage *get_singleton();
-	uint64_t get_rt_content_generation() const { return rt_content_generation.get(); }
-	bool texture_has_external_content_updates(RID p_texture) const;
+	uint64_t texture_get_content_generation(RID p_texture) const;
 
 	void _tex_blit_shader_initialize();
 	void _tex_blit_shader_free();

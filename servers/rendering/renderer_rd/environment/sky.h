@@ -274,6 +274,7 @@ public:
 
 		// State to track when radiance octmap needs updating.
 		SkyMaterialData *prev_material = nullptr;
+		uint64_t prev_material_generation = 0;
 		Vector3 prev_position;
 		double prev_time = 0.0;
 		LocalVector<SkyDirectionalLightData> prev_directional_lights;

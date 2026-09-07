@@ -90,6 +90,7 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 	uses_sss = false;
 	uses_transmittance = false;
 	uses_time = false;
+	uses_previous_time = false;
 	writes_modelview_or_projection = false;
 	uses_world_coordinates = false;
 	uses_particle_trails = false;
@@ -153,6 +154,7 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 
 	actions.usage_flag_pointers["DISCARD"] = &uses_discard;
 	actions.usage_flag_pointers["TIME"] = &uses_time;
+	actions.usage_flag_pointers["PREV_TIME"] = &uses_previous_time;
 	actions.usage_flag_pointers["ROUGHNESS"] = &uses_roughness;
 	actions.usage_flag_pointers["NORMAL"] = &uses_normal;
 	actions.usage_flag_pointers["NORMAL_MAP"] = &uses_normal_map;
@@ -301,13 +303,14 @@ void SceneShaderForwardClustered::ShaderData::set_code_rt(const String &p_code_r
 	bool local_uses_alpha_clip = false;
 	bool local_uses_alpha_antialiasing = false;
 	bool local_uses_depth_prepass_alpha = false;
+	bool local_uses_time = false;
+	bool local_uses_previous_time = false;
 
 	ShaderCompiler::IdentifierActions actions;
 	actions.entry_point_stages["vertex"] = ShaderCompiler::STAGE_VERTEX;
 	actions.entry_point_stages["fragment"] = ShaderCompiler::STAGE_FRAGMENT;
 	actions.entry_point_stages["light"] = ShaderCompiler::STAGE_FRAGMENT;
 
-	// Only the inputs that influence `rt_uses_alpha_pass` / `rt_uses_depth_in_alpha_pass`.
 	actions.render_mode_values["blend_add"] = Pair<int *, int>(&blend_modei, BLEND_MODE_ADD);
 	actions.render_mode_values["blend_mix"] = Pair<int *, int>(&blend_modei, BLEND_MODE_MIX);
 	actions.render_mode_values["blend_sub"] = Pair<int *, int>(&blend_modei, BLEND_MODE_SUB);
@@ -331,6 +334,8 @@ void SceneShaderForwardClustered::ShaderData::set_code_rt(const String &p_code_r
 	actions.render_mode_flags["depth_prepass_alpha"] = &local_uses_depth_prepass_alpha;
 
 	actions.usage_flag_pointers["ALPHA"] = &local_uses_alpha;
+	actions.usage_flag_pointers["TIME"] = &local_uses_time;
+	actions.usage_flag_pointers["PREV_TIME"] = &local_uses_previous_time;
 	actions.usage_flag_pointers["ALPHA_SCISSOR_THRESHOLD"] = &local_uses_alpha_clip;
 	actions.usage_flag_pointers["ALPHA_HASH_SCALE"] = &local_uses_alpha_clip;
 	actions.usage_flag_pointers["ALPHA_ANTIALIASING_EDGE"] = &local_uses_alpha_antialiasing;
@@ -381,6 +386,8 @@ void SceneShaderForwardClustered::ShaderData::set_code_rt(const String &p_code_r
 	}
 
 	rt->uses_alpha = local_uses_alpha;
+	rt->uses_time = local_uses_time;
+	rt->uses_previous_time = local_uses_previous_time;
 	rt->uses_alpha_clip = local_uses_alpha_clip;
 	rt->uses_alpha_antialiasing = local_uses_alpha_antialiasing;
 	rt->uses_depth_prepass_alpha = local_uses_depth_prepass_alpha;

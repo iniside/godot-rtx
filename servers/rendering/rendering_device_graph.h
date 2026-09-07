@@ -184,6 +184,7 @@ public:
 
 	struct ResourceTracker {
 		uint32_t reference_count = 0;
+		uint64_t content_generation = 0;
 		int64_t command_frame = -1;
 		BitField<RDD::PipelineStageBits> previous_frame_stages = {};
 		BitField<RDD::PipelineStageBits> current_frame_stages = {};
