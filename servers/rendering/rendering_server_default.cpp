@@ -249,6 +249,7 @@ void RenderingServerDefault::_init() {
 		return;
 	}
 
+	RSG::camera_attributes = memnew(RendererCameraAttributes);
 	RSG::rasterizer = RendererCompositor::create();
 	if (RSG::rasterizer == nullptr) {
 		return;
@@ -256,7 +257,6 @@ void RenderingServerDefault::_init() {
 	RSG::canvas = memnew(RendererCanvasCull);
 	RSG::viewport = memnew(RendererViewport);
 	RendererSceneCull *sr = memnew(RendererSceneCull);
-	RSG::camera_attributes = memnew(RendererCameraAttributes);
 	RSG::scene = sr;
 	RSG::utilities = RSG::rasterizer->get_utilities();
 	RSG::rasterizer->initialize();
@@ -354,6 +354,9 @@ void RenderingServerDefault::finish() {
 			command_queue.set_pump_task_id(WorkerThreadPool::INVALID_TASK_ID);
 		}
 		server_thread = Thread::MAIN_ID;
+		if (RenderingDevice::get_singleton()) {
+			RenderingDevice::get_singleton()->make_current();
+		}
 	} else {
 		if (initialized || RSG::rasterizer != nullptr) {
 			_finish();

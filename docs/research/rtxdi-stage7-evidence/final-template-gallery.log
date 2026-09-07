@@ -1,0 +1,65 @@
+Godot Engine v4.8.dev.custom_build.eeed72b42 (2026-09-07 07:43:31 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Streamline - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+
+MANUAL_DEMO preset=gallery light=all binary={ "major": 4, "minor": 8, "patch": 0, "hex": 264192, "status": "dev", "build": "custom_build", "hash": "eeed72b42987b2d29f9e1a99e2dd57cc5ff91172", "timestamp": 1788767011, "string": "4.8-dev (custom_build)" } renderer=forward_plus driver=vulkan size=(1280.0, 720.0)
+GPU PROFILE (total 1.221ms):
+	-TLAS Build: 0.04531745683579ms
+	-Setup Shadows: 0.01034920650815ms
+	-Render OmniLight Shadows: 0.02309523877643ms
+	-Render Directional/SpotLight Shadows: 0.01314286201719ms
+	-RTXDI Surface: 0.02833333848015ms
+	-RTXDI Guides: 0.03741269641452ms
+	-RTXDI Direct Lighting: 0.78026974390423ms
+	-NRD RELAX and HDR Composition: 0.31155555967301ms
+	-Render Sky: 0.01233334011502ms
+	-Tonemap: 0.03020634726873ms
+	-Render CanvasItems: 0.0902538905068ms
+GPU PROFILE (total 0.777ms):
+	-TLAS Build: 0.04640982971817ms
+	-Setup Shadows: 0.01039344072342ms
+	-Render Directional/SpotLight Shadows: 0.01209836221132ms
+	-RTXDI Surface: 0.02849180385715ms
+	-RTXDI Guides: 0.0221147595859ms
+	-RTXDI Direct Lighting: 0.51488529267858ms
+	-NRD RELAX and HDR Composition: 0.25511474296695ms
+	-Tonemap: 0.01416393674788ms
+	-Render CanvasItems: 0.05144267394894ms
+GPU PROFILE (total 0.791ms):
+	-TLAS Build: 0.04668852149463ms
+	-Setup Shadows: 0.01086885127865ms
+	-Render Directional/SpotLight Shadows: 0.01300000460421ms
+	-RTXDI Surface: 0.02886885697724ms
+	-RTXDI Guides: 0.02293442898109ms
+	-RTXDI Direct Lighting: 0.75819690891954ms
+	-NRD RELAX and HDR Composition: 0.25711476998251ms
+	-Render CanvasItems: 0.02104918878587ms
+GPU PROFILE (total 1.203ms):
+	-TLAS Build: 0.04680328681821ms
+	-Setup Shadows: 0.01098360585385ms
+	-Render Directional/SpotLight Shadows: 0.01314754466541ms
+	-RTXDI Surface: 0.02893442404075ms
+	-RTXDI Guides: 0.02308196708804ms
+	-RTXDI Direct Lighting: 0.73357372596616ms
+	-NRD RELAX and HDR Composition: 0.25708198547363ms
+	-Render CanvasItems: 0.11726223054479ms
+GPU PROFILE (total 1.133ms):
+	-TLAS Build: 0.04673769825795ms
+	-Setup Shadows: 0.01106557298879ms
+	-Render Directional/SpotLight Shadows: 0.01308197173916ms
+	-RTXDI Surface: 0.02911476033633ms
+	-RTXDI Guides: 0.02263934495019ms
+	-RTXDI Direct Lighting: 0.81104922685467ms
+	-NRD RELAX and HDR Composition: 0.25704918533075ms
+	-Render Sky: 0.02090162918216ms
+	-Render CanvasItems: 0.10011468949865ms
+MANUAL_CAPTURE path=G:/Projects/godot-rtx/docs/research/rtxdi-stage7-evidence/final-gallery.png result=0 frame=352 gpu_ms=0.78600001335144
+MANUAL_MEMORY total=454843296.0 textures=358092288.0 buffers=84067558.0
+PROCESS_EXIT=0

@@ -1139,9 +1139,6 @@ void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, con
 				}
 			}
 
-			// Age-out is handled in the pre-pass (_age_out_motion_vectors) which
-			// covers both raster-only and RT-only instances before this loop runs.
-
 			// Alpha-only (RT path): skip instances with no transparent/fading
 			// surfaces; opaque geometry is in the TLAS. Uses rt_pass_flags so
 			// `#if defined(RT)` overrides are honored.
@@ -1249,15 +1246,12 @@ void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, con
 			lod_distance = surface_distance.length();
 		}
 
-		// Motion-vector age-out is handled in the pre-pass (_age_out_motion_vectors),
-		// which covers both raster-only and RT-only instances before this loop runs.
-
 		while (surf) {
 			surf->sort.uses_forward_gi = 0;
 			surf->sort.uses_lightmap = 0;
 
 			// LOD
-			if (p_render_data->scene_data->screen_mesh_lod_threshold > 0.0 && mesh_storage->mesh_surface_has_lod(surf->surface)) {
+			if (p_pass_mode != PASS_MODE_RTXDI_SURFACE && p_render_data->scene_data->screen_mesh_lod_threshold > 0.0 && mesh_storage->mesh_surface_has_lod(surf->surface)) {
 				uint32_t indices = 0;
 				surf->sort.lod_index = mesh_storage->mesh_surface_get_lod(surf->surface, inst->lod_model_scale * inst->lod_bias, lod_distance * p_render_data->scene_data->lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, indices);
 				if (p_render_data->render_info && !p_alpha_only) {
@@ -1846,7 +1840,7 @@ void RenderForwardClustered::_render_3d_upscaling(const RenderDataRD *p_render_d
 			params.color = rb->get_internal_texture(v);
 			params.depth = rb->get_depth_texture(v);
 			params.velocity = rb->get_velocity_buffer(false, v);
-			params.reactive = rb->get_internal_texture_reactive(v);
+			params.reactive = RendererRD::TextureStorage::get_singleton()->texture_rd_get_default(RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_BLACK);
 			params.exposure = exposure;
 			params.output = rb->get_upscaled_texture(v);
 			params.z_near = p_render_data->scene_data->z_near;
@@ -2001,6 +1995,14 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	p_render_data->scene_data->directional_light_count = 0;
 	p_render_data->scene_data->opaque_prepass_threshold = 0.0f;
 	p_render_data->scene_data->emissive_exposure_normalization = -1.0f;
+	const uint64_t engine_frame = RSG::rasterizer->get_frame_number();
+	for (const PagedArray<RenderGeometryInstance *> *instances : { p_render_data->instances, p_render_data->rt_instances }) {
+		if (instances) {
+			for (uint32_t i = 0; i < instances->size(); i++) {
+				static_cast<GeometryInstanceForwardClustered *>((*instances)[i])->age_out_motion(engine_frame);
+			}
+		}
+	}
 	_setup_environment(p_render_data, false, screen_size, screen_size, p_default_bg_color, false);
 	_update_render_base_uniform_set();
 	_fill_render_list(RENDER_LIST_OPAQUE, p_render_data, PASS_MODE_RTXDI_SURFACE, false, false, false);
@@ -2009,7 +2011,6 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	_fill_instance_data(RENDER_LIST_OPAQUE, render_info);
 	bool invalid_deformation = false;
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
-	const uint64_t engine_frame = RSG::rasterizer->get_frame_number();
 	for (uint32_t i = 0; i < p_render_data->instances->size() && !invalid_deformation; i++) {
 		GeometryInstanceForwardClustered *instance = static_cast<GeometryInstanceForwardClustered *>((*p_render_data->instances)[i]);
 		invalid_deformation = instance->transform_status == GeometryInstanceForwardClustered::TransformStatus::TELEPORTED || instance->rt_procedural != nullptr;

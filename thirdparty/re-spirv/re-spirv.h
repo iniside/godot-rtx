@@ -174,6 +174,7 @@ namespace respv {
         std::vector<uint32_t> instructionAdjacentListIndices;
         std::vector<uint32_t> instructionInDegrees;
         std::vector<uint32_t> instructionOutDegrees;
+        std::vector<uint32_t> loopPhiOperandIndices;
         std::vector<uint32_t> instructionOrder;
         std::vector<Block> blocks;
         std::vector<uint32_t> blockPreOrderIndices;

@@ -159,11 +159,14 @@ RTXDI_DIReservoir rtxdi_sample_initial(uvec2 pixel, RAB_Surface surface, inout R
 		}
 		RTXDI_FinalizeResampling(environment_reservoir, 1.0, float(mis.numMisSamples));
 		environment_reservoir.M = 1.0;
-		if (RTXDI_CombineDIReservoirs(reservoir, environment_reservoir, RTXDI_GetNextRandom(rng), environment_reservoir.targetPdf)) {
+		RTXDI_DIReservoir combined_reservoir = RTXDI_EmptyDIReservoir();
+		RTXDI_CombineDIReservoirs(combined_reservoir, reservoir, 0.5, reservoir.targetPdf);
+		if (RTXDI_CombineDIReservoirs(combined_reservoir, environment_reservoir, RTXDI_GetNextRandom(rng), environment_reservoir.targetPdf)) {
 			selected_sample = RAB_SamplePolymorphicLight(RAB_LoadLightInfo(RTXDI_GetDIReservoirLightIndex(environment_reservoir), false), surface, RTXDI_GetDIReservoirSampleUV(environment_reservoir));
 		}
-		RTXDI_FinalizeResampling(reservoir, 1.0, 1.0);
-		reservoir.M = 1.0;
+		RTXDI_FinalizeResampling(combined_reservoir, 1.0, 1.0);
+		combined_reservoir.M = 1.0;
+		reservoir = combined_reservoir;
 	}
 	if (RTXDI_IsValidDIReservoir(reservoir)) {
 		selected_sample = RAB_SamplePolymorphicLight(RAB_LoadLightInfo(RTXDI_GetDIReservoirLightIndex(reservoir), false), surface, RTXDI_GetDIReservoirSampleUV(reservoir));

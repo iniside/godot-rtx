@@ -983,6 +983,11 @@ Files extracted from upstream source:
 - `re-spirv.h`
 - `LICENSE`
 
+Local patch: `re-spirv/patches/0001-preserve-loop-phi-operand-liveness.patch`
+counts loop-back Phi operands for dead-code elimination without adding cycles
+to the instruction sort graph. Apply from the repository root after extracting
+the pinned source above.
+
 
 ## rtxdi
 

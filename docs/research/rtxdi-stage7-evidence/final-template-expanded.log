@@ -1,0 +1,49 @@
+Godot Engine v4.8.dev.custom_build.eeed72b42 (2026-09-07 07:43:31 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Streamline - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+
+MANUAL_SHADOWS columns=back/front/disabled/double-sided/mirrored/negative-local-MultiMesh rows=up/down mm_threshold=0
+MANUAL_DEMO preset=shadows light=directional binary={ "major": 4, "minor": 8, "patch": 0, "hex": 264192, "status": "dev", "build": "custom_build", "hash": "eeed72b42987b2d29f9e1a99e2dd57cc5ff91172", "timestamp": 1788767011, "string": "4.8-dev (custom_build)" } renderer=forward_plus driver=vulkan size=(1280.0, 720.0)
+GPU PROFILE (total 0.794ms):
+	-TLAS Build: 0.04382539552356ms
+	-Setup Shadows: 0.01114285559881ms
+	-Render Directional/SpotLight Shadows: 0.01106349154124ms
+	-Update Volumetric Fog: 0.01096825183384ms
+	-RTXDI Surface: 0.03428572321695ms
+	-RTXDI Guides: 0.01922221978505ms
+	-RTXDI Direct Lighting: 0.35020637512207ms
+	-NRD RELAX and HDR Composition: 0.35036510891385ms
+	-Tonemap: 0.03246031110249ms
+	-Render CanvasItems: 0.01376191585783ms
+GPU PROFILE (total 1.154ms):
+	-TLAS Build: 0.04514998992284ms
+	-Setup Shadows: 0.01130000154177ms
+	-Render Directional/SpotLight Shadows: 0.0113666643699ms
+	-Update Volumetric Fog: 0.01111666460832ms
+	-RTXDI Surface: 0.03541667064031ms
+	-RTXDI Guides: 0.01906666755676ms
+	-RTXDI Direct Lighting: 0.35436668395996ms
+	-NRD RELAX and HDR Composition: 0.35424995422363ms
+	-Tonemap: 0.02019999821981ms
+	-Render CanvasItems: 0.01698333422343ms
+GPU PROFILE (total 1.079ms):
+	-TLAS Build: 0.05768855282518ms
+	-Setup Shadows: 0.01539343888642ms
+	-Render Directional/SpotLight Shadows: 0.01357376868608ms
+	-Update Volumetric Fog: 0.01388524204004ms
+	-RTXDI Surface: 0.04731147406531ms
+	-RTXDI Guides: 0.02121311523875ms
+	-RTXDI Direct Lighting: 0.67272129996878ms
+	-NRD RELAX and HDR Composition: 0.6749180027696ms
+	-Tonemap: 0.01072131414882ms
+	-Render CanvasItems: 0.02927867115521ms
+MANUAL_CAPTURE path=G:/Projects/godot-rtx/docs/research/rtxdi-stage7-evidence/final-shadows-expanded.png result=0 frame=230 gpu_ms=1.07599997520447
+MANUAL_MEMORY total=374392208.0 textures=279158784.0 buffers=83147028.0
+PROCESS_EXIT=0

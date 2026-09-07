@@ -30,9 +30,9 @@
 
 #include "nrd_effect.h"
 
-#include "servers/rendering/renderer_rd/storage_rd/light_storage.h"
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
 #include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
+#include "servers/rendering/renderer_scene_render.h"
 
 #include "thirdparty/nrd/Include/NRD.h"
 
@@ -321,7 +321,7 @@ bool NRDEffect::process(Context *p_context, const Frame &p_frame) {
 
 NRDEffect::NRDEffect(bool p_radiance_array, uint32_t p_roughness_layers) {
 	String defines = "#define MAX_ROUGHNESS_LOD " + itos(p_roughness_layers - 1) + ".0\n";
-	defines += "#define MAX_DIRECTIONAL_LIGHT_DATA_STRUCTS " + itos(LightStorage::get_singleton()->get_max_directional_lights()) + "\n";
+	defines += "#define MAX_DIRECTIONAL_LIGHT_DATA_STRUCTS " + itos(RendererSceneRender::MAX_DIRECTIONAL_LIGHTS) + "\n";
 	if (p_radiance_array) {
 		defines += "#define USE_RADIANCE_OCTMAP_ARRAY\n";
 	}

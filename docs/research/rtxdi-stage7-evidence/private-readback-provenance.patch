@@ -1,0 +1,124 @@
+--- a/drivers/vulkan/rendering_device_driver_vulkan.cpp
++++ b/drivers/vulkan/rendering_device_driver_vulkan.cpp
+@@ -32,6 +32,7 @@
+ 
+ #include "core/config/engine.h"
+ #include "core/config/project_settings.h"
++#include "core/io/file_access.h"
+ #include "core/os/os.h"
+ #include "core/templates/fixed_vector.h"
+ #include "drivers/vulkan/vulkan_hooks.h"
+@@ -4559,6 +4560,10 @@
+ 		}
+ 
+ 		shader_info.original_stage_size.push_back(decoded_spirv.size());
++		if (String(p_shader_container->shader_name.get_data()).begins_with("NRD ")) {
++			Ref<FileAccess> dump = FileAccess::open("C:/Users/lukas/AppData/Local/Temp/rtxdi-step7-nrd-modules/" + String(p_shader_container->shader_name.get_data()).md5_text() + "-pre.spv", FileAccess::WRITE);
++			dump->store_buffer(decoded_spirv);
++		}
+ 
+ 		if (use_respv) {
+ 			const bool inline_data = store_respv || (RESPV_ONLY_INLINE_SHADERS_WITH_SPEC_CONSTANTS == 0);
+@@ -4592,6 +4597,10 @@
+ 		shader_info.spirv_stage_bytes.push_back(decoded_spirv);
+ #endif
+ 
++		if (String(p_shader_container->shader_name.get_data()).begins_with("NRD ")) {
++			Ref<FileAccess> dump = FileAccess::open("C:/Users/lukas/AppData/Local/Temp/rtxdi-step7-nrd-modules/" + String(p_shader_container->shader_name.get_data()).md5_text() + "-post.spv", FileAccess::WRITE);
++			dump->store_buffer(decoded_spirv);
++		}
+ 		Aftermath::get_singleton()->register_shader(AFTERMATH_SHADER_SPIRV, decoded_spirv.ptr(), decoded_spirv.size());
+ 
+ 		VkShaderModuleCreateInfo shader_module_create_info = {};
+--- a/servers/rendering/renderer_rd/effects/nrd_effect.cpp
++++ b/servers/rendering/renderer_rd/effects/nrd_effect.cpp
+@@ -30,6 +30,9 @@
+ 
+ #include "nrd_effect.h"
+ 
++#include "core/io/file_access.h"
++#include "core/os/os.h"
++
+ #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
+ #include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
+ #include "servers/rendering/renderer_scene_render.h"
+@@ -67,7 +70,7 @@
+ 	format.width = p_size.x;
+ 	format.height = p_size.y;
+ 	format.format = p_format;
+-	format.usage_bits = RD::TEXTURE_USAGE_STORAGE_BIT | RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_CAN_COPY_TO_BIT;
++	format.usage_bits = RD::TEXTURE_USAGE_STORAGE_BIT | RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_CAN_COPY_TO_BIT | RD::TEXTURE_USAGE_CAN_COPY_FROM_BIT;
+ 	ERR_FAIL_COND_V_MSG(!RD::get_singleton()->texture_is_format_supported_for_usage(format.format, format.usage_bits), RID(), "The NRD texture format is unsupported on this device.");
+ 	return RD::get_singleton()->texture_create(format, RD::TextureView());
+ }
+@@ -315,6 +318,25 @@
+ 		rd->draw_command_end_label();
+ 	}
+ 	ERR_FAIL_COND_V(!_process_frame(p_context, p_frame, true), false);
++	if (p_frame.frame_index == 120 && OS::get_singleton()->has_environment("RTXDI_CAPTURE_DIR")) {
++		print_line(vformat("GPU_VIEW size=%s jitter=%s previous_jitter=%s history=%s", p_context->size, p_frame.jitter, p_frame.previous_jitter, p_frame.history_valid));
++		String directory = OS::get_singleton()->get_environment("RTXDI_CAPTURE_DIR");
++		const RID textures[] = { p_frame.noisy_diffuse, p_frame.noisy_specular, p_context->diffuse, p_context->specular, p_frame.color, p_frame.surface[0], p_frame.surface[1], p_frame.surface[2], p_frame.surface[3], p_frame.surface[4], p_frame.surface[5], p_context->view_depth, p_context->normal_roughness };
++		const char *names[] = { "raw_diffuse", "raw_specular", "nrd_diffuse", "nrd_specular", "hdr", "base", "shading", "emission", "motion", "geometry", "classification", "viewz", "nrd_normal" };
++		for (uint32_t i = 0; i < 13; i++) {
++			Vector<uint8_t> bytes = rd->texture_get_data(textures[i], 0);
++			String path = directory.path_join(vformat("%dx%d-%s.bin", p_context->size.x, p_context->size.y, names[i]));
++			Ref<FileAccess> dump = FileAccess::open(path, FileAccess::WRITE);
++			if (dump.is_valid()) {
++				dump->store_buffer(bytes);
++			}
++			print_line(vformat("GPU_READBACK %s bytes=%d frame=%d", path, bytes.size(), p_frame.frame_index));
++		}
++		print_line(vformat("GPU_MEMORY total=%d textures=%d buffers=%d", rd->get_memory_usage(RD::MEMORY_TOTAL), rd->get_memory_usage(RD::MEMORY_TEXTURES), rd->get_memory_usage(RD::MEMORY_BUFFERS)));
++		for (uint32_t i = 0; i < rd->get_captured_timestamps_count(); i++) {
++			print_line(vformat("GPU_TIMESTAMP %s %d", rd->get_captured_timestamp_name(i), rd->get_captured_timestamp_gpu_time(i)));
++		}
++	}
+ 	p_context->last_frame = p_frame.frame_index;
+ 	return true;
+ }
+--- a/servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.cpp
++++ b/servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.cpp
+@@ -66,7 +66,7 @@
+ 		return;
+ 	}
+ 
+-	const uint32_t usage = RD::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT | RD::TEXTURE_USAGE_SAMPLING_BIT;
++	const uint32_t usage = RD::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT | RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_CAN_COPY_FROM_BIT;
+ 	static const RD::DataFormat formats[6] = {
+ 		RD::DATA_FORMAT_R8G8B8A8_UNORM,
+ 		RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
+--- a/servers/rendering/renderer_rd/forward_clustered/render_rtxdi.cpp
++++ b/servers/rendering/renderer_rd/forward_clustered/render_rtxdi.cpp
+@@ -113,7 +113,7 @@
+ 	texture_format.format = RD::DATA_FORMAT_R16G16B16A16_SFLOAT;
+ 	texture_format.width = p_size.x;
+ 	texture_format.height = p_size.y;
+-	texture_format.usage_bits = RD::TEXTURE_USAGE_STORAGE_BIT | RD::TEXTURE_USAGE_SAMPLING_BIT;
++	texture_format.usage_bits = RD::TEXTURE_USAGE_STORAGE_BIT | RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_CAN_COPY_FROM_BIT;
+ 
+ 	for (uint32_t view = 0; view < p_view_count; view++) {
+ 		RenderRTXDIViewResources &view_resources = resources->views[view];
+--- a/servers/rendering/renderer_rd/storage_rd/render_scene_buffers_rd.cpp
++++ b/servers/rendering/renderer_rd/storage_rd/render_scene_buffers_rd.cpp
+@@ -184,7 +184,7 @@
+ 
+ 	// Create our color buffer.
+ 	const bool resolve_target = msaa_3d != RSE::VIEWPORT_MSAA_DISABLED;
+-	create_texture(RB_SCOPE_BUFFERS, RB_TEX_COLOR, get_base_data_format(), get_color_usage_bits(resolve_target, false, can_be_storage));
++	create_texture(RB_SCOPE_BUFFERS, RB_TEX_COLOR, get_base_data_format(), get_color_usage_bits(resolve_target, false, can_be_storage) | RD::TEXTURE_USAGE_CAN_COPY_FROM_BIT);
+ 
+ 	// TODO: Detect when it is safe to use RD::TEXTURE_USAGE_TRANSIENT_BIT for RB_TEX_DEPTH, RB_TEX_COLOR_MSAA and/or RB_TEX_DEPTH_MSAA.
+ 	// (it means we cannot sample from it, we cannot copy from/to it) to save VRAM (and maybe performance too).
+--- a/servers/rendering/renderer_rd/forward_clustered/scene_shader_forward_clustered.cpp
++++ b/servers/rendering/renderer_rd/forward_clustered/scene_shader_forward_clustered.cpp
+@@ -171,7 +171,8 @@
+ 
+ 	actions.usage_flag_pointers["TANGENT"] = &uses_tangent;
+ 	actions.usage_flag_pointers["BINORMAL"] = &uses_tangent;
+-	actions.usage_flag_pointers["ANISOTROPY_FLOW"] = &uses_anisotropy;
++	actions.usage_flag_pointers["ANISOTROPY"] = &uses_tangent;
++	actions.usage_flag_pointers["ANISOTROPY_FLOW"] = &uses_tangent;
+ 
+ 	actions.write_flag_pointers["MODELVIEW_MATRIX"] = &writes_modelview_or_projection;
+ 	actions.write_flag_pointers["PROJECTION_MATRIX"] = &writes_modelview_or_projection;

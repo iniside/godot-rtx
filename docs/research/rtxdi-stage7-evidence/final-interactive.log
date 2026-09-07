@@ -1,0 +1,1197 @@
+Godot Engine v4.8.dev.custom_build.eeed72b42 (2026-09-07 07:43:31 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Streamline - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+
+MANUAL_DEMO preset=gallery light=all binary={ "major": 4, "minor": 8, "patch": 0, "hex": 264192, "status": "dev", "build": "custom_build", "hash": "eeed72b42987b2d29f9e1a99e2dd57cc5ff91172", "timestamp": 1788767011, "string": "4.8-dev (custom_build)" } renderer=forward_plus driver=vulkan size=(1280.0, 720.0)
+GPU PROFILE (total 0.945ms):
+	-Setup Sky: 0.01937497407198ms
+	-BLAS Build: 0.02615624666214ms
+	-TLAS Build: 0.049984395504ms
+	-Render OmniLight Shadows: 0.04393750056624ms
+	-Render Directional/SpotLight Shadows: 0.03101561777294ms
+	-Update Volumetric Fog: 0.0101562468335ms
+	-RTXDI Surface: 0.03459373489022ms
+	-RTXDI Guides: 0.02076562680304ms
+	-RTXDI Direct Lighting: 0.38187500834465ms
+	-NRD RELAX and HDR Composition: 0.3982969224453ms
+GPU PROFILE (total 1.355ms):
+	-BLAS Build: 0.01830645530455ms
+	-TLAS Build: 0.05251615278182ms
+	-Render OmniLight Shadows: 0.04641935133165ms
+	-Render Directional/SpotLight Shadows: 0.03290322134572ms
+	-Update Volumetric Fog: 0.01058064353081ms
+	-RTXDI Surface: 0.03220968092642ms
+	-RTXDI Guides: 0.02148387316735ms
+	-RTXDI Direct Lighting: 0.38887091605894ms
+	-NRD RELAX and HDR Composition: 0.41540324303412ms
+GPU PROFILE (total 1.512ms):
+	-BLAS Build: 0.02596720906555ms
+	-TLAS Build: 0.07555736479212ms
+	-Render OmniLight Shadows: 0.07040982168229ms
+	-Render Directional/SpotLight Shadows: 0.04985246892835ms
+	-Pack 3D Cluster Elements: 0.01211475935139ms
+	-Update Volumetric Fog: 0.01467212204073ms
+	-RTXDI Surface: 0.04650822232981ms
+	-RTXDI Guides: 0.02275409854826ms
+	-RTXDI Direct Lighting: 0.71890171238633ms
+	-NRD RELAX and HDR Composition: 0.70942631705863ms
+	-Render Sky: 0.026114751081ms
+	-Tonemap: 0.01034425907448ms
+	-Render CanvasItems: 0.01209836416557ms
+GPU PROFILE (total 1.735ms):
+	-BLAS Build: 0.02827869673244ms
+	-TLAS Build: 0.08537709126707ms
+	-Render OmniLight Shadows: 0.08019673238035ms
+	-Render Directional/SpotLight Shadows: 0.05627868996292ms
+	-Pack 3D Cluster Elements: 0.01331147698105ms
+	-Update Volumetric Fog: 0.01618032670412ms
+	-RTXDI Surface: 0.06004918598738ms
+	-RTXDI Guides: 0.04901638969046ms
+	-RTXDI Direct Lighting: 0.70004929089155ms
+	-NRD RELAX and HDR Composition: 0.72481968363778ms
+	-Render Sky: 0.02727869299592ms
+	-Tonemap: 0.01145902031758ms
+	-Render CanvasItems: 0.0184754035512ms
+GPU PROFILE (total 2.309ms):
+	-BLAS Build: 0.03141934064127ms
+	-TLAS Build: 0.09485487015017ms
+	-Render OmniLight Shadows: 0.0917741944713ms
+	-Render Directional/SpotLight Shadows: 0.06449999732356ms
+	-Pack 3D Cluster Elements: 0.01511289419666ms
+	-Update Volumetric Fog: 0.0178387126615ms
+	-RTXDI Surface: 0.14169353054416ms
+	-RTXDI Guides: 0.04791936182207ms
+	-RTXDI Direct Lighting: 0.68638709283644ms
+	-NRD RELAX and HDR Composition: 0.87308059200164ms
+	-Render Sky: 0.02070967612728ms
+	-Tonemap: 0.01270968202622ms
+	-Render CanvasItems: 0.01285483856355ms
+MANUAL_ACTION key=4194343 frame=336 lights=4 size=(1280, 720)
+MANUAL_CAPTURE path=C:/Users/lukas/AppData/Roaming/Godot/app_userdata/RTXDI manual rendering demonstration/manual-1788772519.png result=0 frame=336 gpu_ms=2.03999996185303
+MANUAL_MEMORY total=455105440.0 textures=358092288.0 buffers=84067558.0
+GPU PROFILE (total 3.457ms):
+	-BLAS Build: 0.03451922765145ms
+	-TLAS Build: 0.12069232647236ms
+	-Render OmniLight Shadows: 0.10390386214623ms
+	-Render Directional/SpotLight Shadows: 0.07296151381273ms
+	-Render 3D Cluster Elements: 0.01082692352625ms
+	-Pack 3D Cluster Elements: 0.02961538846676ms
+	-Update Volumetric Fog: 0.03513461122146ms
+	-RTXDI Surface: 0.08828842639923ms
+	-RTXDI Guides: 0.02346153901174ms
+	-RTXDI Direct Lighting: 0.80963464883658ms
+	-NRD RELAX and HDR Composition: 1.00194219442514ms
+	-Render Sky: 0.02428845717357ms
+	-Tonemap: 0.02278846043807ms
+	-Render CanvasItems: 0.01342307375028ms
+GPU PROFILE (total 2.065ms):
+	-Cull DirectionalLight3D, Split 3: 0.01011475285546ms
+	-BLAS Build: 0.03581967119311ms
+	-TLAS Build: 0.10916390184496ms
+	-Render OmniLight Shadows: 0.10762300647673ms
+	-Render Directional/SpotLight Shadows: 0.07595079453265ms
+	-Render 3D Cluster Elements: 0.01121311207287ms
+	-Pack 3D Cluster Elements: 0.15890162108374ms
+	-Update Volumetric Fog: 0.03550820663327ms
+	-RTXDI Surface: 0.19026232547447ms
+	-RTXDI Guides: 0.02401639398981ms
+	-RTXDI Direct Lighting: 1.02834445140401ms
+	-NRD RELAX and HDR Composition: 1.03203288844374ms
+	-Render Sky: 0.01899999673249ms
+	-Tonemap: 0.01478688345581ms
+	-Render CanvasItems: 0.0139508188748ms
+GPU PROFILE (total 2.062ms):
+	-BLAS Build: 0.0347213041587ms
+	-TLAS Build: 0.10624588512983ms
+	-Render OmniLight Shadows: 0.10345906898624ms
+	-Render Directional/SpotLight Shadows: 0.07290162414801ms
+	-Render 3D Cluster Elements: 0.01083606481552ms
+	-Pack 3D Cluster Elements: 0.01698360677625ms
+	-Update Volumetric Fog: 0.08378688624648ms
+	-RTXDI Surface: 0.16832784746514ms
+	-RTXDI Guides: 0.02326229556662ms
+	-RTXDI Direct Lighting: 0.8445574650999ms
+	-NRD RELAX and HDR Composition: 1.01270488051117ms
+	-Render Sky: 0.01636064834282ms
+	-Tonemap: 0.01426229125164ms
+	-Render CanvasItems: 0.01357376770895ms
+GPU PROFILE (total 5.14ms):
+	-Cull DirectionalLight3D, Split 3: 0.0109016387189ms
+	-BLAS Build: 0.03909834877389ms
+	-TLAS Build: 0.11821312982528ms
+	-Render OmniLight Shadows: 0.12013113303263ms
+	-Render Directional/SpotLight Shadows: 0.08721312538522ms
+	-Pre Opaque Render: 0.07362294587933ms
+	-Render 3D Cluster Elements: 0.01232787331597ms
+	-Pack 3D Cluster Elements: 0.01922950783714ms
+	-Update Volumetric Fog: 0.02944262496761ms
+	-RTXDI Surface: 0.12619671274404ms
+	-RTXDI Guides: 0.02578687667847ms
+	-RTXDI Direct Lighting: 0.97850805814149ms
+	-NRD RELAX and HDR Composition: 1.11555731101114ms
+	-Render Sky: 0.01836065581587ms
+	-Tonemap: 0.05445901683119ms
+	-Render CanvasItems: 0.01481967675881ms
+GPU PROFILE (total 2.561ms):
+	-Cull DirectionalLight3D, Split 3: 0.01116393628668ms
+	-BLAS Build: 0.04144263267517ms
+	-TLAS Build: 0.12422954840738ms
+	-Render OmniLight Shadows: 0.1287377545091ms
+	-Render Directional/SpotLight Shadows: 0.09337708207427ms
+	-Pre Opaque Render: 0.26690167286357ms
+	-Render 3D Cluster Elements: 0.01288525002902ms
+	-Pack 3D Cluster Elements: 0.02039344388931ms
+	-Update Volumetric Fog: 0.02329508593825ms
+	-RTXDI Surface: 0.08796721599141ms
+	-RTXDI Guides: 0.02759016146425ms
+	-RTXDI Direct Lighting: 1.17040990610592ms
+	-NRD RELAX and HDR Composition: 1.19290173640017ms
+	-Render Sky: 0.07775409104394ms
+	-Tonemap: 0.06211473902718ms
+	-Render CanvasItems: 0.0152459056651ms
+GPU PROFILE (total 2.578ms):
+	-Cull DirectionalLight3D, Split 3: 0.01114753816949ms
+	-BLAS Build: 0.04145902102111ms
+	-TLAS Build: 0.12532787635678ms
+	-Render OmniLight Shadows: 0.12888527698204ms
+	-Render Directional/SpotLight Shadows: 0.11201644334637ms
+	-Pre Opaque Render: 0.14067212089163ms
+	-Render 3D Cluster Elements: 0.01285246552014ms
+	-Pack 3D Cluster Elements: 0.0205573820677ms
+	-Update Volumetric Fog: 0.02332787044713ms
+	-RTXDI Surface: 0.08827868445975ms
+	-RTXDI Guides: 0.02773770152545ms
+	-RTXDI Direct Lighting: 1.15940982005635ms
+	-NRD RELAX and HDR Composition: 1.14450823674436ms
+	-Render Sky: 0.06696720592311ms
+	-Tonemap: 0.03490163459152ms
+	-Render CanvasItems: 0.0146557454203ms
+GPU PROFILE (total 2.577ms):
+	-Cull DirectionalLight3D, Split 3: 0.01124193591456ms
+	-BLAS Build: 0.04141935994548ms
+	-TLAS Build: 0.12472581863403ms
+	-Render OmniLight Shadows: 0.12898392062033ms
+	-Render Directional/SpotLight Shadows: 0.1181935879492ms
+	-Pre Opaque Render: 0.18070968504875ms
+	-Render 3D Cluster Elements: 0.01291936059152ms
+	-Pack 3D Cluster Elements: 0.02024193348423ms
+	-Update Volumetric Fog: 0.02345161860989ms
+	-RTXDI Surface: 0.08812902050634ms
+	-RTXDI Guides: 0.02779031568958ms
+	-RTXDI Direct Lighting: 1.08811273882466ms
+	-NRD RELAX and HDR Composition: 1.26472583893807ms
+	-Render Sky: 0.0251612913224ms
+	-Tonemap: 0.05359674653699ms
+	-Render CanvasItems: 0.01459678046165ms
+MANUAL_ACTION key=32 frame=782 lights=4 size=(1280, 720)
+MANUAL_ACTION key=79 frame=789 lights=4 size=(1280, 720)
+GPU PROFILE (total 2.301ms):
+	-BLAS Build: 0.03677050402907ms
+	-TLAS Build: 0.12401642564867ms
+	-Render OmniLight Shadows: 0.11622952633217ms
+	-Render Directional/SpotLight Shadows: 0.10360661491019ms
+	-Pre Opaque Render: 0.20559016993788ms
+	-Render 3D Cluster Elements: 0.01295082490952ms
+	-Pack 3D Cluster Elements: 0.02042623621518ms
+	-Update Volumetric Fog: 0.02349180667127ms
+	-RTXDI Surface: 0.0881311385358ms
+	-RTXDI Guides: 0.02768852085364ms
+	-RTXDI Direct Lighting: 1.1013771432345ms
+	-NRD RELAX and HDR Composition: 1.10154086253682ms
+	-Render Sky: 0.05178689565815ms
+	-Tonemap: 0.04214751134153ms
+	-Render CanvasItems: 0.01450819851922ms
+MANUAL_ACTION key=4194343 frame=795 lights=4 size=(1280, 720)
+MANUAL_CAPTURE path=C:/Users/lukas/AppData/Roaming/Godot/app_userdata/RTXDI manual rendering demonstration/manual-1788772527.png result=0 frame=795 gpu_ms=2.3050000667572
+MANUAL_MEMORY total=455105440.0 textures=358092288.0 buffers=84067558.0
+GPU PROFILE (total 2.29ms):
+	-TLAS Build: 0.11611112841853ms
+	-Setup Shadows: 0.03055554628372ms
+	-Render Directional/SpotLight Shadows: 0.02818518877029ms
+	-Render 3D Cluster Elements: 0.01272222841227ms
+	-Pack 3D Cluster Elements: 0.02033333204411ms
+	-Update Volumetric Fog: 0.02359259349329ms
+	-RTXDI Surface: 0.08814816121702ms
+	-RTXDI Guides: 0.03607406660363ms
+	-RTXDI Direct Lighting: 1.23038892392759ms
+	-NRD RELAX and HDR Composition: 0.8975000028257ms
+	-Render Sky: 0.01974074266575ms
+	-Tonemap: 0.017370376322ms
+	-Render CanvasItems: 0.01494444851522ms
+GPU PROFILE (total 2.972ms):
+	-TLAS Build: 0.11255741901085ms
+	-Setup Shadows: 0.03032787901456ms
+	-Render Directional/SpotLight Shadows: 0.02521311845936ms
+	-Render 3D Cluster Elements: 0.01219672355496ms
+	-Pack 3D Cluster Elements: 0.01985246236207ms
+	-Update Volumetric Fog: 0.02267213141332ms
+	-RTXDI Surface: 0.08419671605845ms
+	-RTXDI Guides: 0.02659016749898ms
+	-RTXDI Direct Lighting: 1.28242617747823ms
+	-NRD RELAX and HDR Composition: 0.97021315527744ms
+	-Render Sky: 0.01909836198463ms
+	-Tonemap: 0.01691802798725ms
+	-Render CanvasItems: 0.01460655693148ms
+GPU PROFILE (total 2.085ms):
+	-TLAS Build: 0.10840982687278ms
+	-Setup Shadows: 0.02877049954211ms
+	-Render Directional/SpotLight Shadows: 0.0242622934404ms
+	-Render 3D Cluster Elements: 0.01173770818554ms
+	-Pack 3D Cluster Elements: 0.01909836198463ms
+	-Update Volumetric Fog: 0.02163934903067ms
+	-RTXDI Surface: 0.07990160926444ms
+	-RTXDI Guides: 0.02499999960915ms
+	-RTXDI Direct Lighting: 1.13122946317079ms
+	-NRD RELAX and HDR Composition: 0.87619668929303ms
+	-Render Sky: 0.01837705002456ms
+	-Tonemap: 0.01591802522784ms
+	-Render CanvasItems: 0.01418032704807ms
+GPU PROFILE (total 2.29ms):
+	-TLAS Build: 0.1139193734815ms
+	-Setup Shadows: 0.03085482889606ms
+	-Render Directional/SpotLight Shadows: 0.02532257956843ms
+	-Render 3D Cluster Elements: 0.01254839378019ms
+	-Pack 3D Cluster Elements: 0.01995162040957ms
+	-Update Volumetric Fog: 0.023080645069ms
+	-RTXDI Surface: 0.08569352857528ms
+	-RTXDI Guides: 0.02695160911929ms
+	-RTXDI Direct Lighting: 1.27462916220388ms
+	-NRD RELAX and HDR Composition: 0.92870952237037ms
+	-Render Sky: 0.01938709905071ms
+	-Tonemap: 0.01703226181769ms
+	-Render CanvasItems: 0.02845161960971ms
+GPU PROFILE (total 2.302ms):
+	-TLAS Build: 0.11598364251559ms
+	-Setup Shadows: 0.031819656247ms
+	-Render Directional/SpotLight Shadows: 0.02565573668871ms
+	-Render 3D Cluster Elements: 0.01275410515363ms
+	-Pack 3D Cluster Elements: 0.02037705358912ms
+	-Update Volumetric Fog: 0.02355738155177ms
+	-RTXDI Surface: 0.08801638493772ms
+	-RTXDI Guides: 0.02778688415152ms
+	-RTXDI Direct Lighting: 1.31527885061796ms
+	-NRD RELAX and HDR Composition: 0.9709671520796ms
+	-Render Sky: 0.025442629564ms
+	-Tonemap: 0.01759016513824ms
+	-Render CanvasItems: 0.01465574639742ms
+GPU PROFILE (total 2.287ms):
+	-TLAS Build: 0.11611477273409ms
+	-Setup Shadows: 0.03170490460318ms
+	-Render Directional/SpotLight Shadows: 0.02568852510609ms
+	-Render 3D Cluster Elements: 0.01270492545894ms
+	-Pack 3D Cluster Elements: 0.02040983809799ms
+	-Update Volumetric Fog: 0.02345902020814ms
+	-RTXDI Surface: 0.08803277719216ms
+	-RTXDI Guides: 0.02770491310808ms
+	-RTXDI Direct Lighting: 1.2449179477379ms
+	-NRD RELAX and HDR Composition: 0.94345899488105ms
+	-Render Sky: 0.0207704931009ms
+	-Tonemap: 0.01752459221199ms
+	-Render CanvasItems: 0.0148032854815ms
+GPU PROFILE (total 2.291ms):
+	-TLAS Build: 0.11601641139046ms
+	-Setup Shadows: 0.03175408332074ms
+	-Render Directional/SpotLight Shadows: 0.02570491931478ms
+	-Render 3D Cluster Elements: 0.01265574478712ms
+	-Pack 3D Cluster Elements: 0.02037705358912ms
+	-Update Volumetric Fog: 0.02342623179076ms
+	-RTXDI Surface: 0.0881311385358ms
+	-RTXDI Guides: 0.02767213055345ms
+	-RTXDI Direct Lighting: 1.1659016843702ms
+	-NRD RELAX and HDR Composition: 0.87500006253602ms
+	-Render Sky: 0.02016393278466ms
+	-Tonemap: 0.01739344440523ms
+	-Render CanvasItems: 0.01496721877426ms
+GPU PROFILE (total 2.302ms):
+	-TLAS Build: 0.11599998005101ms
+	-Setup Shadows: 0.03177047752943ms
+	-Render Directional/SpotLight Shadows: 0.02586885358466ms
+	-Render 3D Cluster Elements: 0.01270492350469ms
+	-Pack 3D Cluster Elements: 0.02039344388931ms
+	-Update Volumetric Fog: 0.02342623179076ms
+	-RTXDI Surface: 0.08816393867868ms
+	-RTXDI Guides: 0.02763933431907ms
+	-RTXDI Direct Lighting: 1.32542644563268ms
+	-NRD RELAX and HDR Composition: 0.93359031051886ms
+	-Render Sky: 0.02477049632151ms
+	-Tonemap: 0.01765574001875ms
+	-Render CanvasItems: 0.01514754236722ms
+GPU PROFILE (total 2.296ms):
+	-TLAS Build: 0.11596722681014ms
+	-Setup Shadows: 0.03168851821149ms
+	-Render Directional/SpotLight Shadows: 0.02578688449547ms
+	-Render 3D Cluster Elements: 0.01277049740807ms
+	-Pack 3D Cluster Elements: 0.02031147870861ms
+	-Update Volumetric Fog: 0.02354098929734ms
+	-RTXDI Surface: 0.08806556170104ms
+	-RTXDI Guides: 0.02781967061465ms
+	-RTXDI Direct Lighting: 1.25708195420562ms
+	-NRD RELAX and HDR Composition: 0.90331130731301ms
+	-Render Sky: 0.02036065351768ms
+	-Tonemap: 0.01754098837493ms
+	-Render CanvasItems: 0.01475410578681ms
+MANUAL_ACTION key=79 frame=1335 lights=4 size=(1280, 720)
+GPU PROFILE (total 2.989ms):
+	-TLAS Build: 0.12260660577993ms
+	-Setup Shadows: 0.03068851447496ms
+	-Render Directional/SpotLight Shadows: 0.02801639330192ms
+	-Render 3D Cluster Elements: 0.01286885679745ms
+	-Pack 3D Cluster Elements: 0.02034426517174ms
+	-Update Volumetric Fog: 0.03890164562913ms
+	-RTXDI Surface: 0.08811474628136ms
+	-RTXDI Guides: 0.02754097492968ms
+	-RTXDI Direct Lighting: 1.34298368360175ms
+	-NRD RELAX and HDR Composition: 0.94352459516682ms
+	-Render Sky: 0.02434426448384ms
+	-Tonemap: 0.01767213618169ms
+	-Render CanvasItems: 0.01481967578169ms
+GPU PROFILE (total 2.298ms):
+	-TLAS Build: 0.12288528192239ms
+	-Setup Shadows: 0.03178687173812ms
+	-Render Directional/SpotLight Shadows: 0.02583606516729ms
+	-Render 3D Cluster Elements: 0.01277049740807ms
+	-Pack 3D Cluster Elements: 0.02037704968062ms
+	-Update Volumetric Fog: 0.02357377380621ms
+	-RTXDI Surface: 0.08803279282617ms
+	-RTXDI Guides: 0.02772130731676ms
+	-RTXDI Direct Lighting: 1.50416389840548ms
+	-NRD RELAX and HDR Composition: 0.98749179527408ms
+	-Render Sky: 0.04762295816765ms
+	-Tonemap: 0.01765574392725ms
+	-Render CanvasItems: 0.01493443621964ms
+MANUAL_ACTION key=4194343 frame=1462 lights=4 size=(1280, 720)
+MANUAL_CAPTURE path=C:/Users/lukas/AppData/Roaming/Godot/app_userdata/RTXDI manual rendering demonstration/manual-1788772538.png result=0 frame=1462 gpu_ms=2.29900002479553
+MANUAL_MEMORY total=455105440.0 textures=358092288.0 buffers=84067558.0
+GPU PROFILE (total 2.304ms):
+	-TLAS Build: 0.1228148760619ms
+	-Setup Shadows: 0.03172221669444ms
+	-Render Directional/SpotLight Shadows: 0.03425925970078ms
+	-Render 3D Cluster Elements: 0.01275926497247ms
+	-Pack 3D Cluster Elements: 0.02037036860431ms
+	-Update Volumetric Fog: 0.02353703975677ms
+	-RTXDI Surface: 0.08811110920376ms
+	-RTXDI Guides: 0.04409259336966ms
+	-RTXDI Direct Lighting: 1.63001858746564ms
+	-NRD RELAX and HDR Composition: 1.04851835745352ms
+	-Render Sky: 0.02027778272276ms
+	-Tonemap: 0.01779630007567ms
+	-Render CanvasItems: 0.03133333170855ms
+GPU PROFILE (total 2.3ms):
+	-TLAS Build: 0.12286892093596ms
+	-Setup Shadows: 0.03177047752943ms
+	-Render Directional/SpotLight Shadows: 0.02578688840397ms
+	-Render 3D Cluster Elements: 0.01268853027312ms
+	-Pack 3D Cluster Elements: 0.02042623035243ms
+	-Update Volumetric Fog: 0.02349180862552ms
+	-RTXDI Surface: 0.08822949987943ms
+	-RTXDI Guides: 0.02762294597313ms
+	-RTXDI Direct Lighting: 1.41067242231525ms
+	-NRD RELAX and HDR Composition: 0.91931133582944ms
+	-Render Sky: 0.01963934546611ms
+	-Tonemap: 0.01768852843613ms
+	-Render CanvasItems: 0.01468853188343ms
+GPU PROFILE (total 3.987ms):
+	-TLAS Build: 0.12288529755639ms
+	-Setup Shadows: 0.03181965429275ms
+	-Render Directional/SpotLight Shadows: 0.02572131547772ms
+	-Render 3D Cluster Elements: 0.01272131771338ms
+	-Pack 3D Cluster Elements: 0.02031147675436ms
+	-Update Volumetric Fog: 0.02347541637108ms
+	-RTXDI Surface: 0.08816393086168ms
+	-RTXDI Guides: 0.02762294792738ms
+	-RTXDI Direct Lighting: 1.38775434650359ms
+	-NRD RELAX and HDR Composition: 1.03793447525775ms
+	-Render Sky: 0.02418033021395ms
+	-Tonemap: 0.01755737867512ms
+	-Render CanvasItems: 0.01473771353237ms
+GPU PROFILE (total 5.125ms):
+	-TLAS Build: 0.12103280083078ms
+	-Setup Shadows: 0.0312295038192ms
+	-Render Directional/SpotLight Shadows: 0.02547540821013ms
+	-Render 3D Cluster Elements: 0.01254098728055ms
+	-Pack 3D Cluster Elements: 0.02014754834722ms
+	-Update Volumetric Fog: 0.02304917867066ms
+	-RTXDI Surface: 0.08640986583272ms
+	-RTXDI Guides: 0.02706557219146ms
+	-RTXDI Direct Lighting: 1.64013109050813ms
+	-NRD RELAX and HDR Composition: 1.0421965552158ms
+	-Render Sky: 0.01996721791439ms
+	-Tonemap: 0.01737705215079ms
+	-Render CanvasItems: 0.01509837146665ms
+GPU PROFILE (total 3.149ms):
+	-TLAS Build: 0.1103934538169ms
+	-Setup Shadows: 0.02767212273645ms
+	-Render Directional/SpotLight Shadows: 0.02309836520523ms
+	-Render 3D Cluster Elements: 0.01147541452627ms
+	-Pack 3D Cluster Elements: 0.01816393508286ms
+	-Update Volumetric Fog: 0.02072131242908ms
+	-RTXDI Surface: 0.07591803347478ms
+	-RTXDI Guides: 0.02418033021395ms
+	-RTXDI Direct Lighting: 1.37165582375448ms
+	-NRD RELAX and HDR Composition: 0.86567206460921ms
+	-Render Sky: 0.01780328007995ms
+	-Tonemap: 0.01557376150225ms
+	-Render CanvasItems: 0.01409836479875ms
+GPU PROFILE (total 2.546ms):
+	-TLAS Build: 0.1074917902712ms
+	-Setup Shadows: 0.02672130553449ms
+	-Render Directional/SpotLight Shadows: 0.02275410245677ms
+	-Render 3D Cluster Elements: 0.01122950725868ms
+	-Pack 3D Cluster Elements: 0.01742623086836ms
+	-Update Volumetric Fog: 0.02026229412829ms
+	-RTXDI Surface: 0.07277051738051ms
+	-RTXDI Guides: 0.02393442880912ms
+	-RTXDI Direct Lighting: 1.75931161348937ms
+	-NRD RELAX and HDR Composition: 0.98842633356814ms
+	-Render Sky: 0.0210655654063ms
+	-Tonemap: 0.02208196530577ms
+	-Render CanvasItems: 0.01427868936883ms
+GPU PROFILE (total 2.667ms):
+	-TLAS Build: 0.10568850939391ms
+	-Setup Shadows: 0.02600000334568ms
+	-Render Directional/SpotLight Shadows: 0.02236065708223ms
+	-Render 3D Cluster Elements: 0.01096721066803ms
+	-Pack 3D Cluster Elements: 0.01713115270021ms
+	-Update Volumetric Fog: 0.01986885070801ms
+	-RTXDI Surface: 0.07114756693606ms
+	-RTXDI Guides: 0.02373771003035ms
+	-RTXDI Direct Lighting: 1.20100015108703ms
+	-NRD RELAX and HDR Composition: 0.98929520904041ms
+	-Render Sky: 0.01704917579401ms
+	-Tonemap: 0.02185245420112ms
+	-Render CanvasItems: 0.04145902102111ms
+GPU PROFILE (total 3.952ms):
+	-TLAS Build: 0.1127540791621ms
+	-Setup Shadows: 0.02852459227453ms
+	-Render Directional/SpotLight Shadows: 0.02375409837629ms
+	-Render 3D Cluster Elements: 0.01178688885736ms
+	-Pack 3D Cluster Elements: 0.01852459008576ms
+	-Update Volumetric Fog: 0.02144263220615ms
+	-RTXDI Surface: 0.07844264390039ms
+	-RTXDI Guides: 0.02472130392419ms
+	-RTXDI Direct Lighting: 1.22708192418833ms
+	-NRD RELAX and HDR Composition: 0.83124579757941ms
+	-Render Sky: 0.01839344423325ms
+	-Tonemap: 0.05339343821416ms
+	-Render CanvasItems: 0.04252460745514ms
+GPU PROFILE (total 4.68ms):
+	-TLAS Build: 0.11901636592677ms
+	-Setup Shadows: 0.03031147308037ms
+	-Render Directional/SpotLight Shadows: 0.02511475125297ms
+	-Render 3D Cluster Elements: 0.01229508782997ms
+	-Pack 3D Cluster Elements: 0.0198852449167ms
+	-Update Volumetric Fog: 0.02255737781525ms
+	-RTXDI Surface: 0.08422951620133ms
+	-RTXDI Guides: 0.02609835687231ms
+	-RTXDI Direct Lighting: 1.53831144239082ms
+	-NRD RELAX and HDR Composition: 0.94318014676454ms
+	-Render Sky: 0.0198852527337ms
+	-Tonemap: 0.01793442593246ms
+	-Render CanvasItems: 0.02904918154732ms
+GPU PROFILE (total 2.996ms):
+	-TLAS Build: 0.12278693621276ms
+	-Setup Shadows: 0.031885227219ms
+	-Render Directional/SpotLight Shadows: 0.02570491931478ms
+	-Render 3D Cluster Elements: 0.01265574381ms
+	-Pack 3D Cluster Elements: 0.02045902267831ms
+	-Update Volumetric Fog: 0.02337705111894ms
+	-RTXDI Surface: 0.08796720817441ms
+	-RTXDI Guides: 0.02740983298567ms
+	-RTXDI Direct Lighting: 1.44765584976947ms
+	-NRD RELAX and HDR Composition: 0.91416387088963ms
+	-Render Sky: 0.01996721400589ms
+	-Tonemap: 0.01742623477686ms
+	-Render CanvasItems: 0.01480329036713ms
+GPU PROFILE (total 2.292ms):
+	-TLAS Build: 0.12268859050313ms
+	-Setup Shadows: 0.03163933363117ms
+	-Render Directional/SpotLight Shadows: 0.02573770382365ms
+	-Render 3D Cluster Elements: 0.0127213186905ms
+	-Pack 3D Cluster Elements: 0.02031147675436ms
+	-Update Volumetric Fog: 0.02355738155177ms
+	-RTXDI Surface: 0.08811474628136ms
+	-RTXDI Guides: 0.02755737304688ms
+	-RTXDI Direct Lighting: 1.5328031446113ms
+	-NRD RELAX and HDR Composition: 0.88027866551133ms
+	-Render Sky: 0.02665574237949ms
+	-Tonemap: 0.01755737672087ms
+	-Render CanvasItems: 0.01498361298295ms
+GPU PROFILE (total 2.307ms):
+	-TLAS Build: 0.12278692839576ms
+	-Setup Shadows: 0.03163933363117ms
+	-Render Directional/SpotLight Shadows: 0.02580327674991ms
+	-Render 3D Cluster Elements: 0.01277049936232ms
+	-Pack 3D Cluster Elements: 0.02031147675436ms
+	-Update Volumetric Fog: 0.02360655831509ms
+	-RTXDI Surface: 0.08806556951804ms
+	-RTXDI Guides: 0.02767212273645ms
+	-RTXDI Direct Lighting: 1.26673776595319ms
+	-NRD RELAX and HDR Composition: 1.02111459950932ms
+	-Render Sky: 0.03554098723365ms
+	-Tonemap: 0.01747541154017ms
+	-Render CanvasItems: 0.01496722072851ms
+MANUAL_ACTION key=87 frame=2201 lights=4 size=(1280, 720)
+GPU PROFILE (total 3.816ms):
+	-TLAS Build: 0.12286891311896ms
+	-Setup Shadows: 0.03172130076612ms
+	-Render Directional/SpotLight Shadows: 0.02545901400144ms
+	-Render 3D Cluster Elements: 0.01270492350469ms
+	-Pack 3D Cluster Elements: 0.01962295125742ms
+	-Update Volumetric Fog: 0.02352459508865ms
+	-RTXDI Surface: 0.09680328212801ms
+	-RTXDI Guides: 0.02785245707778ms
+	-RTXDI Direct Lighting: 1.45172144155033ms
+	-NRD RELAX and HDR Composition: 1.00622952570681ms
+	-Render Sky: 0.04885245932907ms
+	-Tonemap: 0.01757377483806ms
+	-Render CanvasItems: 0.01495082358845ms
+MANUAL_ACTION key=67 frame=2251 lights=4 size=(1280, 720)
+MANUAL_ACTION key=90 frame=2257 lights=4 size=(1024, 640)
+MANUAL_ACTION key=86 frame=2263 lights=4 size=(1024, 640)
+MANUAL_ACTION key=70 frame=2269 lights=4 size=(1024, 640)
+MANUAL_ACTION key=85 frame=2274 lights=4 size=(1024, 640)
+MANUAL_ACTION key=32 frame=2280 lights=4 size=(1024, 640)
+GPU PROFILE (total 2.674ms):
+	-BLAS Build: 0.01434426327221ms
+	-TLAS Build: 0.23288518874372ms
+	-Setup Shadows: 0.02865574985254ms
+	-Render Directional/SpotLight Shadows: 0.11929504988623ms
+	-Pre Opaque Render: 0.01909835807613ms
+	-Render 3D Cluster Elements: 0.02624589693351ms
+	-Pack 3D Cluster Elements: 0.01695081835887ms
+	-Update Volumetric Fog: 0.01373770588734ms
+	-RTXDI Surface: 0.13954089117832ms
+	-RTXDI Guides: 0.0333770454907ms
+	-RTXDI Direct Lighting: 1.28511447593814ms
+	-NRD RELAX and HDR Composition: 1.06180347380091ms
+	-Render Sky: 0.02290164838072ms
+	-Tonemap: 0.02162294700497ms
+	-Render CanvasItems: 0.02327869368381ms
+	-Render OmniLight Shadows: 0.07449179790059ms
+	-Render Fog: 0.12798360918389ms
+	-Filter Fog: 0.02834425793319ms
+	-Integrate Fog: 0.04742624329739ms
+	-FSR2: 0.08995080385052ms
+GPU PROFILE (total 3.412ms):
+	-Cull DirectionalLight3D, Split 3: 0.01104918073435ms
+	-BLAS Build: 0.04131147900566ms
+	-TLAS Build: 0.24604911491519ms
+	-Render OmniLight Shadows: 0.21088529805668ms
+	-Render Directional/SpotLight Shadows: 0.17449177288618ms
+	-Pre Opaque Render: 0.02827869282394ms
+	-Render 3D Cluster Elements: 0.0238852364118ms
+	-Pack 3D Cluster Elements: 0.02596717779754ms
+	-Render Fog: 0.273901673614ms
+	-Filter Fog: 0.05362296886131ms
+	-Integrate Fog: 0.09044268092171ms
+	-RTXDI Surface: 0.08060654655832ms
+	-RTXDI Guides: 0.02442621598478ms
+	-RTXDI Direct Lighting: 0.72252473674837ms
+	-NRD RELAX and HDR Composition: 0.72686898903769ms
+	-Render Sky: 0.02483607706476ms
+	-Tonemap: 0.02422950893152ms
+	-Render CanvasItems: 0.02637706037428ms
+	-FSR2: 0.21672133148694ms
+GPU PROFILE (total 3.391ms):
+	-Cull DirectionalLight3D, Split 3: 0.01098360194535ms
+	-BLAS Build: 0.04139344418635ms
+	-TLAS Build: 0.24621305309358ms
+	-Render OmniLight Shadows: 0.2109836203153ms
+	-Render Directional/SpotLight Shadows: 0.18681967063028ms
+	-Pre Opaque Render: 0.02332786849288ms
+	-Render 3D Cluster Elements: 0.02021310173097ms
+	-Pack 3D Cluster Elements: 0.01837704220756ms
+	-Render Fog: 0.26157368206587ms
+	-Filter Fog: 0.05362295322731ms
+	-Integrate Fog: 0.09045908099315ms
+	-RTXDI Surface: 0.0806393545182ms
+	-RTXDI Guides: 0.02440982177609ms
+	-RTXDI Direct Lighting: 0.72201631889969ms
+	-NRD RELAX and HDR Composition: 0.72686898903769ms
+	-Render Sky: 0.0247868944387ms
+	-Tonemap: 0.03601638606337ms
+	-Render CanvasItems: 0.02665573847098ms
+	-FSR2: 0.24322952207972ms
+GPU PROFILE (total 3.525ms):
+	-Cull DirectionalLight3D, Split 3: 0.01063934212825ms
+	-BLAS Build: 0.0412458943539ms
+	-TLAS Build: 0.24619665302214ms
+	-Render OmniLight Shadows: 0.21057380613734ms
+	-Render Directional/SpotLight Shadows: 0.19988522764112ms
+	-Pre Opaque Render: 0.03808197818819ms
+	-Render 3D Cluster Elements: 0.02003277716089ms
+	-Pack 3D Cluster Elements: 0.018393434462ms
+	-Render Fog: 0.28432783533315ms
+	-Filter Fog: 0.05375412253083ms
+	-Integrate Fog: 0.09042628866727ms
+	-RTXDI Surface: 0.08067213121008ms
+	-RTXDI Guides: 0.02444260237647ms
+	-RTXDI Direct Lighting: 0.74688539348665ms
+	-NRD RELAX and HDR Composition: 0.68206536965292ms
+	-Render Sky: 0.02468854091207ms
+	-Tonemap: 0.02739344659399ms
+	-Render CanvasItems: 0.02657377524454ms
+	-FSR2: 0.24803285129735ms
+GPU PROFILE (total 2.71ms):
+	-Cull DirectionalLight3D, Split 3: 0.01075409572633ms
+	-BLAS Build: 0.04127869058828ms
+	-TLAS Build: 0.24847543435019ms
+	-Render OmniLight Shadows: 0.21065577522653ms
+	-Render Directional/SpotLight Shadows: 0.24193444799204ms
+	-Pre Opaque Render: 0.02180329698031ms
+	-Render 3D Cluster Elements: 0.02013113655028ms
+	-Pack 3D Cluster Elements: 0.01831146928131ms
+	-Render Fog: 0.21873768040391ms
+	-Filter Fog: 0.05373772636789ms
+	-Integrate Fog: 0.09044267310471ms
+	-RTXDI Surface: 0.08068853128152ms
+	-RTXDI Guides: 0.02429507013227ms
+	-RTXDI Direct Lighting: 0.7547541133693ms
+	-NRD RELAX and HDR Composition: 0.76978702232486ms
+	-Render Sky: 0.0250819784696ms
+	-Tonemap: 0.02421311472283ms
+	-Render CanvasItems: 0.04142625996324ms
+	-FSR2: 0.22426231571885ms
+GPU PROFILE (total 3.419ms):
+	-Cull DirectionalLight3D, Split 3: 0.01091802804196ms
+	-BLAS Build: 0.04157378243618ms
+	-TLAS Build: 0.24590159244225ms
+	-Render OmniLight Shadows: 0.2100655289947ms
+	-Render Directional/SpotLight Shadows: 0.21339346150883ms
+	-Pre Opaque Render: 0.01198361936163ms
+	-Render 3D Cluster Elements: 0.02019671143078ms
+	-Pack 3D Cluster Elements: 0.02540980010736ms
+	-Render Fog: 0.25970487125584ms
+	-Filter Fog: 0.05362294931881ms
+	-Integrate Fog: 0.09050824993947ms
+	-RTXDI Surface: 0.08068853909852ms
+	-RTXDI Guides: 0.02449178891104ms
+	-RTXDI Direct Lighting: 0.72119672181176ms
+	-NRD RELAX and HDR Composition: 0.70626243216092ms
+	-Render Sky: 0.0247869022557ms
+	-Tonemap: 0.02442622966454ms
+	-Render CanvasItems: 0.02681968837488ms
+	-FSR2: 0.24945906342053ms
+GPU PROFILE (total 2.701ms):
+	-Cull DirectionalLight3D, Split 3: 0.01073770249476ms
+	-BLAS Build: 0.04113114466433ms
+	-TLAS Build: 0.24606556188865ms
+	-Render OmniLight Shadows: 0.21118038990459ms
+	-Render Directional/SpotLight Shadows: 0.21839348214572ms
+	-Pre Opaque Render: 0.02040985568625ms
+	-Render 3D Cluster Elements: 0.02004917136958ms
+	-Pack 3D Cluster Elements: 0.01836064799887ms
+	-Render Fog: 0.1844753828205ms
+	-Filter Fog: 0.05372133802195ms
+	-Integrate Fog: 0.09022957379701ms
+	-RTXDI Surface: 0.08067214684408ms
+	-RTXDI Guides: 0.02459014634617ms
+	-RTXDI Direct Lighting: 0.72931170854412ms
+	-NRD RELAX and HDR Composition: 0.69900006153544ms
+	-Render Sky: 0.02504919591497ms
+	-Tonemap: 0.03124590193639ms
+	-Render CanvasItems: 0.02644263916328ms
+	-FSR2: 0.19665577372567ms
+GPU PROFILE (total 6.43ms):
+	-Cull DirectionalLight3D, Split 3: 0.01065573438269ms
+	-BLAS Build: 0.04136065967747ms
+	-TLAS Build: 0.24606548371862ms
+	-Render OmniLight Shadows: 0.21090168249412ms
+	-Render Directional/SpotLight Shadows: 0.22299999487205ms
+	-Pre Opaque Render: 0.01373772640697ms
+	-Render 3D Cluster Elements: 0.02022949789391ms
+	-Pack 3D Cluster Elements: 0.01826228860949ms
+	-Render Fog: 0.21359013729408ms
+	-Filter Fog: 0.05354099195512ms
+	-Integrate Fog: 0.09044267310471ms
+	-RTXDI Surface: 0.08040983950505ms
+	-RTXDI Guides: 0.02454096958285ms
+	-RTXDI Direct Lighting: 0.8043933305584ms
+	-NRD RELAX and HDR Composition: 0.74050853291496ms
+	-Render Sky: 0.02481968676458ms
+	-Tonemap: 0.04477048701927ms
+	-Render CanvasItems: 0.03403277866176ms
+	-FSR2: 0.23721319730165ms
+GPU PROFILE (total 2.721ms):
+	-Cull DirectionalLight3D, Split 3: 0.01077049091214ms
+	-BLAS Build: 0.04127868667978ms
+	-TLAS Build: 0.24603277737977ms
+	-Render OmniLight Shadows: 0.21124600582435ms
+	-Render Directional/SpotLight Shadows: 0.19609834327072ms
+	-Pre Opaque Render: 0.02083607188991ms
+	-Render 3D Cluster Elements: 0.03480326543089ms
+	-Pack 3D Cluster Elements: 0.01831146928131ms
+	-Render Fog: 0.26311471032315ms
+	-Filter Fog: 0.0537049223165ms
+	-Integrate Fog: 0.0903115272522ms
+	-RTXDI Surface: 0.08055739324601ms
+	-RTXDI Guides: 0.02454097153711ms
+	-RTXDI Direct Lighting: 0.75663913664271ms
+	-NRD RELAX and HDR Composition: 0.70670493704374ms
+	-Render Sky: 0.02477051195551ms
+	-Tonemap: 0.0263278660227ms
+	-Render CanvasItems: 0.02698361287352ms
+	-FSR2: 0.21308200085749ms
+GPU PROFILE (total 2.932ms):
+	-Cull DirectionalLight3D, Split 3: 0.01057142776156ms
+	-BLAS Build: 0.03928572412521ms
+	-TLAS Build: 0.25565080794077ms
+	-Render OmniLight Shadows: 0.25904758392818ms
+	-Render Directional/SpotLight Shadows: 0.21809517391144ms
+	-Pre Opaque Render: 0.03763493280562ms
+	-Render 3D Cluster Elements: 0.01938093465472ms
+	-Pack 3D Cluster Elements: 0.02415869538746ms
+	-Render Fog: 0.43314310104128ms
+	-Filter Fog: 0.05865080016ms
+	-Integrate Fog: 0.24725397806319ms
+	-RTXDI Surface: 0.07630162768894ms
+	-RTXDI Guides: 0.0250634844341ms
+	-RTXDI Direct Lighting: 0.79214320107112ms
+	-NRD RELAX and HDR Composition: 0.77385693504697ms
+	-Render Sky: 0.02395238573589ms
+	-Tonemap: 0.03000000355736ms
+	-Render CanvasItems: 0.03523810326107ms
+	-FSR2: 0.26344441610669ms
+GPU PROFILE (total 1.109ms):
+	-BLAS Build: 0.02042623426093ms
+	-TLAS Build: 0.11645902571131ms
+	-Render OmniLight Shadows: 0.08832786904007ms
+	-Render Directional/SpotLight Shadows: 0.06439343045969ms
+	-Render 3D Cluster Elements: 0.01088524353309ms
+	-Render Fog: 0.0697377079823ms
+	-Filter Fog: 0.05362296104431ms
+	-Integrate Fog: 0.03852457296653ms
+	-RTXDI Surface: 0.035180349819ms
+	-RTXDI Guides: 0.01798360660428ms
+	-RTXDI Direct Lighting: 0.64690149025839ms
+	-NRD RELAX and HDR Composition: 0.50147550614154ms
+	-Render Sky: 0.01370491453859ms
+	-Tonemap: 0.01983606424488ms
+	-Render CanvasItems: 0.02339344337338ms
+	-FSR2: 0.07986879348755ms
+GPU PROFILE (total 1.107ms):
+	-BLAS Build: 0.01868852826416ms
+	-TLAS Build: 0.10508199597968ms
+	-Render OmniLight Shadows: 0.07983607151469ms
+	-Render Directional/SpotLight Shadows: 0.05831147412785ms
+	-Render Fog: 0.0643114770045ms
+	-Filter Fog: 0.02703281308784ms
+	-Integrate Fog: 0.0342622858579ms
+	-RTXDI Surface: 0.03124591561614ms
+	-RTXDI Guides: 0.0163934328517ms
+	-RTXDI Direct Lighting: 0.30291813709697ms
+	-NRD RELAX and HDR Composition: 0.28534420201036ms
+	-Render Sky: 0.01222950513246ms
+	-Tonemap: 0.01088525232722ms
+	-Render CanvasItems: 0.01765575174425ms
+	-FSR2: 0.07324586930822ms
+GPU PROFILE (total 1.669ms):
+	-BLAS Build: 0.0238032712311ms
+	-TLAS Build: 0.13709840618196ms
+	-Render OmniLight Shadows: 0.10701638362447ms
+	-Render Directional/SpotLight Shadows: 0.07914756556026ms
+	-Pre Opaque Render: 0.02231148031891ms
+	-Render 3D Cluster Elements: 0.0123114839929ms
+	-Pack 3D Cluster Elements: 0.01191803177849ms
+	-Render Fog: 0.0870656654483ms
+	-Filter Fog: 0.03242623024299ms
+	-Integrate Fog: 0.04681968688965ms
+	-RTXDI Surface: 0.0419180432304ms
+	-RTXDI Guides: 0.01811476418229ms
+	-RTXDI Direct Lighting: 0.3994589633629ms
+	-NRD RELAX and HDR Composition: 0.31444261894851ms
+	-Render Sky: 0.01498361005158ms
+	-Tonemap: 0.01359015703201ms
+	-Render CanvasItems: 0.0200327849779ms
+	-FSR2: 0.09467212489394ms
+GPU PROFILE (total 1.86ms):
+	-BLAS Build: 0.02831148124132ms
+	-TLAS Build: 0.16954103063364ms
+	-Render OmniLight Shadows: 0.18096729966461ms
+	-Render Directional/SpotLight Shadows: 0.14367213014696ms
+	-Render 3D Cluster Elements: 0.01478690299831ms
+	-Pack 3D Cluster Elements: 0.01308197857904ms
+	-Render Fog: 0.09245894385166ms
+	-Filter Fog: 0.03752460245226ms
+	-Integrate Fog: 0.05854096568999ms
+	-RTXDI Surface: 0.08093439946409ms
+	-RTXDI Guides: 0.03350820697722ms
+	-RTXDI Direct Lighting: 0.49575408560331ms
+	-NRD RELAX and HDR Composition: 0.37245909894099ms
+	-Render Sky: 0.01780327617145ms
+	-Tonemap: 0.02393443662612ms
+	-Render CanvasItems: 0.04885247887158ms
+	-FSR2: 0.13068855004232ms
+MANUAL_ACTION key=4194343 frame=3128 lights=4 size=(1024, 640)
+MANUAL_CAPTURE path=C:/Users/lukas/AppData/Roaming/Godot/app_userdata/RTXDI manual rendering demonstration/manual-1788772566.png result=0 frame=3128 gpu_ms=1.21200001239777
+MANUAL_MEMORY total=359857120.0 textures=302668288.0 buffers=41871350.0
+MANUAL_ACTION key=82 frame=3129 lights=4 size=(1024, 640)
+MANUAL_ACTION key=76 frame=3129 lights=3 size=(1024, 640)
+MANUAL_ACTION key=76 frame=3129 lights=2 size=(1024, 640)
+MANUAL_ACTION key=4194312 frame=3136 lights=2 size=(1024, 640)
+GPU PROFILE (total 1.909ms):
+	-BLAS Build: 0.02990196031683ms
+	-TLAS Build: 0.19088236490885ms
+	-Render OmniLight Shadows: 0.18635297289082ms
+	-Render Directional/SpotLight Shadows: 0.10707840265012ms
+	-Render 3D Cluster Elements: 0.01562745781506ms
+	-Pack 3D Cluster Elements: 0.01268626895605ms
+	-Render Fog: 0.09390198015699ms
+	-Filter Fog: 0.04096078872681ms
+	-Integrate Fog: 0.06525487058303ms
+	-RTXDI Surface: 0.11154896605249ms
+	-RTXDI Guides: 0.02198040251638ms
+	-RTXDI Direct Lighting: 0.55837249755859ms
+	-NRD RELAX and HDR Composition: 0.45427442064472ms
+	-Render Sky: 0.02805881406747ms
+	-Tonemap: 0.01798039557887ms
+	-Render CanvasItems: 0.02333332744299ms
+	-FSR2: 0.1504314179514ms
+GPU PROFILE (total 2.137ms):
+	-TLAS Build: 0.22986881068495ms
+	-Render OmniLight Shadows: 0.18811476035196ms
+	-Render Directional/SpotLight Shadows: 0.07204918783219ms
+	-Render 3D Cluster Elements: 0.01693442219593ms
+	-Pack 3D Cluster Elements: 0.01091802804196ms
+	-Render Fog: 0.08826232347332ms
+	-Filter Fog: 0.04493442519766ms
+	-Integrate Fog: 0.073311516496ms
+	-RTXDI Surface: 0.06398360846473ms
+	-RTXDI Guides: 0.02147542257778ms
+	-RTXDI Direct Lighting: 0.69299985541672ms
+	-NRD RELAX and HDR Composition: 0.54262311341333ms
+	-Render Sky: 0.02390163648324ms
+	-Tonemap: 0.02077049896365ms
+	-Render CanvasItems: 0.02539344498369ms
+	-FSR2: 0.14549178764468ms
+MANUAL_ACTION key=90 frame=3262 lights=2 size=(1280, 720)
+MANUAL_ACTION key=4194343 frame=3269 lights=2 size=(1280, 720)
+MANUAL_CAPTURE path=C:/Users/lukas/AppData/Roaming/Godot/app_userdata/RTXDI manual rendering demonstration/manual-1788772569.png result=0 frame=3269 gpu_ms=1.74399995803833
+MANUAL_MEMORY total=412869760.0 textures=344967680.0 buffers=52656942.0
+GPU PROFILE (total 4.532ms):
+	-TLAS Build: 0.2899835930496ms
+	-Render OmniLight Shadows: 0.1867048857642ms
+	-Render Directional/SpotLight Shadows: 0.07377050743728ms
+	-Render 3D Cluster Elements: 0.01832785958149ms
+	-Pack 3D Cluster Elements: 0.01165573421072ms
+	-Render Fog: 0.11611470238107ms
+	-Filter Fog: 0.04855739484068ms
+	-Integrate Fog: 0.08454089086564ms
+	-RTXDI Surface: 0.1392951871528ms
+	-RTXDI Guides: 0.05613114794747ms
+	-RTXDI Direct Lighting: 0.69118043242908ms
+	-NRD RELAX and HDR Composition: 0.58234430531986ms
+	-Render Sky: 0.03014753685623ms
+	-Tonemap: 0.03639343918347ms
+	-Render CanvasItems: 0.02532787596593ms
+	-FSR2: 0.23383600203717ms
+GPU PROFILE (total 2.77ms):
+	-TLAS Build: 0.2321111588251ms
+	-Render OmniLight Shadows: 0.22480957091801ms
+	-Render Directional/SpotLight Shadows: 0.0813650403704ms
+	-Render 3D Cluster Elements: 0.02023808350639ms
+	-Pack 3D Cluster Elements: 0.01282539916417ms
+	-Render Fog: 0.14742861853706ms
+	-Filter Fog: 0.09431739837404ms
+	-Integrate Fog: 0.10023817183479ms
+	-RTXDI Surface: 0.08573012881809ms
+	-RTXDI Guides: 0.02730157829466ms
+	-RTXDI Direct Lighting: 0.86244455973307ms
+	-NRD RELAX and HDR Composition: 0.76582524133107ms
+	-Render Sky: 0.02650793771895ms
+	-Tonemap: 0.04450792736477ms
+	-Render CanvasItems: 0.02788890164996ms
+	-FSR2: 0.28036511133588ms
+GPU PROFILE (total 2.788ms):
+	-TLAS Build: 0.23440987946557ms
+	-Render OmniLight Shadows: 0.21060662191422ms
+	-Render Directional/SpotLight Shadows: 0.08190161282899ms
+	-Render 3D Cluster Elements: 0.02003277325239ms
+	-Pack 3D Cluster Elements: 0.01267213508731ms
+	-Render Fog: 0.18819679197718ms
+	-Filter Fog: 0.07645902477327ms
+	-Integrate Fog: 0.09740989716327ms
+	-RTXDI Surface: 0.08660654943497ms
+	-RTXDI Guides: 0.02718031601828ms
+	-RTXDI Direct Lighting: 0.90921326934314ms
+	-NRD RELAX and HDR Composition: 0.88208220434971ms
+	-Render Sky: 0.02685246897525ms
+	-Tonemap: 0.07085242036913ms
+	-Render CanvasItems: 0.02791804759229ms
+	-FSR2: 0.33395082442487ms
+GPU PROFILE (total 2.794ms):
+	-TLAS Build: 0.23557383115174ms
+	-Render OmniLight Shadows: 0.21060657501221ms
+	-Render Directional/SpotLight Shadows: 0.0816557055614ms
+	-Render 3D Cluster Elements: 0.02016392301341ms
+	-Pack 3D Cluster Elements: 0.01273770605932ms
+	-Render Fog: 0.15531145940061ms
+	-Filter Fog: 0.0988688156253ms
+	-Integrate Fog: 0.09754103519877ms
+	-RTXDI Surface: 0.08614752722568ms
+	-RTXDI Guides: 0.02724589089878ms
+	-RTXDI Direct Lighting: 0.84724607623991ms
+	-NRD RELAX and HDR Composition: 0.81604929439357ms
+	-Render Sky: 0.02673771537718ms
+	-Tonemap: 0.04142621696972ms
+	-Render CanvasItems: 0.02780328813146ms
+	-FSR2: 0.32901645097576ms
+GPU PROFILE (total 6.319ms):
+	-TLAS Build: 0.23540989297335ms
+	-Render OmniLight Shadows: 0.21045906817327ms
+	-Render Directional/SpotLight Shadows: 0.08181963592279ms
+	-Render 3D Cluster Elements: 0.02013113850453ms
+	-Pack 3D Cluster Elements: 0.01273770703644ms
+	-Render Fog: 0.19840986220563ms
+	-Filter Fog: 0.09073768678259ms
+	-Integrate Fog: 0.09532791669251ms
+	-RTXDI Surface: 0.08593441228398ms
+	-RTXDI Guides: 0.02747539809493ms
+	-RTXDI Direct Lighting: 0.95404915731461ms
+	-NRD RELAX and HDR Composition: 0.89398405981846ms
+	-Render Sky: 0.02668853079686ms
+	-Tonemap: 0.06281962941905ms
+	-Render CanvasItems: 0.02826230252375ms
+	-FSR2: 0.36960654962258ms
+GPU PROFILE (total 2.78ms):
+	-TLAS Build: 0.23322959024398ms
+	-Render OmniLight Shadows: 0.21050825275359ms
+	-Render Directional/SpotLight Shadows: 0.08155732858376ms
+	-Render 3D Cluster Elements: 0.01998360235183ms
+	-Pack 3D Cluster Elements: 0.01262295246124ms
+	-Render Fog: 0.174819743047ms
+	-Filter Fog: 0.09132783921039ms
+	-Integrate Fog: 0.10516398851989ms
+	-RTXDI Surface: 0.08631144977007ms
+	-RTXDI Guides: 0.02719670827272ms
+	-RTXDI Direct Lighting: 0.90508207727651ms
+	-NRD RELAX and HDR Composition: 0.78401665609391ms
+	-Render Sky: 0.02663934230804ms
+	-Tonemap: 0.07393440653066ms
+	-Render CanvasItems: 0.02772132685927ms
+	-FSR2: 0.28739347614226ms
+GPU PROFILE (total 2.783ms):
+	-TLAS Build: 0.23240985245001ms
+	-Render OmniLight Shadows: 0.21114755849369ms
+	-Render Directional/SpotLight Shadows: 0.08168850570429ms
+	-Render 3D Cluster Elements: 0.01999999069777ms
+	-Pack 3D Cluster Elements: 0.01296721618684ms
+	-Render Fog: 0.12186879799014ms
+	-Filter Fog: 0.13126224767966ms
+	-Integrate Fog: 0.09598365377207ms
+	-RTXDI Surface: 0.08647540358246ms
+	-RTXDI Guides: 0.0272130985729ms
+	-RTXDI Direct Lighting: 0.86854115470511ms
+	-NRD RELAX and HDR Composition: 0.81080352282915ms
+	-Render Sky: 0.02637705842002ms
+	-Tonemap: 0.04191801587089ms
+	-Render CanvasItems: 0.02755739258938ms
+	-FSR2: 0.28822948893563ms
+GPU PROFILE (total 2.927ms):
+	-TLAS Build: 0.2221803196141ms
+	-Render OmniLight Shadows: 0.20277043639636ms
+	-Render Directional/SpotLight Shadows: 0.08598358123029ms
+	-Render 3D Cluster Elements: 0.017655741973ms
+	-Pack 3D Cluster Elements: 0.01101638645422ms
+	-Render Fog: 0.09780335817181ms
+	-Filter Fog: 0.06945899275483ms
+	-Integrate Fog: 0.07775408322694ms
+	-RTXDI Surface: 0.07050818302592ms
+	-RTXDI Guides: 0.02419672051414ms
+	-RTXDI Direct Lighting: 0.83378682371046ms
+	-NRD RELAX and HDR Composition: 0.76160668545082ms
+	-Render Sky: 0.02999997529827ms
+	-Tonemap: 0.02768854821315ms
+	-Render CanvasItems: 0.04509835165055ms
+	-FSR2: 0.26129514662946ms
+GPU PROFILE (total 2.134ms):
+	-TLAS Build: 0.20026228857822ms
+	-Render OmniLight Shadows: 0.1752131102515ms
+	-Render Directional/SpotLight Shadows: 0.07416393717781ms
+	-Render 3D Cluster Elements: 0.01649180982934ms
+	-Pack 3D Cluster Elements: 0.01042622230092ms
+	-Render Fog: 0.08621316659646ms
+	-Filter Fog: 0.04401640032159ms
+	-Integrate Fog: 0.06936067049621ms
+	-RTXDI Surface: 0.06518029775776ms
+	-RTXDI Guides: 0.02375409251354ms
+	-RTXDI Direct Lighting: 0.69106549122294ms
+	-NRD RELAX and HDR Composition: 0.5265245281282ms
+	-Render Sky: 0.02108196547774ms
+	-Tonemap: 0.02109835968643ms
+	-Render CanvasItems: 0.02445902589892ms
+	-FSR2: 0.20901640907663ms
+GPU PROFILE (total 2.613ms):
+	-TLAS Build: 0.23014754936343ms
+	-Render OmniLight Shadows: 0.19322958148894ms
+	-Render Directional/SpotLight Shadows: 0.07547538788592ms
+	-Render 3D Cluster Elements: 0.01895081019792ms
+	-Pack 3D Cluster Elements: 0.01199999598206ms
+	-Render Fog: 0.0988525328089ms
+	-Filter Fog: 0.07981970271126ms
+	-Integrate Fog: 0.11573775869901ms
+	-RTXDI Surface: 0.11172138276647ms
+	-RTXDI Guides: 0.02557375587401ms
+	-RTXDI Direct Lighting: 0.79781998180952ms
+	-NRD RELAX and HDR Composition: 0.74273750430248ms
+	-Render Sky: 0.02495082870859ms
+	-Tonemap: 0.03932785206154ms
+	-Render CanvasItems: 0.08222954390479ms
+	-FSR2: 0.26629510473032ms
+GPU PROFILE (total 2.753ms):
+	-TLAS Build: 0.23250823724465ms
+	-Render OmniLight Shadows: 0.20675409035605ms
+	-Render Directional/SpotLight Shadows: 0.08037702372817ms
+	-Render 3D Cluster Elements: 0.02004916941533ms
+	-Pack 3D Cluster Elements: 0.0125737747208ms
+	-Render Fog: 0.18431160098217ms
+	-Filter Fog: 0.0749999890562ms
+	-Integrate Fog: 0.12831152462568ms
+	-RTXDI Surface: 0.08488521419588ms
+	-RTXDI Guides: 0.02665572283698ms
+	-RTXDI Direct Lighting: 0.82872134349385ms
+	-NRD RELAX and HDR Composition: 0.75795076714187ms
+	-Render Sky: 0.02632788556521ms
+	-Tonemap: 0.05219669811061ms
+	-Render CanvasItems: 0.02739345050249ms
+	-FSR2: 0.28019667453453ms
+GPU PROFILE (total 4.643ms):
+	-TLAS Build: 0.23347545060955ms
+	-Render OmniLight Shadows: 0.21067214402996ms
+	-Render Directional/SpotLight Shadows: 0.08172127457916ms
+	-Render 3D Cluster Elements: 0.01998360039758ms
+	-Pack 3D Cluster Elements: 0.01263934471568ms
+	-Render Fog: 0.18542624301598ms
+	-Filter Fog: 0.05526234282822ms
+	-Integrate Fog: 0.10577058010414ms
+	-RTXDI Surface: 0.08621311187744ms
+	-RTXDI Guides: 0.02716392376384ms
+	-RTXDI Direct Lighting: 0.81370538179992ms
+	-NRD RELAX and HDR Composition: 0.77683633272765ms
+	-Render Sky: 0.02642623909184ms
+	-Tonemap: 0.03200001599359ms
+	-Render CanvasItems: 0.02763936363283ms
+	-FSR2: 0.2663278736052ms
+GPU PROFILE (total 2.797ms):
+	-TLAS Build: 0.23365578885938ms
+	-Render OmniLight Shadows: 0.2112458494843ms
+	-Render Directional/SpotLight Shadows: 0.08216392016802ms
+	-Pre Opaque Render: 0.0195081917966ms
+	-Render 3D Cluster Elements: 0.02039343020955ms
+	-Pack 3D Cluster Elements: 0.02670492500555ms
+	-Render Fog: 0.19214753635594ms
+	-Filter Fog: 0.0624098816856ms
+	-Integrate Fog: 0.09921317804055ms
+	-RTXDI Surface: 0.08677049543037ms
+	-RTXDI Guides: 0.02703277009432ms
+	-RTXDI Direct Lighting: 0.93298352350954ms
+	-NRD RELAX and HDR Composition: 0.83047554141185ms
+	-Render Sky: 0.04018033918787ms
+	-Tonemap: 0.04391803116095ms
+	-Render CanvasItems: 0.02798362833555ms
+	-FSR2: 0.28673775469671ms
+GPU PROFILE (total 2.763ms):
+	-TLAS Build: 0.23288532944976ms
+	-Render OmniLight Shadows: 0.21090160432409ms
+	-Render Directional/SpotLight Shadows: 0.08198357410118ms
+	-Render 3D Cluster Elements: 0.02018032308485ms
+	-Pack 3D Cluster Elements: 0.01280327898557ms
+	-Render Fog: 0.19514768631732ms
+	-Filter Fog: 0.05500003939769ms
+	-Integrate Fog: 0.09631153012885ms
+	-RTXDI Surface: 0.08647538794846ms
+	-RTXDI Guides: 0.02726228119897ms
+	-RTXDI Direct Lighting: 0.88196745075163ms
+	-NRD RELAX and HDR Composition: 0.79373800559122ms
+	-Render Sky: 0.02627870293914ms
+	-Tonemap: 0.02872132082454ms
+	-Render CanvasItems: 0.0276721403247ms
+	-FSR2: 0.28747542959745ms
+GPU PROFILE (total 2.773ms):
+	-TLAS Build: 0.23286881994029ms
+	-Render OmniLight Shadows: 0.2107213911463ms
+	-Render Directional/SpotLight Shadows: 0.08190160501199ms
+	-Render 3D Cluster Elements: 0.01988523319119ms
+	-Pack 3D Cluster Elements: 0.01280328484832ms
+	-Render Fog: 0.19191815423184ms
+	-Filter Fog: 0.05511477736176ms
+	-Integrate Fog: 0.12555745390595ms
+	-RTXDI Surface: 0.08639343449327ms
+	-RTXDI Guides: 0.02724589089878ms
+	-RTXDI Direct Lighting: 0.85918032536741ms
+	-NRD RELAX and HDR Composition: 0.87760675148886ms
+	-Render Sky: 0.03296721567873ms
+	-Tonemap: 0.02714754909766ms
+	-Render CanvasItems: 0.02757378288957ms
+	-FSR2: 0.28603272359879ms
+GPU PROFILE (total 2.777ms):
+	-TLAS Build: 0.23609839892778ms
+	-Render OmniLight Shadows: 0.21044268373583ms
+	-Render Directional/SpotLight Shadows: 0.08209832769925ms
+	-Render 3D Cluster Elements: 0.02022949593966ms
+	-Pack 3D Cluster Elements: 0.01278689161676ms
+	-Render Fog: 0.18755743933506ms
+	-Filter Fog: 0.05500003548919ms
+	-Integrate Fog: 0.16555737667396ms
+	-RTXDI Surface: 0.086196696172ms
+	-RTXDI Guides: 0.02726228510747ms
+	-RTXDI Direct Lighting: 0.83090191200131ms
+	-NRD RELAX and HDR Composition: 0.84627883160701ms
+	-Render Sky: 0.03337706503321ms
+	-Tonemap: 0.02724590653279ms
+	-Render CanvasItems: 0.02777050557684ms
+	-FSR2: 0.27380327318535ms
+MANUAL_ACTION key=67 frame=4211 lights=2 size=(1280, 720)
+MANUAL_ACTION key=86 frame=4217 lights=2 size=(1280, 720)
+GPU PROFILE (total 2.2ms):
+	-TLAS Build: 0.1765573845535ms
+	-Render OmniLight Shadows: 0.16977052219578ms
+	-Render Directional/SpotLight Shadows: 0.06306557968015ms
+	-Render 3D Cluster Elements: 0.0150983538784ms
+	-Pack 3D Cluster Elements: 0.01108197110598ms
+	-Render Fog: 0.13036066586854ms
+	-Filter Fog: 0.0973934345558ms
+	-Integrate Fog: 0.12842629385776ms
+	-RTXDI Surface: 0.07798359042308ms
+	-RTXDI Guides: 0.02244262030867ms
+	-RTXDI Direct Lighting: 0.96703269833424ms
+	-NRD RELAX and HDR Composition: 0.85880348330638ms
+	-Render Sky: 0.03209838515422ms
+	-Tonemap: 0.02544263738101ms
+	-Render CanvasItems: 0.02149181287797ms
+	-FSR2: 0.28601649550141ms
+GPU PROFILE (total 2.188ms):
+	-TLAS Build: 0.11521309711894ms
+	-Render OmniLight Shadows: 0.12680323397527ms
+	-Render Directional/SpotLight Shadows: 0.0446557373297ms
+	-Render 3D Cluster Elements: 0.0100163905347ms
+	-Render Fog: 0.05139346591762ms
+	-Filter Fog: 0.09780325655077ms
+	-Integrate Fog: 0.06709834395862ms
+	-RTXDI Surface: 0.06655737611114ms
+	-RTXDI Guides: 0.0172131178809ms
+	-RTXDI Direct Lighting: 0.89818016427462ms
+	-NRD RELAX and HDR Composition: 0.6491967498279ms
+	-Render Sky: 0.01359016680327ms
+	-FSR2: 0.27408205876585ms
+	-Tonemap: 0.01921312144545ms
+	-Render CanvasItems: 0.02840984649346ms
+MANUAL_ACTION key=4194343 frame=4344 lights=2 size=(1280, 720)
+MANUAL_CAPTURE path=C:/Users/lukas/AppData/Roaming/Godot/app_userdata/RTXDI manual rendering demonstration/manual-1788772587.png result=0 frame=4344 gpu_ms=2.23900008201599
+MANUAL_MEMORY total=360987088.0 textures=300500480.0 buffers=45254018.0
+GPU PROFILE (total 2.243ms):
+	-TLAS Build: 0.13402085502942ms
+	-Render OmniLight Shadows: 0.15089585383733ms
+	-Render Directional/SpotLight Shadows: 0.04485415915648ms
+	-Render 3D Cluster Elements: 0.01064583410819ms
+	-Render Fog: 0.07489582896233ms
+	-Filter Fog: 0.11214582125346ms
+	-Integrate Fog: 0.04441667099794ms
+	-RTXDI Surface: 0.0861875017484ms
+	-RTXDI Guides: 0.01722917084893ms
+	-RTXDI Direct Lighting: 0.93793757756551ms
+	-NRD RELAX and HDR Composition: 0.70941662788391ms
+	-Render Sky: 0.01377083361149ms
+	-FSR2: 0.28202082713445ms
+	-Tonemap: 0.01908333227038ms
+	-Render CanvasItems: 0.05620834728082ms
+MANUAL_ACTION key=4194305 frame=4398 lights=2 size=(1280, 720)

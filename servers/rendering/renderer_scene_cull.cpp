@@ -3671,6 +3671,7 @@ void RendererSceneCull::_render_scene(RID p_camera, const RendererSceneRender::C
 	//append the directional lights to the lights culled
 	for (int i = 0; i < directional_lights.size(); i++) {
 		scene_cull_result.light_instances.push_back(directional_lights[i]);
+		scene_cull_result.rt_light_instances.push_back(directional_lights[i]);
 	}
 
 	RID camera_attributes;

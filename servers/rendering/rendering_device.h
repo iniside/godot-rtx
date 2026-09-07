@@ -1436,6 +1436,7 @@ public:
 		RID blas;
 	};
 
+	bool acceleration_structure_is_valid(RID p_acceleration_structure);
 	Error blas_build(RID p_blas);
 	Error blas_update(RID p_blas);
 	Error clas_build(const ClusterBuildInput &p_input, RID p_dst_implicit_buffer, const ClusterAddressRegion &p_dst_addresses, const ClusterAddressRegion &p_dst_sizes, RID p_scratch_buffer, const ClusterAddressRegion &p_src_infos, RID p_src_infos_count_buffer);

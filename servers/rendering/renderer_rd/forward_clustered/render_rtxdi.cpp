@@ -253,7 +253,7 @@ void RenderRTXDI::render(const RenderRTXDISurfaceResources &p_surface, RTViewpor
 	parameters.extent_history[3] = p_surface.orthogonal ? 1u : 0u;
 	RD::get_singleton()->buffer_update(view_resources.parameters_buffer, 0, sizeof(parameters), &parameters);
 
-	RID bindless_uniform_set = raytracing->get_bindless_uniform_set();
+	RID bindless_uniform_set = raytracing->get_bindless_uniform_set(shader.shader_rid[PASS_INITIAL]);
 	ERR_FAIL_COND(!bindless_uniform_set.is_valid());
 	RID uniform_sets[PASS_MAX];
 	for (uint32_t pass = 0; pass < PASS_MAX; pass++) {

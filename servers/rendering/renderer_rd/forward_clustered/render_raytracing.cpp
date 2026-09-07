@@ -294,7 +294,7 @@ void RenderRaytracing::cleanup_caches() {
 				continue;
 			}
 			if (e->ptr) {
-				if (e->ptr->blas.is_valid()) {
+				if (rd->acceleration_structure_is_valid(e->ptr->blas)) {
 					rd->free_rid(e->ptr->blas);
 				}
 				memdelete(e->ptr);
@@ -514,7 +514,7 @@ void RenderRaytracing::prepare_frame() {
 				continue;
 			}
 			if (e->ptr) {
-				if (e->ptr->blas.is_valid()) {
+				if (rd->acceleration_structure_is_valid(e->ptr->blas)) {
 					rd->free_rid(e->ptr->blas);
 				}
 				memdelete(e->ptr);
@@ -686,6 +686,10 @@ RTSurfaceData *RenderRaytracing::process_deformed_surface(
 	RTDeformedCacheEntry *entry_ptr = _access_deformed_slot(surf->rt_deformed_handle);
 	ERR_FAIL_NULL_V(entry_ptr, nullptr);
 	RTDeformedCacheEntry &entry = *entry_ptr;
+	if (entry.ptr && !rd->acceleration_structure_is_valid(entry.ptr->blas)) {
+		entry.ptr->blas = RID();
+		entry.blas_built_once = false;
+	}
 
 	bool layout_changed = entry.cached_vertex_count != vertex_count || entry.cached_full_size != full_size;
 	bool data_changed = layout_changed ||
@@ -3098,11 +3102,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 	build_acceleration_structures(state, dirty_blas_list, dirty_blas_update_list);
 	finalize_buffers(state);
 	build_light_registry(state, p_render_data);
-	RID shader_rd = rt_shader_singleton->get_pipeline_shader_rd(p_rt_flags);
-	if (shader_rd.is_valid()) {
-		bindless_block->finalize(shader_rd, 1);
-		bindless_uniform_set = bindless_block->get_uniform_set();
-	}
 
 	return state;
 }

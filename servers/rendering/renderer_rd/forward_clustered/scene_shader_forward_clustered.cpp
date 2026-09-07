@@ -171,8 +171,7 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 
 	actions.usage_flag_pointers["TANGENT"] = &uses_tangent;
 	actions.usage_flag_pointers["BINORMAL"] = &uses_tangent;
-	actions.usage_flag_pointers["ANISOTROPY"] = &uses_tangent;
-	actions.usage_flag_pointers["ANISOTROPY_FLOW"] = &uses_tangent;
+	actions.usage_flag_pointers["ANISOTROPY_FLOW"] = &uses_anisotropy;
 
 	actions.write_flag_pointers["MODELVIEW_MATRIX"] = &writes_modelview_or_projection;
 	actions.write_flag_pointers["PROJECTION_MATRIX"] = &writes_modelview_or_projection;

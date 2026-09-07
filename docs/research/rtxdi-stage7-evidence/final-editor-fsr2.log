@@ -1,0 +1,79 @@
+Godot Engine v4.8.dev.custom_build.eeed72b42 (2026-09-07 07:43:31 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Streamline - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+WARNING: The separate rendering thread feature is experimental. Feel free to try it since it will eventually become a stable feature.
+However, bear in mind that at the moment it can lead to project crashes or instability.
+So, unless you want to test the engine, set the "rendering/driver/threads/thread_model" project setting to 'Safe'.
+   at: Main::setup2 (main\main.cpp:3563)
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+
+MANUAL_DEMO preset=gallery light=all binary={ "major": 4, "minor": 8, "patch": 0, "hex": 264192, "status": "dev", "build": "custom_build", "hash": "eeed72b42987b2d29f9e1a99e2dd57cc5ff91172", "timestamp": 1788767011, "string": "4.8-dev (custom_build)" } renderer=forward_plus driver=vulkan size=(1280.0, 720.0)
+GPU PROFILE (total 0.603ms):
+	-Setup Sky: 0.01660936325788ms
+	-TLAS Build: 0.04914061352611ms
+	-Render Directional/SpotLight Shadows: 0.01284375600517ms
+	-RTXDI Surface: 0.01998438313603ms
+	-RTXDI Guides: 0.01284375227988ms
+	-RTXDI Direct Lighting: 0.20957811176777ms
+	-NRD RELAX and HDR Composition: 0.20826558768749ms
+	-FSR2: 0.09181247651577ms
+GPU PROFILE (total 0.875ms):
+	-TLAS Build: 0.0516393458257ms
+	-Render Directional/SpotLight Shadows: 0.01231147715303ms
+	-Update Volumetric Fog: 0.01024589968509ms
+	-RTXDI Surface: 0.02072131242908ms
+	-RTXDI Guides: 0.0130163949044ms
+	-RTXDI Direct Lighting: 0.20590161495521ms
+	-NRD RELAX and HDR Composition: 0.19567212902132ms
+	-FSR2: 0.09059013304163ms
+GPU PROFILE (total 1.008ms):
+	-TLAS Build: 0.07763936089688ms
+	-Setup Shadows: 0.01593442334503ms
+	-Render Directional/SpotLight Shadows: 0.01673771123417ms
+	-Pack 3D Cluster Elements: 0.01262295441549ms
+	-Update Volumetric Fog: 0.01460654911448ms
+	-RTXDI Surface: 0.0313770477889ms
+	-RTXDI Guides: 0.01450819265647ms
+	-RTXDI Direct Lighting: 0.36840973525751ms
+	-NRD RELAX and HDR Composition: 0.24224589300937ms
+	-Render Sky: 0.01078688609795ms
+	-FSR2: 0.20849179439857ms
+	-Tonemap: 0.0152786950596ms
+	-Render CanvasItems: 0.01147540964064ms
+GPU PROFILE (total 1.144ms):
+	-TLAS Build: 0.08844261482114ms
+	-Setup Shadows: 0.01880327990798ms
+	-Render Directional/SpotLight Shadows: 0.01872131277303ms
+	-Pack 3D Cluster Elements: 0.01440982838146ms
+	-Update Volumetric Fog: 0.0162459006075ms
+	-RTXDI Surface: 0.03659016577924ms
+	-RTXDI Guides: 0.01493442058563ms
+	-RTXDI Direct Lighting: 0.4321638638856ms
+	-NRD RELAX and HDR Composition: 0.29740980804944ms
+	-Render Sky: 0.02954098826549ms
+	-FSR2: 0.17221310099617ms
+	-Tonemap: 0.01355737643164ms
+	-Render CanvasItems: 0.01218033032339ms
+MANUAL_CAPTURE path=G:/Projects/godot-rtx/docs/research/rtxdi-stage7-evidence/final-editor-fsr2.png result=0 frame=296 gpu_ms=1.90699994564056
+MANUAL_MEMORY total=343157664.0 textures=287229440.0 buffers=42982630.0
+GPU PROFILE (total 1.285ms):
+	-TLAS Build: 0.09751996040344ms
+	-Setup Shadows: 0.02110000610352ms
+	-Render Directional/SpotLight Shadows: 0.0203800034523ms
+	-Pack 3D Cluster Elements: 0.01611999630928ms
+	-Update Volumetric Fog: 0.0178400015831ms
+	-RTXDI Surface: 0.04082002162933ms
+	-RTXDI Guides: 0.01517999529839ms
+	-RTXDI Direct Lighting: 0.52525997161865ms
+	-NRD RELAX and HDR Composition: 0.42539989471436ms
+	-Render Sky: 0.01200000405312ms
+	-FSR2: 0.18058000564575ms
+	-Tonemap: 0.01541999340057ms
+	-Render CanvasItems: 0.01393999814987ms
+PROCESS_EXIT=0

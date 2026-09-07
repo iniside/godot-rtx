@@ -429,8 +429,6 @@ class RenderRaytracing {
 	SceneShaderRaytracing *shader = nullptr;
 	BindlessBlock *bindless_block = nullptr;
 
-	RID bindless_uniform_set;
-
 	// Caching (chunked sparse caches indexed by RID low bits / 256).
 	Vector<RTCacheEntry *> surface_chunks;
 	Vector<RTMaterialCacheEntry *> material_chunks;
@@ -576,7 +574,10 @@ public:
 
 	void register_compute_buffer_dependencies(RD::ComputeListID p_list);
 
-	RID get_bindless_uniform_set() const { return bindless_uniform_set; }
+	RID get_bindless_uniform_set(RID p_shader) const {
+		bindless_block->finalize(p_shader, 1);
+		return bindless_block->get_uniform_set();
+	}
 	RID get_mat_ubo_pool_buffer() const { return mat_ubo_pool_buffer; }
 
 	~RenderRaytracing();

@@ -1,0 +1,113 @@
+Godot Engine v4.8.dev.custom_build.eeed72b42 (2026-09-07 07:43:31 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Streamline - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+
+MANUAL_SHADOWS columns=back/front/disabled/double-sided/mirrored/negative-local-MultiMesh rows=up/down mm_threshold=65536
+MANUAL_DEMO preset=shadows light=directional binary={ "major": 4, "minor": 8, "patch": 0, "hex": 264192, "status": "dev", "build": "custom_build", "hash": "eeed72b42987b2d29f9e1a99e2dd57cc5ff91172", "timestamp": 1788767011, "string": "4.8-dev (custom_build)" } renderer=forward_plus driver=vulkan size=(1280.0, 720.0)
+GPU PROFILE (total 0.797ms):
+	-TLAS Build: 0.03928570141868ms
+	-Setup Shadows: 0.01115872651812ms
+	-Render Directional/SpotLight Shadows: 0.01090475964168ms
+	-Update Volumetric Fog: 0.01085714215324ms
+	-RTXDI Surface: 0.0345873037974ms
+	-RTXDI Guides: 0.01944445049952ms
+	-RTXDI Direct Lighting: 0.28498410421704ms
+	-NRD RELAX and HDR Composition: 0.35061905876039ms
+GPU PROFILE (total 0.793ms):
+	-TLAS Build: 0.03986884336003ms
+	-Setup Shadows: 0.01101639231697ms
+	-Render Directional/SpotLight Shadows: 0.01113114884642ms
+	-Update Volumetric Fog: 0.01118032756399ms
+	-RTXDI Surface: 0.0350164038236ms
+	-RTXDI Guides: 0.0196557396748ms
+	-RTXDI Direct Lighting: 0.29063937703117ms
+	-NRD RELAX and HDR Composition: 0.34386881843942ms
+GPU PROFILE (total 1.188ms):
+	-TLAS Build: 0.05175409551527ms
+	-Setup Shadows: 0.01498360809733ms
+	-Render Directional/SpotLight Shadows: 0.01311475331666ms
+	-Update Volumetric Fog: 0.01354097831445ms
+	-RTXDI Surface: 0.04737705480857ms
+	-RTXDI Guides: 0.02086885835304ms
+	-RTXDI Direct Lighting: 0.37024594916672ms
+	-NRD RELAX and HDR Composition: 0.52262299959777ms
+	-Tonemap: 0.01034425907448ms
+	-Render CanvasItems: 0.01100000006254ms
+GPU PROFILE (total 1.31ms):
+	-TLAS Build: 0.06337703251448ms
+	-Setup Shadows: 0.0187704914906ms
+	-Render Directional/SpotLight Shadows: 0.01449179747066ms
+	-Update Volumetric Fog: 0.01618032474987ms
+	-RTXDI Surface: 0.05921311456649ms
+	-RTXDI Guides: 0.02155737798722ms
+	-RTXDI Direct Lighting: 0.43304918633133ms
+	-NRD RELAX and HDR Composition: 0.79095077514648ms
+	-Tonemap: 0.01259016697524ms
+	-Render CanvasItems: 0.01240984045091ms
+GPU PROFILE (total 1.443ms):
+	-TLAS Build: 0.07006557652208ms
+	-Setup Shadows: 0.02124590365613ms
+	-Render Directional/SpotLight Shadows: 0.01509835192415ms
+	-Update Volumetric Fog: 0.01768852843613ms
+	-RTXDI Surface: 0.06722952107914ms
+	-RTXDI Guides: 0.02178688713762ms
+	-RTXDI Direct Lighting: 0.46552461092589ms
+	-NRD RELAX and HDR Composition: 0.75070496856189ms
+	-Tonemap: 0.01381967009091ms
+	-Render CanvasItems: 0.01309835715372ms
+GPU PROFILE (total 1.571ms):
+	-TLAS Build: 0.07649178583114ms
+	-Setup Shadows: 0.0236721331956ms
+	-Render Directional/SpotLight Shadows: 0.01598360010835ms
+	-Update Volumetric Fog: 0.01916393295663ms
+	-RTXDI Surface: 0.07542621893961ms
+	-RTXDI Guides: 0.02198360591638ms
+	-RTXDI Direct Lighting: 0.50301633115675ms
+	-NRD RELAX and HDR Composition: 0.86350825575532ms
+	-Tonemap: 0.01503277802076ms
+	-Render CanvasItems: 0.01360655417208ms
+MANUAL_ACTION key=4194343 frame=406 lights=1 size=(1280, 720)
+MANUAL_CAPTURE path=C:/Users/lukas/AppData/Roaming/Godot/app_userdata/RTXDI manual rendering demonstration/manual-1788772612.png result=0 frame=406 gpu_ms=1.66299998760223
+MANUAL_MEMORY total=374392096.0 textures=279158784.0 buffers=83145920.0
+GPU PROFILE (total 1.713ms):
+	-TLAS Build: 0.08288334210714ms
+	-Setup Shadows: 0.02593332926432ms
+	-Render Directional/SpotLight Shadows: 0.01656666795413ms
+	-Update Volumetric Fog: 0.02041667103767ms
+	-RTXDI Surface: 0.08288334210714ms
+	-RTXDI Guides: 0.02275000413259ms
+	-RTXDI Direct Lighting: 0.55201657613118ms
+	-NRD RELAX and HDR Composition: 1.0111665725708ms
+	-Tonemap: 0.01621666053931ms
+	-Render CanvasItems: 0.01411666969458ms
+MANUAL_ACTION key=66 frame=472 lights=1 size=(1280, 720)
+GPU PROFILE (total 2.191ms):
+	-TLAS Build: 0.08877052244593ms
+	-Setup Shadows: 0.02054098785901ms
+	-Render Directional/SpotLight Shadows: 0.01278688966251ms
+	-Update Volumetric Fog: 0.01867213014696ms
+	-RTXDI Surface: 0.09054095627832ms
+	-RTXDI Guides: 0.02386885197436ms
+	-RTXDI Direct Lighting: 0.57611471707704ms
+	-NRD RELAX and HDR Composition: 1.09667230824955ms
+	-Tonemap: 0.01755737672087ms
+	-Render CanvasItems: 0.01460656670273ms
+GPU PROFILE (total 1.809ms):
+	-TLAS Build: 0.09257374435175ms
+	-RTXDI Surface: 0.09618033737433ms
+	-RTXDI Guides: 0.02481966722207ms
+	-RTXDI Direct Lighting: 0.56436069676133ms
+	-NRD RELAX and HDR Composition: 1.30560652936091ms
+	-Tonemap: 0.01921311362845ms
+	-Render CanvasItems: 0.01531148445411ms
+MANUAL_ACTION key=4194343 frame=598 lights=1 size=(1280, 720)
+MANUAL_CAPTURE path=C:/Users/lukas/AppData/Roaming/Godot/app_userdata/RTXDI manual rendering demonstration/manual-1788772615.png result=0 frame=598 gpu_ms=1.90199995040894
+MANUAL_MEMORY total=374392096.0 textures=279158784.0 buffers=83145920.0
+GPU PROFILE (total 2.555ms):
+	-TLAS Build: 0.11238333384196ms
+	-RTXDI Surface: 0.10196670691172ms
+	-RTXDI Guides: 0.02619999845823ms
+	-RTXDI Direct Lighting: 0.59878323872884ms
+	-NRD RELAX and HDR Composition: 1.13448333740234ms
+	-Tonemap: 0.01984999577204ms
+	-Render CanvasItems: 0.01546667913596ms
+MANUAL_ACTION key=4194305 frame=665 lights=1 size=(1280, 720)

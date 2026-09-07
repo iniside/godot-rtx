@@ -1,0 +1,139 @@
+Godot Engine v4.8.dev.custom_build.eeed72b42 (2026-09-07 07:43:31 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Streamline - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+WARNING: The separate rendering thread feature is experimental. Feel free to try it since it will eventually become a stable feature.
+However, bear in mind that at the moment it can lead to project crashes or instability.
+So, unless you want to test the engine, set the "rendering/driver/threads/thread_model" project setting to 'Safe'.
+   at: Main::setup2 (main\main.cpp:3563)
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:242)
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+
+MANUAL_DEMO preset=gallery light=all binary={ "major": 4, "minor": 8, "patch": 0, "hex": 264192, "status": "dev", "build": "custom_build", "hash": "eeed72b42987b2d29f9e1a99e2dd57cc5ff91172", "timestamp": 1788767011, "string": "4.8-dev (custom_build)" } renderer=forward_plus driver=vulkan size=(1280.0, 720.0)
+GPU PROFILE (total 0.603ms):
+	-Setup Sky: 0.01299998071045ms
+	-TLAS Build: 0.04934373497963ms
+	-Render Directional/SpotLight Shadows: 0.01267187763005ms
+	-RTXDI Surface: 0.02357812784612ms
+	-RTXDI Guides: 0.01253125630319ms
+	-RTXDI Direct Lighting: 0.19478122889996ms
+	-NRD RELAX and HDR Composition: 0.14929686486721ms
+	-FSR2: 0.08779683709145ms
+GPU_VIEW size=(858, 483) jitter=(0.000793, -0.000204) previous_jitter=(-0.000967, 0.001577) history=true
+GPU_READBACK C:\Users\lukas\AppData\Local\Temp/rtxdi-step7-motion-aging/858x483-raw_diffuse.bin bytes=3315312 frame=120
+GPU_READBACK C:\Users\lukas\AppData\Local\Temp/rtxdi-step7-motion-aging/858x483-raw_specular.bin bytes=3315312 frame=120
+GPU_READBACK C:\Users\lukas\AppData\Local\Temp/rtxdi-step7-motion-aging/858x483-nrd_diffuse.bin bytes=3315312 frame=120
+GPU_READBACK C:\Users\lukas\AppData\Local\Temp/rtxdi-step7-motion-aging/858x483-nrd_specular.bin bytes=3315312 frame=120
+GPU_READBACK C:\Users\lukas\AppData\Local\Temp/rtxdi-step7-motion-aging/858x483-hdr.bin bytes=3315312 frame=120
+GPU_READBACK C:\Users\lukas\AppData\Local\Temp/rtxdi-step7-motion-aging/858x483-base.bin bytes=1657656 frame=120
+GPU_READBACK C:\Users\lukas\AppData\Local\Temp/rtxdi-step7-motion-aging/858x483-shading.bin bytes=3315312 frame=120
+GPU_READBACK C:\Users\lukas\AppData\Local\Temp/rtxdi-step7-motion-aging/858x483-emission.bin bytes=3315312 frame=120
+GPU_READBACK C:\Users\lukas\AppData\Local\Temp/rtxdi-step7-motion-aging/858x483-motion.bin bytes=3315312 frame=120
+GPU_READBACK C:\Users\lukas\AppData\Local\Temp/rtxdi-step7-motion-aging/858x483-geometry.bin bytes=1657656 frame=120
+GPU_READBACK C:\Users\lukas\AppData\Local\Temp/rtxdi-step7-motion-aging/858x483-classification.bin bytes=3315312 frame=120
+GPU_READBACK C:\Users\lukas\AppData\Local\Temp/rtxdi-step7-motion-aging/858x483-viewz.bin bytes=1657656 frame=120
+GPU_READBACK C:\Users\lukas\AppData\Local\Temp/rtxdi-step7-motion-aging/858x483-nrd_normal.bin bytes=3315312 frame=120
+GPU_MEMORY total=343157664 textures=287229440 buffers=42982630
+GPU PROFILE (total 0.595ms):
+	-TLAS Build: 0.04919999440511ms
+	-Render Directional/SpotLight Shadows: 0.01161666909854ms
+	-RTXDI Surface: 0.01958333452543ms
+	-RTXDI Guides: 0.0127333343029ms
+	-RTXDI Direct Lighting: 0.19414998690287ms
+	-NRD RELAX and HDR Composition: 0.14730002085368ms
+	-FSR2: 0.08738329410553ms
+GPU PROFILE (total 1.245ms):
+	-TLAS Build: 0.08008197878228ms
+	-Setup Shadows: 0.01678688799749ms
+	-Render Directional/SpotLight Shadows: 0.01739344245098ms
+	-Pack 3D Cluster Elements: 0.01303278129609ms
+	-Update Volumetric Fog: 0.01478688834143ms
+	-RTXDI Surface: 0.03281967366328ms
+	-RTXDI Guides: 0.01506557034664ms
+	-RTXDI Direct Lighting: 0.33022946217021ms
+	-NRD RELAX and HDR Composition: 0.28406555926214ms
+	-Render Sky: 0.01027869005672ms
+	-FSR2: 0.17891808806873ms
+	-Tonemap: 0.01262294757562ms
+	-Render CanvasItems: 0.01124589951312ms
+GPU PROFILE (total 1.518ms):
+	-TLAS Build: 0.11091803722694ms
+	-Setup Shadows: 0.02427868178633ms
+	-Render Directional/SpotLight Shadows: 0.0230000077701ms
+	-Render 3D Cluster Elements: 0.01026229291666ms
+	-Pack 3D Cluster Elements: 0.01844262685932ms
+	-Update Volumetric Fog: 0.02001638881496ms
+	-RTXDI Surface: 0.04668853322013ms
+	-RTXDI Guides: 0.01691803189575ms
+	-RTXDI Direct Lighting: 0.48150812993284ms
+	-NRD RELAX and HDR Composition: 0.42345900613754ms
+	-Render Sky: 0.02231149009017ms
+	-FSR2: 0.21037702091405ms
+	-Tonemap: 0.01704918165676ms
+	-Render CanvasItems: 0.01322950789186ms
+GPU PROFILE (total 1.608ms):
+	-TLAS Build: 0.12268859050313ms
+	-Setup Shadows: 0.02798361074729ms
+	-Render Directional/SpotLight Shadows: 0.02511475516147ms
+	-Render 3D Cluster Elements: 0.01122950725868ms
+	-Pack 3D Cluster Elements: 0.02078688926384ms
+	-Update Volumetric Fog: 0.02234426091929ms
+	-RTXDI Surface: 0.05355735685005ms
+	-RTXDI Guides: 0.01813115252823ms
+	-RTXDI Direct Lighting: 0.55403268532675ms
+	-NRD RELAX and HDR Composition: 0.51437706243796ms
+	-Render Sky: 0.014868844728ms
+	-FSR2: 0.24157380276039ms
+	-Tonemap: 0.01908196777594ms
+	-Render CanvasItems: 0.01388524594854ms
+GPU PROFILE (total 1.614ms):
+	-TLAS Build: 0.12359020358226ms
+	-Setup Shadows: 0.02793441834997ms
+	-Render Directional/SpotLight Shadows: 0.0255245947447ms
+	-Render 3D Cluster Elements: 0.01113114689217ms
+	-Pack 3D Cluster Elements: 0.02104918292311ms
+	-Update Volumetric Fog: 0.02239343963686ms
+	-RTXDI Surface: 0.05411474431147ms
+	-RTXDI Guides: 0.01806557764773ms
+	-RTXDI Direct Lighting: 0.557999970483ms
+	-NRD RELAX and HDR Composition: 0.54678682421075ms
+	-Render Sky: 0.01473769789836ms
+	-FSR2: 0.2435573984365ms
+	-Tonemap: 0.01903278905837ms
+	-Render CanvasItems: 0.01419672125676ms
+GPU PROFILE (total 1.606ms):
+	-TLAS Build: 0.12334430413168ms
+	-Setup Shadows: 0.02806557006523ms
+	-Render Directional/SpotLight Shadows: 0.02555738120783ms
+	-Render 3D Cluster Elements: 0.01122950725868ms
+	-Pack 3D Cluster Elements: 0.02096721383392ms
+	-Update Volumetric Fog: 0.0224098357998ms
+	-RTXDI Surface: 0.05401637124234ms
+	-RTXDI Guides: 0.01809836411085ms
+	-RTXDI Direct Lighting: 0.5571476045202ms
+	-NRD RELAX and HDR Composition: 0.48044264121134ms
+	-Render Sky: 0.01491802539982ms
+	-FSR2: 0.2430983527762ms
+	-Tonemap: 0.01911475423907ms
+	-Render CanvasItems: 0.01391803241167ms
+MANUAL_CAPTURE path=C:/Users/lukas/AppData/Local/Temp/rtxdi-motion-aging.png result=0 frame=474 gpu_ms=1.61800003051758
+MANUAL_MEMORY total=343157664.0 textures=287229440.0 buffers=42982630.0
+GPU PROFILE (total 1.61ms):
+	-TLAS Build: 0.12369567414989ms
+	-Setup Shadows: 0.0280869577242ms
+	-Render Directional/SpotLight Shadows: 0.02532608871875ms
+	-Render 3D Cluster Elements: 0.01141304295996ms
+	-Pack 3D Cluster Elements: 0.02067391898321ms
+	-Update Volumetric Fog: 0.0225869598596ms
+	-RTXDI Surface: 0.0539782565573ms
+	-RTXDI Guides: 0.01800000278846ms
+	-RTXDI Direct Lighting: 0.55763049747633ms
+	-NRD RELAX and HDR Composition: 0.45508703978165ms
+	-Render Sky: 0.01469564697017ms
+	-FSR2: 0.24334783139436ms
+	-Tonemap: 0.01884782314301ms
+	-Render CanvasItems: 0.01419565599898ms

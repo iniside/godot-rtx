@@ -1,0 +1,63 @@
+COMMAND: scons platform=windows target=editor accesskit=no d3d12=no -j16
+LOCAL FULL LOG: %TEMP%/rtxdi-step7-clean-editor-build.log
+scons: Reading SConscript files ...
+Using Visual Studio 14.5 with Windows SDK 10.0.26100.0.
+Building for platform "windows", architecture "x86_64", target "editor".
+WARNING: The ANGLE rendering driver requires dependencies to be installed.
+You can install them by running `python misc\scripts\install_angle.py`.
+See the documentation for more information:
+	https://docs.godotengine.org/en/latest/engine_details/development/compiling/compiling_for_windows.html
+Alternatively, disable this driver by compiling with `angle=no` explicitly.
+Linking Static Library bin\obj\servers\servers.windows.editor.x86_64.lib ...
+Linking Program bin\godot.windows.editor.x86_64.exe ...
+Linking Program bin\godot.windows.editor.x86_64.console.exe ...
+scons: done building targets.
+INFO: Time elapsed: 00:00:31.73
+
+COMMAND: scons platform=windows target=template_debug accesskit=no d3d12=no -j16
+LOCAL FULL LOG: %TEMP%/rtxdi-step7-clean-template-build.log
+scons: Reading SConscript files ...
+Using Visual Studio 14.5 with Windows SDK 10.0.26100.0.
+Building for platform "windows", architecture "x86_64", target "template_debug".
+WARNING: The ANGLE rendering driver requires dependencies to be installed.
+You can install them by running `python misc\scripts\install_angle.py`.
+See the documentation for more information:
+	https://docs.godotengine.org/en/latest/engine_details/development/compiling/compiling_for_windows.html
+Alternatively, disable this driver by compiling with `angle=no` explicitly.
+Linking Static Library bin\obj\servers\servers.windows.template_debug.x86_64.lib ...
+Linking Program bin\godot.windows.template_debug.x86_64.exe ...
+Linking Program bin\godot.windows.template_debug.x86_64.console.exe ...
+scons: done building targets.
+INFO: Time elapsed: 00:00:44.45
+
+COMMAND: scons platform=windows target=template_debug accesskit=no d3d12=no disable_path_overrides=no -j16
+LOCAL FULL LOG: %TEMP%/rtxdi-step7-template-path-build.log
+scons: Reading SConscript files ...
+Using Visual Studio 14.5 with Windows SDK 10.0.26100.0.
+WARNING: The ANGLE rendering driver requires dependencies to be installed.
+You can install them by running `python misc\scripts\install_angle.py`.
+See the documentation for more information:
+	https://docs.godotengine.org/en/latest/engine_details/development/compiling/compiling_for_windows.html
+Building for platform "windows", architecture "x86_64", target "template_debug".
+Alternatively, disable this driver by compiling with `angle=no` explicitly.
+Linking Static Library bin\obj\core\core.windows.template_debug.x86_64.lib ...
+Linking Program bin\godot.windows.template_debug.x86_64.exe ...
+Linking Program bin\godot.windows.template_debug.x86_64.console.exe ...
+scons: done building targets.
+INFO: Time elapsed: 00:04:19.74
+
+COMMAND: scons platform=windows target=editor accesskit=no d3d12=no -j16
+LOCAL FULL LOG: %TEMP%/rtxdi-step7-final-editor-build.log
+scons: Reading SConscript files ...
+Using Visual Studio 14.5 with Windows SDK 10.0.26100.0.
+Building for platform "windows", architecture "x86_64", target "editor".
+WARNING: The ANGLE rendering driver requires dependencies to be installed.
+You can install them by running `python misc\scripts\install_angle.py`.
+See the documentation for more information:
+	https://docs.godotengine.org/en/latest/engine_details/development/compiling/compiling_for_windows.html
+Alternatively, disable this driver by compiling with `angle=no` explicitly.
+Linking Static Library bin\obj\servers\servers.windows.editor.x86_64.lib ...
+Linking Program bin\godot.windows.editor.x86_64.exe ...
+Linking Program bin\godot.windows.editor.x86_64.console.exe ...
+scons: done building targets.
+INFO: Time elapsed: 00:00:32.41

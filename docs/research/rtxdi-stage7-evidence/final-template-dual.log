@@ -1,0 +1,128 @@
+Godot Engine v4.8.dev.custom_build.eeed72b42 (2026-09-07 07:43:31 UTC) - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Streamline - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090
+WARNING: The separate rendering thread feature is experimental. Feel free to try it since it will eventually become a stable feature.
+However, bear in mind that at the moment it can lead to project crashes or instability.
+So, unless you want to test the engine, set the "rendering/driver/threads/thread_model" project setting to 'Safe'.
+   at: Main::setup2 (main\main.cpp:3563)
+WARNING: Forward Clustered RTXDI surface: shader <inline> uses shading or deformation that the RTXDI material contract cannot represent; affected surfaces render as a magenta diagnostic.
+   at: RendererSceneRenderImplementation::SceneShaderForwardClustered::ShaderData::set_code (servers\rendering\renderer_rd\forward_clustered\scene_shader_forward_clustered.cpp:241)
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+OpTypeForwardPointer is not supported yet.
+
+MANUAL_DEMO preset=gallery light=all binary={ "major": 4, "minor": 8, "patch": 0, "hex": 264192, "status": "dev", "build": "custom_build", "hash": "eeed72b42987b2d29f9e1a99e2dd57cc5ff91172", "timestamp": 1788767011, "string": "4.8-dev (custom_build)" } renderer=forward_plus driver=vulkan size=(1280.0, 720.0)
+GPU PROFILE (total 1.125ms):
+	-Setup Sky: 0.02657807990909ms
+	-BLAS Build: 0.02251562289894ms
+	-TLAS Build: 0.10859377682209ms
+	-Render OmniLight Shadows: 0.07415622472763ms
+	-Render Directional/SpotLight Shadows: 0.05309374630451ms
+	-Pack 3D Cluster Elements: 0.01165625732392ms
+	-Render Fog: 0.06065620109439ms
+	-Filter Fog: 0.03017190471292ms
+	-Integrate Fog: 0.0314218737185ms
+	-RTXDI Surface: 0.03010938316584ms
+	-RTXDI Guides: 0.01860938034952ms
+	-RTXDI Direct Lighting: 0.29357805848122ms
+	-NRD RELAX and HDR Composition: 0.22935938835144ms
+	-Render Sky: 0.01579686999321ms
+	-Tonemap: 0.02093750610948ms
+	-Render CanvasItems: 0.03299999982119ms
+	-FSR2: 0.09217183291912ms
+GPU PROFILE (total 1.788ms):
+	-BLAS Build: 0.02183334032694ms
+	-TLAS Build: 0.12626669406891ms
+	-Render OmniLight Shadows: 0.09628330071767ms
+	-Render Directional/SpotLight Shadows: 0.0690166870753ms
+	-Render 3D Cluster Elements: 0.01176667312781ms
+	-Pack 3D Cluster Elements: 0.01533333559831ms
+	-Render Fog: 0.08056668440501ms
+	-Filter Fog: 0.03095001578331ms
+	-Integrate Fog: 0.04159999291102ms
+	-RTXDI Surface: 0.03896667559942ms
+	-RTXDI Guides: 0.02028333346049ms
+	-RTXDI Direct Lighting: 0.4022167523702ms
+	-NRD RELAX and HDR Composition: 0.28165006637573ms
+	-Render Sky: 0.01415000657241ms
+	-Tonemap: 0.01974999507268ms
+	-Render CanvasItems: 0.03234998981158ms
+	-FSR2: 0.11230001449585ms
+GPU PROFILE (total 1.943ms):
+	-BLAS Build: 0.02824590636081ms
+	-TLAS Build: 0.16680328181533ms
+	-Render OmniLight Shadows: 0.16437704055036ms
+	-Render Directional/SpotLight Shadows: 0.09888529386677ms
+	-Pre Opaque Render: 0.01629509105057ms
+	-Render 3D Cluster Elements: 0.01434427988334ms
+	-Pack 3D Cluster Elements: 0.01983607401613ms
+	-Render Fog: 0.09091803284942ms
+	-Filter Fog: 0.03813117058551ms
+	-Integrate Fog: 0.05777049846336ms
+	-RTXDI Surface: 0.0536229258678ms
+	-RTXDI Guides: 0.03613114747845ms
+	-RTXDI Direct Lighting: 0.61544249487705ms
+	-NRD RELAX and HDR Composition: 0.40152449686019ms
+	-Render Sky: 0.03249180316925ms
+	-Tonemap: 0.0180327872761ms
+	-Render CanvasItems: 0.02254097188105ms
+	-FSR2: 0.1661639135392ms
+GPU PROFILE (total 2.723ms):
+	-BLAS Build: 0.03044999440511ms
+	-TLAS Build: 0.23793341318766ms
+	-Render OmniLight Shadows: 0.17326669692993ms
+	-Render Directional/SpotLight Shadows: 0.10436673959096ms
+	-Render 3D Cluster Elements: 0.01550001104673ms
+	-Pack 3D Cluster Elements: 0.02181666493416ms
+	-Render Fog: 0.0985667069753ms
+	-Filter Fog: 0.04141666094462ms
+	-Integrate Fog: 0.06373331944148ms
+	-RTXDI Surface: 0.09220002492269ms
+	-RTXDI Guides: 0.04311667283376ms
+	-RTXDI Direct Lighting: 0.63218320210775ms
+	-NRD RELAX and HDR Composition: 0.48361670176188ms
+	-Render Sky: 0.02000000079473ms
+	-Tonemap: 0.01961667339007ms
+	-Render CanvasItems: 0.03806667725245ms
+	-FSR2: 0.16564998626709ms
+GPU PROFILE (total 3.463ms):
+	-BLAS Build: 0.03100000248581ms
+	-TLAS Build: 0.28480326543089ms
+	-Render OmniLight Shadows: 0.16306558202525ms
+	-Render Directional/SpotLight Shadows: 0.10680322959775ms
+	-Render 3D Cluster Elements: 0.01872133036129ms
+	-Pack 3D Cluster Elements: 0.02198361959614ms
+	-Render Fog: 0.10054091156506ms
+	-Filter Fog: 0.04203277337747ms
+	-Integrate Fog: 0.10072140615495ms
+	-RTXDI Surface: 0.07796715126663ms
+	-RTXDI Guides: 0.02334426465582ms
+	-RTXDI Direct Lighting: 0.60981975617956ms
+	-NRD RELAX and HDR Composition: 0.49263944782195ms
+	-Render Sky: 0.02037705163487ms
+	-Tonemap: 0.01995082761421ms
+	-Render CanvasItems: 0.02370491575022ms
+	-FSR2: 0.16914753835709ms
+MANUAL_CAPTURE path=G:/Projects/godot-rtx/docs/research/rtxdi-stage7-evidence/final-dual-fog-fsr2.png result=0 frame=350 gpu_ms=1.27400004863739
+MANUAL_MEMORY total=413041856.0 textures=344967680.0 buffers=52756694.0
+GPU PROFILE (total 3.496ms):
+	-BLAS Build: 0.02964443630642ms
+	-TLAS Build: 0.21326671176487ms
+	-Render OmniLight Shadows: 0.18193327585856ms
+	-Render Directional/SpotLight Shadows: 0.10022220611572ms
+	-Render 3D Cluster Elements: 0.01515556176503ms
+	-Pack 3D Cluster Elements: 0.02102222442627ms
+	-Render Fog: 0.09533335367839ms
+	-Filter Fog: 0.04013334380256ms
+	-Integrate Fog: 0.0611555258433ms
+	-RTXDI Surface: 0.113200018141ms
+	-RTXDI Guides: 0.04902222421434ms
+	-RTXDI Direct Lighting: 0.59266671074761ms
+	-NRD RELAX and HDR Composition: 0.46011110941569ms
+	-Render Sky: 0.01917777723736ms
+	-Tonemap: 0.01915555530124ms
+	-Render CanvasItems: 0.02284444173177ms
+	-FSR2: 0.15853331883748ms
+PROCESS_EXIT=0

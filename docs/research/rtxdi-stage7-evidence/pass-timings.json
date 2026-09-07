@@ -1,0 +1,248 @@
+{
+  "final-template-gallery": {
+    "TLAS Build": {
+      "samples": 5,
+      "min_ms": 0.04531745683579,
+      "median_ms": 0.04668852149463,
+      "max_ms": 0.04680328681821
+    },
+    "Setup Shadows": {
+      "samples": 5,
+      "min_ms": 0.01034920650815,
+      "median_ms": 0.01086885127865,
+      "max_ms": 0.01106557298879
+    },
+    "Render OmniLight Shadows": {
+      "samples": 1,
+      "min_ms": 0.02309523877643,
+      "median_ms": 0.02309523877643,
+      "max_ms": 0.02309523877643
+    },
+    "Render Directional/SpotLight Shadows": {
+      "samples": 5,
+      "min_ms": 0.01209836221132,
+      "median_ms": 0.01308197173916,
+      "max_ms": 0.01314754466541
+    },
+    "RTXDI Surface": {
+      "samples": 5,
+      "min_ms": 0.02833333848015,
+      "median_ms": 0.02886885697724,
+      "max_ms": 0.02911476033633
+    },
+    "RTXDI Guides": {
+      "samples": 5,
+      "min_ms": 0.0221147595859,
+      "median_ms": 0.02293442898109,
+      "max_ms": 0.03741269641452
+    },
+    "RTXDI Direct Lighting": {
+      "samples": 5,
+      "min_ms": 0.51488529267858,
+      "median_ms": 0.75819690891954,
+      "max_ms": 0.81104922685467
+    },
+    "NRD RELAX and HDR Composition": {
+      "samples": 5,
+      "min_ms": 0.25511474296695,
+      "median_ms": 0.25708198547363,
+      "max_ms": 0.31155555967301
+    },
+    "Render Sky": {
+      "samples": 2,
+      "min_ms": 0.01233334011502,
+      "median_ms": 0.01661748464859,
+      "max_ms": 0.02090162918216
+    },
+    "Tonemap": {
+      "samples": 2,
+      "min_ms": 0.01416393674788,
+      "median_ms": 0.022185142008305,
+      "max_ms": 0.03020634726873
+    },
+    "Render CanvasItems": {
+      "samples": 5,
+      "min_ms": 0.02104918878587,
+      "median_ms": 0.0902538905068,
+      "max_ms": 0.11726223054479
+    }
+  },
+  "final-template-dual": {
+    "Setup Sky": {
+      "samples": 1,
+      "min_ms": 0.02657807990909,
+      "median_ms": 0.02657807990909,
+      "max_ms": 0.02657807990909
+    },
+    "BLAS Build": {
+      "samples": 6,
+      "min_ms": 0.02183334032694,
+      "median_ms": 0.028945171333615002,
+      "max_ms": 0.03100000248581
+    },
+    "TLAS Build": {
+      "samples": 6,
+      "min_ms": 0.10859377682209,
+      "median_ms": 0.1900349967901,
+      "max_ms": 0.28480326543089
+    },
+    "Render OmniLight Shadows": {
+      "samples": 6,
+      "min_ms": 0.07415622472763,
+      "median_ms": 0.163721311287805,
+      "max_ms": 0.18193327585856
+    },
+    "Render Directional/SpotLight Shadows": {
+      "samples": 6,
+      "min_ms": 0.05309374630451,
+      "median_ms": 0.099553749991245,
+      "max_ms": 0.10680322959775
+    },
+    "Pack 3D Cluster Elements": {
+      "samples": 6,
+      "min_ms": 0.01165625732392,
+      "median_ms": 0.0204291492212,
+      "max_ms": 0.02198361959614
+    },
+    "Render Fog": {
+      "samples": 6,
+      "min_ms": 0.06065620109439,
+      "median_ms": 0.093125693263905,
+      "max_ms": 0.10054091156506
+    },
+    "Filter Fog": {
+      "samples": 6,
+      "min_ms": 0.03017190471292,
+      "median_ms": 0.039132257194035,
+      "max_ms": 0.04203277337747
+    },
+    "Integrate Fog": {
+      "samples": 6,
+      "min_ms": 0.0314218737185,
+      "median_ms": 0.05946301215333,
+      "max_ms": 0.10072140615495
+    },
+    "RTXDI Surface": {
+      "samples": 6,
+      "min_ms": 0.03010938316584,
+      "median_ms": 0.065795038567215,
+      "max_ms": 0.113200018141
+    },
+    "RTXDI Guides": {
+      "samples": 6,
+      "min_ms": 0.01860938034952,
+      "median_ms": 0.029737706067134998,
+      "max_ms": 0.04902222421434
+    },
+    "RTXDI Direct Lighting": {
+      "samples": 6,
+      "min_ms": 0.29357805848122,
+      "median_ms": 0.601243233463585,
+      "max_ms": 0.63218320210775
+    },
+    "NRD RELAX and HDR Composition": {
+      "samples": 6,
+      "min_ms": 0.22935938835144,
+      "median_ms": 0.43081780313794,
+      "max_ms": 0.49263944782195
+    },
+    "Render Sky": {
+      "samples": 6,
+      "min_ms": 0.01415000657241,
+      "median_ms": 0.019588889016045,
+      "max_ms": 0.03249180316925
+    },
+    "Tonemap": {
+      "samples": 6,
+      "min_ms": 0.0180327872761,
+      "median_ms": 0.019683334231375,
+      "max_ms": 0.02093750610948
+    },
+    "Render CanvasItems": {
+      "samples": 6,
+      "min_ms": 0.02254097188105,
+      "median_ms": 0.0280274527809,
+      "max_ms": 0.03806667725245
+    },
+    "FSR2": {
+      "samples": 6,
+      "min_ms": 0.09217183291912,
+      "median_ms": 0.162091652552285,
+      "max_ms": 0.16914753835709
+    },
+    "Render 3D Cluster Elements": {
+      "samples": 5,
+      "min_ms": 0.01176667312781,
+      "median_ms": 0.01515556176503,
+      "max_ms": 0.01872133036129
+    },
+    "Pre Opaque Render": {
+      "samples": 1,
+      "min_ms": 0.01629509105057,
+      "median_ms": 0.01629509105057,
+      "max_ms": 0.01629509105057
+    }
+  },
+  "final-template-expanded": {
+    "TLAS Build": {
+      "samples": 3,
+      "min_ms": 0.04382539552356,
+      "median_ms": 0.04514998992284,
+      "max_ms": 0.05768855282518
+    },
+    "Setup Shadows": {
+      "samples": 3,
+      "min_ms": 0.01114285559881,
+      "median_ms": 0.01130000154177,
+      "max_ms": 0.01539343888642
+    },
+    "Render Directional/SpotLight Shadows": {
+      "samples": 3,
+      "min_ms": 0.01106349154124,
+      "median_ms": 0.0113666643699,
+      "max_ms": 0.01357376868608
+    },
+    "Update Volumetric Fog": {
+      "samples": 3,
+      "min_ms": 0.01096825183384,
+      "median_ms": 0.01111666460832,
+      "max_ms": 0.01388524204004
+    },
+    "RTXDI Surface": {
+      "samples": 3,
+      "min_ms": 0.03428572321695,
+      "median_ms": 0.03541667064031,
+      "max_ms": 0.04731147406531
+    },
+    "RTXDI Guides": {
+      "samples": 3,
+      "min_ms": 0.01906666755676,
+      "median_ms": 0.01922221978505,
+      "max_ms": 0.02121311523875
+    },
+    "RTXDI Direct Lighting": {
+      "samples": 3,
+      "min_ms": 0.35020637512207,
+      "median_ms": 0.35436668395996,
+      "max_ms": 0.67272129996878
+    },
+    "NRD RELAX and HDR Composition": {
+      "samples": 3,
+      "min_ms": 0.35036510891385,
+      "median_ms": 0.35424995422363,
+      "max_ms": 0.6749180027696
+    },
+    "Tonemap": {
+      "samples": 3,
+      "min_ms": 0.01072131414882,
+      "median_ms": 0.02019999821981,
+      "max_ms": 0.03246031110249
+    },
+    "Render CanvasItems": {
+      "samples": 3,
+      "min_ms": 0.01376191585783,
+      "median_ms": 0.01698333422343,
+      "max_ms": 0.02927867115521
+    }
+  }
+}

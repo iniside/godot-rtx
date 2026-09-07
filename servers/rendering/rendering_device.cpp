@@ -499,6 +499,12 @@ RID RenderingDevice::tlas_create(uint32_t p_max_instance_count, BitField<Acceler
 	return id;
 }
 
+bool RenderingDevice::acceleration_structure_is_valid(RID p_acceleration_structure) {
+	ERR_RENDER_THREAD_GUARD_V(false);
+
+	return acceleration_structure_owner.owns(p_acceleration_structure);
+}
+
 Error RenderingDevice::blas_build(RID p_blas) {
 	ERR_RENDER_THREAD_GUARD_V(ERR_UNAVAILABLE);
 

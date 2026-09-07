@@ -772,6 +772,7 @@ namespace respv {
         instructionAdjacentListIndices.clear();
         instructionInDegrees.clear();
         instructionOutDegrees.clear();
+        loopPhiOperandIndices.clear();
         instructionOrder.clear();
         blocks.clear();
         blockPreOrderIndices.clear();
@@ -1970,11 +1971,6 @@ namespace respv {
                         return false;
                     }
                     
-                    // Make sure this label doesn't come from the loop continue.
-                    if (labelId == continueLabelId) {
-                        continue;
-                    }
-
                     uint32_t operandId = dataWords[wordIndex + j];
                     if (operandId >= results.size()) {
                         fprintf(stderr, "SPIR-V Parsing error. Invalid Operand ID: %u.\n", operandId);
@@ -1988,6 +1984,11 @@ namespace respv {
 
                     uint32_t labelIndex = results[labelId].instructionIndex;
                     uint32_t resultIndex = results[operandId].instructionIndex;
+                    if (labelId == continueLabelId) {
+                        loopPhiOperandIndices.push_back(resultIndex);
+                        continue;
+                    }
+
                     instructionAdjacentListIndices[labelIndex] = addToList(i, instructionAdjacentListIndices[labelIndex], listNodes);
                     instructionAdjacentListIndices[resultIndex] = addToList(i, instructionAdjacentListIndices[resultIndex], listNodes);
                 }
@@ -2136,6 +2137,10 @@ namespace respv {
                 instructionOutDegrees[i]++;
                 listIndex = listNode.nextListIndex;
             }
+        }
+
+        for (uint32_t instructionIndex : loopPhiOperandIndices) {
+            instructionOutDegrees[instructionIndex]++;
         }
 
         // Sort degrees doesn't need to be cleared as its contents will be copied over.
