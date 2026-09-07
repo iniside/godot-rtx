@@ -83,6 +83,13 @@ observations and remaining limits are in the
 [migration status](../research/2026-09-07-1126-shader-unification-status.md) and
 [final validation report](../research/2026-09-07-1518-shader-unification-step5-status.md).
 
+Startup follow-up, 2026-09-07 at baseline `10b3db6873`: bare `-e` without a project
+exposed the upstream project-manager OpenGL default, rejected by this Vulkan-only
+fork. `Main::setup` now defaults that path to Vulkan/Forward+. Ordinary/double
+editor builds passed; the rebuilt double runs `-e --verbose --quit-after 90` on
+RTX 4090 Vulkan and exits 0 without the reported renderer/ObjectDB errors.
+See the [bounded fix evidence](../research/2026-09-07-1558-project-manager-vulkan-fix.md).
+
 Active work is tracked in the [RTXDI implementation status](../research/2026-09-06-1904-rtxdi-implementation-status.md).
 Approval/plan commit: `e02ea8c87d`. Dependency integration landed in `89b35e1d1c`
 with shader/host compile evidence and a fresh hostile review PASS. RT ownership
