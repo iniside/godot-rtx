@@ -6597,7 +6597,7 @@ LRESULT DisplayServerWindows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
 			if (wParam == windows[window_id].move_timer_id) {
 				_THREAD_SAFE_UNLOCK_
 				_process_key_events();
-				if (!Main::is_iterating()) {
+				if (!Main::is_iterating() && OS::get_singleton()->get_main_loop()) {
 					Main::iteration();
 				}
 				_THREAD_SAFE_LOCK_
