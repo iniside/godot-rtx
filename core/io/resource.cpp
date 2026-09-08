@@ -233,6 +233,9 @@ void Resource::reset_state() {
 
 Error Resource::copy_from(const Ref<Resource> &p_resource) {
 	ERR_FAIL_COND_V(p_resource.is_null(), ERR_INVALID_PARAMETER);
+	if (p_resource.ptr() == this) {
+		return OK;
+	}
 	if (get_class() != p_resource->get_class()) {
 		return ERR_INVALID_PARAMETER;
 	}
