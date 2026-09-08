@@ -31,6 +31,12 @@
 
 #include "render_raytracing.h"
 
+#ifdef DEBUG_ENABLED
+#include "core/io/file_access.h"
+#include "core/io/json.h"
+#include "core/os/os.h"
+#endif
+
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
 #include "servers/rendering/renderer_rd/storage_rd/texture_storage.h"
 #include "servers/rendering/rendering_server_globals.h"
@@ -62,11 +68,33 @@ void RenderRTXDI::initialize(RenderRaytracing *p_raytracing, bool p_radiance_use
 	raytracing = p_raytracing;
 	radiance_uses_array = p_radiance_uses_array;
 
+#ifdef DEBUG_ENABLED
+	diagnostic_prefix = OS::get_singleton()->get_environment("GODOT_RTXDI_CAPTURE_PREFIX");
+	if (!diagnostic_prefix.is_empty()) {
+		String frame = OS::get_singleton()->get_environment("GODOT_RTXDI_CAPTURE_FRAME");
+		if (!frame.is_empty()) {
+			if (frame.is_valid_int() && frame.to_int() > 0 && frame.to_int() <= UINT32_MAX) {
+				diagnostic_frame = uint32_t(frame.to_int());
+			} else {
+				ERR_PRINT("GODOT_RTXDI_CAPTURE_FRAME requires a positive 32-bit render-call number; capture disabled.");
+				diagnostic_prefix = String();
+			}
+		}
+	}
+#endif
 	Vector<ShaderRD::VariantDefine> modes;
 	modes.push_back(ShaderRD::VariantDefine(0, "\n#define MODE_INITIAL 1\n", true));
 	modes.push_back(ShaderRD::VariantDefine(0, "\n#define MODE_TEMPORAL 1\n", true));
 	modes.push_back(ShaderRD::VariantDefine(0, "\n#define MODE_SPATIAL 1\n", true));
 	modes.push_back(ShaderRD::VariantDefine(0, "\n#define MODE_SHADE 1\n", true));
+#ifdef DEBUG_ENABLED
+	if (!diagnostic_prefix.is_empty()) {
+		modes.push_back(ShaderRD::VariantDefine(0, "\n#define MODE_INITIAL 1\n#define RTXDI_DIAGNOSTICS 1\n", true));
+		modes.push_back(ShaderRD::VariantDefine(0, "\n#define MODE_TEMPORAL 1\n#define RTXDI_DIAGNOSTICS 1\n", true));
+		modes.push_back(ShaderRD::VariantDefine(0, "\n#define MODE_SPATIAL 1\n#define RTXDI_DIAGNOSTICS 1\n", true));
+		modes.push_back(ShaderRD::VariantDefine(0, "\n#define MODE_SHADE 1\n#define RTXDI_DIAGNOSTICS 1\n", true));
+	}
+#endif
 	String defines = "\n#define MAX_ROUGHNESS_LOD " + itos(p_roughness_layers - 1) + ".0\n";
 #ifdef REAL_T_IS_DOUBLE
 	defines += "\n#define USE_DOUBLE_PRECISION\n";
@@ -76,7 +104,7 @@ void RenderRTXDI::initialize(RenderRaytracing *p_raytracing, bool p_radiance_use
 	}
 	shader.shader.initialize(modes, defines, Vector<RD::PipelineImmutableSampler>(), Vector<uint64_t>(), false, false);
 	shader.version = shader.shader.version_create();
-	for (uint32_t i = 0; i < PASS_MAX; i++) {
+	for (uint32_t i = 0; i < uint32_t(modes.size()); i++) {
 		shader.shader_rid[i] = shader.shader.version_get_shader(shader.version, i);
 		shader.pipeline[i] = RD::get_singleton()->compute_pipeline_create(shader.shader_rid[i]);
 	}
@@ -177,7 +205,7 @@ bool RenderRTXDI::_ensure_viewport_resources(RTViewportState *p_state, const Siz
 	return true;
 }
 
-RID RenderRTXDI::_create_uniform_set(const RenderRTXDISurfaceResources &p_surface, RTViewportState *p_state, RID p_scene_data_buffer, uint32_t p_view, Pass p_pass) {
+RID RenderRTXDI::_create_uniform_set(const RenderRTXDISurfaceResources &p_surface, RTViewportState *p_state, RID p_scene_data_buffer, uint32_t p_view, uint32_t p_variant, RID p_diagnostic_buffer) {
 	ERR_FAIL_NULL_V(p_state, RID());
 	ERR_FAIL_NULL_V(p_state->rtxdi_di, RID());
 	ERR_FAIL_UNSIGNED_INDEX_V(p_view, p_state->rtxdi_di->views.size(), RID());
@@ -220,7 +248,10 @@ RID RenderRTXDI::_create_uniform_set(const RenderRTXDISurfaceResources &p_surfac
 	append_uniform(uniforms, RD::UNIFORM_TYPE_IMAGE, 32, view_resources.specular_radiance_distance);
 	p_surface.samplers.append_uniforms(uniforms, 33);
 	append_uniform(uniforms, RD::UNIFORM_TYPE_UNIFORM_BUFFER, 45, p_state->frame_constants_buffer);
-	return RD::get_singleton()->uniform_set_create(uniforms, shader.shader_rid[p_pass], 0, true);
+	if (p_diagnostic_buffer.is_valid()) {
+		append_uniform(uniforms, RD::UNIFORM_TYPE_STORAGE_BUFFER, 46, p_diagnostic_buffer);
+	}
+	return RD::get_singleton()->uniform_set_create(uniforms, shader.shader_rid[p_variant], 0, true);
 }
 
 void RenderRTXDI::render(const RenderRTXDISurfaceResources &p_surface, RTViewportState *p_state, RID p_scene_data_buffer, uint32_t p_view, uint32_t p_view_count) {
@@ -259,17 +290,45 @@ void RenderRTXDI::render(const RenderRTXDISurfaceResources &p_surface, RTViewpor
 
 	RID bindless_uniform_set = raytracing->get_bindless_uniform_set(shader.shader_rid[PASS_INITIAL]);
 	ERR_FAIL_COND(!bindless_uniform_set.is_valid());
+	RID diagnostic_buffer;
+	uint32_t variant_offset = 0;
+#ifdef DEBUG_ENABLED
+	if (!diagnostic_prefix.is_empty() && !diagnostic_complete && ++diagnostic_render_count == diagnostic_frame) {
+		diagnostic_complete = true;
+		Vector<uint8_t> zeros;
+		zeros.resize(PASS_MAX * 1024 * 48 * sizeof(uint32_t));
+		zeros.fill(0);
+		diagnostic_buffer = RD::get_singleton()->storage_buffer_create(zeros.size(), zeros);
+		if (diagnostic_buffer.is_valid()) {
+			variant_offset = PASS_MAX;
+		} else {
+			ERR_PRINT("Failed to allocate RTXDI diagnostic capture buffer.");
+		}
+	}
+#endif
 	RID uniform_sets[PASS_MAX];
-	for (uint32_t pass = 0; pass < PASS_MAX; pass++) {
-		if (shader.pipeline[pass].is_valid()) {
-			uniform_sets[pass] = _create_uniform_set(p_surface, p_state, p_scene_data_buffer, p_view, Pass(pass));
+	for (uint32_t pass = 0; pass < PASS_MAX;) {
+		if (shader.pipeline[pass + variant_offset].is_valid()) {
+			uniform_sets[pass] = _create_uniform_set(p_surface, p_state, p_scene_data_buffer, p_view, pass + variant_offset, diagnostic_buffer);
 		}
 		if (!uniform_sets[pass].is_valid()) {
 			for (uint32_t previous_pass = 0; previous_pass < pass; previous_pass++) {
 				RD::get_singleton()->free_rid(uniform_sets[previous_pass]);
 			}
+			if (diagnostic_buffer.is_valid()) {
+				RD::get_singleton()->free_rid(diagnostic_buffer);
+				diagnostic_buffer = RID();
+				variant_offset = 0;
+				pass = 0;
+				for (RID &uniform_set : uniform_sets) {
+					uniform_set = RID();
+				}
+				ERR_PRINT("Failed to prepare RTXDI diagnostic dispatch resources; rendering without capture.");
+				continue;
+			}
 			ERR_FAIL_MSG("Failed to prepare RTXDI DI dispatch resources.");
 		}
+		pass++;
 	}
 
 	RD *rd = RD::get_singleton();
@@ -278,7 +337,7 @@ void RenderRTXDI::render(const RenderRTXDISurfaceResources &p_surface, RTViewpor
 		RENDER_TIMESTAMP(pass_timestamps[pass]);
 		RD::ComputeListID compute_list = rd->compute_list_begin();
 		raytracing->register_compute_buffer_dependencies(compute_list);
-		rd->compute_list_bind_compute_pipeline(compute_list, shader.pipeline[pass]);
+		rd->compute_list_bind_compute_pipeline(compute_list, shader.pipeline[pass + variant_offset]);
 		rd->compute_list_bind_uniform_set(compute_list, uniform_sets[pass], 0);
 		rd->compute_list_bind_uniform_set(compute_list, bindless_uniform_set, 1);
 		rd->compute_list_dispatch_threads(compute_list, p_surface.size.x, p_surface.size.y, 1);
@@ -288,7 +347,121 @@ void RenderRTXDI::render(const RenderRTXDISurfaceResources &p_surface, RTViewpor
 	RENDER_TIMESTAMP("RTXDI Dispatches Complete");
 	view_resources.last_frame_index = p_surface.frame_index;
 	view_resources.camera_history_epoch = p_state->camera_history_epoch;
+#ifdef DEBUG_ENABLED
+	if (diagnostic_buffer.is_valid()) {
+		_capture_diagnostics(diagnostic_buffer, p_surface, p_state, parameters.extent_history[2] != 0);
+		rd->free_rid(diagnostic_buffer);
+	}
+#endif
 }
+
+#ifdef DEBUG_ENABLED
+void RenderRTXDI::_capture_diagnostics(RID p_buffer, const RenderRTXDISurfaceResources &p_surface, const RTViewportState *p_state, bool p_history_valid) {
+	static const char *const counter_names[] = {
+		"sampled_pixels",
+		"valid_surfaces",
+		"light_sample_calls_omni",
+		"light_sample_calls_directional",
+		"light_sample_calls_spot",
+		"light_sample_calls_area",
+		"light_sample_calls_emissive_triangle",
+		"light_sample_calls_environment",
+		"initial_candidate_sample_calls_omni",
+		"initial_candidate_sample_calls_directional",
+		"initial_candidate_sample_calls_spot",
+		"initial_candidate_sample_calls_area",
+		"initial_candidate_sample_calls_emissive_triangle",
+		"initial_candidate_sample_calls_environment",
+		"initial_selected_sample_reconstructions",
+		"target_pdf_calls",
+		"positive_target_pdf_results",
+		"target_pdf_brdf_evaluations",
+		"brdf_pdf_evaluations",
+		"brdf_sample_calls",
+		"local_source_pdf_calls",
+		"environment_source_pdf_calls",
+		"conservative_visibility_calls",
+		"temporal_visibility_calls",
+		"shadow_rays",
+		"no_shadow_flag_bypasses",
+		"shadow_triangle_candidates",
+		"shadow_geometry_load_successes",
+		"shadow_coverage_calls",
+		"shadow_material_tests",
+		"shadow_committed_hits",
+		"shadow_visible_results",
+		"emitter_coverage_calls",
+		"emitter_material_tests",
+		"local_ray_calls",
+		"local_ray_triangle_candidates",
+		"local_ray_geometry_load_successes",
+		"local_ray_coverage_calls",
+		"local_ray_material_tests",
+		"local_ray_geometry_hits",
+		"local_ray_geometry_misses",
+		"local_light_scan_iterations",
+		"local_light_scan_matches",
+		"local_light_scan_no_match",
+		"valid_output_reservoirs",
+		"final_shading_brdf_evaluations",
+		"gbuffer_load_calls",
+		"light_sample_calls_unknown_type",
+	};
+	static_assert(sizeof(counter_names) / sizeof(counter_names[0]) == 48);
+	Vector<uint8_t> data = RD::get_singleton()->buffer_get_data(p_buffer);
+	ERR_FAIL_COND_MSG(data.size() != PASS_MAX * 1024 * 48 * int(sizeof(uint32_t)), "RTXDI diagnostic readback has an unexpected size.");
+	const uint32_t *records = reinterpret_cast<const uint32_t *>(data.ptr());
+	const RTLightSnapshot &lights = p_state->light_snapshots[p_state->current_light_snapshot];
+	Dictionary metadata;
+	metadata["schema_version"] = 1;
+	metadata["render_call"] = diagnostic_render_count;
+	metadata["surface_frame_index"] = p_surface.frame_index;
+	metadata["shader_frame_index"] = uint32_t(p_surface.frame_index);
+	metadata["width"] = p_surface.size.x;
+	metadata["height"] = p_surface.size.y;
+	metadata["viewport_reservoir_id"] = p_state->rtxdi_di->views[0].reservoir_buffer.get_id();
+	metadata["history_valid"] = p_history_valid;
+	const uint64_t pixel_count = uint64_t(p_surface.size.x) * uint64_t(p_surface.size.y);
+	const uint64_t stride = (pixel_count + 1023) / 1024;
+	metadata["sample_limit_per_pass"] = 1024;
+	metadata["pixel_count"] = pixel_count;
+	metadata["sample_linear_stride"] = stride;
+	metadata["sample_linear_offset"] = uint32_t(p_surface.frame_index) % stride;
+	metadata["sampling_rule"] = "linear_pixel_index % stride == offset; identical pixels in all four passes; raw counts only, no full-frame extrapolation";
+	metadata["measurement"] = "Executed shader events for sampled invocations, not GPU time. Diagnostic variants and the synchronous readback perturb the capture frame; use separate normal-frame native GPU timings.";
+	metadata["initial_candidate_sample_calls"] = "RAB_SamplePolymorphicLight calls during SDK initial proposals and the explicit environment proposal loop; excludes selected-reservoir reconstruction";
+	metadata["coverage_calls"] = "Entry to geometry_alpha_covered; material_tests count only calls reaching geometry_material_covered after triangle decode";
+	metadata["local_light_scan_iterations"] = "One current_lights load per iteration after a BRDF ray geometry hit; stops on a matching emissive triangle";
+	metadata["local_light_count"] = lights.parameters.local_count;
+	metadata["infinite_light_count"] = lights.parameters.infinite_count;
+	metadata["environment_light_present"] = lights.parameters.environment_present;
+	metadata["configured_local_samples"] = config.local_light_samples;
+	metadata["configured_infinite_samples"] = config.infinite_light_samples;
+	metadata["configured_environment_samples"] = config.environment_samples;
+	metadata["configured_brdf_samples"] = config.brdf_samples;
+	static const char *const pass_names[PASS_MAX] = { "initial", "temporal", "spatial", "shade" };
+	Dictionary passes;
+	for (uint32_t pass = 0; pass < PASS_MAX; pass++) {
+		Dictionary counters;
+		for (uint32_t counter = 0; counter < 48; counter++) {
+			uint64_t total = 0;
+			for (uint32_t sample = 0; sample < 1024; sample++) {
+				total += records[(pass * 1024 + sample) * 48 + counter];
+			}
+			counters[counter_names[counter]] = total;
+		}
+		passes[pass_names[pass]] = counters;
+	}
+	metadata["passes"] = passes;
+	String path = diagnostic_prefix + "-frame-" + uitos(p_surface.frame_index) + ".json";
+	Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
+	ERR_FAIL_COND_MSG(file.is_null(), "Failed to open RTXDI diagnostic capture: " + path);
+	file->store_string(JSON::stringify(metadata, "\t"));
+	file->flush();
+	ERR_FAIL_COND_MSG(file->get_error() != OK, "Failed to write RTXDI diagnostic capture: " + path);
+	print_line("RTXDI_CAPTURE " + path);
+}
+#endif
 
 RID RenderRTXDI::get_diffuse_radiance_distance(const RTViewportState *p_state, uint32_t p_view) const {
 	ERR_FAIL_NULL_V(p_state, RID());

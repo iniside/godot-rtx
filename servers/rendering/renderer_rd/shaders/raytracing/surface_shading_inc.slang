@@ -25,6 +25,9 @@ float surface_light_target_pdf(SurfaceLightSample light_sample, SurfaceData surf
 	if (light_sample.valid == 0u || (light_sample.receiver_mask & surface.layer_mask) == 0u || dot(surface.geometry_normal, light_sample.direction) <= 0.0 || dot(surface.normal, surface.view_direction) <= 0.0) {
 		return 0.0;
 	}
+#ifdef RTXDI_DIAGNOSTICS
+	RTXDI_DIAGNOSTIC_COUNT(TARGET_PDF_BRDF_EVALUATIONS);
+#endif
 	float3 diffuse;
 	float3 specular;
 	surface_evaluate_brdf(surface, light_sample.direction, diffuse, specular);
@@ -34,6 +37,9 @@ float surface_light_target_pdf(SurfaceLightSample light_sample, SurfaceData surf
 #include "material_coverage_inc.slang"
 
 bool geometry_alpha_covered(GeometryHitInput hit, MaterialData material, GeometryFootprint footprint, bool shadow_ray, uint caster_mask) {
+#ifdef RTXDI_DIAGNOSTICS
+	rtxdi_diagnostic_count(shadow_ray ? RTXDI_DIAGNOSTIC_SHADOW_COVERAGE_CALLS : (rtxdi_diagnostic_local_ray ? RTXDI_DIAGNOSTIC_LOCAL_RAY_COVERAGE_CALLS : RTXDI_DIAGNOSTIC_EMITTER_COVERAGE_CALLS));
+#endif
 	GeometryTriangle triangle;
 	if (!geometry_decode_triangle(hit, triangle)) {
 		return false;
@@ -45,6 +51,9 @@ bool geometry_alpha_covered(GeometryHitInput hit, MaterialData material, Geometr
 	float2 uv_dx;
 	float2 uv_dy;
 	geometry_footprint_derivatives(hit, triangle, footprint, object_position, position_dx, position_dy, uv, uv_dx, uv_dy);
+#ifdef RTXDI_DIAGNOSTICS
+	rtxdi_diagnostic_count(shadow_ray ? RTXDI_DIAGNOSTIC_SHADOW_MATERIAL_TESTS : (rtxdi_diagnostic_local_ray ? RTXDI_DIAGNOSTIC_LOCAL_RAY_MATERIAL_TESTS : RTXDI_DIAGNOSTIC_EMITTER_MATERIAL_TESTS));
+#endif
 	return geometry_material_covered(hit, material, object_position, position_dx, position_dy, uv, uv_dx, uv_dy, shadow_ray, caster_mask);
 }
 
@@ -110,6 +119,9 @@ SurfaceLightSample sample_surface_light(RTLightData light, SurfaceData surface, 
 
 bool trace_light_visibility(SurfaceData surface, SurfaceLightSample light_sample, GeometryFootprint footprint) {
 	if ((light_sample.flags & RT_LIGHT_FLAG_CASTS_SHADOW) == 0u) {
+#ifdef RTXDI_DIAGNOSTICS
+		RTXDI_DIAGNOSTIC_COUNT(NO_SHADOW_FLAG_BYPASSES);
+#endif
 		return true;
 	}
 	RayDesc ray;
@@ -117,24 +129,44 @@ bool trace_light_visibility(SurfaceData surface, SurfaceLightSample light_sample
 	ray.Direction = light_sample.direction;
 	ray.TMin = 0.001;
 	ray.TMax = light_sample.light_type == RT_LIGHT_TYPE_ENVIRONMENT || light_sample.light_type == RT_LIGHT_TYPE_DIRECTIONAL ? 3.402823466e+38 : max(light_sample.distance - 0.002, 0.001);
+#ifdef RTXDI_DIAGNOSTICS
+	RTXDI_DIAGNOSTIC_COUNT(SHADOW_RAYS);
+#endif
 	RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_FORCE_NON_OPAQUE> query;
 	query.TraceRayInline(scene_tlas, RAY_FLAG_NONE, 0xFF, ray);
 	while (query.Proceed()) {
 		if (query.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE) {
+#ifdef RTXDI_DIAGNOSTICS
+			RTXDI_DIAGNOSTIC_COUNT(SHADOW_TRIANGLE_CANDIDATES);
+#endif
 			GeometryHitInput hit;
 			MaterialData material;
 			if (load_geometry_hit(query.CandidateInstanceID(), query.CandidatePrimitiveIndex(), query.CandidateClusterID(), query.CandidateTriangleBarycentrics(), query.CandidateObjectToWorld3x4(), hit, material)) {
+#ifdef RTXDI_DIAGNOSTICS
+				RTXDI_DIAGNOSTIC_COUNT(SHADOW_GEOMETRY_LOAD_SUCCESSES);
+#endif
 				bool shadow_facing = (hit.geometry.flags & FLAG_SHADOW_CULL_ENABLED) == 0u || !query.CandidateTriangleFrontFace();
 				if (shadow_facing && geometry_alpha_covered(hit, material, footprint, true, light_sample.caster_mask)) {
+#ifdef RTXDI_DIAGNOSTICS
+					RTXDI_DIAGNOSTIC_COUNT(SHADOW_COMMITTED_HITS);
+#endif
 					query.CommitNonOpaqueTriangleHit();
 				}
 			}
 		}
 	}
+#ifdef RTXDI_DIAGNOSTICS
+	if (query.CommittedStatus() == COMMITTED_NOTHING) {
+		RTXDI_DIAGNOSTIC_COUNT(SHADOW_VISIBLE_RESULTS);
+	}
+#endif
 	return query.CommittedStatus() == COMMITTED_NOTHING;
 }
 
 bool trace_local_geometry(float3 origin, float3 direction, float min_t, float max_t, GeometryFootprint footprint, out uint geometry_index, out uint primitive_index, out float2 barycentrics) {
+#ifdef RTXDI_DIAGNOSTICS
+	rtxdi_diagnostic_local_ray = true;
+#endif
 	geometry_index = OFFSET_NONE;
 	primitive_index = OFFSET_NONE;
 	barycentrics = float2(0.0);
@@ -147,13 +179,24 @@ bool trace_local_geometry(float3 origin, float3 direction, float min_t, float ma
 	query.TraceRayInline(scene_tlas, RAY_FLAG_NONE, 0xFF, ray);
 	while (query.Proceed()) {
 		if (query.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE) {
+#ifdef RTXDI_DIAGNOSTICS
+			RTXDI_DIAGNOSTIC_COUNT(LOCAL_RAY_TRIANGLE_CANDIDATES);
+#endif
 			GeometryHitInput hit;
 			MaterialData material;
-			if (load_geometry_hit(query.CandidateInstanceID(), query.CandidatePrimitiveIndex(), query.CandidateClusterID(), query.CandidateTriangleBarycentrics(), query.CandidateObjectToWorld3x4(), hit, material) && geometry_alpha_covered(hit, material, footprint, false, 0xFFFFFFFFu)) {
-				query.CommitNonOpaqueTriangleHit();
+			if (load_geometry_hit(query.CandidateInstanceID(), query.CandidatePrimitiveIndex(), query.CandidateClusterID(), query.CandidateTriangleBarycentrics(), query.CandidateObjectToWorld3x4(), hit, material)) {
+#ifdef RTXDI_DIAGNOSTICS
+				RTXDI_DIAGNOSTIC_COUNT(LOCAL_RAY_GEOMETRY_LOAD_SUCCESSES);
+#endif
+				if (geometry_alpha_covered(hit, material, footprint, false, 0xFFFFFFFFu)) {
+					query.CommitNonOpaqueTriangleHit();
+				}
 			}
 		}
 	}
+#ifdef RTXDI_DIAGNOSTICS
+	rtxdi_diagnostic_local_ray = false;
+#endif
 	if (query.CommittedStatus() == COMMITTED_NOTHING) {
 		return false;
 	}

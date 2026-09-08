@@ -83,6 +83,92 @@ struct RtxdiParametersBlock {
 
 [[vk::binding(0, 1)]] Texture2D<float4> bindless_textures[];
 
+#ifdef RTXDI_DIAGNOSTICS
+[[vk::binding(46, 0)]] RWStructuredBuffer<uint> rtxdi_diagnostic_data;
+static const uint RTXDI_DIAGNOSTIC_SAMPLE_LIMIT = 1024u;
+static const uint RTXDI_DIAGNOSTIC_COUNTER_COUNT = 48u;
+static const uint RTXDI_DIAGNOSTIC_SAMPLED_PIXELS = 0u;
+static const uint RTXDI_DIAGNOSTIC_VALID_SURFACES = 1u;
+static const uint RTXDI_DIAGNOSTIC_LIGHT_SAMPLE_CALLS_OMNI = 2u;
+static const uint RTXDI_DIAGNOSTIC_LIGHT_SAMPLE_CALLS_DIRECTIONAL = 3u;
+static const uint RTXDI_DIAGNOSTIC_LIGHT_SAMPLE_CALLS_SPOT = 4u;
+static const uint RTXDI_DIAGNOSTIC_LIGHT_SAMPLE_CALLS_AREA = 5u;
+static const uint RTXDI_DIAGNOSTIC_LIGHT_SAMPLE_CALLS_EMISSIVE_TRIANGLE = 6u;
+static const uint RTXDI_DIAGNOSTIC_LIGHT_SAMPLE_CALLS_ENVIRONMENT = 7u;
+static const uint RTXDI_DIAGNOSTIC_INITIAL_CANDIDATE_SAMPLE_CALLS_OMNI = 8u;
+static const uint RTXDI_DIAGNOSTIC_INITIAL_CANDIDATE_SAMPLE_CALLS_DIRECTIONAL = 9u;
+static const uint RTXDI_DIAGNOSTIC_INITIAL_CANDIDATE_SAMPLE_CALLS_SPOT = 10u;
+static const uint RTXDI_DIAGNOSTIC_INITIAL_CANDIDATE_SAMPLE_CALLS_AREA = 11u;
+static const uint RTXDI_DIAGNOSTIC_INITIAL_CANDIDATE_SAMPLE_CALLS_EMISSIVE_TRIANGLE = 12u;
+static const uint RTXDI_DIAGNOSTIC_INITIAL_CANDIDATE_SAMPLE_CALLS_ENVIRONMENT = 13u;
+static const uint RTXDI_DIAGNOSTIC_INITIAL_SELECTED_SAMPLE_RECONSTRUCTIONS = 14u;
+static const uint RTXDI_DIAGNOSTIC_TARGET_PDF_CALLS = 15u;
+static const uint RTXDI_DIAGNOSTIC_POSITIVE_TARGET_PDF_RESULTS = 16u;
+static const uint RTXDI_DIAGNOSTIC_TARGET_PDF_BRDF_EVALUATIONS = 17u;
+static const uint RTXDI_DIAGNOSTIC_BRDF_PDF_EVALUATIONS = 18u;
+static const uint RTXDI_DIAGNOSTIC_BRDF_SAMPLE_CALLS = 19u;
+static const uint RTXDI_DIAGNOSTIC_LOCAL_SOURCE_PDF_CALLS = 20u;
+static const uint RTXDI_DIAGNOSTIC_ENVIRONMENT_SOURCE_PDF_CALLS = 21u;
+static const uint RTXDI_DIAGNOSTIC_CONSERVATIVE_VISIBILITY_CALLS = 22u;
+static const uint RTXDI_DIAGNOSTIC_TEMPORAL_VISIBILITY_CALLS = 23u;
+static const uint RTXDI_DIAGNOSTIC_SHADOW_RAYS = 24u;
+static const uint RTXDI_DIAGNOSTIC_NO_SHADOW_FLAG_BYPASSES = 25u;
+static const uint RTXDI_DIAGNOSTIC_SHADOW_TRIANGLE_CANDIDATES = 26u;
+static const uint RTXDI_DIAGNOSTIC_SHADOW_GEOMETRY_LOAD_SUCCESSES = 27u;
+static const uint RTXDI_DIAGNOSTIC_SHADOW_COVERAGE_CALLS = 28u;
+static const uint RTXDI_DIAGNOSTIC_SHADOW_MATERIAL_TESTS = 29u;
+static const uint RTXDI_DIAGNOSTIC_SHADOW_COMMITTED_HITS = 30u;
+static const uint RTXDI_DIAGNOSTIC_SHADOW_VISIBLE_RESULTS = 31u;
+static const uint RTXDI_DIAGNOSTIC_EMITTER_COVERAGE_CALLS = 32u;
+static const uint RTXDI_DIAGNOSTIC_EMITTER_MATERIAL_TESTS = 33u;
+static const uint RTXDI_DIAGNOSTIC_LOCAL_RAY_CALLS = 34u;
+static const uint RTXDI_DIAGNOSTIC_LOCAL_RAY_TRIANGLE_CANDIDATES = 35u;
+static const uint RTXDI_DIAGNOSTIC_LOCAL_RAY_GEOMETRY_LOAD_SUCCESSES = 36u;
+static const uint RTXDI_DIAGNOSTIC_LOCAL_RAY_COVERAGE_CALLS = 37u;
+static const uint RTXDI_DIAGNOSTIC_LOCAL_RAY_MATERIAL_TESTS = 38u;
+static const uint RTXDI_DIAGNOSTIC_LOCAL_RAY_GEOMETRY_HITS = 39u;
+static const uint RTXDI_DIAGNOSTIC_LOCAL_RAY_GEOMETRY_MISSES = 40u;
+static const uint RTXDI_DIAGNOSTIC_LOCAL_LIGHT_SCAN_ITERATIONS = 41u;
+static const uint RTXDI_DIAGNOSTIC_LOCAL_LIGHT_SCAN_MATCHES = 42u;
+static const uint RTXDI_DIAGNOSTIC_LOCAL_LIGHT_SCAN_NO_MATCH = 43u;
+static const uint RTXDI_DIAGNOSTIC_VALID_OUTPUT_RESERVOIRS = 44u;
+static const uint RTXDI_DIAGNOSTIC_FINAL_SHADING_BRDF_EVALUATIONS = 45u;
+static const uint RTXDI_DIAGNOSTIC_GBUFFER_LOAD_CALLS = 46u;
+static const uint RTXDI_DIAGNOSTIC_LIGHT_SAMPLE_CALLS_UNKNOWN_TYPE = 47u;
+
+static bool rtxdi_diagnostic_sampled = false;
+static bool rtxdi_diagnostic_initial_candidates = false;
+static bool rtxdi_diagnostic_local_ray = false;
+static uint rtxdi_diagnostic_base = 0u;
+
+void rtxdi_diagnostic_count(uint counter) {
+	if (rtxdi_diagnostic_sampled) {
+		rtxdi_diagnostic_data[rtxdi_diagnostic_base + counter] += 1u;
+	}
+}
+
+void rtxdi_diagnostic_begin(uint2 pixel) {
+	uint pixel_count = rtxdi_params.extent_history.x * rtxdi_params.extent_history.y;
+	uint stride = (pixel_count + RTXDI_DIAGNOSTIC_SAMPLE_LIMIT - 1u) / RTXDI_DIAGNOSTIC_SAMPLE_LIMIT;
+	uint index = pixel.y * rtxdi_params.extent_history.x + pixel.x;
+	rtxdi_diagnostic_sampled = index % stride == rtxdi_params.runtime.frameIndex % stride;
+#if defined(MODE_INITIAL)
+	uint pass = 0u;
+#elif defined(MODE_TEMPORAL)
+	uint pass = 1u;
+#elif defined(MODE_SPATIAL)
+	uint pass = 2u;
+#else
+	uint pass = 3u;
+#endif
+	rtxdi_diagnostic_base = (pass * RTXDI_DIAGNOSTIC_SAMPLE_LIMIT + index / stride) * RTXDI_DIAGNOSTIC_COUNTER_COUNT;
+	rtxdi_diagnostic_count(RTXDI_DIAGNOSTIC_SAMPLED_PIXELS);
+}
+#define RTXDI_DIAGNOSTIC_COUNT(name) rtxdi_diagnostic_count(RTXDI_DIAGNOSTIC_##name)
+#else
+#define RTXDI_DIAGNOSTIC_COUNT(name)
+#endif
+
 #define RTXDI_LIGHT_RESERVOIR_BUFFER reservoir_data
 #define RTXDI_NEIGHBOR_OFFSETS_BUFFER neighbor_offsets
 #include "light_sampling_inc.slang"
@@ -98,6 +184,9 @@ RTXDI_DIReservoir rtxdi_sample_initial(uint2 pixel, RAB_Surface surface, inout R
 	RTXDI_DIInitialSamplingParameters initial = rtxdi_params.restir.initialSamplingParams;
 	initial.enableInitialVisibility = 0u;
 	RTXDI_InitialSamplingMisData mis = RTXDI_ComputeInitialSamplingMisData(initial);
+#ifdef RTXDI_DIAGNOSTICS
+	rtxdi_diagnostic_initial_candidates = true;
+#endif
 	RTXDI_DIReservoir reservoir = RTXDI_SampleLightsForSurface(rng, coherent_rng, surface, initial, rtxdi_params.light_buffer, selected_sample);
 	if (rtxdi_params.restir.initialSamplingParams.numEnvironmentSamples > 0u && rtxdi_params.light_buffer.environmentLightParams.lightPresent != 0u) {
 		RTXDI_DIReservoir environment_reservoir = RTXDI_EmptyDIReservoir();
@@ -111,6 +200,9 @@ RTXDI_DIReservoir rtxdi_sample_initial(uint2 pixel, RAB_Surface surface, inout R
 				selected_sample = light_sample;
 			}
 		}
+#ifdef RTXDI_DIAGNOSTICS
+		rtxdi_diagnostic_initial_candidates = false;
+#endif
 		RTXDI_FinalizeResampling(environment_reservoir, 1.0, float(mis.numMisSamples));
 		environment_reservoir.M = 1.0;
 		RTXDI_DIReservoir combined_reservoir = RTXDI_EmptyDIReservoir();
@@ -122,6 +214,9 @@ RTXDI_DIReservoir rtxdi_sample_initial(uint2 pixel, RAB_Surface surface, inout R
 		combined_reservoir.M = 1.0;
 		reservoir = combined_reservoir;
 	}
+#ifdef RTXDI_DIAGNOSTICS
+	rtxdi_diagnostic_initial_candidates = false;
+#endif
 	if (RTXDI_IsValidDIReservoir(reservoir)) {
 		selected_sample = RAB_SamplePolymorphicLight(RAB_LoadLightInfo(RTXDI_GetDIReservoirLightIndex(reservoir), false), surface, RTXDI_GetDIReservoirSampleUV(reservoir));
 	}
@@ -137,6 +232,9 @@ void main(uint3 invocation : SV_DispatchThreadID) {
 	if (any(pixel >= rtxdi_params.extent_history.xy)) {
 		return;
 	}
+#ifdef RTXDI_DIAGNOSTICS
+	rtxdi_diagnostic_begin(pixel);
+#endif
 	RAB_Surface surface = RAB_GetGBufferSurface(int2(pixel), false);
 	RTXDI_RandomSamplerState rng = RTXDI_InitRandomSampler(pixel, rtxdi_params.runtime.frameIndex, 0u);
 	if (!RAB_IsSurfaceValid(surface)) {
@@ -152,6 +250,8 @@ void main(uint3 invocation : SV_DispatchThreadID) {
 #endif
 		return;
 	}
+
+	RTXDI_DIAGNOSTIC_COUNT(VALID_SURFACES);
 
 #if defined(MODE_INITIAL)
 	RTXDI_DIReservoir reservoir = rtxdi_sample_initial(pixel, surface, rng);
@@ -181,6 +281,7 @@ void main(uint3 invocation : SV_DispatchThreadID) {
 		if (RAB_GetLightSampleTargetPdfForSurface(light_sample, surface) > 0.0 && RAB_GetConservativeVisibility(surface, light_sample)) {
 			float3 diffuse;
 			float3 specular;
+			RTXDI_DIAGNOSTIC_COUNT(FINAL_SHADING_BRDF_EVALUATIONS);
 			surface_evaluate_brdf(surface.surface, light_sample.direction, diffuse, specular);
 			BrdfData brdf_data = prepareBRDFData(surface.surface.normal, light_sample.direction, surface.surface.view_direction, surface_material_properties(surface.surface.material));
 			float3 diffuse_factor;
@@ -193,5 +294,10 @@ void main(uint3 invocation : SV_DispatchThreadID) {
 	}
 	diffuse_radiance_distance[pixel] = diffuse_output;
 	specular_radiance_distance[pixel] = specular_output;
+#endif
+#ifdef RTXDI_DIAGNOSTICS
+	if (RTXDI_IsValidDIReservoir(reservoir)) {
+		RTXDI_DIAGNOSTIC_COUNT(VALID_OUTPUT_RESERVOIRS);
+	}
 #endif
 }

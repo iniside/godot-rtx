@@ -34,6 +34,7 @@ GeometryFootprint rtxdi_camera_footprint() {
 }
 
 RAB_Surface RAB_GetGBufferSurface(int2 pixel, bool previous_frame) {
+	RTXDI_DIAGNOSTIC_COUNT(GBUFFER_LOAD_CALLS);
 	if (any(pixel < int2(0)) || any(pixel >= int2(rtxdi_params.extent_history.xy)) || (previous_frame && rtxdi_params.extent_history.z == 0u)) {
 		return RAB_EmptySurface();
 	}
@@ -123,6 +124,21 @@ int RAB_TranslateLightIndex(uint light_index, bool current_to_previous) {
 }
 
 RAB_LightSample RAB_SamplePolymorphicLight(RAB_LightInfo light, RAB_Surface surface, float2 random) {
+#ifdef RTXDI_DIAGNOSTICS
+	if (light.type <= RT_LIGHT_TYPE_ENVIRONMENT) {
+		rtxdi_diagnostic_count(RTXDI_DIAGNOSTIC_LIGHT_SAMPLE_CALLS_OMNI + light.type);
+		if (rtxdi_diagnostic_initial_candidates) {
+			rtxdi_diagnostic_count(RTXDI_DIAGNOSTIC_INITIAL_CANDIDATE_SAMPLE_CALLS_OMNI + light.type);
+		}
+	} else {
+		RTXDI_DIAGNOSTIC_COUNT(LIGHT_SAMPLE_CALLS_UNKNOWN_TYPE);
+	}
+#ifdef MODE_INITIAL
+	if (!rtxdi_diagnostic_initial_candidates) {
+		RTXDI_DIAGNOSTIC_COUNT(INITIAL_SELECTED_SAMPLE_RECONSTRUCTIONS);
+	}
+#endif
+#endif
 	SceneData scene = scene_data_block.data;
 	float3x3 world_to_radiance = mul(transpose(scene.radiance_inverse_xform), transpose((float3x3)scene.inv_view_matrix));
 	float2 border = float2(scene.radiance_border_size, 1.0 - scene.radiance_border_size * 2.0);
@@ -143,14 +159,23 @@ bool RAB_IsAnalyticLightSample(RAB_LightSample light_sample) {
 }
 
 float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample light_sample, RAB_Surface surface) {
-	return surface_light_target_pdf(light_sample, surface.surface);
+	RTXDI_DIAGNOSTIC_COUNT(TARGET_PDF_CALLS);
+	float pdf = surface_light_target_pdf(light_sample, surface.surface);
+#ifdef RTXDI_DIAGNOSTICS
+	if (pdf > 0.0) {
+		RTXDI_DIAGNOSTIC_COUNT(POSITIVE_TARGET_PDF_RESULTS);
+	}
+#endif
+	return pdf;
 }
 
 float RAB_SurfaceEvaluateBrdfPdf(RAB_Surface surface, float3 direction) {
+	RTXDI_DIAGNOSTIC_COUNT(BRDF_PDF_EVALUATIONS);
 	return surface_brdf_pdf(surface.surface, direction);
 }
 
 bool RAB_SurfaceImportanceSampleBrdf(RAB_Surface surface, inout RTXDI_RandomSamplerState rng, out float3 direction) {
+	RTXDI_DIAGNOSTIC_COUNT(BRDF_SAMPLE_CALLS);
 	float3 random;
 	random.x = RTXDI_GetNextRandom(rng);
 	random.y = RTXDI_GetNextRandom(rng);
@@ -159,6 +184,7 @@ bool RAB_SurfaceImportanceSampleBrdf(RAB_Surface surface, inout RTXDI_RandomSamp
 }
 
 float RAB_EvaluateLocalLightSourcePdf(uint light_index) {
+	RTXDI_DIAGNOSTIC_COUNT(LOCAL_SOURCE_PDF_CALLS);
 	return light_uniform_light_pdf(light_index, rt_light_params.local_first, rt_light_params.local_count);
 }
 
@@ -168,36 +194,49 @@ float2 RAB_GetEnvironmentMapRandXYFromDir(float3 direction) {
 }
 
 float RAB_EvaluateEnvironmentMapSamplingPdf(float3 direction) {
+	RTXDI_DIAGNOSTIC_COUNT(ENVIRONMENT_SOURCE_PDF_CALLS);
 	return 1.0;
 }
 
 bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample light_sample) {
+	RTXDI_DIAGNOSTIC_COUNT(CONSERVATIVE_VISIBILITY_CALLS);
 	return trace_light_visibility(surface.surface, light_sample, rtxdi_camera_footprint());
 }
 
 bool RAB_GetTemporalConservativeVisibility(RAB_Surface current_surface, RAB_Surface previous_surface, RAB_LightSample light_sample) {
+	RTXDI_DIAGNOSTIC_COUNT(TEMPORAL_VISIBILITY_CALLS);
 	return trace_light_visibility(previous_surface.surface, light_sample, rtxdi_camera_footprint());
 }
 
 bool RAB_TraceRayForLocalLight(float3 origin, float3 direction, float min_t, float max_t, out uint light_index, out float2 random) {
+	RTXDI_DIAGNOSTIC_COUNT(LOCAL_RAY_CALLS);
 	light_index = RTXDI_InvalidLightIndex;
 	random = float2(0.0);
 	uint geometry_index;
 	uint primitive_index;
 	float2 barycentrics;
 	if (!trace_local_geometry(origin, direction, min_t, max_t, rtxdi_camera_footprint(), geometry_index, primitive_index, barycentrics)) {
+		RTXDI_DIAGNOSTIC_COUNT(LOCAL_RAY_GEOMETRY_MISSES);
 		return false;
 	}
+	RTXDI_DIAGNOSTIC_COUNT(LOCAL_RAY_GEOMETRY_HITS);
 	for (uint i = 0u; i < rt_light_params.local_count; i++) {
+		RTXDI_DIAGNOSTIC_COUNT(LOCAL_LIGHT_SCAN_ITERATIONS);
 		uint candidate_index = rt_light_params.local_first + i;
 		RTLightData light = current_lights[candidate_index];
 		if (light.type == RT_LIGHT_TYPE_EMISSIVE_TRIANGLE && light.geometry_index == geometry_index && light.primitive_index == primitive_index) {
+			RTXDI_DIAGNOSTIC_COUNT(LOCAL_LIGHT_SCAN_MATCHES);
 			light_index = candidate_index;
 			float root = max(barycentrics.x + barycentrics.y, 1e-6);
 			random = float2(root * root, barycentrics.y / root);
 			break;
 		}
 	}
+#ifdef RTXDI_DIAGNOSTICS
+	if (light_index == RTXDI_InvalidLightIndex) {
+		RTXDI_DIAGNOSTIC_COUNT(LOCAL_LIGHT_SCAN_NO_MATCH);
+	}
+#endif
 	return true;
 }
 

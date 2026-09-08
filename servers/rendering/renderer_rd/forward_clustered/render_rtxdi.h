@@ -92,8 +92,8 @@ class RenderRTXDI {
 	struct ShaderData {
 		RtxdiDiShaderRD shader;
 		RID version;
-		RID shader_rid[PASS_MAX];
-		RID pipeline[PASS_MAX];
+		RID shader_rid[PASS_MAX * 2];
+		RID pipeline[PASS_MAX * 2];
 	} shader;
 
 	RenderRaytracing *raytracing = nullptr;
@@ -102,9 +102,16 @@ class RenderRTXDI {
 	RID neighbor_offsets_buffer;
 	RID surface_sampler;
 	RID environment_sampler;
+#ifdef DEBUG_ENABLED
+	String diagnostic_prefix;
+	uint32_t diagnostic_frame = 120;
+	uint32_t diagnostic_render_count = 0;
+	bool diagnostic_complete = false;
+	void _capture_diagnostics(RID p_buffer, const RenderRTXDISurfaceResources &p_surface, const RTViewportState *p_state, bool p_history_valid);
+#endif
 
 	bool _ensure_viewport_resources(RTViewportState *p_state, const Size2i &p_size, uint32_t p_view_count);
-	RID _create_uniform_set(const RenderRTXDISurfaceResources &p_surface, RTViewportState *p_state, RID p_scene_data_buffer, uint32_t p_view, Pass p_pass);
+	RID _create_uniform_set(const RenderRTXDISurfaceResources &p_surface, RTViewportState *p_state, RID p_scene_data_buffer, uint32_t p_view, uint32_t p_variant, RID p_diagnostic_buffer);
 
 public:
 	void initialize(RenderRaytracing *p_raytracing, bool p_radiance_uses_array, uint32_t p_roughness_layers);
