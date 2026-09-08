@@ -1426,8 +1426,9 @@
 			<param index="0" name="env" type="RID" />
 			<param index="1" name="mode" type="int" enum="RenderingServer.RaytracingRenderingMode" />
 			<param index="2" name="denoiser" type="int" enum="RenderingServer.RaytracingDenoiser" />
+			<param index="3" name="rtxdi_local_light_samples" type="int" />
 			<description>
-				Selects hybrid raster RTXDI/DDGI or camera-ray path tracing and independently selects NRD, DLSS Ray Reconstruction or raw camera output for this environment. Invalid or unavailable RR and raw-reference configurations report an error. See [member Environment.raytracing_rendering_mode] and [member Environment.raytracing_denoiser].
+				Selects hybrid raster RTXDI/DDGI or camera-ray path tracing and independently selects NRD, DLSS Ray Reconstruction or raw camera output for this environment. Invalid or unavailable RR and raw-reference configurations report an error. The RTXDI local-light candidate count must be 1 to 32 and applies to hybrid rendering. Invalid parameter groups leave the configuration unchanged. See [member Environment.raytracing_rendering_mode], [member Environment.raytracing_denoiser], and [member Environment.rtxdi_local_light_samples].
 			</description>
 		</method>
 		<method name="environment_set_sdfgi">

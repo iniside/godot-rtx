@@ -170,7 +170,7 @@ bool RenderRTXDI::_ensure_viewport_resources(RTViewportState *p_state, const Siz
 		view_resources.context->SetResamplingMode(rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial);
 
 		RTXDI_DIInitialSamplingParameters initial = view_resources.context->GetInitialSamplingParameters();
-		initial.numLocalLightSamples = config.local_light_samples;
+		initial.numLocalLightSamples = p_state->settings.rtxdi_local_light_samples;
 		initial.numInfiniteLightSamples = config.infinite_light_samples;
 		initial.numEnvironmentSamples = config.environment_samples;
 		initial.numBrdfSamples = config.brdf_samples;
@@ -278,6 +278,9 @@ void RenderRTXDI::render(const RenderRTXDISurfaceResources &p_surface, RTViewpor
 	ERR_FAIL_UNSIGNED_INDEX(p_view, p_state->rtxdi_di->views.size());
 
 	RenderRTXDIViewResources &view_resources = p_state->rtxdi_di->views[p_view];
+	RTXDI_DIInitialSamplingParameters initial = view_resources.context->GetInitialSamplingParameters();
+	initial.numLocalLightSamples = p_state->settings.rtxdi_local_light_samples;
+	view_resources.context->SetInitialSamplingParameters(initial);
 	view_resources.context->SetFrameIndex(uint32_t(p_surface.frame_index));
 	const RTLightSnapshot &light_snapshot = p_state->light_snapshots[p_state->current_light_snapshot];
 	RtxdiParametersBlock parameters;
@@ -449,7 +452,7 @@ void RenderRTXDI::_capture_diagnostics(RID p_buffer, const RenderRTXDISurfaceRes
 	metadata["local_light_count"] = lights.parameters.local_count;
 	metadata["infinite_light_count"] = lights.parameters.infinite_count;
 	metadata["environment_light_present"] = lights.parameters.environment_present;
-	metadata["configured_local_samples"] = config.local_light_samples;
+	metadata["configured_local_samples"] = p_state->rtxdi_di->views[0].context->GetInitialSamplingParameters().numLocalLightSamples;
 	metadata["configured_infinite_samples"] = config.infinite_light_samples;
 	metadata["configured_environment_samples"] = config.environment_samples;
 	metadata["configured_brdf_samples"] = config.brdf_samples;

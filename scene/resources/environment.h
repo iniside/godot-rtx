@@ -163,6 +163,7 @@ private:
 
 	RaytracingRenderingMode raytracing_rendering_mode = RAYTRACING_RENDERING_MODE_HYBRID;
 	RaytracingDenoiser raytracing_denoiser = RAYTRACING_DENOISER_NRD;
+	int rtxdi_local_light_samples = 8;
 	bool ddgi_enabled = true;
 	int ddgi_cascade_count = 4;
 	float ddgi_probe_spacing = 2.0;
@@ -353,6 +354,8 @@ public:
 	RaytracingRenderingMode get_raytracing_rendering_mode() const;
 	void set_raytracing_denoiser(RaytracingDenoiser p_value);
 	RaytracingDenoiser get_raytracing_denoiser() const;
+	void set_rtxdi_local_light_samples(int p_value);
+	int get_rtxdi_local_light_samples() const;
 	void set_ddgi_enabled(bool p_value);
 	bool is_ddgi_enabled() const;
 	void set_ddgi_cascade_count(int p_value);

@@ -864,17 +864,19 @@ RendererEnvironmentStorage::RaytracingSettings RendererEnvironmentStorage::envir
 	return env->raytracing;
 }
 
-void RendererEnvironmentStorage::environment_set_raytracing(RID p_env, RSE::RaytracingRenderingMode p_mode, RSE::RaytracingDenoiser p_denoiser) {
+void RendererEnvironmentStorage::environment_set_raytracing(RID p_env, RSE::RaytracingRenderingMode p_mode, RSE::RaytracingDenoiser p_denoiser, int p_rtxdi_local_light_samples) {
 	Environment *env = environment_owner.get_or_null(p_env);
 	ERR_FAIL_NULL(env);
 	ERR_FAIL_COND(p_mode < RSE::RAYTRACING_RENDERING_MODE_HYBRID || p_mode > RSE::RAYTRACING_RENDERING_MODE_PATH_TRACED);
 	ERR_FAIL_COND(p_denoiser < RSE::RAYTRACING_DENOISER_NRD || p_denoiser > RSE::RAYTRACING_DENOISER_NONE);
+	ERR_FAIL_COND(p_rtxdi_local_light_samples < 1 || p_rtxdi_local_light_samples > 32);
 	RaytracingSettings &settings = env->raytracing;
-	if (settings.raytracing_rendering_mode == p_mode && settings.raytracing_denoiser == p_denoiser) {
+	if (settings.raytracing_rendering_mode == p_mode && settings.raytracing_denoiser == p_denoiser && settings.rtxdi_local_light_samples == p_rtxdi_local_light_samples) {
 		return;
 	}
 	settings.raytracing_rendering_mode = p_mode;
 	settings.raytracing_denoiser = p_denoiser;
+	settings.rtxdi_local_light_samples = p_rtxdi_local_light_samples;
 	settings.mode_generation++;
 }
 

@@ -236,7 +236,7 @@ public:
 
 	virtual void environment_set_ssil_quality(RSE::EnvironmentSSILQuality p_quality, bool p_half_size, float p_adaptive_target, int p_blur_passes, float p_fadeout_from, float p_fadeout_to) = 0;
 
-	void environment_set_raytracing(RID p_env, RSE::RaytracingRenderingMode p_mode, RSE::RaytracingDenoiser p_denoiser);
+	void environment_set_raytracing(RID p_env, RSE::RaytracingRenderingMode p_mode, RSE::RaytracingDenoiser p_denoiser, int p_rtxdi_local_light_samples);
 	void environment_set_ddgi(RID p_env, bool p_enabled, int p_cascade_count, float p_probe_spacing, int p_rays_per_probe, int p_updates_per_frame);
 	void environment_set_pathtracing(RID p_env, int p_samples_per_pixel, int p_max_bounces, bool p_accumulate);
 

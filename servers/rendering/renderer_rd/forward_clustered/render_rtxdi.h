@@ -79,7 +79,6 @@ class RenderRTXDI {
 
 	struct Config {
 		uint32_t neighbor_offset_count = 8192;
-		uint32_t local_light_samples = 8;
 		uint32_t infinite_light_samples = 1;
 		uint32_t environment_samples = 1;
 		uint32_t brdf_samples = 0;

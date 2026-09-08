@@ -497,6 +497,19 @@ Environment::RaytracingDenoiser Environment::get_raytracing_denoiser() const {
 	return raytracing_denoiser;
 }
 
+void Environment::set_rtxdi_local_light_samples(int p_value) {
+	ERR_FAIL_COND(p_value < 1 || p_value > 32);
+	if (rtxdi_local_light_samples == p_value) {
+		return;
+	}
+	rtxdi_local_light_samples = p_value;
+	_update_raytracing();
+}
+
+int Environment::get_rtxdi_local_light_samples() const {
+	return rtxdi_local_light_samples;
+}
+
 void Environment::set_ddgi_enabled(bool p_value) {
 	if (ddgi_enabled == p_value) {
 		return;
@@ -603,7 +616,7 @@ bool Environment::is_pathtracing_accumulate() const {
 }
 
 void Environment::_update_raytracing() {
-	RS::get_singleton()->environment_set_raytracing(environment, RSE::RaytracingRenderingMode(raytracing_rendering_mode), RSE::RaytracingDenoiser(raytracing_denoiser));
+	RS::get_singleton()->environment_set_raytracing(environment, RSE::RaytracingRenderingMode(raytracing_rendering_mode), RSE::RaytracingDenoiser(raytracing_denoiser), rtxdi_local_light_samples);
 }
 
 void Environment::_update_ddgi() {
@@ -1250,6 +1263,12 @@ void Environment::_update_adjustment() {
 // Private methods, constructor and destructor
 
 void Environment::_validate_property(PropertyInfo &p_property) const {
+	if (p_property.name == "rtxdi_local_light_samples") {
+		if (raytracing_rendering_mode != RAYTRACING_RENDERING_MODE_HYBRID) {
+			p_property.usage |= PROPERTY_USAGE_READ_ONLY;
+		}
+		return;
+	}
 	if (p_property.name.begins_with("ddgi_")) {
 		if (raytracing_rendering_mode != RAYTRACING_RENDERING_MODE_HYBRID || (!ddgi_enabled && p_property.name != "ddgi_enabled")) {
 			p_property.usage |= PROPERTY_USAGE_READ_ONLY;
@@ -1404,6 +1423,8 @@ void Environment::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_raytracing_rendering_mode"), &Environment::get_raytracing_rendering_mode);
 	ClassDB::bind_method(D_METHOD("set_raytracing_denoiser", "value"), &Environment::set_raytracing_denoiser);
 	ClassDB::bind_method(D_METHOD("get_raytracing_denoiser"), &Environment::get_raytracing_denoiser);
+	ClassDB::bind_method(D_METHOD("set_rtxdi_local_light_samples", "value"), &Environment::set_rtxdi_local_light_samples);
+	ClassDB::bind_method(D_METHOD("get_rtxdi_local_light_samples"), &Environment::get_rtxdi_local_light_samples);
 	ClassDB::bind_method(D_METHOD("set_ddgi_enabled", "value"), &Environment::set_ddgi_enabled);
 	ClassDB::bind_method(D_METHOD("is_ddgi_enabled"), &Environment::is_ddgi_enabled);
 	ClassDB::bind_method(D_METHOD("set_ddgi_cascade_count", "value"), &Environment::set_ddgi_cascade_count);
@@ -1424,6 +1445,8 @@ void Environment::_bind_methods() {
 	ADD_GROUP("Ray Tracing", "");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "raytracing_rendering_mode", PROPERTY_HINT_ENUM, "Hybrid,Path Traced"), "set_raytracing_rendering_mode", "get_raytracing_rendering_mode");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "raytracing_denoiser", PROPERTY_HINT_ENUM, "NRD,DLSS Ray Reconstruction,None"), "set_raytracing_denoiser", "get_raytracing_denoiser");
+	ADD_SUBGROUP("RTXDI", "rtxdi_");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "rtxdi_local_light_samples", PROPERTY_HINT_RANGE, "1,32,1"), "set_rtxdi_local_light_samples", "get_rtxdi_local_light_samples");
 	ADD_SUBGROUP("DDGI", "ddgi_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "ddgi_enabled"), "set_ddgi_enabled", "is_ddgi_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "ddgi_cascade_count", PROPERTY_HINT_RANGE, "1,6,1"), "set_ddgi_cascade_count", "get_ddgi_cascade_count");
