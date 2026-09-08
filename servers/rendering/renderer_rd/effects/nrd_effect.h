@@ -96,6 +96,7 @@ public:
 		Vector2 previous_jitter;
 		uint64_t frame_index = 0;
 		bool history_valid = false;
+		bool stochastic_direct_samples = false;
 		bool orthogonal = false;
 		bool fog_enabled = false;
 		bool fog_legacy_blending = false;

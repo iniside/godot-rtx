@@ -98,7 +98,7 @@ float4 main(DebugVertex input) : SV_Target0 {
 		view_position /= view_position.w;
 		float3 view_normal = mul(surface.geometry_normal, (float3x3)rt_camera_to_rt(rt_frame, false));
 		float3 unused_diffuse, unused_specular, indirect;
-		reconstruct_lighting(pixel, params.internal_size, params.interpolation_size, surface, view_position.xyz, view_normal, false, true, unused_diffuse, unused_specular, indirect);
+		reconstruct_lighting(pixel, params.internal_size, params.interpolation_size, surface, view_position.xyz, view_normal, false, true, false, 0u, unused_diffuse, unused_specular, indirect);
 		float3 diffuse_factor, specular_factor;
 		rtxdi_nrd_material_factors(surface.normal, view, surface.material.base_color * (1.0 - surface.material.metallic), lerp(float3(0.08 * surface.material.specular), surface.material.base_color, surface.material.metallic), surface.material.roughness, diffuse_factor, specular_factor);
 		float3 radiance = max(indirect * diffuse_factor * surface.material.ambient_occlusion, 0.0);

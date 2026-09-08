@@ -34,9 +34,11 @@ struct Params {
 	uint camera_radiance_enabled;
 	uint camera_radiance_full;
 	uint reflection_hit_distance_enabled;
-	uint pad;
+	uint stochastic_direct_samples;
 	uint2 lighting_size;
 	uint2 indirect_size;
+	uint frame_index;
+	uint pad;
 };
 [[vk::push_constant]] ConstantBuffer<Params> params;
 
@@ -268,10 +270,10 @@ void main(uint3 invocation : SV_DispatchThreadID) {
 		float3 indirect_lighting;
 		float3 view_normal = mul(surface.geometry_normal, (float3x3)inverse_view);
 		bool shared_grid = params.ddgi_enabled != 0u && all(params.indirect_size == params.lighting_size);
-		reconstruct_lighting(pixel, params.size, params.lighting_size, surface, view_position.xyz, view_normal, true, shared_grid, diffuse_lighting, specular_lighting, indirect_lighting);
+		reconstruct_lighting(pixel, params.size, params.lighting_size, surface, view_position.xyz, view_normal, true, shared_grid, params.stochastic_direct_samples != 0u, params.frame_index, diffuse_lighting, specular_lighting, indirect_lighting);
 		if (params.ddgi_enabled != 0u && !shared_grid) {
 			float3 unused_diffuse, unused_specular;
-			reconstruct_lighting(pixel, params.size, params.indirect_size, surface, view_position.xyz, view_normal, false, true, unused_diffuse, unused_specular, indirect_lighting);
+			reconstruct_lighting(pixel, params.size, params.indirect_size, surface, view_position.xyz, view_normal, false, true, false, params.frame_index, unused_diffuse, unused_specular, indirect_lighting);
 		}
 		output_color += (diffuse_lighting + indirect_lighting * surface.material.ambient_occlusion) * diffuse_factor * scene.data.emissive_exposure_normalization;
 		specular_color = specular_lighting * specular_factor * scene.data.emissive_exposure_normalization;

@@ -2,8 +2,11 @@
 #define RT_LIGHTING_RECONSTRUCTION_INC_SLANG
 
 #include "../rtxdi_resolution_inc.slang"
+#ifdef RECONSTRUCT_DIRECT_LIGHTING
+#include <Rtxdi/Utils/RandomSamplerState.hlsli>
+#endif
 
-void reconstruct_lighting(uint2 pixel, uint2 frame_size, uint2 lighting_size, SurfaceData surface, float3 view_position, float3 view_normal, bool use_direct, bool use_indirect, out float3 diffuse, out float3 specular, out float3 indirect) {
+void reconstruct_lighting(uint2 pixel, uint2 frame_size, uint2 lighting_size, SurfaceData surface, float3 view_position, float3 view_normal, bool use_direct, bool use_indirect, bool stochastic_direct_samples, uint frame_index, out float3 diffuse, out float3 specular, out float3 indirect) {
 	diffuse = float3(0.0);
 	specular = float3(0.0);
 	indirect = float3(0.0);
@@ -27,6 +30,11 @@ void reconstruct_lighting(uint2 pixel, uint2 frame_size, uint2 lighting_size, Su
 	float3 fallback_diffuse = float3(0.0);
 	float3 fallback_specular = float3(0.0);
 	float3 fallback_indirect = float3(0.0);
+#ifdef RECONSTRUCT_DIRECT_LIGHTING
+	RTXDI_RandomSamplerState rng = RTXDI_InitRandomSampler(pixel, frame_index, 4u);
+	float3 sampled_diffuse = float3(0.0);
+	float3 sampled_specular = float3(0.0);
+#endif
 	for (int y = -1; y <= 1; y++) {
 		for (int x = -1; x <= 1; x++) {
 			int2 tap = nearest + int2(x, y);
@@ -61,6 +69,14 @@ void reconstruct_lighting(uint2 pixel, uint2 frame_size, uint2 lighting_size, Su
 				diffuse += tap_diffuse * weight;
 				specular += tap_specular * weight * roughness_weight;
 				specular_weight += weight * roughness_weight;
+				if (stochastic_direct_samples) {
+					if (RTXDI_GetNextRandom(rng) * (diffuse_weight + weight) < weight) {
+						sampled_diffuse = tap_diffuse;
+					}
+					if (RTXDI_GetNextRandom(rng) * specular_weight < weight * roughness_weight) {
+						sampled_specular = tap_specular;
+					}
+				}
 			}
 #endif
 			float3 tap_indirect = use_indirect ? indirect_diffuse.Load(int3(tap, 0)).rgb : float3(0.0);
@@ -77,6 +93,12 @@ void reconstruct_lighting(uint2 pixel, uint2 frame_size, uint2 lighting_size, Su
 	}
 	diffuse = diffuse_weight > 1e-6 ? diffuse / diffuse_weight : fallback_diffuse;
 	specular = specular_weight > 1e-6 ? specular / specular_weight : fallback_specular;
+#ifdef RECONSTRUCT_DIRECT_LIGHTING
+	if (stochastic_direct_samples && use_direct) {
+		diffuse = diffuse_weight > 1e-6 ? sampled_diffuse : fallback_diffuse;
+		specular = specular_weight > 1e-6 ? sampled_specular : fallback_specular;
+	}
+#endif
 	indirect = diffuse_weight > 1e-6 ? indirect / diffuse_weight : fallback_indirect;
 }
 

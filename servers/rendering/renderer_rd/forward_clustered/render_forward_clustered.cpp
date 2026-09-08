@@ -2037,6 +2037,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	surface.orthogonal = rb_data->is_rtxdi_surface_camera_orthogonal();
 	surface.frame_index = rb_data->get_rtxdi_surface_frame_index();
 	RendererRD::NRDEffect::Frame frame;
+	frame.stochastic_direct_samples = rt_settings.raytracing_denoiser == RSE::RAYTRACING_DENOISER_DLSS_RR;
 	for (uint32_t attachment = 0; attachment < 6; attachment++) {
 		frame.surface[attachment] = surface.current[attachment];
 	}
