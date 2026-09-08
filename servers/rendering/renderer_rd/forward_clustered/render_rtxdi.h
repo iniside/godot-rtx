@@ -103,6 +103,8 @@ class RenderRTXDI {
 	RID surface_sampler;
 	RID environment_sampler;
 #ifdef DEBUG_ENABLED
+	RtxdiDiShaderRD diagnostic_shader;
+	RID diagnostic_version;
 	String diagnostic_prefix;
 	uint32_t diagnostic_frame = 120;
 	uint32_t diagnostic_render_count = 0;

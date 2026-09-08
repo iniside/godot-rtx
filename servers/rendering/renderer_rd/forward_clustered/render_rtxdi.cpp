@@ -87,14 +87,6 @@ void RenderRTXDI::initialize(RenderRaytracing *p_raytracing, bool p_radiance_use
 	modes.push_back(ShaderRD::VariantDefine(0, "\n#define MODE_TEMPORAL 1\n", true));
 	modes.push_back(ShaderRD::VariantDefine(0, "\n#define MODE_SPATIAL 1\n", true));
 	modes.push_back(ShaderRD::VariantDefine(0, "\n#define MODE_SHADE 1\n", true));
-#ifdef DEBUG_ENABLED
-	if (!diagnostic_prefix.is_empty()) {
-		modes.push_back(ShaderRD::VariantDefine(0, "\n#define MODE_INITIAL 1\n#define RTXDI_DIAGNOSTICS 1\n", true));
-		modes.push_back(ShaderRD::VariantDefine(0, "\n#define MODE_TEMPORAL 1\n#define RTXDI_DIAGNOSTICS 1\n", true));
-		modes.push_back(ShaderRD::VariantDefine(0, "\n#define MODE_SPATIAL 1\n#define RTXDI_DIAGNOSTICS 1\n", true));
-		modes.push_back(ShaderRD::VariantDefine(0, "\n#define MODE_SHADE 1\n#define RTXDI_DIAGNOSTICS 1\n", true));
-	}
-#endif
 	String defines = "\n#define MAX_ROUGHNESS_LOD " + itos(p_roughness_layers - 1) + ".0\n";
 #ifdef REAL_T_IS_DOUBLE
 	defines += "\n#define USE_DOUBLE_PRECISION\n";
@@ -104,10 +96,32 @@ void RenderRTXDI::initialize(RenderRaytracing *p_raytracing, bool p_radiance_use
 	}
 	shader.shader.initialize(modes, defines, Vector<RD::PipelineImmutableSampler>(), Vector<uint64_t>(), false, false);
 	shader.version = shader.shader.version_create();
-	for (uint32_t i = 0; i < uint32_t(modes.size()); i++) {
+	for (uint32_t i = 0; i < PASS_MAX; i++) {
 		shader.shader_rid[i] = shader.shader.version_get_shader(shader.version, i);
 		shader.pipeline[i] = RD::get_singleton()->compute_pipeline_create(shader.shader_rid[i]);
 	}
+#ifdef DEBUG_ENABLED
+	if (!diagnostic_prefix.is_empty()) {
+		diagnostic_shader.initialize(modes, defines + "\n#define RTXDI_DIAGNOSTICS 1\n", Vector<RD::PipelineImmutableSampler>(), Vector<uint64_t>(), false, false);
+		diagnostic_version = diagnostic_shader.version_create();
+		bool diagnostic_valid = diagnostic_shader.version_is_valid(diagnostic_version);
+		for (uint32_t i = 0; i < PASS_MAX && diagnostic_valid; i++) {
+			shader.shader_rid[PASS_MAX + i] = diagnostic_shader.version_get_shader(diagnostic_version, i);
+			shader.pipeline[PASS_MAX + i] = RD::get_singleton()->compute_pipeline_create(shader.shader_rid[PASS_MAX + i]);
+			diagnostic_valid = shader.pipeline[PASS_MAX + i].is_valid();
+		}
+		if (!diagnostic_valid) {
+			diagnostic_shader.version_free(diagnostic_version);
+			diagnostic_version = RID();
+			diagnostic_prefix = String();
+			for (uint32_t i = 0; i < PASS_MAX; i++) {
+				shader.shader_rid[PASS_MAX + i] = RID();
+				shader.pipeline[PASS_MAX + i] = RID();
+			}
+			ERR_PRINT("Failed to compile RTXDI diagnostic shaders or create their pipelines; rendering without capture.");
+		}
+	}
+#endif
 
 	Vector<uint8_t> packed_offsets;
 	packed_offsets.resize(config.neighbor_offset_count * 2);
@@ -504,6 +518,11 @@ void RenderRTXDI::free_viewport_resources(RTViewportState *p_state) {
 }
 
 RenderRTXDI::~RenderRTXDI() {
+#ifdef DEBUG_ENABLED
+	if (diagnostic_version.is_valid()) {
+		diagnostic_shader.version_free(diagnostic_version);
+	}
+#endif
 	if (neighbor_offsets_buffer.is_valid()) {
 		RD::get_singleton()->free_rid(neighbor_offsets_buffer);
 	}
