@@ -1,5 +1,22 @@
 # Project State
 
+Owner renderer scope correction (2026-09-08): DLSS/RR, path tracing and
+camera-following DDGI only; no VR/XR work or validation and no requirement for
+DDGI to match path tracing visually. See the amended
+[approved plan](../plans/2026-09-07-1635-ddgi-pt-rr-plan.md).
+
+Latest renderer integration (2026-09-08): camera-following DDGI, shared native
+camera PT, selectable NRD/RR/raw composition and official DLSS 4.5 preset-M
+delivery are implemented. Actual GPU/build/export observations and unverified
+cases are in [the runtime status](../research/2026-09-08-ddgi-pt-rr-runtime-status.md).
+Earlier milestone limitations below describe their recorded snapshots.
+Final executable source `968d4e9e8e` passes fresh source review. Editor,
+double editor and template builds succeed; exported SR/RR render and exit 0.
+Material/VisualShader/texture reload works in hybrid and PT, and saved settings
+survive editor restart. The [closure status](../research/2026-09-08-0935-ddgi-pt-rr-closure-status.md)
+records independent proof, exact artifacts and the original shutdown crash's
+causal-evidence limit. Earlier status paragraphs below are historical snapshots.
+
 Read this compact index before project research. Follow the linked source or
 canonical decision document when detail matters; do not treat this page as an
 implementation plan or runtime proof.

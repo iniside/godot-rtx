@@ -1,5 +1,17 @@
 # DDGI/PT/RR post-commit review
 
+Current closure source (2026-09-08): `968d4e9e8ef7884552b82c70c3886e9fc5f4efae`.
+Fresh review of that exact commit and corrective range `82c5e7a0a5..968d4e9e8e`
+returns PASS. The material-cache RID refresh, whole-graph VisualShader reset,
+resource self-copy and Windows post-main-loop timer corrections are reviewed.
+Current builds, both-mode external reload, saved-resource restart and exported
+SR/RR rendering are recorded in the [closure status](2026-09-08-0935-ddgi-pt-rr-closure-status.md).
+Independent proof audit returns PASS for bounded amended Step 8 claims.
+Final exported SR/RR runs render and exit 0. The earlier intermittent exit
+crash remains recorded with its unrecovered-stack limit; no deterministic
+reproduction or universal reliability claim is made. The historical broad
+missing-proof list below describes earlier reviews and is superseded.
+
 Owner scope correction (2026-09-08): VR/XR work and multiview validation are
 excluded from closure. The closure-specific early multiview guard and
 XR-to-mono recovery change are removed. Historical multiview requirements

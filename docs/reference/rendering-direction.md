@@ -1,5 +1,18 @@
 # Docelowy kierunek renderera i TODO
 
+Zakres domknięcia uzgodniony 2026-09-08: DLSS/RR, path tracing i DDGI.
+VR/XR nie jest wspierane ani objęte naprawami lub weryfikacją tego zadania.
+DDGI nie ma osiągać zgodności obrazu z path tracingiem; porównania służą
+ocenie zachowania obu metod i ich ograniczeń, nie wymuszaniu identyczności.
+
+Aktualizacja wykonania 2026-09-08: DDGI podążające za kamerą, wspólny natywny
+path tracer, wybór NRD/RR/raw oraz dostarczenie DLSS 4.5 z presetem M są wdrożone.
+Końcowe źródła `968d4e9e8e` przeszły świeże review; buildy edytora, double
+i template oraz eksport SR/RR zakończyły się poprawnie. Dowody GPU, hot reloadu,
+zapisu ustawień i granice weryfikacji opisuje
+[status domknięcia](../research/2026-09-08-0935-ddgi-pt-rr-closure-status.md).
+Poniższy kierunek architektury pozostaje szerszy od tego wdrożenia.
+
 Ustalenia właściciela z 2026-09-06. Dokument zapisuje przyjęty kierunek i pytania
 do dalszego researchu; nie jest planem implementacji ani potwierdzeniem wykonania.
 
