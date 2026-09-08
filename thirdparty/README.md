@@ -1014,6 +1014,34 @@ Patches:
   the GLSL spelling for HLSL's reciprocal-square-root intrinsic.
 
 
+## rtxgi_ddgi
+
+- Upstream: https://github.com/NVIDIAGameWorks/RTXGI-DDGI
+- Version: 1.3.6 (f33e496ca31b3f0eec1c4e2cbaa8bb620e337fa6)
+- License: NVIDIA RTX SDKs License (`License.txt`)
+
+The import contains `rtxgi-sdk/shaders/`, `Defines.h`, the DDGI GPU descriptor
+and root constants headers, and the upstream license. `import.json` records
+the pinned source, patch hashes, and hashes before and after patch application.
+The importer normalizes line endings to LF and removes trailing spaces/tabs;
+the manifest records this transformation so Git normalization preserves hashes.
+Engine wrappers compile these shaders with Slang; the SDK host/API backends
+and sample applications are not imported.
+
+Run `python misc/scripts/update_rtxgi_ddgi.py` to reproduce the import. The
+optional `--source` accepts a local upstream Git repository; the archive is
+always read from the pinned commit, never from its working files.
+
+Patches are maintained in `misc/scripts/patches/rtxgi_ddgi/`:
+
+- `0001-native-shader-closure.patch` removes CPU-only header includes from the
+  imported GPU headers and rejects the unused external shader config include.
+  Configuration comes from the engine's Slang wrappers.
+- `0002-probe-validity-query.patch` excludes uninitialized or relocated slots
+  from SDK irradiance interpolation and returns the available trilinear support
+  for cascade blending. SDK active/inactive classification remains separate.
+
+
 ## rvo2
 
 For 2D in `rvo2_2d` folder

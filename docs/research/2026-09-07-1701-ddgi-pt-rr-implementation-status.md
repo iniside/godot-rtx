@@ -22,7 +22,7 @@ Automated tests are not authorized. The full implementation is not complete.
 | 1. Public settings and per-buffer ownership | Source review PASS | `8aa9a77747`; ordinary editor builds |
 | 2. Common RT coordinates and temporal basis | Final round 2 source PASS and proof PASS | `eecc668b45` + correction `28dbaa3dd2` |
 | 3. Shared native RT hit materials | LOD correction compiled; dispatched image validation remains | `d3936e37b7` + `faa1f8dcfe` and follow-up below |
-| 4. Pinned DDGI import and moving cascades | In progress | Pinned shader import and native wrappers |
+| 4. Pinned DDGI import and moving cascades | Source implemented; bounded build and Vulkan state validation | 2026-09-08 evidence below; lighting dispatch follows in Step 5 |
 | 5. DDGI lighting and hybrid composition | Pending | Depends on step 4 |
 | 6. True camera-ray PT | Pending | Depends on step 5 |
 | 7. RR / DLSS lifecycle and composition | Pending | Depends on camera producers |
@@ -232,6 +232,60 @@ Steps 4/6: native hit payload readback and DDGI/PT image correctness are unprove
 Arbitrary texture-coordinate expressions retain a basis approximation; explicit
 Grad/Lod operands are preserved according to the author. Detailed skin/TBN,
 array/default packing and decal-hit output lack separate runtime readback.
+
+## Step 4 moving cascade runtime, 2026-09-08
+
+Source baseline: `03ace28bbcfc608b653b7b5be2ae8f6cd39ae87e`.
+The reproducible import pins RTXGI-DDGI 1.3.6 at
+`f33e496ca31b3f0eec1c4e2cbaa8bb620e337fa6`. It imports 22 shader/header/license
+files, with per-file original and patched SHA256 values in `import.json`.
+Two patches close native shader dependencies and add independent validity plus
+interpolation support to the SDK query. Importing again from the pinned Git
+archive reports an exact match; updating refuses locally edited imported files.
+`glsl_builders.py` resolves and tracks the complete native SDK include graph.
+Existing shader/effect SCsub globs include the new files without a second build route.
+
+`DDGIEffect` owns SDK shader versions and per-context atlases. Each RT viewport
+owns its context, released through RT viewport teardown and rebuilt for layout
+changes. Hybrid frames prepare camera-following grids immediately. Every cascade
+uses absolute int64 minimum cells with modulo physical slots. Fixed-size scans
+invalidate all entering slabs for signed multi-cell moves, preserving overlap;
+nonoverlapping moves clear every slot. Mapping/reset runs independently of the
+lighting budget. Alternating round-robin and dirty-priority slots bound scheduling
+to at most twice the cascade count in frames at budget one. Storage does not grow
+with travel, and RT origin changes preserve physical probe identity.
+
+Native state passes reset irradiance/distance/rays/offsets/classification/validity
+and age together. Selected levels snapshot traced offsets, classify current rays,
+blend SDK irradiance and distance, relocate, then publish only matching positions.
+Relocation invalidates unmatched lighting until a subsequent trace. Query patches
+exclude invalid slots before normalization; the wrapper fades inside grid edges
+and returns zero outside support. Ray reach is the outer grid diagonal. Distance
+moments use FP32 to avoid half-float overflow at the configured finite reach.
+
+Evidence root: `C:/Users/lukas/AppData/Local/Temp/godot-ddgi-step4-20260908`.
+`editor-final`, `double-final` and `template-final` receipts record exit 0 with
+stable source manifests. The import then gained LF/trailing-whitespace
+normalization so staged Git blobs retain the exact manifest hashes; all 22 blobs
+were checked. The twelve SPIR-V SHA256 values are identical before and after
+normalization (`native-probe-query-final` versus `native-import-final`).
+Post-normalization builds are recorded separately as `*-import-final`.
+`native-import-final/receipts.json` records twelve
+nonempty SPIR-V compiler/validator successes: irradiance/distance at 64/128/256
+rays, relocation, classification, reset/prepare/publish, and validity-aware query
+with scrolling probe-position helpers. `runtime-final` records a real RTX 4090
+Vulkan run with all four DDGI shader classes, resource/reset execution, exit 0
+and no ERROR lines. The subsequent `runtime-built-editor` and
+`runtime-built-editor.double` runs also exit 0 without ERROR lines, on the
+exact binaries identified by the final build receipts. Existing OpDemote diagnostics and the explicit missing-DDGI-
+lighting warning remain. The initial C++ build errors were corrected before the
+successful final builds.
+
+No fresh external source review is claimed in this continuation. The SDK update
+methods are ready for Step 5 but no probe ray producer calls them yet. Current
+Vulkan evidence proves initialization/reset, not probe lighting, relocation output,
+GPU readback of scrolling validity, continuous motion, multi-viewport isolation,
+large-coordinate images, or final DDGI/PT/RR composition. These remain required.
 
 ## Remaining boundaries
 

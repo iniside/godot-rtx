@@ -71,6 +71,9 @@ RenderRaytracing::~RenderRaytracing() {
 		_free_viewport_state_internal(kv.value);
 	}
 	viewport_states.clear();
+	if (ddgi_effect) {
+		memdelete(ddgi_effect);
+	}
 
 	cleanup_caches();
 
@@ -156,6 +159,31 @@ bool RenderRaytracing::update_viewport_settings(const RenderDataRD *p_render_dat
 	return camera_settings_changed || camera_changed || origin_changed;
 }
 
+bool RenderRaytracing::_prepare_ddgi(RTViewportState *p_state) {
+	const RendererEnvironmentStorage::RaytracingSettings &settings = p_state->settings;
+	const bool enabled = settings.ddgi_enabled && settings.raytracing_rendering_mode == RSE::RAYTRACING_RENDERING_MODE_HYBRID;
+	if (p_state->ddgi && (!enabled || p_state->ddgi->cascade_count != uint32_t(settings.ddgi_cascade_count) || p_state->ddgi->rays_per_probe != uint32_t(settings.ddgi_rays_per_probe) || p_state->ddgi->base_spacing != settings.ddgi_probe_spacing)) {
+		memdelete(p_state->ddgi);
+		p_state->ddgi = nullptr;
+	}
+	if (!enabled) {
+		return true;
+	}
+	if (!ddgi_effect) {
+		ddgi_effect = memnew(RendererRD::DDGIEffect);
+	}
+	if (!p_state->ddgi) {
+		p_state->ddgi = ddgi_effect->create_context(settings);
+	}
+	ERR_FAIL_NULL_V(p_state->ddgi, false);
+	if (!ddgi_effect->prepare(*p_state->ddgi, p_state->camera_transform.origin, p_state->rt_origin, p_state->ddgi_history_epoch, settings.ddgi_updates_per_frame)) {
+		memdelete(p_state->ddgi);
+		p_state->ddgi = nullptr;
+		return false;
+	}
+	return true;
+}
+
 RTViewportState *RenderRaytracing::_get_viewport_state(const RenderDataRD *p_render_data) const {
 	if (!p_render_data || p_render_data->render_buffers.is_null()) {
 		return nullptr;
@@ -211,6 +239,9 @@ void RenderRaytracing::_free_viewport_state_internal(RTViewportState *p_state) {
 		}
 	}
 	RenderRTXDI::free_viewport_resources(p_state);
+	if (p_state->ddgi) {
+		memdelete(p_state->ddgi);
+	}
 	memdelete(p_state);
 }
 

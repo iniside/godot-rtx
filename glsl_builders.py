@@ -8,6 +8,7 @@ from methods import generated_wrapper, print_error, to_raw_cstring
 
 RD_HEADER_INCLUDE_ROOTS = {
     "Rtxdi/": "thirdparty/rtxdi/Include",
+    "rtxgi-sdk/": "thirdparty/rtxgi_ddgi",
 }
 RD_HEADER_SOURCE_ROOT = os.path.dirname(os.path.abspath(__file__))
 

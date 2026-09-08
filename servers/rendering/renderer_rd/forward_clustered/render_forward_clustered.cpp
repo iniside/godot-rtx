@@ -1812,6 +1812,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		rb_data->invalidate_raytracing_history();
 	}
 	const RendererEnvironmentStorage::RaytracingSettings &rt_settings = raytracing->_get_viewport_state(p_render_data)->settings;
+	ERR_FAIL_COND_MSG(!raytracing->_prepare_ddgi(raytracing->_get_viewport_state(p_render_data)), "Camera-following DDGI state preparation failed.");
 	if (rt_settings.raytracing_rendering_mode == RSE::RAYTRACING_RENDERING_MODE_PATH_TRACED) {
 		WARN_PRINT_ONCE("Path Traced mode is not implemented yet. This build continues rendering raster RTXDI with NRD; it does not produce a path-traced reference.");
 	} else if (rt_settings.ddgi_enabled) {

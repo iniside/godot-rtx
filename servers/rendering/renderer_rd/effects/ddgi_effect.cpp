@@ -1,0 +1,315 @@
+/**************************************************************************/
+/*  ddgi_effect.cpp                                                        */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
+
+#include "ddgi_effect.h"
+
+#include "core/math/quaternion.h"
+#include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
+
+namespace RendererRD {
+
+DDGIEffect::Context::~Context() {
+	RD *rd = RD::get_singleton();
+	for (Cascade &cascade : cascades) {
+		for (RID resource : { cascade.ray_data, cascade.irradiance, cascade.distance, cascade.probe_data, cascade.traced_data, cascade.validity, cascade.update_frame, cascade.variability, cascade.reset_mask }) {
+			if (resource.is_valid()) {
+				rd->free_rid(resource);
+			}
+		}
+	}
+	if (volume_buffer.is_valid()) {
+		rd->free_rid(volume_buffer);
+	}
+}
+
+DDGIEffect::DDGIEffect() {
+	Vector<String> blend_modes;
+	for (int output = 0; output < 2; output++) {
+		for (int rays : { 64, 128, 256 }) {
+			blend_modes.push_back(vformat("\n#define RTXGI_DDGI_BLEND_RAYS_PER_PROBE %d\n", rays) + (output == 0 ? "#define MODE_IRRADIANCE\n" : ""));
+		}
+	}
+	blend_shader.initialize(blend_modes);
+	blend_version = blend_shader.version_create();
+	available = true;
+	for (int i = 0; i < 6; i++) {
+		RID shader = blend_shader.version_get_shader(blend_version, i);
+		blend_pipelines[i] = shader.is_valid() ? RD::get_singleton()->compute_pipeline_create(shader) : RID();
+		available &= blend_pipelines[i].is_valid();
+	}
+	classify_shader.initialize(Vector<String>{ "\n" });
+	classify_version = classify_shader.version_create();
+	RID shader = classify_shader.version_get_shader(classify_version, 0);
+	classify_pipeline = shader.is_valid() ? RD::get_singleton()->compute_pipeline_create(shader) : RID();
+	relocate_shader.initialize(Vector<String>{ "\n" });
+	relocate_version = relocate_shader.version_create();
+	shader = relocate_shader.version_get_shader(relocate_version, 0);
+	relocate_pipeline = shader.is_valid() ? RD::get_singleton()->compute_pipeline_create(shader) : RID();
+	available &= classify_pipeline.is_valid() && relocate_pipeline.is_valid();
+	state_shader.initialize(Vector<String>{ "\n#define MODE_RESET\n", "\n#define MODE_PREPARE\n", "\n#define MODE_FINISH\n" });
+	state_version = state_shader.version_create();
+	for (int i = 0; i < STATE_MODE_COUNT; i++) {
+		shader = state_shader.version_get_shader(state_version, i);
+		state_pipelines[i] = shader.is_valid() ? RD::get_singleton()->compute_pipeline_create(shader) : RID();
+		available &= state_pipelines[i].is_valid();
+	}
+}
+
+DDGIEffect::~DDGIEffect() {
+	blend_shader.version_free(blend_version);
+	classify_shader.version_free(classify_version);
+	relocate_shader.version_free(relocate_version);
+	state_shader.version_free(state_version);
+}
+
+RID DDGIEffect::_texture(uint32_t p_width, uint32_t p_height, RD::DataFormat p_format) {
+	RD::TextureFormat format;
+	format.texture_type = RD::TEXTURE_TYPE_2D_ARRAY;
+	format.width = p_width;
+	format.height = p_height;
+	format.array_layers = PROBE_AXIS;
+	format.format = p_format;
+	format.usage_bits = RD::TEXTURE_USAGE_STORAGE_BIT | RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_CAN_COPY_FROM_BIT | RD::TEXTURE_USAGE_CAN_COPY_TO_BIT;
+	ERR_FAIL_COND_V_MSG(!RD::get_singleton()->texture_is_format_supported_for_usage(p_format, format.usage_bits), RID(), "The DDGI texture format is unsupported on this device.");
+	return RD::get_singleton()->texture_create(format, RD::TextureView());
+}
+
+DDGIEffect::Context *DDGIEffect::create_context(const RendererEnvironmentStorage::RaytracingSettings &p_settings) {
+	ERR_FAIL_COND_V(!available, nullptr);
+	ERR_FAIL_COND_V(p_settings.ddgi_cascade_count < 1 || p_settings.ddgi_cascade_count > int(MAX_CASCADES), nullptr);
+	ERR_FAIL_COND_V(p_settings.ddgi_rays_per_probe != 64 && p_settings.ddgi_rays_per_probe != 128 && p_settings.ddgi_rays_per_probe != 256, nullptr);
+	ERR_FAIL_COND_V(!Math::is_finite(p_settings.ddgi_probe_spacing) || p_settings.ddgi_probe_spacing <= 0.0f, nullptr);
+	Context *context = memnew(Context);
+	context->cascade_count = p_settings.ddgi_cascade_count;
+	context->rays_per_probe = p_settings.ddgi_rays_per_probe;
+	context->base_spacing = p_settings.ddgi_probe_spacing;
+	context->volume_buffer = RD::get_singleton()->storage_buffer_create(sizeof(context->descriptors));
+	bool valid = context->volume_buffer.is_valid();
+	for (uint32_t i = 0; i < context->cascade_count && valid; i++) {
+		Cascade &cascade = context->cascades[i];
+		cascade.ray_data = _texture(context->rays_per_probe, PROBE_AXIS * PROBE_AXIS, RD::DATA_FORMAT_R32G32B32A32_SFLOAT);
+		cascade.irradiance = _texture(PROBE_AXIS * 8, PROBE_AXIS * 8, RD::DATA_FORMAT_R16G16B16A16_SFLOAT);
+		cascade.distance = _texture(PROBE_AXIS * 16, PROBE_AXIS * 16, RD::DATA_FORMAT_R32G32B32A32_SFLOAT);
+		cascade.probe_data = _texture(PROBE_AXIS, PROBE_AXIS, RD::DATA_FORMAT_R32G32B32A32_SFLOAT);
+		cascade.traced_data = _texture(PROBE_AXIS, PROBE_AXIS, RD::DATA_FORMAT_R32G32B32A32_SFLOAT);
+		cascade.validity = _texture(PROBE_AXIS, PROBE_AXIS, RD::DATA_FORMAT_R32_UINT);
+		cascade.update_frame = _texture(PROBE_AXIS, PROBE_AXIS, RD::DATA_FORMAT_R32_UINT);
+		cascade.variability = _texture(PROBE_AXIS * 6, PROBE_AXIS * 6, RD::DATA_FORMAT_R16G16B16A16_SFLOAT);
+		cascade.reset_mask = RD::get_singleton()->storage_buffer_create(PROBE_COUNT * sizeof(uint32_t));
+		for (RID resource : { cascade.ray_data, cascade.irradiance, cascade.distance, cascade.probe_data, cascade.traced_data, cascade.validity, cascade.update_frame, cascade.variability, cascade.reset_mask }) {
+			valid &= resource.is_valid();
+		}
+	}
+	if (!valid) {
+		memdelete(context);
+		ERR_FAIL_V_MSG(nullptr, "Failed to allocate camera-following DDGI resources.");
+	}
+	return context;
+}
+
+bool DDGIEffect::_dispatch(RID p_shader, RID p_pipeline, const LocalVector<RD::Uniform> &p_uniforms, const void *p_constants, uint32_t p_constant_size, uint32_t p_x, uint32_t p_y, uint32_t p_z) {
+	ERR_FAIL_COND_V(p_shader.is_null() || p_pipeline.is_null(), false);
+	RID uniform_set = UniformSetCacheRD::get_singleton()->get_cache_vec(p_shader, 0, p_uniforms);
+	ERR_FAIL_COND_V(uniform_set.is_null(), false);
+	RD *rd = RD::get_singleton();
+	RD::ComputeListID list = rd->compute_list_begin();
+	rd->compute_list_bind_compute_pipeline(list, p_pipeline);
+	rd->compute_list_bind_uniform_set(list, uniform_set, 0);
+	rd->compute_list_set_push_constant(list, p_constants, p_constant_size);
+	rd->compute_list_dispatch(list, p_x, p_y, p_z);
+	rd->compute_list_end();
+	return true;
+}
+
+bool DDGIEffect::_state(Context &p_context, uint32_t p_cascade, StateMode p_mode) {
+	Cascade &cascade = p_context.cascades[p_cascade];
+	LocalVector<RD::Uniform> uniforms;
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 0, { p_context.volume_buffer }));
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 4, { cascade.probe_data }));
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 5, { cascade.traced_data }));
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 6, { cascade.validity }));
+	if (p_mode != STATE_FINISH) {
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 2, { cascade.irradiance }));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 3, { cascade.distance }));
+	}
+	if (p_mode == STATE_RESET) {
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 1, { cascade.ray_data }));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 7, { cascade.reset_mask }));
+	}
+	if (p_mode != STATE_PREPARE) {
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 8, { cascade.update_frame }));
+	}
+	uint32_t constants[4] = { p_cascade, uint32_t(p_context.frame), 0, 0 };
+	return _dispatch(state_shader.version_get_shader(state_version, p_mode), state_pipelines[p_mode], uniforms, constants, sizeof(constants), PROBE_COUNT / 32);
+}
+
+bool DDGIEffect::prepare(Context &p_context, const Vector3 &p_camera, const Vector3 &p_rt_origin, uint64_t p_history_epoch, int p_update_budget) {
+	ERR_FAIL_COND_V(!p_camera.is_finite() || !p_rt_origin.is_finite(), false);
+	p_context.frame++;
+	p_context.updates.clear();
+	bool reset_cascade[MAX_CASCADES] = {};
+	uint32_t reset_mask[PROBE_COUNT];
+	const float outer_spacing = p_context.base_spacing * float(1u << (p_context.cascade_count - 1));
+	const float max_distance = Math::sqrt(3.0f) * float(PROBE_AXIS - 1) * outer_spacing;
+	for (uint32_t i = 0; i < p_context.cascade_count; i++) {
+		Cascade &cascade = p_context.cascades[i];
+		ERR_FAIL_COND_V(cascade.update_started, false);
+		VolumeDescriptor &descriptor = p_context.descriptors[i];
+		const double spacing = double(p_context.base_spacing) * double(1u << i);
+		int64_t minimum[3];
+		uint32_t offset[3];
+		for (uint32_t axis = 0; axis < 3; axis++) {
+			double cell = Math::floor(double(p_camera[axis]) / spacing);
+			ERR_FAIL_COND_V(cell <= -double(INT64_MAX) + 4096.0 || cell >= double(INT64_MAX) - 4096.0, false);
+			minimum[axis] = int64_t(cell) - int64_t(PROBE_AXIS / 2);
+			offset[axis] = uint32_t((minimum[axis] % int64_t(PROBE_AXIS) + PROBE_AXIS) % PROBE_AXIS);
+			descriptor.origin[axis] = float((double(minimum[axis]) * spacing - double(p_rt_origin[axis])) + (double(PROBE_AXIS - 1) * 0.5 - offset[axis]) * spacing);
+			descriptor.spacing[axis] = float(spacing);
+		}
+		const bool full_reset = !cascade.initialized || p_context.history_epoch != p_history_epoch;
+		uint32_t entering_count = 0;
+		for (uint32_t index = 0; index < PROBE_COUNT; index++) {
+			uint32_t physical[3] = { index % PROBE_AXIS, index / (PROBE_AXIS * PROBE_AXIS), (index / PROBE_AXIS) % PROBE_AXIS };
+			bool entering = full_reset;
+			for (uint32_t axis = 0; axis < 3; axis++) {
+				int64_t absolute = minimum[axis] + ((physical[axis] + PROBE_AXIS - offset[axis]) % PROBE_AXIS);
+				entering |= absolute < cascade.minimum_cell[axis] || absolute >= cascade.minimum_cell[axis] + PROBE_AXIS;
+			}
+			reset_mask[index] = entering ? 1u : 0u;
+			entering_count += reset_mask[index];
+		}
+		if (entering_count > 0) {
+			RD::get_singleton()->buffer_update(cascade.reset_mask, 0, sizeof(reset_mask), reset_mask);
+			reset_cascade[i] = true;
+			cascade.dirty_count = MAX(cascade.dirty_count, entering_count);
+		}
+		for (uint32_t axis = 0; axis < 3; axis++) {
+			cascade.minimum_cell[axis] = minimum[axis];
+		}
+		Quaternion ray_rotation(Vector3(1, 2, 3).normalized(), real_t(Math::fmod(double(p_context.frame + i * 17) * 0.6180339887498948, 1.0) * Math::TAU));
+		for (uint32_t component = 0; component < 4; component++) {
+			descriptor.ray_rotation[component] = float(ray_rotation[component]);
+		}
+		descriptor.max_ray_distance = max_distance;
+		descriptor.normal_bias = float(spacing * 0.05);
+		descriptor.view_bias = float(spacing * 0.05);
+		descriptor.min_frontface_distance = float(spacing * 0.1);
+		descriptor.packed[0] = PROBE_AXIS | (PROBE_AXIS << 10) | (PROBE_AXIS << 20);
+		descriptor.packed[1] = 6553u | (16383u << 16);
+		descriptor.packed[2] = p_context.rays_per_probe | (6u << 16) | (14u << 24);
+		descriptor.packed[3] = offset[0] | (offset[1] << 16);
+		descriptor.packed[4] = offset[2] | (1u << 16) | (6u << 17) | (3u << 20) | (1u << 23) | (1u << 24);
+	}
+	RD::get_singleton()->buffer_update(p_context.volume_buffer, 0, sizeof(p_context.descriptors), p_context.descriptors);
+	for (uint32_t i = 0; i < p_context.cascade_count; i++) {
+		if (reset_cascade[i] && !_state(p_context, i, STATE_RESET)) {
+			for (Cascade &cascade : p_context.cascades) {
+				cascade.initialized = false;
+			}
+			return false;
+		}
+		p_context.cascades[i].initialized = true;
+	}
+	p_context.history_epoch = p_history_epoch;
+	bool selected[MAX_CASCADES] = {};
+	uint32_t budget = uint32_t(CLAMP(p_update_budget, 1, int(p_context.cascade_count)));
+	for (uint32_t work = 0; work < budget; work++) {
+		uint32_t candidate = p_context.fair_cursor;
+		if ((p_context.schedule_slot++ & 1u) == 0u) {
+			while (selected[candidate]) {
+				candidate = (candidate + 1) % p_context.cascade_count;
+			}
+			p_context.fair_cursor = (candidate + 1) % p_context.cascade_count;
+		} else {
+			candidate = MAX_CASCADES;
+			for (uint32_t i = 0; i < p_context.cascade_count; i++) {
+				if (selected[i]) {
+					continue;
+				}
+				if (candidate == MAX_CASCADES || p_context.cascades[i].dirty_count > p_context.cascades[candidate].dirty_count ||
+						(p_context.cascades[i].dirty_count == p_context.cascades[candidate].dirty_count && p_context.cascades[i].last_update_frame < p_context.cascades[candidate].last_update_frame)) {
+					candidate = i;
+				}
+			}
+		}
+		selected[candidate] = true;
+		p_context.updates.push_back(candidate);
+	}
+	return true;
+}
+
+bool DDGIEffect::begin_update(Context &p_context, uint32_t p_cascade) {
+	ERR_FAIL_UNSIGNED_INDEX_V(p_cascade, p_context.cascade_count, false);
+	bool scheduled = false;
+	for (uint32_t cascade : p_context.updates) {
+		scheduled |= cascade == p_cascade;
+	}
+	ERR_FAIL_COND_V(!scheduled || p_context.cascades[p_cascade].update_started, false);
+	if (!_state(p_context, p_cascade, STATE_PREPARE)) {
+		return false;
+	}
+	p_context.cascades[p_cascade].update_started = true;
+	return true;
+}
+
+bool DDGIEffect::finish_update(Context &p_context, uint32_t p_cascade) {
+	ERR_FAIL_UNSIGNED_INDEX_V(p_cascade, p_context.cascade_count, false);
+	Cascade &cascade = p_context.cascades[p_cascade];
+	ERR_FAIL_COND_V(!cascade.update_started, false);
+	LocalVector<RD::Uniform> uniforms;
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 0, { p_context.volume_buffer }));
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 1, { cascade.ray_data }));
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 4, { cascade.probe_data }));
+	uint32_t constants[6] = { p_cascade, 0, 0, 0, 0, 0 };
+	if (!_dispatch(classify_shader.version_get_shader(classify_version, 0), classify_pipeline, uniforms, constants, sizeof(constants), PROBE_COUNT / 32)) {
+		return false;
+	}
+	const int ray_variant = p_context.rays_per_probe == 64 ? 0 : (p_context.rays_per_probe == 128 ? 1 : 2);
+	for (int output = 0; output < 2; output++) {
+		LocalVector<RD::Uniform> blend_uniforms(uniforms);
+		blend_uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, output == 0 ? 2 : 3, { output == 0 ? cascade.irradiance : cascade.distance }));
+		if (output == 0) {
+			blend_uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 5, { cascade.variability }));
+		}
+		int variant = ray_variant + output * 3;
+		if (!_dispatch(blend_shader.version_get_shader(blend_version, variant), blend_pipelines[variant], blend_uniforms, constants, sizeof(constants), PROBE_AXIS, PROBE_AXIS, PROBE_AXIS)) {
+			return false;
+		}
+	}
+	if (!_dispatch(relocate_shader.version_get_shader(relocate_version, 0), relocate_pipeline, uniforms, constants, sizeof(constants), PROBE_COUNT / 32) || !_state(p_context, p_cascade, STATE_FINISH)) {
+		return false;
+	}
+	cascade.update_started = false;
+	cascade.last_update_frame = p_context.frame;
+	cascade.dirty_count = 0;
+	return true;
+}
+
+} // namespace RendererRD

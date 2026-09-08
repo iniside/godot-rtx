@@ -1,0 +1,71 @@
+--- a/rtxgi-sdk/shaders/ddgi/ProbeBlendingCS.hlsl
++++ b/rtxgi-sdk/shaders/ddgi/ProbeBlendingCS.hlsl
+@@ -13,7 +13,7 @@
+ // -------- CONFIG FILE ---------------------------------------------------------------------------
+ 
+ #if RTXGI_DDGI_USE_SHADER_CONFIG_FILE
+-#include <DDGIShaderConfig.h>
++#error Configure RTXGI through the native shader wrapper defines.
+ #endif
+ 
+ // -------- DEFINE VALIDATION ---------------------------------------------------------------------
+--- a/rtxgi-sdk/shaders/ddgi/ProbeClassificationCS.hlsl
++++ b/rtxgi-sdk/shaders/ddgi/ProbeClassificationCS.hlsl
+@@ -13,7 +13,7 @@
+ // -------- CONFIG FILE ---------------------------------------------------------------------------
+ 
+ #if RTXGI_DDGI_USE_SHADER_CONFIG_FILE
+-#include <DDGIShaderConfig.h>
++#error Configure RTXGI through the native shader wrapper defines.
+ #endif
+ 
+ // -------- DEFINE VALIDATION ---------------------------------------------------------------------
+--- a/rtxgi-sdk/shaders/ddgi/ProbeRelocationCS.hlsl
++++ b/rtxgi-sdk/shaders/ddgi/ProbeRelocationCS.hlsl
+@@ -13,7 +13,7 @@
+ // -------- CONFIG FILE ---------------------------------------------------------------------------
+ 
+ #if RTXGI_DDGI_USE_SHADER_CONFIG_FILE
+-#include <DDGIShaderConfig.h>
++#error Configure RTXGI through the native shader wrapper defines.
+ #endif
+ 
+ // -------- DEFINE VALIDATION ---------------------------------------------------------------------
+--- a/rtxgi-sdk/shaders/ddgi/ReductionCS.hlsl
++++ b/rtxgi-sdk/shaders/ddgi/ReductionCS.hlsl
+@@ -13,7 +13,7 @@
+ // -------- CONFIG FILE ---------------------------------------------------------------------------
+ 
+ #if RTXGI_DDGI_USE_SHADER_CONFIG_FILE
+-#include <DDGIShaderConfig.h>
++#error Configure RTXGI through the native shader wrapper defines.
+ #endif
+ 
+ // -------- DEFINE VALIDATION ---------------------------------------------------------------------
+--- a/rtxgi-sdk/include/rtxgi/ddgi/DDGIVolumeDescGPU.h
++++ b/rtxgi-sdk/include/rtxgi/ddgi/DDGIVolumeDescGPU.h
+@@ -11,11 +11,6 @@
+ #ifndef RTXGI_DDGI_VOLUME_DESC_GPU_H
+ #define RTXGI_DDGI_VOLUME_DESC_GPU_H
+ 
+-#ifndef HLSL
+-#include <rtxgi/Math.h>
+-#include <rtxgi/Types.h>
+-using namespace rtxgi;
+-#endif
+ 
+ /**
+  * Describes the location (i.e. index) of DDGIVolume resources
+--- a/rtxgi-sdk/include/rtxgi/ddgi/DDGIRootConstants.h
++++ b/rtxgi-sdk/include/rtxgi/ddgi/DDGIRootConstants.h
+@@ -11,10 +11,6 @@
+ #ifndef RTXGI_DDGI_ROOT_CONSTANTS_H
+ #define RTXGI_DDGI_ROOT_CONSTANTS_H
+ 
+-#ifndef HLSL
+-#include "../Types.h"
+-using namespace rtxgi;
+-#endif
+ 
+ struct DDGIRootConstants
+ {

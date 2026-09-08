@@ -1,0 +1,41 @@
+--- a/rtxgi-sdk/shaders/ddgi/Irradiance.hlsl
++++ b/rtxgi-sdk/shaders/ddgi/Irradiance.hlsl
+@@ -19,6 +19,7 @@
+     Texture2DArray<float4> probeDistance;
+     Texture2DArray<float4> probeData;
+     SamplerState bilinearSampler;
++    Texture2DArray<uint> probeValidity;
+ };
+ 
+ /**
+@@ -67,10 +68,12 @@
+     float3 surfaceBias,
+     float3 direction,
+     DDGIVolumeDescGPU volume,
+-    DDGIVolumeResources resources)
++    DDGIVolumeResources resources,
++    out float support)
+ {
+     float3 irradiance = float3(0.f, 0.f, 0.f);
+     float  accumulatedWeights = 0.f;
++    support = 0.f;
+ 
+     // Bias the world space position
+     float3 biasedWorldPosition = (worldPosition + surfaceBias);
+@@ -100,6 +103,8 @@
+         // Get the adjacent probe's index, adjusting the adjacent probe index for scrolling offsets (if present)
+         int adjacentProbeIndex = DDGIGetScrollingProbeIndex(adjacentProbeCoords, volume);
+ 
++        if (resources.probeValidity.Load(int4(DDGIGetProbeTexelCoords(adjacentProbeIndex, volume), 0)) == 0u) continue;
++
+         // Early Out: don't allow inactive probes to contribute to irradiance
+         int probeState = DDGILoadProbeState(adjacentProbeIndex, resources.probeData, volume);
+         if (probeState == RTXGI_DDGI_PROBE_STATE_INACTIVE) continue;
+@@ -117,6 +122,7 @@
+         // using a 1-alpha when adjacentProbeOffset = 0 and alpha when adjacentProbeOffset = 1.
+         float3 trilinear = max(0.001f, lerp(1.f - alpha, alpha, adjacentProbeOffset));
+         float  trilinearWeight = (trilinear.x * trilinear.y * trilinear.z);
++        support += trilinearWeight;
+         float  weight = 1.f;
+ 
+         // A naive soft backface weight would ignore a probe when

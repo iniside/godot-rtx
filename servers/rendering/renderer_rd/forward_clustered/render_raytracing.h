@@ -38,6 +38,7 @@
 #include "core/templates/rid_owner.h"
 #include "core/templates/vector.h"
 #include "servers/rendering/renderer_rd/bindless_block.h"
+#include "servers/rendering/renderer_rd/effects/ddgi_effect.h"
 #include "servers/rendering/renderer_rd/shaders/raytracing/multimesh_merge.glsl.gen.h"
 #include "servers/rendering/rendering_device.h"
 #include "servers/rendering/storage/environment_storage.h"
@@ -477,12 +478,15 @@ struct RTViewportState {
 	bool light_history_valid = false;
 	RID environment_texture;
 	RenderRTXDIViewportResources *rtxdi_di = nullptr;
+	RendererRD::DDGIEffect::Context *ddgi = nullptr;
 };
 
 class RenderRaytracing {
 	friend class RenderForwardClustered;
 
 	RenderForwardClustered *owner = nullptr;
+	RendererRD::DDGIEffect *ddgi_effect = nullptr;
+	bool _prepare_ddgi(RTViewportState *p_state);
 	BindlessBlock *bindless_block = nullptr;
 
 	// Caching (chunked sparse caches indexed by RID low bits / 256).

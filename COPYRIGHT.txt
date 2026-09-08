@@ -581,6 +581,11 @@ Comment: NVIDIA RTX Direct Illumination
 Copyright: 2020-2026, NVIDIA Corporation
 License: LicenseRef-Nvidia-RTX-SDK
 
+Files: thirdparty/rtxgi_ddgi/*
+Comment: NVIDIA RTX Global Illumination DDGI
+Copyright: 2019-2023, NVIDIA Corporation
+License: LicenseRef-Nvidia-RTX-SDK
+
 Files: thirdparty/rvo2/*
 Comment: RVO2
 Copyright: 2016, University of North Carolina at Chapel Hill
