@@ -115,9 +115,11 @@ bool RenderRaytracing::update_viewport_settings(const RenderDataRD *p_render_dat
 	RTViewportState *state = _get_or_create_viewport_state(p_render_data);
 	ERR_FAIL_NULL_V(state, false);
 	const RenderSceneDataRD &scene = *p_render_data->scene_data;
-	Vector3 rt_origin;
+	Vector3 rt_origin = state->rt_origin;
 	for (int axis = 0; axis < 3; axis++) {
-		rt_origin[axis] = Math::floor(scene.cam_transform.origin[axis] / real_t(1024.0)) * real_t(1024.0);
+		if (!state->coordinates_initialized || Math::abs(scene.cam_transform.origin[axis] - rt_origin[axis]) > real_t(1024.0)) {
+			rt_origin[axis] = Math::round(scene.cam_transform.origin[axis] / real_t(1024.0)) * real_t(1024.0);
+		}
 	}
 	const bool origin_changed = !state->coordinates_initialized || state->rt_origin != rt_origin;
 	const bool uses_jitter = scene.taa_jitter != Vector2();
