@@ -5259,6 +5259,7 @@ bool Main::iteration() {
 
 	if (fixed_fps != -1) {
 		if (Streamline::get_singleton()) {
+			RenderingServer::get_singleton()->sync();
 			Streamline::get_singleton()->emit_marker(STREAMLINE_MARKER_BEFORE_MESSAGE_LOOP);
 		}
 		return exit;
