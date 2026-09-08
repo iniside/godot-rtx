@@ -101,6 +101,7 @@ public:
 		RID camera_scene_data;
 		bool camera_rendered = false;
 		Size2i camera_size;
+		Size2i interpolation_size;
 		uint32_t cascade_count = 0;
 		uint32_t rays_per_probe = 0;
 		float base_spacing = 0;
@@ -126,7 +127,7 @@ public:
 	RID get_trace_shader(bool p_radiance_array);
 	LocalVector<RD::Uniform> get_grid_uniforms(const Context &p_context) const;
 	void update_frame(Context &p_context, uint32_t p_cascade, uint32_t p_layers);
-	bool render_camera(Context &p_context, RID p_scene_data, RID p_rt_frame, const RID p_surface[6], RID p_depth, const Size2i &p_size, bool p_orthogonal);
+	bool render_camera(Context &p_context, RID p_scene_data, RID p_rt_frame, const RID p_surface[6], RID p_depth, const Size2i &p_size, const Size2i &p_interpolation_size, bool p_orthogonal);
 
 	bool render_debug(Context &p_context, RID p_framebuffer, RID p_rt_frame, const RID p_surface[6], RID p_depth, const Size2i &p_output_size, bool p_orthogonal, uint32_t p_mode);
 

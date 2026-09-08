@@ -409,25 +409,28 @@ void DDGIEffect::update_frame(Context &p_context, uint32_t p_cascade, uint32_t p
 	RD::get_singleton()->buffer_update(p_context.frame_buffer, 0, sizeof(data), data);
 }
 
-bool DDGIEffect::render_camera(Context &p_context, RID p_scene_data, RID p_rt_frame, const RID p_surface[6], RID p_depth, const Size2i &p_size, bool p_orthogonal) {
+bool DDGIEffect::render_camera(Context &p_context, RID p_scene_data, RID p_rt_frame, const RID p_surface[6], RID p_depth, const Size2i &p_size, const Size2i &p_interpolation_size, bool p_orthogonal) {
 	RD *rd = RD::get_singleton();
-	if (p_context.camera_size != p_size) {
+	p_context.camera_rendered = false;
+	if (p_context.interpolation_size != p_interpolation_size) {
 		if (p_context.indirect_radiance.is_valid()) {
 			rd->free_rid(p_context.indirect_radiance);
 		}
 		p_context.indirect_radiance = RID();
-		p_context.camera_size = Size2i();
+		p_context.interpolation_size = Size2i();
 	}
 	if (p_context.indirect_radiance.is_null()) {
 		RD::TextureFormat format;
-		format.width = p_size.x;
-		format.height = p_size.y;
+		format.width = p_interpolation_size.x;
+		format.height = p_interpolation_size.y;
 		format.format = RD::DATA_FORMAT_R16G16B16A16_SFLOAT;
 		format.usage_bits = RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT | RD::TEXTURE_USAGE_CAN_COPY_FROM_BIT;
 		p_context.indirect_radiance = rd->texture_create(format, RD::TextureView());
 		ERR_FAIL_COND_V(p_context.indirect_radiance.is_null(), false);
-		p_context.camera_size = p_size;
+		p_context.interpolation_size = p_interpolation_size;
+		print_verbose(vformat("DDGI interpolation resolution: %dx%d; full-resolution camera: %dx%d.", p_interpolation_size.x, p_interpolation_size.y, p_size.x, p_size.y));
 	}
+	p_context.camera_size = p_size;
 	RID shader = camera_shader.version_get_shader(camera_version, 0);
 	LocalVector<RD::Uniform> uniforms;
 	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 0, { p_scene_data }));
@@ -440,13 +443,13 @@ bool DDGIEffect::render_camera(Context &p_context, RID p_scene_data, RID p_rt_fr
 	RID camera_set = UniformSetCacheRD::get_singleton()->get_cache_vec(shader, 0, uniforms);
 	RID grid_set = UniformSetCacheRD::get_singleton()->get_cache_vec(shader, 2, get_grid_uniforms(p_context));
 	ERR_FAIL_COND_V(camera_set.is_null() || grid_set.is_null(), false);
-	uint32_t constants[4] = { uint32_t(p_size.x), uint32_t(p_size.y), uint32_t(p_orthogonal), 0 };
+	uint32_t constants[6] = { uint32_t(p_size.x), uint32_t(p_size.y), uint32_t(p_orthogonal), 0, uint32_t(p_interpolation_size.x), uint32_t(p_interpolation_size.y) };
 	RD::ComputeListID list = rd->compute_list_begin();
 	rd->compute_list_bind_compute_pipeline(list, camera_pipeline);
 	rd->compute_list_bind_uniform_set(list, camera_set, 0);
 	rd->compute_list_bind_uniform_set(list, grid_set, 2);
 	rd->compute_list_set_push_constant(list, constants, sizeof(constants));
-	rd->compute_list_dispatch_threads(list, p_size.x, p_size.y, 1);
+	rd->compute_list_dispatch_threads(list, p_interpolation_size.x, p_interpolation_size.y, 1);
 	rd->compute_list_end();
 	p_context.camera_scene_data = p_scene_data;
 	p_context.camera_rendered = true;
@@ -496,7 +499,7 @@ bool DDGIEffect::render_debug(Context &p_context, RID p_framebuffer, RID p_rt_fr
 	ERR_FAIL_COND_V(camera_set.is_null() || grid_set.is_null(), false);
 	RID pipeline = debug_pipeline.get_render_pipeline(RD::INVALID_FORMAT_ID, rd->framebuffer_get_format(p_framebuffer));
 	ERR_FAIL_COND_V(pipeline.is_null(), false);
-	uint32_t constants[8] = { uint32_t(p_output_size.x), uint32_t(p_output_size.y), uint32_t(p_context.camera_size.x), uint32_t(p_context.camera_size.y), p_mode, 0, reset_cascades, uint32_t(p_orthogonal) };
+	uint32_t constants[10] = { uint32_t(p_output_size.x), uint32_t(p_output_size.y), uint32_t(p_context.camera_size.x), uint32_t(p_context.camera_size.y), p_mode, 0, reset_cascades, uint32_t(p_orthogonal), uint32_t(p_context.interpolation_size.x), uint32_t(p_context.interpolation_size.y) };
 	RD::DrawListID list = rd->draw_list_begin(p_framebuffer);
 	rd->draw_list_bind_render_pipeline(list, pipeline);
 	rd->draw_list_bind_uniform_set(list, camera_set, 0);
@@ -536,8 +539,11 @@ void DDGIEffect::_capture_diagnostics(Context &p_context) {
 	metadata["cascade_count"] = p_context.cascade_count;
 	metadata["rays_per_probe"] = p_context.rays_per_probe;
 	metadata["base_spacing"] = p_context.base_spacing;
-	metadata["camera_width"] = p_context.camera_size.x;
-	metadata["camera_height"] = p_context.camera_size.y;
+	metadata["camera_width"] = p_context.interpolation_size.x;
+	metadata["camera_height"] = p_context.interpolation_size.y;
+	metadata["internal_width"] = p_context.camera_size.x;
+	metadata["internal_height"] = p_context.camera_size.y;
+	metadata["camera_signal"] = "irradiance / pi, before material and ambient occlusion";
 	metadata["probe_axis"] = PROBE_AXIS;
 	metadata["texture_layer_order"] = "Y layers, Z rows, X columns; little-endian components";
 	Array cascades;

@@ -663,8 +663,8 @@ void RendererSceneRender::environment_set_raytracing(RID p_env, RSE::RaytracingR
 	environment_storage.environment_set_raytracing(p_env, p_mode, p_denoiser, p_rtxdi_local_light_samples, p_rtxdi_resolution);
 }
 
-void RendererSceneRender::environment_set_ddgi(RID p_env, bool p_enabled, int p_cascade_count, float p_probe_spacing, int p_rays_per_probe, int p_updates_per_frame) {
-	environment_storage.environment_set_ddgi(p_env, p_enabled, p_cascade_count, p_probe_spacing, p_rays_per_probe, p_updates_per_frame);
+void RendererSceneRender::environment_set_ddgi(RID p_env, bool p_enabled, int p_cascade_count, float p_probe_spacing, int p_rays_per_probe, int p_updates_per_frame, RSE::DDGIResolution p_resolution) {
+	environment_storage.environment_set_ddgi(p_env, p_enabled, p_cascade_count, p_probe_spacing, p_rays_per_probe, p_updates_per_frame, p_resolution);
 }
 
 void RendererSceneRender::environment_set_pathtracing(RID p_env, int p_samples_per_pixel, int p_max_bounces, bool p_accumulate) {

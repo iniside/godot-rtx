@@ -1854,6 +1854,11 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		const double scale = rt_settings.rtxdi_resolution == RSE::RTXDI_RESOLUTION_HALF_PIXELS ? Math::sqrt(0.5) : 0.5;
 		lighting_size = Size2i(MAX(1, int(Math::ceil(screen_size.x * scale))), MAX(1, int(Math::ceil(screen_size.y * scale))));
 	}
+	Size2i indirect_size = screen_size;
+	if (!path_traced && rt_settings.ddgi_resolution != RSE::DDGI_RESOLUTION_FULL) {
+		const double scale = rt_settings.ddgi_resolution == RSE::DDGI_RESOLUTION_HALF_PIXELS ? Math::sqrt(0.5) : 0.5;
+		indirect_size = Size2i(MAX(1, int(Math::ceil(screen_size.x * scale))), MAX(1, int(Math::ceil(screen_size.y * scale))));
+	}
 	const bool using_taa = rb->get_use_taa();
 	const Scale3DMode scale_type = _resolve_scale_3d_mode(rb);
 	const bool using_upscaling = scale_type != SCALE_3D_NONE;
@@ -2105,8 +2110,9 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 			RENDER_TIMESTAMP("DDGI Probe Lighting");
 			ERR_FAIL_COND_MSG(!raytracing->_render_ddgi(rt_state, frame.scene_data, frame.radiance), "DDGI probe lighting failed.");
 			RENDER_TIMESTAMP("DDGI Camera Irradiance");
-			ERR_FAIL_COND_MSG(!raytracing->ddgi_effect->render_camera(*rt_state->ddgi, frame.scene_data, rt_state->frame_constants_buffer, frame.surface, frame.depth, rb->get_internal_size(), frame.orthogonal), "DDGI camera interpolation failed.");
+			ERR_FAIL_COND_MSG(!raytracing->ddgi_effect->render_camera(*rt_state->ddgi, frame.scene_data, rt_state->frame_constants_buffer, frame.surface, frame.depth, screen_size, indirect_size, frame.orthogonal), "DDGI camera interpolation failed.");
 			frame.indirect_diffuse = rt_state->ddgi->indirect_radiance;
+			frame.indirect_size = rt_state->ddgi->interpolation_size;
 		}
 	}
 	RENDER_TIMESTAMP("Camera HDR Composition");

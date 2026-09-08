@@ -82,6 +82,12 @@ public:
 		RTXDI_RESOLUTION_QUARTER_PIXELS,
 	};
 
+	enum DDGIResolution {
+		DDGI_RESOLUTION_FULL,
+		DDGI_RESOLUTION_HALF_PIXELS,
+		DDGI_RESOLUTION_QUARTER_PIXELS,
+	};
+
 	enum RaytracingDenoiser {
 		RAYTRACING_DENOISER_NRD,
 		RAYTRACING_DENOISER_DLSS_RR,
@@ -171,6 +177,7 @@ private:
 	RaytracingDenoiser raytracing_denoiser = RAYTRACING_DENOISER_NRD;
 	int rtxdi_local_light_samples = 8;
 	RTXDIResolution rtxdi_resolution = RTXDI_RESOLUTION_FULL;
+	DDGIResolution ddgi_resolution = DDGI_RESOLUTION_FULL;
 	bool ddgi_enabled = true;
 	int ddgi_cascade_count = 4;
 	float ddgi_probe_spacing = 2.0;
@@ -365,6 +372,8 @@ public:
 	RTXDIResolution get_rtxdi_resolution() const;
 	void set_rtxdi_local_light_samples(int p_value);
 	int get_rtxdi_local_light_samples() const;
+	void set_ddgi_resolution(DDGIResolution p_value);
+	DDGIResolution get_ddgi_resolution() const;
 	void set_ddgi_enabled(bool p_value);
 	bool is_ddgi_enabled() const;
 	void set_ddgi_cascade_count(int p_value);
@@ -520,6 +529,7 @@ VARIANT_ENUM_CAST(Environment::ToneMapper)
 VARIANT_ENUM_CAST(Environment::RaytracingRenderingMode)
 VARIANT_ENUM_CAST(Environment::RaytracingDenoiser)
 VARIANT_ENUM_CAST(Environment::RTXDIResolution)
+VARIANT_ENUM_CAST(Environment::DDGIResolution)
 VARIANT_ENUM_CAST(Environment::SDFGIYScale)
 VARIANT_ENUM_CAST(Environment::GlowBlendMode)
 VARIANT_ENUM_CAST(Environment::FogMode)

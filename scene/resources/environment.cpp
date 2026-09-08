@@ -523,6 +523,19 @@ int Environment::get_rtxdi_local_light_samples() const {
 	return rtxdi_local_light_samples;
 }
 
+void Environment::set_ddgi_resolution(DDGIResolution p_value) {
+	ERR_FAIL_COND(p_value < DDGI_RESOLUTION_FULL || p_value > DDGI_RESOLUTION_QUARTER_PIXELS);
+	if (ddgi_resolution == p_value) {
+		return;
+	}
+	ddgi_resolution = p_value;
+	_update_ddgi();
+}
+
+Environment::DDGIResolution Environment::get_ddgi_resolution() const {
+	return ddgi_resolution;
+}
+
 void Environment::set_ddgi_enabled(bool p_value) {
 	if (ddgi_enabled == p_value) {
 		return;
@@ -633,7 +646,7 @@ void Environment::_update_raytracing() {
 }
 
 void Environment::_update_ddgi() {
-	RS::get_singleton()->environment_set_ddgi(environment, ddgi_enabled, ddgi_cascade_count, ddgi_probe_spacing, ddgi_rays_per_probe, ddgi_updates_per_frame);
+	RS::get_singleton()->environment_set_ddgi(environment, ddgi_enabled, ddgi_cascade_count, ddgi_probe_spacing, ddgi_rays_per_probe, ddgi_updates_per_frame, RSE::DDGIResolution(ddgi_resolution));
 }
 
 void Environment::_update_pathtracing() {
@@ -1440,6 +1453,8 @@ void Environment::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_rtxdi_resolution"), &Environment::get_rtxdi_resolution);
 	ClassDB::bind_method(D_METHOD("set_rtxdi_local_light_samples", "value"), &Environment::set_rtxdi_local_light_samples);
 	ClassDB::bind_method(D_METHOD("get_rtxdi_local_light_samples"), &Environment::get_rtxdi_local_light_samples);
+	ClassDB::bind_method(D_METHOD("set_ddgi_resolution", "value"), &Environment::set_ddgi_resolution);
+	ClassDB::bind_method(D_METHOD("get_ddgi_resolution"), &Environment::get_ddgi_resolution);
 	ClassDB::bind_method(D_METHOD("set_ddgi_enabled", "value"), &Environment::set_ddgi_enabled);
 	ClassDB::bind_method(D_METHOD("is_ddgi_enabled"), &Environment::is_ddgi_enabled);
 	ClassDB::bind_method(D_METHOD("set_ddgi_cascade_count", "value"), &Environment::set_ddgi_cascade_count);
@@ -1465,6 +1480,7 @@ void Environment::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "rtxdi_local_light_samples", PROPERTY_HINT_RANGE, "1,32,1"), "set_rtxdi_local_light_samples", "get_rtxdi_local_light_samples");
 	ADD_SUBGROUP("DDGI", "ddgi_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "ddgi_enabled"), "set_ddgi_enabled", "is_ddgi_enabled");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "ddgi_resolution", PROPERTY_HINT_ENUM, "Full,Half Pixels,Quarter Pixels"), "set_ddgi_resolution", "get_ddgi_resolution");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "ddgi_cascade_count", PROPERTY_HINT_RANGE, "1,6,1"), "set_ddgi_cascade_count", "get_ddgi_cascade_count");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "ddgi_probe_spacing", PROPERTY_HINT_RANGE, "0.01,1024,0.01,suffix:m"), "set_ddgi_probe_spacing", "get_ddgi_probe_spacing");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "ddgi_rays_per_probe", PROPERTY_HINT_ENUM, "64:64,128:128,256:256"), "set_ddgi_rays_per_probe", "get_ddgi_rays_per_probe");
@@ -1482,6 +1498,9 @@ void Environment::_bind_methods() {
 	BIND_ENUM_CONSTANT(RTXDI_RESOLUTION_FULL);
 	BIND_ENUM_CONSTANT(RTXDI_RESOLUTION_HALF_PIXELS);
 	BIND_ENUM_CONSTANT(RTXDI_RESOLUTION_QUARTER_PIXELS);
+	BIND_ENUM_CONSTANT(DDGI_RESOLUTION_FULL);
+	BIND_ENUM_CONSTANT(DDGI_RESOLUTION_HALF_PIXELS);
+	BIND_ENUM_CONSTANT(DDGI_RESOLUTION_QUARTER_PIXELS);
 
 	// Background
 

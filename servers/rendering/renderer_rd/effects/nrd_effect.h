@@ -77,6 +77,7 @@ public:
 		RID noisy_diffuse;
 		RID noisy_specular;
 		RID indirect_diffuse;
+		Size2i indirect_size;
 		RID camera_radiance;
 		RID reflection_hit_distance;
 		RID scene_data;

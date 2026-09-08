@@ -221,7 +221,9 @@ bool NRDEffect::_process_frame(Context *p_context, const Frame &p_frame, uint32_
 		uint32_t padding;
 		uint32_t lighting_width;
 		uint32_t lighting_height;
-	} push = { uint32_t(p_context->frame_size.x), uint32_t(p_context->frame_size.y), p_frame.orthogonal, p_frame.fog_enabled, p_frame.fog_inverse_length, p_frame.fog_spread, p_frame.fog_legacy_blending, p_frame.separate_specular.is_valid(), p_frame.environment_energy, p_frame.indirect_diffuse.is_valid(), p_frame.camera_radiance.is_valid(), p_frame.camera_radiance.is_valid() && !p_denoised, p_frame.reflection_hit_distance.is_valid(), 0, uint32_t(p_context->size.x), uint32_t(p_context->size.y) };
+		uint32_t indirect_width;
+		uint32_t indirect_height;
+	} push = { uint32_t(p_context->frame_size.x), uint32_t(p_context->frame_size.y), p_frame.orthogonal, p_frame.fog_enabled, p_frame.fog_inverse_length, p_frame.fog_spread, p_frame.fog_legacy_blending, p_frame.separate_specular.is_valid(), p_frame.environment_energy, p_frame.indirect_diffuse.is_valid(), p_frame.camera_radiance.is_valid(), p_frame.camera_radiance.is_valid() && !p_denoised, p_frame.reflection_hit_distance.is_valid(), 0, uint32_t(p_context->size.x), uint32_t(p_context->size.y), uint32_t(p_frame.indirect_size.x), uint32_t(p_frame.indirect_size.y) };
 	RD *rd = RD::get_singleton();
 	RENDER_TIMESTAMP(compose ? "NRD Compose" : (pass == 2 ? "NRD Prepare Lighting Guides" : "NRD Prepare Guides"));
 	RD::ComputeListID list = rd->compute_list_begin();

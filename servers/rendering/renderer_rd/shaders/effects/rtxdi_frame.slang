@@ -36,6 +36,7 @@ struct Params {
 	uint reflection_hit_distance_enabled;
 	uint pad;
 	uint2 lighting_size;
+	uint2 indirect_size;
 };
 [[vk::push_constant]] ConstantBuffer<Params> params;
 
@@ -111,64 +112,8 @@ struct DirectionalLights {
 [[vk::binding(16, 0)]] Texture2D<float4> indirect_diffuse;
 [[vk::binding(17, 0)]] Texture2D<float4> camera_radiance;
 
-void reconstruct_radiance(uint2 pixel, SurfaceData surface, float3 view_position, out float3 diffuse, out float3 specular) {
-	if (all(params.lighting_size == params.size)) {
-		diffuse = diffuse_radiance.Load(int3(pixel, 0)).rgb;
-		specular = specular_radiance.Load(int3(pixel, 0)).rgb;
-		return;
-	}
-	float2 lighting_position = rtxdi_lighting_position(float2(pixel) + 0.5, params.lighting_size, params.size) - 0.5;
-	int2 nearest = int2(floor(lighting_position + 0.5));
-	float3 view_normal = mul(surface.geometry_normal, (float3x3)decode_inverse_view(scene.data));
-	diffuse = float3(0.0);
-	specular = float3(0.0);
-	float diffuse_weight = 0.0;
-	float specular_weight = 0.0;
-	float best_score = 0.0;
-	float3 fallback_diffuse = float3(0.0);
-	float3 fallback_specular = float3(0.0);
-	for (int y = -1; y <= 1; y++) {
-		for (int x = -1; x <= 1; x++) {
-			int2 tap = nearest + int2(x, y);
-			if (any(tap < int2(0)) || any(tap >= int2(params.lighting_size))) {
-				continue;
-			}
-			uint2 representative = rtxdi_surface_pixel(uint2(tap), params.lighting_size, params.size);
-			int3 address = int3(representative, 0);
-			uint2 classification = surface_classification.Load(address);
-			float depth = surface_depth.Load(address);
-			if (classification.x != surface.material.flags || classification.y != surface.layer_mask || depth <= 0.0) {
-				continue;
-			}
-			float4 shading = surface_shading.Load(address);
-			float3 tap_normal = oct_to_vec3(shading.xy * 2.0 - 1.0);
-			float normal_weight = pow(saturate(dot(surface.normal, tap_normal)), 32.0);
-			float2 uv = (float2(representative) + 0.5) / float2(params.size);
-			float4 tap_view = mul(float4(uv * 2.0 - 1.0, depth, 1.0), scene.data.inv_projection_matrix);
-			tap_view /= tap_view.w;
-			float plane_distance = abs(dot(tap_view.xyz - view_position, view_normal));
-			float depth_tolerance = max(0.005, abs(view_position.z) * 0.002);
-			float2 offset = float2(tap) - lighting_position;
-			float spatial_weight = exp2(-dot(offset, offset));
-			float weight = spatial_weight * normal_weight * exp2(-plane_distance / depth_tolerance);
-			float roughness_weight = exp2(-abs(shading.z - surface.material.roughness) * 32.0);
-			float3 tap_diffuse = diffuse_radiance.Load(int3(tap, 0)).rgb;
-			float3 tap_specular = specular_radiance.Load(int3(tap, 0)).rgb;
-			diffuse += tap_diffuse * weight;
-			specular += tap_specular * weight * roughness_weight;
-			diffuse_weight += weight;
-			specular_weight += weight * roughness_weight;
-			float score = spatial_weight * normal_weight / (1.0 + plane_distance / depth_tolerance);
-			if (score > best_score) {
-				best_score = score;
-				fallback_diffuse = tap_diffuse;
-				fallback_specular = tap_specular;
-			}
-		}
-	}
-	diffuse = diffuse_weight > 1e-6 ? diffuse / diffuse_weight : fallback_diffuse;
-	specular = specular_weight > 1e-6 ? specular / specular_weight : fallback_specular;
-}
+#define RECONSTRUCT_DIRECT_LIGHTING
+#include "rt_lighting_reconstruction_inc.slang"
 
 float3 fog_sample_radiance(float3 view_direction, float mip_level) {
 	float3 sky_direction = mul(view_direction, scene.data.radiance_inverse_xform);
@@ -304,11 +249,15 @@ void main(uint3 invocation : SV_DispatchThreadID) {
 		rtxdi_nrd_material_factors(normal, surface.view_direction, surface.material.base_color * (1.0 - surface.material.metallic), lerp(float3(0.08 * surface.material.specular), surface.material.base_color, surface.material.metallic), surface.material.roughness, diffuse_factor, specular_factor);
 		float3 diffuse_lighting;
 		float3 specular_lighting;
-		reconstruct_radiance(pixel, surface, view_position.xyz, diffuse_lighting, specular_lighting);
-		output_color += diffuse_lighting * diffuse_factor * scene.data.emissive_exposure_normalization;
-		if (params.ddgi_enabled != 0u) {
-			output_color += indirect_diffuse.Load(address).rgb * scene.data.emissive_exposure_normalization;
+		float3 indirect_lighting;
+		float3 view_normal = mul(surface.geometry_normal, (float3x3)inverse_view);
+		bool shared_grid = params.ddgi_enabled != 0u && all(params.indirect_size == params.lighting_size);
+		reconstruct_lighting(pixel, params.size, params.lighting_size, surface, view_position.xyz, view_normal, true, shared_grid, diffuse_lighting, specular_lighting, indirect_lighting);
+		if (params.ddgi_enabled != 0u && !shared_grid) {
+			float3 unused_diffuse, unused_specular;
+			reconstruct_lighting(pixel, params.size, params.indirect_size, surface, view_position.xyz, view_normal, false, true, unused_diffuse, unused_specular, indirect_lighting);
 		}
+		output_color += (diffuse_lighting + indirect_lighting * surface.material.ambient_occlusion) * diffuse_factor * scene.data.emissive_exposure_normalization;
 		specular_color = specular_lighting * specular_factor * scene.data.emissive_exposure_normalization;
 	}
 	float4 fog = float4(0.0, 0.0, 0.0, 1.0);

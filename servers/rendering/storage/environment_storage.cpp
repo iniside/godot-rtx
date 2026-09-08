@@ -885,26 +885,32 @@ void RendererEnvironmentStorage::environment_set_raytracing(RID p_env, RSE::Rayt
 	}
 }
 
-void RendererEnvironmentStorage::environment_set_ddgi(RID p_env, bool p_enabled, int p_cascade_count, float p_probe_spacing, int p_rays_per_probe, int p_updates_per_frame) {
+void RendererEnvironmentStorage::environment_set_ddgi(RID p_env, bool p_enabled, int p_cascade_count, float p_probe_spacing, int p_rays_per_probe, int p_updates_per_frame, RSE::DDGIResolution p_resolution) {
 	Environment *env = environment_owner.get_or_null(p_env);
 	ERR_FAIL_NULL(env);
 	ERR_FAIL_COND(p_cascade_count < 1 || p_cascade_count > 6);
 	ERR_FAIL_COND(!Math::is_finite(p_probe_spacing) || p_probe_spacing < 0.01f || p_probe_spacing > 1024.0f);
 	ERR_FAIL_COND(p_rays_per_probe != 64 && p_rays_per_probe != 128 && p_rays_per_probe != 256);
 	ERR_FAIL_COND(p_updates_per_frame < 1 || p_updates_per_frame > p_cascade_count);
+	ERR_FAIL_COND(p_resolution < RSE::DDGI_RESOLUTION_FULL || p_resolution > RSE::DDGI_RESOLUTION_QUARTER_PIXELS);
 	RaytracingSettings &settings = env->raytracing;
-	if (settings.ddgi_enabled == p_enabled && settings.ddgi_cascade_count == p_cascade_count && settings.ddgi_probe_spacing == p_probe_spacing && settings.ddgi_rays_per_probe == p_rays_per_probe && settings.ddgi_updates_per_frame == p_updates_per_frame) {
+	const bool probe_settings_changed = settings.ddgi_enabled != p_enabled || settings.ddgi_cascade_count != p_cascade_count || settings.ddgi_probe_spacing != p_probe_spacing || settings.ddgi_rays_per_probe != p_rays_per_probe || settings.ddgi_updates_per_frame != p_updates_per_frame;
+	const bool resolution_changed = settings.ddgi_resolution != p_resolution;
+	if (!probe_settings_changed && !resolution_changed) {
 		return;
 	}
 	if (settings.ddgi_cascade_count != p_cascade_count || settings.ddgi_probe_spacing != p_probe_spacing || settings.ddgi_rays_per_probe != p_rays_per_probe) {
 		settings.ddgi_layout_generation++;
 	}
+	settings.ddgi_resolution = p_resolution;
 	settings.ddgi_enabled = p_enabled;
 	settings.ddgi_cascade_count = p_cascade_count;
 	settings.ddgi_probe_spacing = p_probe_spacing;
 	settings.ddgi_rays_per_probe = p_rays_per_probe;
 	settings.ddgi_updates_per_frame = p_updates_per_frame;
-	settings.ddgi_generation++;
+	if (probe_settings_changed || (resolution_changed && p_enabled && settings.raytracing_rendering_mode == RSE::RAYTRACING_RENDERING_MODE_HYBRID)) {
+		settings.ddgi_generation++;
+	}
 }
 
 void RendererEnvironmentStorage::environment_set_pathtracing(RID p_env, int p_samples_per_pixel, int p_max_bounces, bool p_accumulate) {

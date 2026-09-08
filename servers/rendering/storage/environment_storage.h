@@ -40,6 +40,7 @@ public:
 		RSE::RaytracingDenoiser raytracing_denoiser = RSE::RAYTRACING_DENOISER_NRD;
 		int rtxdi_local_light_samples = 8;
 		RSE::RTXDIResolution rtxdi_resolution = RSE::RTXDI_RESOLUTION_FULL;
+		RSE::DDGIResolution ddgi_resolution = RSE::DDGI_RESOLUTION_FULL;
 		bool ddgi_enabled = true;
 		int ddgi_cascade_count = 4;
 		float ddgi_probe_spacing = 2.0;
@@ -336,7 +337,7 @@ public:
 	RaytracingSettings environment_get_raytracing_settings(RID p_env) const;
 
 	void environment_set_raytracing(RID p_env, RSE::RaytracingRenderingMode p_mode, RSE::RaytracingDenoiser p_denoiser, int p_rtxdi_local_light_samples, RSE::RTXDIResolution p_rtxdi_resolution);
-	void environment_set_ddgi(RID p_env, bool p_enabled, int p_cascade_count, float p_probe_spacing, int p_rays_per_probe, int p_updates_per_frame);
+	void environment_set_ddgi(RID p_env, bool p_enabled, int p_cascade_count, float p_probe_spacing, int p_rays_per_probe, int p_updates_per_frame, RSE::DDGIResolution p_resolution);
 	void environment_set_pathtracing(RID p_env, int p_samples_per_pixel, int p_max_bounces, bool p_accumulate);
 
 	// SDFGI

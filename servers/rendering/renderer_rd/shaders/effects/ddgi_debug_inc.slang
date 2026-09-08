@@ -4,7 +4,7 @@
 #include "ddgi_camera_inc.slang"
 #include "ddgi_probe_inc.slang"
 
-[[vk::binding(9, 0)]] Texture2D<float4> camera_indirect;
+[[vk::binding(9, 0)]] Texture2D<float4> indirect_diffuse;
 [[vk::binding(0, 1)]] Texture2DArray<uint> probe_update_frame;
 [[vk::binding(1, 1)]] StructuredBuffer<uint> probe_reset_mask;
 
@@ -15,6 +15,7 @@ struct DebugParams {
 	uint cascade;
 	uint reset_cascades;
 	uint orthogonal;
+	uint2 interpolation_size;
 };
 [[vk::push_constant]] ConstantBuffer<DebugParams> params;
 

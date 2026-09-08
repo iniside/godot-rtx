@@ -1361,8 +1361,9 @@
 			<param index="3" name="probe_spacing" type="float" />
 			<param index="4" name="rays_per_probe" type="int" />
 			<param index="5" name="updates_per_frame" type="int" />
+			<param index="6" name="resolution" type="int" enum="RenderingServer.DDGIResolution" />
 			<description>
-				Sets the complete camera-following DDGI configuration for hybrid rendering. Cascade count must be 1 to 6, spacing finite and 0.01 to 1024.0, rays per probe 64, 128 or 256, and updates per frame 1 to cascade count. Invalid groups leave the configuration unchanged. Probe history belongs to each mono viewport. Ignored in path-traced mode. See [member Environment.ddgi_enabled].
+				Sets the complete camera-following DDGI configuration for hybrid rendering. Cascade count must be 1 to 6, spacing finite and 0.01 to 1024.0, rays per probe 64, 128 or 256, and updates per frame 1 to cascade count. Invalid groups leave the configuration unchanged. Probe history belongs to each mono viewport. Resolution controls only screen-space probe interpolation and leaves probe history and updates unchanged. Ignored in path-traced mode. See [member Environment.ddgi_enabled].
 			</description>
 		</method>
 		<method name="environment_set_fog">
@@ -4814,6 +4815,15 @@
 		</constant>
 		<constant name="RTXDI_RESOLUTION_QUARTER_PIXELS" value="2" enum="RTXDIResolution">
 			Approximately one quarter of the viewport rendering pixel count for RTXDI and NRD.
+		</constant>
+		<constant name="DDGI_RESOLUTION_FULL" value="0" enum="DDGIResolution">
+			Interpolate DDGI probes at the viewport's internal rendering resolution.
+		</constant>
+		<constant name="DDGI_RESOLUTION_HALF_PIXELS" value="1" enum="DDGIResolution">
+			Interpolate DDGI probes using approximately half as many screen pixels, scaling each dimension by the square root of one half.
+		</constant>
+		<constant name="DDGI_RESOLUTION_QUARTER_PIXELS" value="2" enum="DDGIResolution">
+			Interpolate DDGI probes using half of each screen dimension, for approximately one quarter as many pixels.
 		</constant>
 		<constant name="NO_INDEX_ARRAY" value="-1">
 			Marks an error that shows that the index array is empty.
