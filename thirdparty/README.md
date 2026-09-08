@@ -1012,6 +1012,9 @@ Patches:
 
 - `0001-glsl-bool-bit-conversions.patch` adds explicit GLSL conversions and
   the GLSL spelling for HLSL's reciprocal-square-root intrinsic.
+- `0003-pcg-random-sampler.patch` replaces per-sample MurmurHash with the
+  32-bit PCG RXS-M-XS generator, retaining sampler entry points and float range.
+  Constants follow the [PCG reference implementation](https://github.com/imneme/pcg-cpp/blob/master/include/pcg_random.hpp).
 
 
 ## rtxgi_ddgi

@@ -1,0 +1,68 @@
+--- a/Include/Rtxdi/Utils/RandomSamplerState.hlsli
++++ b/Include/Rtxdi/Utils/RandomSamplerState.hlsli
+@@ -22,6 +22,13 @@
+     uint index;
+ };
+ 
++uint RTXDI_pcg_hash(uint value)
++{
++    uint state = value * 747796405u + 2891336453u;
++    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
++    return (word >> 22u) ^ word;
++}
++
+ // Initialized the random sampler for a given pixel or tile index.
+ // The pass parameter is provided to help generate different RNG sequences
+ // for different resampling passes, which is important for image quality.
+@@ -34,49 +41,16 @@
+     uint linearPixelIndex = RTXDI_ZCurveToLinearIndex(pixelPos);
+ 
+     state.index = 1;
+-    state.seed = RTXDI_JenkinsHash(linearPixelIndex) + frameIndex + (pass * RTXDI_RANDOM_SAMPLER_PRIME_CONSTANT);
++    state.seed = RTXDI_pcg_hash(RTXDI_JenkinsHash(linearPixelIndex) + frameIndex + (pass * RTXDI_RANDOM_SAMPLER_PRIME_CONSTANT));
+ 
+     return state;
+ 
+ }
+ 
+-uint RTXDI_murmur3(inout RTXDI_RandomSamplerState r)
+-{
+-#define ROT32(x, y) ((x << y) | (x >> (32 - y)))
+-
+-    // https://en.wikipedia.org/wiki/MurmurHash
+-    uint c1 = 0xcc9e2d51;
+-    uint c2 = 0x1b873593;
+-    uint r1 = 15;
+-    uint r2 = 13;
+-    uint m = 5;
+-    uint n = 0xe6546b64;
+-
+-    uint hash = r.seed;
+-    uint k = r.index++;
+-    k *= c1;
+-    k = ROT32(k, r1);
+-    k *= c2;
+-
+-    hash ^= k;
+-    hash = ROT32(hash, r2) * m + n;
+-
+-    hash ^= 4;
+-    hash ^= (hash >> 16);
+-    hash *= 0x85ebca6b;
+-    hash ^= (hash >> 13);
+-    hash *= 0xc2b2ae35;
+-    hash ^= (hash >> 16);
+-
+-#undef ROT32
+-
+-    return hash;
+-}
+-
+ // Draws a random number X from the sampler, so that (0 <= X < 1).
+ float RTXDI_GetNextRandom(inout RTXDI_RandomSamplerState rng)
+ {
+-    uint v = RTXDI_murmur3(rng);
++    uint v = RTXDI_pcg_hash(rng.seed + rng.index++);
+     const uint one = asuint(1.f);
+     const uint mask = (1 << 23) - 1;
+     return asfloat((mask & v) | one) - 1.f;
