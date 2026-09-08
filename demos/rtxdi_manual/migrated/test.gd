@@ -169,11 +169,14 @@ func _prepare_ddgi_sequence() -> void:
 
 func _run_ddgi_sequence() -> void:
 	for sequence_frame in DDGI_SEQUENCE_FRAMES:
-		_apply_ddgi_sequence_pose(sequence_frame)
+		var hold_frames := (DDGI_SEQUENCE_FRAMES - DDGI_MOTION_FRAMES * 2) / 2
+		var pose_frame := mini(sequence_frame, DDGI_MOTION_FRAMES - 1) if sequence_frame < DDGI_MOTION_FRAMES + hold_frames else sequence_frame - hold_frames
+		var phase := "destination_hold" if sequence_frame >= DDGI_MOTION_FRAMES and sequence_frame < DDGI_MOTION_FRAMES + hold_frames else _ddgi_sequence_phase(pose_frame)
+		_apply_ddgi_sequence_pose(pose_frame)
 		await RenderingServer.frame_post_draw
 		var frame_path := "%s-%03d.png" % [capture_path.get_basename(), sequence_frame]
 		var result := get_viewport().get_texture().get_image().save_png(frame_path)
-		print("MIGRATED_DDGI_FRAME sequence=", sequence_frame, " phase=", _ddgi_sequence_phase(sequence_frame), " engine_frame=", Engine.get_frames_drawn(), " wall_unix=", Time.get_unix_time_from_system(), " frame_delta=", last_process_delta, " camera_position=", camera.global_position, " camera_rotation=", camera.global_rotation, " capture=", ProjectSettings.globalize_path(frame_path), " result=", result, " motion=", ddgi_motion, " ", _runtime_settings_log())
+		print("MIGRATED_DDGI_FRAME sequence=", sequence_frame, " phase=", phase, " engine_frame=", Engine.get_frames_drawn(), " wall_unix=", Time.get_unix_time_from_system(), " frame_delta=", last_process_delta, " camera_position=", camera.global_position, " camera_rotation=", camera.global_rotation, " capture=", ProjectSettings.globalize_path(frame_path), " result=", result, " motion=", ddgi_motion, " ", _runtime_settings_log())
 	_restore_ddgi_sequence()
 	print("MIGRATED_DDGI_SEQUENCE_DONE frames=", DDGI_SEQUENCE_FRAMES, " final_position=", camera.global_position, " final_rotation=", camera.global_rotation)
 	get_tree().quit()
