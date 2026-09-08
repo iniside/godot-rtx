@@ -352,6 +352,7 @@ void RenderRTXDI::render(const RenderRTXDISurfaceResources &p_surface, RTViewpor
 	static const char *const pass_timestamps[PASS_MAX] = { "RTXDI Initial Sampling", "RTXDI Temporal Resampling", "RTXDI Spatial Resampling", "RTXDI Final Shading" };
 	for (uint32_t pass = 0; pass < PASS_MAX; pass++) {
 		RENDER_TIMESTAMP(pass_timestamps[pass]);
+		rd->draw_command_begin_label(Span<char>(pass_timestamps[pass], strlen(pass_timestamps[pass])));
 		RD::ComputeListID compute_list = rd->compute_list_begin();
 		raytracing->register_compute_buffer_dependencies(compute_list);
 		rd->compute_list_bind_compute_pipeline(compute_list, shader.pipeline[pass + variant_offset]);
@@ -359,6 +360,7 @@ void RenderRTXDI::render(const RenderRTXDISurfaceResources &p_surface, RTViewpor
 		rd->compute_list_bind_uniform_set(compute_list, bindless_uniform_set, 1);
 		rd->compute_list_dispatch_threads(compute_list, p_surface.size.x, p_surface.size.y, 1);
 		rd->compute_list_end();
+		rd->draw_command_end_label();
 		rd->free_rid(uniform_sets[pass]);
 	}
 	RENDER_TIMESTAMP("RTXDI Dispatches Complete");
