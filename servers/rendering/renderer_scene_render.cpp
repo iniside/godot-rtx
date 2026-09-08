@@ -659,8 +659,8 @@ float RendererSceneRender::environment_get_ssil_normal_rejection(RID p_env) cons
 	return environment_storage.environment_get_ssil_normal_rejection(p_env);
 }
 
-void RendererSceneRender::environment_set_raytracing(RID p_env, RSE::RaytracingRenderingMode p_mode, RSE::RaytracingDenoiser p_denoiser, int p_rtxdi_local_light_samples) {
-	environment_storage.environment_set_raytracing(p_env, p_mode, p_denoiser, p_rtxdi_local_light_samples);
+void RendererSceneRender::environment_set_raytracing(RID p_env, RSE::RaytracingRenderingMode p_mode, RSE::RaytracingDenoiser p_denoiser, int p_rtxdi_local_light_samples, RSE::RTXDIResolution p_rtxdi_resolution) {
+	environment_storage.environment_set_raytracing(p_env, p_mode, p_denoiser, p_rtxdi_local_light_samples, p_rtxdi_resolution);
 }
 
 void RendererSceneRender::environment_set_ddgi(RID p_env, bool p_enabled, int p_cascade_count, float p_probe_spacing, int p_rays_per_probe, int p_updates_per_frame) {

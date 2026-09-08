@@ -5,6 +5,7 @@
 #define MAX_VIEWS 2
 #include "../scene_data_inc.slang"
 #include "../surface_data_inc.slang"
+#include "../rtxdi_resolution_inc.slang"
 #include "../raytracing/rtxdi_nrd_inc.slang"
 
 struct SceneDataBlock {
@@ -33,9 +34,8 @@ struct Params {
 	uint camera_radiance_enabled;
 	uint camera_radiance_full;
 	uint reflection_hit_distance_enabled;
-	uint pad0;
-	uint pad1;
-	uint pad2;
+	uint pad;
+	uint2 lighting_size;
 };
 [[vk::push_constant]] ConstantBuffer<Params> params;
 
@@ -59,6 +59,7 @@ float4x4 decode_inverse_view(SceneData data) {
 [[vk::binding(14, 0), vk::image_format("rgba16f")]] RWTexture2D<float4> rr_normal_roughness;
 [[vk::binding(15, 0), vk::image_format("r16f")]] RWTexture2D<float> rr_specular_hit_distance;
 [[vk::binding(16, 0)]] Texture2D<float> reflection_hit_distance;
+[[vk::binding(17, 0), vk::image_format("rgba16f")]] RWTexture2D<float4> nrd_motion;
 #else
 [[vk::binding(8, 0)]] Texture2D<float4> diffuse_radiance;
 [[vk::binding(9, 0)]] Texture2D<float4> specular_radiance;
@@ -110,6 +111,65 @@ struct DirectionalLights {
 [[vk::binding(16, 0)]] Texture2D<float4> indirect_diffuse;
 [[vk::binding(17, 0)]] Texture2D<float4> camera_radiance;
 
+void reconstruct_radiance(uint2 pixel, SurfaceData surface, float3 view_position, out float3 diffuse, out float3 specular) {
+	if (all(params.lighting_size == params.size)) {
+		diffuse = diffuse_radiance.Load(int3(pixel, 0)).rgb;
+		specular = specular_radiance.Load(int3(pixel, 0)).rgb;
+		return;
+	}
+	float2 lighting_position = rtxdi_lighting_position(float2(pixel) + 0.5, params.lighting_size, params.size) - 0.5;
+	int2 nearest = int2(floor(lighting_position + 0.5));
+	float3 view_normal = mul(surface.geometry_normal, (float3x3)decode_inverse_view(scene.data));
+	diffuse = float3(0.0);
+	specular = float3(0.0);
+	float diffuse_weight = 0.0;
+	float specular_weight = 0.0;
+	float best_score = 0.0;
+	float3 fallback_diffuse = float3(0.0);
+	float3 fallback_specular = float3(0.0);
+	for (int y = -1; y <= 1; y++) {
+		for (int x = -1; x <= 1; x++) {
+			int2 tap = nearest + int2(x, y);
+			if (any(tap < int2(0)) || any(tap >= int2(params.lighting_size))) {
+				continue;
+			}
+			uint2 representative = rtxdi_surface_pixel(uint2(tap), params.lighting_size, params.size);
+			int3 address = int3(representative, 0);
+			uint2 classification = surface_classification.Load(address);
+			float depth = surface_depth.Load(address);
+			if (classification.x != surface.material.flags || classification.y != surface.layer_mask || depth <= 0.0) {
+				continue;
+			}
+			float4 shading = surface_shading.Load(address);
+			float3 tap_normal = oct_to_vec3(shading.xy * 2.0 - 1.0);
+			float normal_weight = pow(saturate(dot(surface.normal, tap_normal)), 32.0);
+			float2 uv = (float2(representative) + 0.5) / float2(params.size);
+			float4 tap_view = mul(float4(uv * 2.0 - 1.0, depth, 1.0), scene.data.inv_projection_matrix);
+			tap_view /= tap_view.w;
+			float plane_distance = abs(dot(tap_view.xyz - view_position, view_normal));
+			float depth_tolerance = max(0.005, abs(view_position.z) * 0.002);
+			float2 offset = float2(tap) - lighting_position;
+			float spatial_weight = exp2(-dot(offset, offset));
+			float weight = spatial_weight * normal_weight * exp2(-plane_distance / depth_tolerance);
+			float roughness_weight = exp2(-abs(shading.z - surface.material.roughness) * 32.0);
+			float3 tap_diffuse = diffuse_radiance.Load(int3(tap, 0)).rgb;
+			float3 tap_specular = specular_radiance.Load(int3(tap, 0)).rgb;
+			diffuse += tap_diffuse * weight;
+			specular += tap_specular * weight * roughness_weight;
+			diffuse_weight += weight;
+			specular_weight += weight * roughness_weight;
+			float score = spatial_weight * normal_weight / (1.0 + plane_distance / depth_tolerance);
+			if (score > best_score) {
+				best_score = score;
+				fallback_diffuse = tap_diffuse;
+				fallback_specular = tap_specular;
+			}
+		}
+	}
+	diffuse = diffuse_weight > 1e-6 ? diffuse / diffuse_weight : fallback_diffuse;
+	specular = specular_weight > 1e-6 ? specular / specular_weight : fallback_specular;
+}
+
 float3 fog_sample_radiance(float3 view_direction, float mip_level) {
 	float3 sky_direction = mul(view_direction, scene.data.radiance_inverse_xform);
 	float2 uv = vec3_to_oct_with_border(normalize(sky_direction), float2(scene.data.radiance_border_size, 1.0 - 2.0 * scene.data.radiance_border_size));
@@ -154,11 +214,19 @@ float4 fog_process(float3 vertex) {
 [numthreads(8, 8, 1)]
 void main(uint3 invocation : SV_DispatchThreadID) {
 	uint2 pixel = invocation.xy;
+#ifdef MODE_PREPARE_LIGHTING
+	if (any(pixel >= params.lighting_size)) {
+		return;
+	}
+	uint2 surface_pixel = rtxdi_surface_pixel(pixel, params.lighting_size, params.size);
+#else
 	if (any(pixel >= params.size)) {
 		return;
 	}
-	int3 address = int3(pixel, 0);
-	float2 uv = (float2(pixel) + 0.5) / float2(params.size);
+	uint2 surface_pixel = pixel;
+#endif
+	int3 address = int3(surface_pixel, 0);
+	float2 uv = (float2(surface_pixel) + 0.5) / float2(params.size);
 	float depth = surface_depth.Load(address);
 	SurfaceBufferData packed;
 	packed.base = surface_base.Load(address);
@@ -185,8 +253,19 @@ void main(uint3 invocation : SV_DispatchThreadID) {
 	float3 normal = surface_valid ? surface.normal : float3(0.0, 0.0, 1.0);
 
 #ifdef MODE_PREPARE
-	nrd_normal_roughness[pixel] = NRD_FrontEnd_PackNormalAndRoughness(normal, surface.material.roughness, 0.0);
-	nrd_view_depth[pixel] = surface_valid && (flags & 2u) == 0u ? -view_position.z : 1e6;
+#ifdef MODE_PREPARE_LIGHTING
+	float4 packed_motion = surface_motion.Load(address);
+	float2 jitter_delta = (scene.previous.taa_jitter - scene.data.taa_jitter) * 0.5;
+	float2 previous_position = float2(surface_pixel) + 0.5 + packed_motion.xy + jitter_delta * float2(params.size);
+	packed_motion.xy = rtxdi_lighting_position(previous_position, params.lighting_size, params.size) - (float2(pixel) + 0.5) - jitter_delta * float2(params.lighting_size);
+	nrd_motion[pixel] = packed_motion;
+#else
+	if (all(params.lighting_size == params.size)) {
+#endif
+		nrd_normal_roughness[pixel] = NRD_FrontEnd_PackNormalAndRoughness(normal, surface.material.roughness, 0.0);
+		nrd_view_depth[pixel] = surface_valid && (flags & 2u) == 0u ? -view_position.z : 1e6;
+#ifndef MODE_PREPARE_LIGHTING
+	}
 	float2 motion;
 	if (surface_valid) {
 		motion = surface_motion.Load(address).xy / float2(params.size);
@@ -206,6 +285,7 @@ void main(uint3 invocation : SV_DispatchThreadID) {
 	rr_normal_roughness[pixel] = float4(normalize(normal), surface_valid ? saturate(surface.material.roughness) : 1.0);
 	float reflection_distance = lit_surface && params.reflection_hit_distance_enabled != 0u ? reflection_hit_distance.Load(address) : 0.0;
 	rr_specular_hit_distance[pixel] = isnan(reflection_distance) || isinf(reflection_distance) ? 0.0 : clamp(reflection_distance, 0.0, 65504.0);
+#endif
 #else
 	if (!surface_valid && params.camera_radiance_enabled == 0u) {
 		if (params.separate_specular != 0u) {
@@ -222,11 +302,14 @@ void main(uint3 invocation : SV_DispatchThreadID) {
 		float3 diffuse_factor;
 		float3 specular_factor;
 		rtxdi_nrd_material_factors(normal, surface.view_direction, surface.material.base_color * (1.0 - surface.material.metallic), lerp(float3(0.08 * surface.material.specular), surface.material.base_color, surface.material.metallic), surface.material.roughness, diffuse_factor, specular_factor);
-		output_color += diffuse_radiance.Load(address).rgb * diffuse_factor * scene.data.emissive_exposure_normalization;
+		float3 diffuse_lighting;
+		float3 specular_lighting;
+		reconstruct_radiance(pixel, surface, view_position.xyz, diffuse_lighting, specular_lighting);
+		output_color += diffuse_lighting * diffuse_factor * scene.data.emissive_exposure_normalization;
 		if (params.ddgi_enabled != 0u) {
 			output_color += indirect_diffuse.Load(address).rgb * scene.data.emissive_exposure_normalization;
 		}
-		specular_color = specular_radiance.Load(address).rgb * specular_factor * scene.data.emissive_exposure_normalization;
+		specular_color = specular_lighting * specular_factor * scene.data.emissive_exposure_normalization;
 	}
 	float4 fog = float4(0.0, 0.0, 0.0, 1.0);
 	bool fixed_fog = (scene.data.flags & SCENE_DATA_FLAGS_USE_FOG) != 0u;

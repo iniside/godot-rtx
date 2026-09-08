@@ -45,6 +45,7 @@ public:
 	struct Context {
 		nrd::Instance *instance = nullptr;
 		Size2i size;
+		Size2i frame_size;
 		LocalVector<RID> shaders;
 		LocalVector<RID> pipelines;
 		LocalVector<RID> permanent_pool;
@@ -52,6 +53,7 @@ public:
 		LocalVector<RID> constants;
 		RID normal_roughness;
 		RID view_depth;
+		RID motion;
 		RID diffuse;
 		RID specular;
 		RID rr_diffuse_albedo;
@@ -105,14 +107,14 @@ public:
 private:
 	RtxdiFrameShaderRD frame_shader;
 	RID shader_version;
-	RID frame_pipelines[2];
+	RID frame_pipelines[3];
 	RID samplers[2];
 
-	bool _process_frame(Context *p_context, const Frame &p_frame, bool p_compose, bool p_denoised = false);
+	bool _process_frame(Context *p_context, const Frame &p_frame, uint32_t p_pass, bool p_denoised = false);
 	static RID _create_texture(const Size2i &p_size, RD::DataFormat p_format);
 
 public:
-	Context *create_context(const Size2i &p_size);
+	Context *create_context(const Size2i &p_size, const Size2i &p_frame_size);
 	bool prepare(Context *p_context, const Frame &p_frame);
 	bool process(Context *p_context, const Frame &p_frame, bool p_denoise = true);
 	NRDEffect(bool p_radiance_array, uint32_t p_roughness_layers);

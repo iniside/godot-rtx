@@ -497,6 +497,19 @@ Environment::RaytracingDenoiser Environment::get_raytracing_denoiser() const {
 	return raytracing_denoiser;
 }
 
+void Environment::set_rtxdi_resolution(RTXDIResolution p_value) {
+	ERR_FAIL_COND(p_value < RTXDI_RESOLUTION_FULL || p_value > RTXDI_RESOLUTION_QUARTER_PIXELS);
+	if (rtxdi_resolution == p_value) {
+		return;
+	}
+	rtxdi_resolution = p_value;
+	_update_raytracing();
+}
+
+Environment::RTXDIResolution Environment::get_rtxdi_resolution() const {
+	return rtxdi_resolution;
+}
+
 void Environment::set_rtxdi_local_light_samples(int p_value) {
 	ERR_FAIL_COND(p_value < 1 || p_value > 32);
 	if (rtxdi_local_light_samples == p_value) {
@@ -616,7 +629,7 @@ bool Environment::is_pathtracing_accumulate() const {
 }
 
 void Environment::_update_raytracing() {
-	RS::get_singleton()->environment_set_raytracing(environment, RSE::RaytracingRenderingMode(raytracing_rendering_mode), RSE::RaytracingDenoiser(raytracing_denoiser), rtxdi_local_light_samples);
+	RS::get_singleton()->environment_set_raytracing(environment, RSE::RaytracingRenderingMode(raytracing_rendering_mode), RSE::RaytracingDenoiser(raytracing_denoiser), rtxdi_local_light_samples, RSE::RTXDIResolution(rtxdi_resolution));
 }
 
 void Environment::_update_ddgi() {
@@ -1263,7 +1276,7 @@ void Environment::_update_adjustment() {
 // Private methods, constructor and destructor
 
 void Environment::_validate_property(PropertyInfo &p_property) const {
-	if (p_property.name == "rtxdi_local_light_samples") {
+	if (p_property.name == "rtxdi_local_light_samples" || p_property.name == "rtxdi_resolution") {
 		if (raytracing_rendering_mode != RAYTRACING_RENDERING_MODE_HYBRID) {
 			p_property.usage |= PROPERTY_USAGE_READ_ONLY;
 		}
@@ -1423,6 +1436,8 @@ void Environment::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_raytracing_rendering_mode"), &Environment::get_raytracing_rendering_mode);
 	ClassDB::bind_method(D_METHOD("set_raytracing_denoiser", "value"), &Environment::set_raytracing_denoiser);
 	ClassDB::bind_method(D_METHOD("get_raytracing_denoiser"), &Environment::get_raytracing_denoiser);
+	ClassDB::bind_method(D_METHOD("set_rtxdi_resolution", "value"), &Environment::set_rtxdi_resolution);
+	ClassDB::bind_method(D_METHOD("get_rtxdi_resolution"), &Environment::get_rtxdi_resolution);
 	ClassDB::bind_method(D_METHOD("set_rtxdi_local_light_samples", "value"), &Environment::set_rtxdi_local_light_samples);
 	ClassDB::bind_method(D_METHOD("get_rtxdi_local_light_samples"), &Environment::get_rtxdi_local_light_samples);
 	ClassDB::bind_method(D_METHOD("set_ddgi_enabled", "value"), &Environment::set_ddgi_enabled);
@@ -1446,6 +1461,7 @@ void Environment::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "raytracing_rendering_mode", PROPERTY_HINT_ENUM, "Hybrid,Path Traced"), "set_raytracing_rendering_mode", "get_raytracing_rendering_mode");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "raytracing_denoiser", PROPERTY_HINT_ENUM, "NRD,DLSS Ray Reconstruction,None"), "set_raytracing_denoiser", "get_raytracing_denoiser");
 	ADD_SUBGROUP("RTXDI", "rtxdi_");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "rtxdi_resolution", PROPERTY_HINT_ENUM, "Full,Half Pixels,Quarter Pixels"), "set_rtxdi_resolution", "get_rtxdi_resolution");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "rtxdi_local_light_samples", PROPERTY_HINT_RANGE, "1,32,1"), "set_rtxdi_local_light_samples", "get_rtxdi_local_light_samples");
 	ADD_SUBGROUP("DDGI", "ddgi_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "ddgi_enabled"), "set_ddgi_enabled", "is_ddgi_enabled");
@@ -1463,6 +1479,9 @@ void Environment::_bind_methods() {
 	BIND_ENUM_CONSTANT(RAYTRACING_DENOISER_NRD);
 	BIND_ENUM_CONSTANT(RAYTRACING_DENOISER_DLSS_RR);
 	BIND_ENUM_CONSTANT(RAYTRACING_DENOISER_NONE);
+	BIND_ENUM_CONSTANT(RTXDI_RESOLUTION_FULL);
+	BIND_ENUM_CONSTANT(RTXDI_RESOLUTION_HALF_PIXELS);
+	BIND_ENUM_CONSTANT(RTXDI_RESOLUTION_QUARTER_PIXELS);
 
 	// Background
 

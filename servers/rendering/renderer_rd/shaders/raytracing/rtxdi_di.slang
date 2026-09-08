@@ -263,7 +263,6 @@ void main(uint3 invocation : SV_DispatchThreadID) {
 	RTXDI_DIReservoir reservoir = current_reservoir;
 	if (rtxdi_params.extent_history.z != 0u) {
 		float3 temporal_motion = surface.motion;
-		temporal_motion.xy += (scene_data_block.prev_data.taa_jitter - scene_data_block.data.taa_jitter) * 0.5 * scene_data_block.data.viewport_size;
 		reservoir = RTXDI_DITemporalResampling(pixel, surface, current_reservoir, rng, rtxdi_params.runtime, rtxdi_params.restir.reservoirBufferParams, temporal_motion, rtxdi_params.restir.bufferIndices.temporalResamplingInputBufferIndex, rtxdi_params.restir.temporalResamplingParams, temporal_pixel, selected_sample);
 	}
 	RTXDI_StoreDIReservoir(reservoir, rtxdi_params.restir.reservoirBufferParams, pixel, rtxdi_params.restir.bufferIndices.temporalResamplingOutputBufferIndex);

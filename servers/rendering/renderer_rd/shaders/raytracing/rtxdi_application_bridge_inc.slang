@@ -1,6 +1,8 @@
 #ifndef RTXDI_APPLICATION_BRIDGE_INC_SLANG
 #define RTXDI_APPLICATION_BRIDGE_INC_SLANG
 
+#include "../rtxdi_resolution_inc.slang"
+
 typedef SurfaceMaterial RAB_Material;
 typedef RTLightData RAB_LightInfo;
 typedef SurfaceLightSample RAB_LightSample;
@@ -29,7 +31,7 @@ RAB_LightSample RAB_EmptyLightSample() {
 GeometryFootprint rtxdi_camera_footprint() {
 	GeometryFootprint footprint;
 	footprint.world_to_clip = mul(transpose(scene_data_block.data.projection_matrix), geometry_inverse(rt_camera_to_rt(rt_frame, false)));
-	footprint.pixel_size = scene_data_block.data.screen_pixel_size;
+	footprint.pixel_size = 1.0 / float2(rtxdi_params.extent_history.xy);
 	return footprint;
 }
 
@@ -38,7 +40,10 @@ RAB_Surface RAB_GetGBufferSurface(int2 pixel, bool previous_frame) {
 	if (any(pixel < int2(0)) || any(pixel >= int2(rtxdi_params.extent_history.xy)) || (previous_frame && rtxdi_params.extent_history.z == 0u)) {
 		return RAB_EmptySurface();
 	}
-	int3 address = int3(pixel, 0);
+	uint2 frame_size;
+	current_depth.GetDimensions(frame_size.x, frame_size.y);
+	uint2 surface_pixel = rtxdi_surface_pixel(uint2(pixel), rtxdi_params.extent_history.xy, frame_size);
+	int3 address = int3(surface_pixel, 0);
 	SurfaceBufferData packed;
 	packed.base = previous_frame ? previous_base.Load(address) : current_base.Load(address);
 	packed.shading = previous_frame ? previous_shading.Load(address) : current_shading.Load(address);
@@ -52,7 +57,7 @@ RAB_Surface RAB_GetGBufferSurface(int2 pixel, bool previous_frame) {
 		return RAB_EmptySurface();
 	}
 	SceneData scene_data = previous_frame ? scene_data_block.prev_data : scene_data_block.data;
-	float2 ndc = (float2(pixel) + 0.5) * scene_data.screen_pixel_size * 2.0 - 1.0;
+	float2 ndc = (float2(surface_pixel) + 0.5) * scene_data.screen_pixel_size * 2.0 - 1.0;
 	float4 view = mul(float4(ndc, depth, 1.0), scene_data.inv_projection_matrix);
 	view /= view.w;
 	float4x4 inv_view = rt_camera_to_rt(rt_frame, previous_frame);
@@ -63,7 +68,9 @@ RAB_Surface RAB_GetGBufferSurface(int2 pixel, bool previous_frame) {
 	RAB_Surface surface;
 	surface.surface = decode_surface_buffers(packed, world_position, view_direction);
 	surface.linear_depth = -view.z;
-	surface.motion = motion.xyz;
+	float2 jitter_motion = (scene_data_block.prev_data.taa_jitter - scene_data_block.data.taa_jitter) * 0.5 * float2(frame_size);
+	float2 previous_position = float2(surface_pixel) + 0.5 + motion.xy + jitter_motion;
+	surface.motion = float3(all(rtxdi_params.extent_history.xy == frame_size) ? motion.xy + jitter_motion : rtxdi_lighting_position(previous_position, rtxdi_params.extent_history.xy, frame_size) - (float2(pixel) + 0.5), motion.z);
 	surface.valid = true;
 	return surface;
 }

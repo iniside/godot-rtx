@@ -1427,8 +1427,9 @@
 			<param index="1" name="mode" type="int" enum="RenderingServer.RaytracingRenderingMode" />
 			<param index="2" name="denoiser" type="int" enum="RenderingServer.RaytracingDenoiser" />
 			<param index="3" name="rtxdi_local_light_samples" type="int" />
+			<param index="4" name="rtxdi_resolution" type="int" enum="RenderingServer.RTXDIResolution" />
 			<description>
-				Selects hybrid raster RTXDI/DDGI or camera-ray path tracing and independently selects NRD, DLSS Ray Reconstruction or raw camera output for this environment. Invalid or unavailable RR and raw-reference configurations report an error. The RTXDI local-light candidate count must be 1 to 32 and applies to hybrid rendering. Invalid parameter groups leave the configuration unchanged. See [member Environment.raytracing_rendering_mode], [member Environment.raytracing_denoiser], and [member Environment.rtxdi_local_light_samples].
+				Selects hybrid raster RTXDI/DDGI or camera-ray path tracing and independently selects NRD, DLSS Ray Reconstruction or raw camera output for this environment. Invalid or unavailable RR and raw-reference configurations report an error. The RTXDI local-light candidate count must be 1 to 32 and applies to hybrid rendering. Invalid parameter groups leave the configuration unchanged. See [member Environment.raytracing_rendering_mode], [member Environment.raytracing_denoiser], [member Environment.rtxdi_local_light_samples], and [member Environment.rtxdi_resolution].
 			</description>
 		</method>
 		<method name="environment_set_sdfgi">
@@ -4805,6 +4806,15 @@
 		</signal>
 	</signals>
 	<constants>
+		<constant name="RTXDI_RESOLUTION_FULL" value="0" enum="RTXDIResolution">
+			Full viewport rendering pixel count for RTXDI and NRD.
+		</constant>
+		<constant name="RTXDI_RESOLUTION_HALF_PIXELS" value="1" enum="RTXDIResolution">
+			Approximately half the viewport rendering pixel count for RTXDI and NRD.
+		</constant>
+		<constant name="RTXDI_RESOLUTION_QUARTER_PIXELS" value="2" enum="RTXDIResolution">
+			Approximately one quarter of the viewport rendering pixel count for RTXDI and NRD.
+		</constant>
 		<constant name="NO_INDEX_ARRAY" value="-1">
 			Marks an error that shows that the index array is empty.
 		</constant>

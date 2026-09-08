@@ -236,6 +236,9 @@
 		<member name="rtxdi_local_light_samples" type="int" setter="set_rtxdi_local_light_samples" getter="get_rtxdi_local_light_samples" default="8">
 			Number of local-light candidates proposed per valid pixel during RTXDI initial sampling, from 1 to 32. Lower values reduce initial sampling work and may increase noise. This does not change directional-light or environment sample counts. Changing this setting resets camera lighting history. Read-only in path-traced mode.
 		</member>
+		<member name="rtxdi_resolution" type="int" setter="set_rtxdi_resolution" getter="get_rtxdi_resolution" enum="Environment.RTXDIResolution" default="0">
+			Controls the pixel count used by RTXDI direct lighting and NRD in hybrid mode. Full preserves native lighting resolution, Half Pixels uses approximately half the pixels (about 0.707 of each dimension), and Quarter Pixels uses half of each dimension. Radiance is reconstructed before full-resolution material composition. Geometry, DDGI and DLSS Ray Reconstruction guides retain the viewport rendering resolution. Ignored by path tracing.
+		</member>
 		<member name="sdfgi_bounce_feedback" type="float" setter="set_sdfgi_bounce_feedback" getter="get_sdfgi_bounce_feedback" default="0.5">
 			The energy multiplier applied to light every time it bounces from a surface when using SDFGI. Values greater than [code]0.0[/code] will simulate multiple bounces, resulting in a more realistic appearance. Increasing [member sdfgi_bounce_feedback] generally has no performance impact. See also [member sdfgi_energy].
 			[b]Note:[/b] Values greater than [code]0.5[/code] can cause infinite feedback loops and should be avoided in scenes with bright materials.
@@ -416,6 +419,15 @@
 		</member>
 	</members>
 	<constants>
+		<constant name="RTXDI_RESOLUTION_FULL" value="0" enum="RTXDIResolution">
+			Full viewport rendering pixel count for RTXDI and NRD.
+		</constant>
+		<constant name="RTXDI_RESOLUTION_HALF_PIXELS" value="1" enum="RTXDIResolution">
+			Approximately half the viewport rendering pixel count for RTXDI and NRD.
+		</constant>
+		<constant name="RTXDI_RESOLUTION_QUARTER_PIXELS" value="2" enum="RTXDIResolution">
+			Approximately one quarter of the viewport rendering pixel count for RTXDI and NRD.
+		</constant>
 		<constant name="BG_CLEAR_COLOR" value="0" enum="BGMode">
 			Clears the background using the clear color defined in [member ProjectSettings.rendering/environment/defaults/default_clear_color].
 		</constant>

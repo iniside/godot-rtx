@@ -1327,7 +1327,7 @@ public:
 
 	PASS6(environment_set_ssil_quality, RSE::EnvironmentSSILQuality, bool, float, int, float, float)
 
-	PASS4(environment_set_raytracing, RID, RSE::RaytracingRenderingMode, RSE::RaytracingDenoiser, int)
+	PASS5(environment_set_raytracing, RID, RSE::RaytracingRenderingMode, RSE::RaytracingDenoiser, int, RSE::RTXDIResolution)
 	PASS6(environment_set_ddgi, RID, bool, int, float, int, int)
 	PASS4(environment_set_pathtracing, RID, int, int, bool)
 

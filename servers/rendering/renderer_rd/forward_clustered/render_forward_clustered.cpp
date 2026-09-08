@@ -1849,6 +1849,11 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 
 	RENDER_TIMESTAMP("Prepare 3D Scene");
 	const Size2i screen_size = rb->get_internal_size();
+	Size2i lighting_size = screen_size;
+	if (!path_traced && rt_settings.rtxdi_resolution != RSE::RTXDI_RESOLUTION_FULL) {
+		const double scale = rt_settings.rtxdi_resolution == RSE::RTXDI_RESOLUTION_HALF_PIXELS ? Math::sqrt(0.5) : 0.5;
+		lighting_size = Size2i(MAX(1, int(Math::ceil(screen_size.x * scale))), MAX(1, int(Math::ceil(screen_size.y * scale))));
+	}
 	const bool using_taa = rb->get_use_taa();
 	const Scale3DMode scale_type = _resolve_scale_3d_mode(rb);
 	const bool using_upscaling = scale_type != SCALE_3D_NONE;
@@ -1858,12 +1863,12 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	RID color_framebuffer;
 	rb->ensure_velocity();
 	rb_data->ensure_normal_roughness_texture();
-	if (rb_data->nrd_context && rb_data->nrd_context->size != screen_size) {
+	if (rb_data->nrd_context && (rb_data->nrd_context->size != lighting_size || rb_data->nrd_context->frame_size != screen_size)) {
 		memdelete(rb_data->nrd_context);
 		rb_data->nrd_context = nullptr;
 	}
 	if (!rb_data->nrd_context) {
-		rb_data->nrd_context = nrd_effect->create_context(screen_size);
+		rb_data->nrd_context = nrd_effect->create_context(lighting_size, screen_size);
 	}
 	ERR_FAIL_NULL(rb_data->nrd_context);
 	p_render_data->scene_data->calculate_motion_vectors = true;
@@ -2022,7 +2027,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	}
 	surface.current_depth = rb_data->get_rtxdi_surface_depth();
 	surface.previous_depth = rb_data->get_rtxdi_surface_depth(true);
-	surface.size = screen_size;
+	surface.size = lighting_size;
 	surface.history_valid = rb_data->is_rtxdi_surface_history_valid();
 	surface.orthogonal = rb_data->is_rtxdi_surface_camera_orthogonal();
 	surface.frame_index = rb_data->get_rtxdi_surface_frame_index();

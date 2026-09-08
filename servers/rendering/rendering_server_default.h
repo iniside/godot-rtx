@@ -893,7 +893,7 @@ public:
 	FUNC2(environment_set_volumetric_fog_volume_size, int, int)
 	FUNC1(environment_set_volumetric_fog_filter_active, bool)
 
-	FUNC4(environment_set_raytracing, RID, RSE::RaytracingRenderingMode, RSE::RaytracingDenoiser, int)
+	FUNC5(environment_set_raytracing, RID, RSE::RaytracingRenderingMode, RSE::RaytracingDenoiser, int, RSE::RTXDIResolution)
 	FUNC6(environment_set_ddgi, RID, bool, int, float, int, int)
 	FUNC4(environment_set_pathtracing, RID, int, int, bool)
 

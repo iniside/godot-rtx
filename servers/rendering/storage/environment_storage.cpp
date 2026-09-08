@@ -864,20 +864,25 @@ RendererEnvironmentStorage::RaytracingSettings RendererEnvironmentStorage::envir
 	return env->raytracing;
 }
 
-void RendererEnvironmentStorage::environment_set_raytracing(RID p_env, RSE::RaytracingRenderingMode p_mode, RSE::RaytracingDenoiser p_denoiser, int p_rtxdi_local_light_samples) {
+void RendererEnvironmentStorage::environment_set_raytracing(RID p_env, RSE::RaytracingRenderingMode p_mode, RSE::RaytracingDenoiser p_denoiser, int p_rtxdi_local_light_samples, RSE::RTXDIResolution p_rtxdi_resolution) {
 	Environment *env = environment_owner.get_or_null(p_env);
 	ERR_FAIL_NULL(env);
 	ERR_FAIL_COND(p_mode < RSE::RAYTRACING_RENDERING_MODE_HYBRID || p_mode > RSE::RAYTRACING_RENDERING_MODE_PATH_TRACED);
 	ERR_FAIL_COND(p_denoiser < RSE::RAYTRACING_DENOISER_NRD || p_denoiser > RSE::RAYTRACING_DENOISER_NONE);
 	ERR_FAIL_COND(p_rtxdi_local_light_samples < 1 || p_rtxdi_local_light_samples > 32);
+	ERR_FAIL_COND(p_rtxdi_resolution < RSE::RTXDI_RESOLUTION_FULL || p_rtxdi_resolution > RSE::RTXDI_RESOLUTION_QUARTER_PIXELS);
 	RaytracingSettings &settings = env->raytracing;
-	if (settings.raytracing_rendering_mode == p_mode && settings.raytracing_denoiser == p_denoiser && settings.rtxdi_local_light_samples == p_rtxdi_local_light_samples) {
+	if (settings.raytracing_rendering_mode == p_mode && settings.raytracing_denoiser == p_denoiser && settings.rtxdi_local_light_samples == p_rtxdi_local_light_samples && settings.rtxdi_resolution == p_rtxdi_resolution) {
 		return;
 	}
+	const bool mode_changed = settings.raytracing_rendering_mode != p_mode || settings.raytracing_denoiser != p_denoiser || settings.rtxdi_local_light_samples != p_rtxdi_local_light_samples || (settings.rtxdi_resolution != p_rtxdi_resolution && p_mode == RSE::RAYTRACING_RENDERING_MODE_HYBRID);
+	settings.rtxdi_resolution = p_rtxdi_resolution;
 	settings.raytracing_rendering_mode = p_mode;
 	settings.raytracing_denoiser = p_denoiser;
 	settings.rtxdi_local_light_samples = p_rtxdi_local_light_samples;
-	settings.mode_generation++;
+	if (mode_changed) {
+		settings.mode_generation++;
+	}
 }
 
 void RendererEnvironmentStorage::environment_set_ddgi(RID p_env, bool p_enabled, int p_cascade_count, float p_probe_spacing, int p_rays_per_probe, int p_updates_per_frame) {
