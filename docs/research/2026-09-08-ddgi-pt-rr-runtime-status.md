@@ -1,5 +1,13 @@
 # DDGI, camera PT and DLSS integration — 2026-09-08
 
+Post-commit review: the original final handoff omitted mandatory review. Fresh
+reviews rejected it, then the source/XML and diagnostic-gate corrections at
+`31e3a94fbc` received independent bounded PASS verdicts. Full-plan verification
+remains REJECT. See the [review status](2026-09-08-0848-ddgi-pt-rr-review-status.md)
+for findings, correction evidence and the outstanding requirements. The build
+and run records below retain their historical revisions; the review status
+records the later corrected builds separately.
+
 ## Implemented behavior
 
 The shared native material/TLAS scene now serves both camera-following DDGI

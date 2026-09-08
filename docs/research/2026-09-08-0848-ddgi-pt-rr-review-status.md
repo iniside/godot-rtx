@@ -54,6 +54,36 @@ The new temporary `compile_lighting_review.py` preserves the historical driver
 and requires the explicit per-file inventory and complete set of 20 stage
 identities. `review-native-final/receipts.json` records all 20 successful
 compiler/validator outputs. This is a native shader diagnostic, not an automated
-test suite. Real-device diagnostic parity and the fresh second review remain
-pending. No final PASS or complete Step 8 verification is claimed; neither
-original reviewer is reused for round 2.
+test suite. The source/XML correction is committed as
+`31e3a94fbce898f06681dc0d5550380b891bba64`.
+
+## Round 2 — bounded corrections PASS; full-plan proof REJECT
+
+A fresh hostile-reviewer and a fresh proof-auditor independently returned PASS
+for the named corrections at `31e3a94fbce898f06681dc0d5550380b891bba64`.
+Both used Astra/high; neither round-one reviewer was reused.
+
+The source review confirms shared diagnostic emission and binding/XML closure,
+without changed signatures, enum values, shader layouts or a second diagnostic
+authority. It inspected the exact fix, original task history and relevant
+cumulative changes, applying classes 1, 3, 4, 5, 6, 8 and 9.
+
+The proof audit independently verified the new explicit 20-stage inventory and
+all compiled artifact/dependency hashes, three rebuilt executable hashes, and
+the representative unsupported-material GPU case. The temporary room fixture
+sets actual StandardMaterial3D meshes to SHADING_MODE_UNSHADED. The five
+`review-unsupported-{raw,rr,nrd,hybrid-rr,hybrid-nrd}` PNGs all show magenta
+geometry, as independently viewed by the auditor. The associated launch
+receipts retain argv, cwd, timestamps, binary hashes, selected SDK environment
+and actual exit 0. The two RR logs explicitly record feature 1001 evaluation
+with `sl::eOk`. Hybrid NRD used DDGI off; hybrid RR retained DDGI.
+
+`run_review_capture.py` records execution, not image acceptance: its
+classification remains null and all image claims require inspection. The new
+five receipts cover these editor runs only. They do not retroactively prove
+the environment or process status of historical exports/motion captures.
+
+Full Step 8 proof remains REJECT for the editor/serialization/hot-reload,
+partial-setup/multiview, contiguous-motion, per-pass/probe/VRAM and historical
+export-provenance obligations listed above. The task is not represented as
+fully verified or complete. No automated tests were added or run.
