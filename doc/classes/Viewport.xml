@@ -583,7 +583,7 @@
 			[b]Note:[/b] When using the [b]Nearest[/b] scaling mode, to avoid uneven pixel scaling, it's highly recommended to use a value equal to an integer divisor with a dividend of [code]1[/code]. For example, it's best to use a scale of [code]0.5[/code] (1/2), [code]0.3333[/code] (1/3), [code]0.25[/code] (1/4), [code]0.2[/code] (1/5), and so on.
 		</constant>
 		<constant name="SCALING_3D_MODE_DLSS" value="6" enum="Scaling3DMode">
-			Use NVIDIA DLSS upscaling for the viewport's 3D buffer. Set [member scaling_3d_scale] to 0.5 for Performance, 0.58 for Balanced, 0.66 for Quality, or 1.0 for DLAA. Values above 1.0 use bilinear downsampling. Camera denoising is selected independently by [member Environment.raytracing_denoiser]; selecting path tracing does not automatically enable Ray Reconstruction. This build uses DLSS Super Resolution and has no active camera RR evaluation.
+			Use NVIDIA DLSS upscaling for the viewport's 3D buffer. Set [member scaling_3d_scale] to 0.5 for Performance, 0.58 for Balanced, 0.66 for Quality, or 1.0 for DLAA. Values above 1.0 use bilinear downsampling. Camera denoising is selected independently by [member Environment.raytracing_denoiser]. Selecting DLSS Ray Reconstruction uses RR in place of NRD and DLSS Super Resolution in either hybrid or path-traced mode. Other denoiser selections use DLSS Super Resolution. Path tracing does not automatically enable Ray Reconstruction.
 		</constant>
 		<constant name="SCALING_3D_MODE_MAX" value="7" enum="Scaling3DMode">
 			Represents the size of the [enum Scaling3DMode] enum.

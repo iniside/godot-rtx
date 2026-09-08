@@ -36,7 +36,7 @@ void main() {
 				float distance = hit.hit != 0u ? hit.hit_distance : NRD_FP16_MAX;
 				diffuse_distance += distance; specular_distance += distance;
 			}
-			float3 emission = hit.hit != 0u ? hit.surface.material.emission : (bounce == 0u && pt.options.w == 0.0 ? pt.background.rgb : pt_environment(ray.Direction));
+			float3 emission = hit.hit != 0u ? encode_surface_buffers(hit.surface).emission.rgb : (bounce == 0u && pt.options.w == 0.0 ? pt.background.rgb : pt_environment(ray.Direction));
 			float weight = bounce > 0u && any(emission != float3(0.0)) ? pt_mis(previous_pdf, pt_emitter_pdf(hit, ray.Origin, ray.Direction, previous_mask)) : 1.0;
 			float3 incoming = emission * weight;
 			if (bounce == 0u) { radiance += incoming; }

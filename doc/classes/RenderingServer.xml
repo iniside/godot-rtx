@@ -1362,7 +1362,7 @@
 			<param index="4" name="rays_per_probe" type="int" />
 			<param index="5" name="updates_per_frame" type="int" />
 			<description>
-				Stores the complete DDGI configuration. Cascade count must be 1 to 6, spacing finite and 0.01 to 1024.0, rays per probe 64, 128 or 256, and updates per frame 1 to cascade count. Invalid groups leave the configuration unchanged. See [member Environment.ddgi_enabled]. Probe lighting is not implemented yet.
+				Sets the complete camera-following DDGI configuration for hybrid rendering. Cascade count must be 1 to 6, spacing finite and 0.01 to 1024.0, rays per probe 64, 128 or 256, and updates per frame 1 to cascade count. Invalid groups leave the configuration unchanged. Probe history belongs to each mono viewport. Ignored in path-traced mode. See [member Environment.ddgi_enabled].
 			</description>
 		</method>
 		<method name="environment_set_fog">
@@ -1418,7 +1418,7 @@
 			<param index="2" name="max_bounces" type="int" />
 			<param index="3" name="accumulate" type="bool" />
 			<description>
-				Stores the complete path-tracing configuration. Samples per pixel must be 1 to 64 and maximum bounces 1 to 32. Invalid groups leave the configuration unchanged. Denoised previews use one primary sample per pixel. See [member Environment.pathtracing_accumulate]. Path-tracing execution is not implemented yet.
+				Sets the complete camera-ray path-tracing configuration. Samples per pixel must be 1 to 64 and maximum bounces 1 to 32. Invalid groups leave the configuration unchanged. Denoised previews use one primary sample per pixel; raw mode uses the requested sample count and optional progressive accumulation. See [member Environment.pathtracing_accumulate].
 			</description>
 		</method>
 		<method name="environment_set_raytracing">
@@ -1427,7 +1427,7 @@
 			<param index="1" name="mode" type="int" enum="RenderingServer.RaytracingRenderingMode" />
 			<param index="2" name="denoiser" type="int" enum="RenderingServer.RaytracingDenoiser" />
 			<description>
-				Stores the requested rendering mode and camera denoiser for this environment. See [member Environment.raytracing_rendering_mode] and [member Environment.raytracing_denoiser]. This build still renders raster RTXDI with NRD and reports unavailable selections.
+				Selects hybrid raster RTXDI/DDGI or camera-ray path tracing and independently selects NRD, DLSS Ray Reconstruction or raw camera output for this environment. Invalid or unavailable RR and raw-reference configurations report an error. See [member Environment.raytracing_rendering_mode] and [member Environment.raytracing_denoiser].
 			</description>
 		</method>
 		<method name="environment_set_sdfgi">
@@ -4826,19 +4826,19 @@
 			The maximum number of surfaces a mesh can have.
 		</constant>
 		<constant name="RAYTRACING_DENOISER_DLSS_RR" value="1" enum="RaytracingDenoiser">
-			DLSS Ray Reconstruction instead of NRD and DLSS Super Resolution. Requires DLSS scaling mode and supported hardware. Camera RR execution is not implemented yet.
+			DLSS Ray Reconstruction for the composed hybrid or path-traced camera image, bypassing NRD and DLSS Super Resolution. Requires DLSS scaling mode and available Streamline RR support.
 		</constant>
 		<constant name="RAYTRACING_DENOISER_NONE" value="2" enum="RaytracingDenoiser">
-			Raw signal without denoising; path tracing can progressively accumulate. Raw camera output is not implemented yet.
+			Raw camera signal without denoising. Path tracing can progressively accumulate at native resolution with no temporal upscaler, TAA or frame generation.
 		</constant>
 		<constant name="RAYTRACING_DENOISER_NRD" value="0" enum="RaytracingDenoiser">
-			NRD denoising, the currently active camera denoiser.
+			NRD denoising for hybrid lighting or a path-traced preview. Can be combined with DLSS Super Resolution.
 		</constant>
 		<constant name="RAYTRACING_RENDERING_MODE_HYBRID" value="0" enum="RaytracingRenderingMode">
-			Hybrid primary visibility with RTXDI direct lighting and camera-following DDGI. DDGI execution is not implemented yet.
+			Raster primary visibility with RTXDI direct lighting and camera-following DDGI when [member Environment.ddgi_enabled] is enabled.
 		</constant>
 		<constant name="RAYTRACING_RENDERING_MODE_PATH_TRACED" value="1" enum="RaytracingRenderingMode">
-			True camera-ray path tracing for comparison. Execution is not implemented yet.
+			True camera-ray path tracing using the shared ray-traced scene, with raw progressive accumulation or NRD/RR previews. Does not use DDGI.
 		</constant>
 		<constant name="TEXTURE_TYPE_2D" value="0" enum="TextureType">
 			2D texture.
@@ -5481,7 +5481,7 @@
 			[b]Note:[/b] When using the [b]Nearest[/b] scaling mode, to avoid uneven pixel scaling, it's highly recommended to use a value equal to an integer divisor with a dividend of [code]1[/code]. For example, it's best to use a scale of [code]0.5[/code] (1/2), [code]0.3333[/code] (1/3), [code]0.25[/code] (1/4), [code]0.2[/code] (1/5), and so on.
 		</constant>
 		<constant name="VIEWPORT_SCALING_3D_MODE_DLSS" value="6" enum="ViewportScaling3DMode">
-			Use NVIDIA DLSS upscaling for the viewport's 3D buffer. Resolution and quality are controlled by [member Viewport.scaling_3d_scale]; a value of [code]1.0[/code] uses DLAA and values above 1.0 use bilinear downsampling. Camera denoising is selected separately with [member Environment.raytracing_denoiser]. Path tracing does not automatically enable Ray Reconstruction. This build uses DLSS Super Resolution and has no active camera RR evaluation.
+			Use NVIDIA DLSS upscaling for the viewport's 3D buffer. Resolution and quality are controlled by [member Viewport.scaling_3d_scale]; a value of [code]1.0[/code] uses DLAA and values above 1.0 use bilinear downsampling. Camera denoising is selected separately with [member Environment.raytracing_denoiser]. Selecting DLSS Ray Reconstruction uses RR in place of NRD and DLSS Super Resolution in either hybrid or path-traced mode. Other denoiser selections use DLSS Super Resolution. Path tracing does not automatically enable Ray Reconstruction.
 		</constant>
 		<constant name="VIEWPORT_SCALING_3D_MODE_MAX" value="7" enum="ViewportScaling3DMode">
 			Represents the size of the [enum ViewportScaling3DMode] enum.

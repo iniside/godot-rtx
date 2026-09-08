@@ -86,7 +86,7 @@
 			Number of nested camera-following probe grids, from 1 to 6. Each grid contains 16 cubed probes. Changing this setting rebuilds probe state. Reducing this value also reduces [member ddgi_updates_per_frame] if needed.
 		</member>
 		<member name="ddgi_enabled" type="bool" setter="set_ddgi_enabled" getter="is_ddgi_enabled" default="true">
-			Enables automatic camera-following diffuse GI probes in hybrid mode. Ignored and read-only in path-traced mode. Probe history belongs to each mono viewport, even when viewports share this Environment. [b]Probe lighting is not implemented yet.[/b]
+			Enables automatic camera-following diffuse GI probes in hybrid mode. Ignored and read-only in path-traced mode. Probe history belongs to each mono viewport, even when viewports share this Environment.
 		</member>
 		<member name="ddgi_probe_spacing" type="float" setter="set_ddgi_probe_spacing" getter="get_ddgi_probe_spacing" default="2.0">
 			Base probe spacing in world units, finite and bounded from [code]0.01[/code] to [code]1024.0[/code]. Successive cascades double this spacing. Changing spacing rebuilds probe state. These defaults are starting settings, not measured performance presets.
@@ -225,10 +225,10 @@
 			Camera samples per pixel per rendered frame, from 1 to 64, used by raw reference mode. NRD and RR previews use one primary sample per pixel so guides match that sample. Read-only for hybrid mode and denoised previews.
 		</member>
 		<member name="raytracing_denoiser" type="int" setter="set_raytracing_denoiser" getter="get_raytracing_denoiser" enum="Environment.RaytracingDenoiser" default="0">
-			Selects NRD, DLSS Ray Reconstruction, or raw output. RR requires [member Viewport.scaling_3d_mode] set to [constant Viewport.SCALING_3D_MODE_DLSS] and supported hardware. For the root viewport, use Project Settings &gt; Rendering &gt; Scaling 3D &gt; Mode &gt; NVIDIA DLSS. Resolution and DLSS quality remain controlled by [member Viewport.scaling_3d_scale] and [member ProjectSettings.rendering/scaling_3d/scale]. Raw PT reference requires scale [code]1.0[/code], no temporal upscaler, TAA or frame generation. [b]This build still uses NRD; RR and raw output are not implemented yet.[/b]
+			Selects NRD, DLSS Ray Reconstruction, or raw output for hybrid or path-traced rendering. RR processes the composed noisy camera image and bypasses NRD and DLSS Super Resolution; hybrid DDGI probe integration remains active. RR requires [member Viewport.scaling_3d_mode] set to [constant Viewport.SCALING_3D_MODE_DLSS] and available Streamline RR support. Invalid configurations report an error. For the root viewport, use Project Settings &gt; Rendering &gt; Scaling 3D &gt; Mode &gt; NVIDIA DLSS. Resolution and DLSS quality remain controlled by [member Viewport.scaling_3d_scale] and [member ProjectSettings.rendering/scaling_3d/scale]. Raw PT reference requires scale [code]1.0[/code], no temporal upscaler, TAA or frame generation.
 		</member>
 		<member name="raytracing_rendering_mode" type="int" setter="set_raytracing_rendering_mode" getter="get_raytracing_rendering_mode" enum="Environment.RaytracingRenderingMode" default="0">
-			Selects hybrid raster primary visibility with RTXDI and camera-following DDGI, or true camera-ray path tracing for comparison. Mode and denoiser are independent. [b]This build stores the selection but still renders raster RTXDI with NRD; DDGI and path tracing are not implemented yet.[/b]
+			Selects hybrid raster primary visibility with RTXDI and optional camera-following DDGI, or true camera-ray path tracing for comparison. Both modes share the ray-traced geometry, material and light scene. Path tracing supplies its own primary visibility and guides and does not use DDGI. Mode and denoiser are independent. The renderer requires a supported Vulkan ray-tracing device and one view per viewport.
 		</member>
 		<member name="reflected_light_source" type="int" setter="set_reflection_source" getter="get_reflection_source" enum="Environment.ReflectionSource" default="0">
 			The reflected (specular) light source.
@@ -447,19 +447,19 @@
 			Gather ambient light from the [Sky] regardless of what the background is.
 		</constant>
 		<constant name="RAYTRACING_DENOISER_DLSS_RR" value="1" enum="RaytracingDenoiser">
-			DLSS Ray Reconstruction instead of NRD and DLSS Super Resolution. Requires DLSS scaling mode and supported hardware. Camera RR execution is not implemented yet.
+			DLSS Ray Reconstruction for the composed hybrid or path-traced camera image, bypassing NRD and DLSS Super Resolution. Requires DLSS scaling mode and available Streamline RR support.
 		</constant>
 		<constant name="RAYTRACING_DENOISER_NONE" value="2" enum="RaytracingDenoiser">
-			Raw signal without denoising; path tracing can progressively accumulate. Raw camera output is not implemented yet.
+			Raw camera signal without denoising. Path tracing can progressively accumulate at native resolution with no temporal upscaler, TAA or frame generation.
 		</constant>
 		<constant name="RAYTRACING_DENOISER_NRD" value="0" enum="RaytracingDenoiser">
-			NRD denoising, the currently active camera denoiser.
+			NRD denoising for hybrid lighting or a path-traced preview. Can be combined with DLSS Super Resolution.
 		</constant>
 		<constant name="RAYTRACING_RENDERING_MODE_HYBRID" value="0" enum="RaytracingRenderingMode">
-			Hybrid primary visibility with RTXDI direct lighting and camera-following DDGI. DDGI execution is not implemented yet.
+			Raster primary visibility with RTXDI direct lighting and camera-following DDGI when [member ddgi_enabled] is enabled.
 		</constant>
 		<constant name="RAYTRACING_RENDERING_MODE_PATH_TRACED" value="1" enum="RaytracingRenderingMode">
-			True camera-ray path tracing for comparison. Execution is not implemented yet.
+			True camera-ray path tracing using the shared ray-traced scene, with raw progressive accumulation or NRD/RR previews. Does not use DDGI.
 		</constant>
 		<constant name="REFLECTION_SOURCE_BG" value="0" enum="ReflectionSource">
 			Use the background for reflections.
