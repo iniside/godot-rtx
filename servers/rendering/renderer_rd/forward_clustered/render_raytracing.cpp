@@ -1589,12 +1589,15 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 	uint32_t mat_version = get_rid_version(p_material_rid);
 	RTMaterialCacheEntry *entry = get_material_cache_entry(mat_idx);
 	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
+	SceneShaderForwardClustered::MaterialData *raster_material = static_cast<SceneShaderForwardClustered::MaterialData *>(material_storage->material_get_data(p_material_rid, RendererRD::MaterialStorage::SHADER_TYPE_3D));
+	const RID hit_shader = raster_material && raster_material->shader_data ? raster_material->shader_data->get_hit_shader() : RID();
 	const uint64_t shader_hash = material_storage->material_get_shader_code_rt_hash(p_material_rid);
 	const uint64_t shader_hash_b = material_storage->material_get_shader_code_rt_hash_b(p_material_rid);
 	const uint64_t content_generation = material_storage->material_get_rt_content_generation(p_material_rid);
 
 	uint32_t current_frame = RSG::rasterizer->get_frame_number();
 	const bool needs_refresh = !entry->ptr ||
+			entry->ptr->hit_shader != hit_shader ||
 			entry->cached_rid_version != mat_version ||
 			entry->cached_counter != p_material_invalidation_counter ||
 			entry->cached_content_generation != content_generation ||
@@ -1615,6 +1618,7 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 	}
 
 	RTMaterialData *mat_data = entry->ptr;
+	mat_data->hit_shader = hit_shader;
 	RT_MaterialData &mat = mat_data->data;
 
 	// Initialize defaults
@@ -1650,7 +1654,6 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 	mat.coverage_sampler = 0;
 	mat.alpha_scissor_threshold = 0.5f;
 	mat.alpha_hash_scale = 1.0f;
-	SceneShaderForwardClustered::MaterialData *raster_material = static_cast<SceneShaderForwardClustered::MaterialData *>(material_storage->material_get_data(p_material_rid, RendererRD::MaterialStorage::SHADER_TYPE_3D));
 	if (raster_material && raster_material->shader_data && raster_material->shader_data->generated_standard_material) {
 		for (const ShaderCompiler::GeneratedCode::Texture &texture : raster_material->shader_data->texture_uniforms) {
 			if (texture.name == SNAME("texture_albedo")) {
@@ -1742,7 +1745,6 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 	}
 	if (raster_material && raster_material->shader_data) {
 		const SceneShaderForwardClustered::ShaderData *shader_data = raster_material->shader_data;
-		mat_data->hit_shader = shader_data->get_hit_shader();
 		mat_data->uses_alpha_clip = shader_data->rt ? shader_data->rt->uses_alpha_clip : shader_data->uses_alpha_clip;
 		const ShaderCompiler::GeneratedCode &generated = shader_data->hit_code;
 		const uint32_t uniform_total_size = (generated.rt_uniform_total_size + 15u) & ~15u;
