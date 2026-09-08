@@ -1,5 +1,11 @@
 # DDGI/PT/RR post-commit review
 
+Owner scope correction (2026-09-08): VR/XR work and multiview validation are
+excluded from closure. The closure-specific early multiview guard and
+XR-to-mono recovery change are removed. Historical multiview requirements
+below no longer apply. DDGI/path-tracing visual parity is not an acceptance
+criterion; active work covers DLSS/RR, path tracing and camera-following DDGI.
+
 Frozen target: `52c8563dc828036904f7f6c727994dd5b60bbeae`.
 Cumulative baseline: `381c36eec7d7e0d5c9111be366a3a0ae78cdadd3`.
 

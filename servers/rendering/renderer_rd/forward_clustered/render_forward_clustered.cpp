@@ -276,7 +276,6 @@ void RenderForwardClustered::RenderBufferDataForwardClustered::configure(RenderS
 
 	render_buffers = p_render_buffers;
 	ERR_FAIL_NULL(render_buffers);
-	ERR_FAIL_COND_MSG(render_buffers->get_view_count() != 1, "RTXDI surface rendering supports one view per viewport.");
 
 	if (cluster_builder == nullptr) {
 		cluster_builder = memnew(ClusterBuilderRD);
