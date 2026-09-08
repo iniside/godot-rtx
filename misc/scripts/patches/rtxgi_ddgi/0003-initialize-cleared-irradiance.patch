@@ -1,0 +1,8 @@
+--- a/rtxgi-sdk/shaders/ddgi/ProbeBlendingCS.hlsl
++++ b/rtxgi-sdk/shaders/ddgi/ProbeBlendingCS.hlsl
+@@ -529,4 +529,4 @@
+-        if (RTXGILinearRGBToLuminance(delta) > volume.probeBrightnessThreshold)
++        if (dot(probeIrradianceMean, probeIrradianceMean) != 0 && RTXGILinearRGBToLuminance(delta) > volume.probeBrightnessThreshold)
+         {
+             // Clamp the maximum per-update change in irradiance when a large brightness change is detected
+             delta *= 0.25f;

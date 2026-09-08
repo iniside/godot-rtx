@@ -12,7 +12,8 @@
   "normalization": "LF line endings and no trailing spaces/tabs",
   "patches": {
     "0001-native-shader-closure.patch": "25435370a7249358a5d83be29637f3e18eb35f7756c1eee987ac2e88715d372e",
-    "0002-probe-validity-query.patch": "0f12327258d497bd5ad1ac2678ea613e629788a0258a425d993b9883b9a7916f"
+    "0002-probe-validity-query.patch": "0f12327258d497bd5ad1ac2678ea613e629788a0258a425d993b9883b9a7916f",
+    "0003-initialize-cleared-irradiance.patch": "72dc99e2f096003140220bca5696a55fcfabc3c00b1b0caa22332c06adeffc26"
   },
   "upstream_files": {
     "License.txt": "85201d19c2dc5041d9a2029e9fda9d78105fe41ce21ce9701d4aa7e56184b6e7",
@@ -56,7 +57,7 @@
     "rtxgi-sdk/shaders/ddgi/include/validation/ProbeRelocationDefines.hlsl": "7979a7eee2e2d8e291e0dac2f07e68f0366915d3ac313279704fb9c5aef60c21",
     "rtxgi-sdk/shaders/ddgi/include/validation/ReductionDefines.hlsl": "626e486dff812d052fcb7b9760daadf3680d065abf27f75ee65d0a655e7cd3a0",
     "rtxgi-sdk/shaders/ddgi/Irradiance.hlsl": "e0f9d8f0450f53133c07d8408c0d86157c6243864eaf844cfca72548ff38f8ab",
-    "rtxgi-sdk/shaders/ddgi/ProbeBlendingCS.hlsl": "84a120155ecb62a1818ab84f2a791cf0802c4b0fd8b35f8f19413dbebd000527",
+    "rtxgi-sdk/shaders/ddgi/ProbeBlendingCS.hlsl": "c6a52397613833ce54e9ebf1a300fad38e4a913a6c28676f9ed8dacf8c19ba1e",
     "rtxgi-sdk/shaders/ddgi/ProbeClassificationCS.hlsl": "33edfa253df881c2b34d864541b5593e750cff721c84d548e117a12c08eac845",
     "rtxgi-sdk/shaders/ddgi/ProbeRelocationCS.hlsl": "e4e34f7bf1f2041f18959bd080a2d97f30bad9fd78de1ff46f9d0ef1271b3749",
     "rtxgi-sdk/shaders/ddgi/ReductionCS.hlsl": "dc6f1e1cb69e4e543896994b829e465c44333b8473300a616efff8462e95556f",

@@ -526,7 +526,7 @@ void DDGIProbeBlendingCS(
             hysteresis = max(0.f, hysteresis - 0.75f);
         }
 
-        if (RTXGILinearRGBToLuminance(delta) > volume.probeBrightnessThreshold)
+        if (dot(probeIrradianceMean, probeIrradianceMean) != 0 && RTXGILinearRGBToLuminance(delta) > volume.probeBrightnessThreshold)
         {
             // Clamp the maximum per-update change in irradiance when a large brightness change is detected
             delta *= 0.25f;
