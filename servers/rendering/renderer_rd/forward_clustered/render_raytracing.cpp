@@ -1618,7 +1618,6 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 	}
 
 	RTMaterialData *mat_data = entry->ptr;
-	mat_data->hit_shader = hit_shader;
 	RT_MaterialData &mat = mat_data->data;
 
 	// Initialize defaults
@@ -1887,6 +1886,7 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 	}
 
 	// Update cache entry
+	mat_data->hit_shader = hit_shader;
 	entry->cached_counter = p_material_invalidation_counter;
 	entry->cached_rid_version = mat_version;
 	entry->cached_shader_hash = shader_hash;
