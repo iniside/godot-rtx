@@ -50,7 +50,9 @@ void main(inout RTHitPayload payload, BuiltInTriangleIntersectionAttributes attr
 	}
 	bool shadow_ray = (payload.ray_flags & 1u) != 0u;
 	bool native_front = HitKind() == HIT_KIND_TRIANGLE_FRONT_FACE;
-	bool facing = shadow_ray ? ((hit.geometry.flags & FLAG_SHADOW_CULL_ENABLED) == 0u || !native_front) : (RT_CULL_MODE == 0 || !native_front);
+	// TLAS instance flags orient the accepted material side as native front.
+	// Shadow rays retain the renderer's existing opposite-side shadow culling.
+	bool facing = shadow_ray ? ((hit.geometry.flags & FLAG_SHADOW_CULL_ENABLED) == 0u || !native_front) : ((payload.ray_flags & 2u) != 0u || RT_CULL_MODE == 0 || native_front);
 	if (!facing || (hit.geometry.instance_layer_mask & payload.ray_layer_mask) == 0u) {
 		IgnoreHit();
 		return;
@@ -94,7 +96,7 @@ void main(inout RTHitPayload payload, BuiltInTriangleIntersectionAttributes attr
 	payload.geometry_index = hit.geometry_index;
 	geometry_resolve_primitive(hit.geometry, hit.cluster_id, hit.primitive_id, payload.primitive_index);
 	payload.barycentrics = attributes.barycentrics;
-	payload.front_face = front_facing_builtin ? 1u : 0u;
+	payload.front_face = native_front || ((payload.ray_flags & 2u) != 0u && RT_CULL_MODE == 0) ? 1u : 0u;
 }
 
 #[miss]

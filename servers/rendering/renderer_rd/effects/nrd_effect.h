@@ -63,6 +63,7 @@ public:
 		RID depth;
 		RID noisy_diffuse;
 		RID noisy_specular;
+		RID indirect_diffuse;
 		RID scene_data;
 		RID color;
 		RID separate_specular;

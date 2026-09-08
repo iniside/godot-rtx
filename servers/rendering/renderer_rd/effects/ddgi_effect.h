@@ -33,9 +33,11 @@
 #include "core/math/vector3.h"
 #include "core/templates/local_vector.h"
 #include "servers/rendering/renderer_rd/shaders/effects/ddgi_blend.slang.gen.h"
+#include "servers/rendering/renderer_rd/shaders/effects/ddgi_camera.slang.gen.h"
 #include "servers/rendering/renderer_rd/shaders/effects/ddgi_classify.slang.gen.h"
 #include "servers/rendering/renderer_rd/shaders/effects/ddgi_relocate.slang.gen.h"
 #include "servers/rendering/renderer_rd/shaders/effects/ddgi_state.slang.gen.h"
+#include "servers/rendering/renderer_rd/shaders/raytracing/ddgi_trace.slang.gen.h"
 #include "servers/rendering/storage/environment_storage.h"
 
 namespace RendererRD {
@@ -86,6 +88,12 @@ public:
 		Cascade cascades[MAX_CASCADES];
 		VolumeDescriptor descriptors[MAX_CASCADES];
 		RID volume_buffer;
+		RID frame_buffer;
+		RID trace_pipeline;
+		RID trace_sbt;
+		RID material_source_pipeline;
+		RID indirect_radiance;
+		Size2i camera_size;
 		uint32_t cascade_count = 0;
 		uint32_t rays_per_probe = 0;
 		float base_spacing = 0;
@@ -93,6 +101,11 @@ public:
 		uint64_t frame = 0;
 		uint32_t fair_cursor = 0;
 		uint64_t schedule_slot = 0;
+#ifdef DEBUG_ENABLED
+		String diagnostic_prefix;
+		LocalVector<uint32_t> diagnostic_frames;
+		uint32_t diagnostic_capture_index = 0;
+#endif
 		LocalVector<uint32_t> updates;
 		~Context();
 	};
@@ -103,6 +116,10 @@ public:
 	bool prepare(Context &p_context, const Vector3 &p_camera, const Vector3 &p_rt_origin, uint64_t p_history_epoch, int p_update_budget);
 	bool begin_update(Context &p_context, uint32_t p_cascade);
 	bool finish_update(Context &p_context, uint32_t p_cascade);
+	RID get_trace_shader(bool p_radiance_array);
+	LocalVector<RD::Uniform> get_grid_uniforms(const Context &p_context) const;
+	void update_frame(Context &p_context, uint32_t p_cascade, uint32_t p_layers);
+	bool render_camera(Context &p_context, RID p_scene_data, RID p_rt_frame, const RID p_surface[6], RID p_depth, const Size2i &p_size, bool p_orthogonal);
 
 private:
 	enum StateMode { STATE_RESET,
@@ -113,10 +130,16 @@ private:
 	DdgiClassifyShaderRD classify_shader;
 	DdgiRelocateShaderRD relocate_shader;
 	DdgiStateShaderRD state_shader;
+	DdgiTraceShaderRD trace_shader;
+	DdgiCameraShaderRD camera_shader;
 	RID blend_version;
 	RID classify_version;
 	RID relocate_version;
 	RID state_version;
+	RID trace_version;
+	RID camera_version;
+	RID camera_pipeline;
+	RID sampler;
 	RID blend_pipelines[6];
 	RID classify_pipeline;
 	RID relocate_pipeline;
@@ -126,6 +149,7 @@ private:
 	RID _texture(uint32_t p_width, uint32_t p_height, RD::DataFormat p_format);
 	bool _dispatch(RID p_shader, RID p_pipeline, const LocalVector<RD::Uniform> &p_uniforms, const void *p_constants, uint32_t p_constant_size, uint32_t p_x, uint32_t p_y = 1, uint32_t p_z = 1);
 	bool _state(Context &p_context, uint32_t p_cascade, StateMode p_mode);
+	void _capture_diagnostics(Context &p_context);
 };
 
 } // namespace RendererRD

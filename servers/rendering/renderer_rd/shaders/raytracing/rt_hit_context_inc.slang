@@ -455,7 +455,7 @@ SurfaceData rt_evaluate_material(GeometryHitInput hit, GeometryTriangle triangle
 	instance_custom = geometry_instance_custom(hit.geometry, triangle.indices[0]);
 	ViewIndex = 0u;
 	eye_offset = float3(0.0);
-	front_facing_builtin = RT_CULL_MODE == 1 ? native_front : !native_front;
+	front_facing_builtin = RT_CULL_MODE == 1 ? !native_front : native_front;
 	rt_material_discarded = false;
 	rt_cone_radius = max(cone_width + hit_t * cone_spread, 1e-6);
 	float3 object_position, object_dx, object_dy;

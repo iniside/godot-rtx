@@ -62,5 +62,7 @@ private:
 	uint32_t free_indices_count = 0; // logical top to avoid resize of free_indices array
 	RID default_texture;
 	RID uniform_set;
+	HashMap<RID, Pair<uint32_t, RID>> shader_uniform_sets;
 	bool needs_refinalize = false;
+	void _clear_uniform_sets();
 };

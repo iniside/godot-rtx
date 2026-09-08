@@ -48,8 +48,17 @@ void BindlessBlock::begin_frame() {
 		return;
 	}
 
+	LocalVector<RID> invalid_shaders;
+	for (const KeyValue<RID, Pair<uint32_t, RID>> &entry : shader_uniform_sets) {
+		if (!rd->uniform_set_is_valid(entry.value.second)) {
+			invalid_shaders.push_back(entry.key);
+		}
+	}
+	for (RID shader : invalid_shaders) {
+		shader_uniform_sets.erase(shader);
+	}
 	bool set_valid = uniform_set.is_valid() && rd->uniform_set_is_valid(uniform_set);
-	if (set_valid) {
+	if (set_valid && invalid_shaders.is_empty()) {
 		return;
 	}
 
@@ -69,7 +78,7 @@ void BindlessBlock::begin_frame() {
 				free_indices.push_back(i);
 			}
 			++free_indices_count;
-		} else {
+		} else if (textures[i] != default_texture) {
 			texture_to_index[textures[i]] = i;
 		}
 	}
@@ -117,12 +126,16 @@ void BindlessBlock::finalize(RID p_shader, uint32_t p_set_index) {
 	ERR_FAIL_COND_MSG(!is_initialized(), "BindlessBlock not initialized.");
 	ERR_FAIL_COND_MSG(textures.is_empty(), "BindlessBlock has no textures.");
 
-	if (is_finalized() && !needs_refinalize && rd->uniform_set_is_valid(uniform_set)) {
+	if (needs_refinalize) {
+		_clear_uniform_sets();
+	}
+	Pair<uint32_t, RID> *cached = shader_uniform_sets.getptr(p_shader);
+	if (cached && cached->first == p_set_index && rd->uniform_set_is_valid(cached->second)) {
+		uniform_set = cached->second;
 		return;
 	}
-
-	if (uniform_set.is_valid() && rd->uniform_set_is_valid(uniform_set)) {
-		rd->free_rid(uniform_set);
+	if (cached && rd->uniform_set_is_valid(cached->second)) {
+		rd->free_rid(cached->second);
 	}
 	uniform_set = RID();
 
@@ -140,15 +153,23 @@ void BindlessBlock::finalize(RID p_shader, uint32_t p_set_index) {
 	uniform_set = rd->uniform_set_create(uniforms, p_shader, p_set_index);
 	ERR_FAIL_COND_MSG(!uniform_set.is_valid(), "Failed to create bindless uniform set.");
 	rd->set_resource_name(uniform_set, "Bindless Texture Set");
+	shader_uniform_sets[p_shader] = Pair<uint32_t, RID>(p_set_index, uniform_set);
 
 	needs_refinalize = false;
 }
 
-void BindlessBlock::clear() {
-	if (uniform_set.is_valid() && rd && rd->uniform_set_is_valid(uniform_set)) {
-		rd->free_rid(uniform_set);
+void BindlessBlock::_clear_uniform_sets() {
+	for (const KeyValue<RID, Pair<uint32_t, RID>> &entry : shader_uniform_sets) {
+		if (rd && rd->uniform_set_is_valid(entry.value.second)) {
+			rd->free_rid(entry.value.second);
+		}
 	}
+	shader_uniform_sets.clear();
 	uniform_set = RID();
+}
+
+void BindlessBlock::clear() {
+	_clear_uniform_sets();
 	textures.clear();
 	texture_to_index.clear();
 	free_indices.clear();

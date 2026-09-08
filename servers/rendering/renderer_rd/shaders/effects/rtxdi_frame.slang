@@ -29,7 +29,7 @@ struct Params {
 	uint fog_legacy_blending;
 	uint separate_specular;
 	float environment_energy;
-	uint pad0;
+	uint ddgi_enabled;
 	uint pad1;
 	uint pad2;
 };
@@ -98,6 +98,7 @@ struct DirectionalLights {
 [[vk::binding(13, 0)]] ConstantBuffer<DirectionalLights> directional_lights;
 [[vk::binding(14, 0), vk::image_format("rgba16f")]] RWTexture2D<float4> separate_specular;
 [[vk::binding(15, 0)]] SamplerState environment_sampler;
+[[vk::binding(16, 0)]] Texture2D<float4> indirect_diffuse;
 
 float3 fog_sample_radiance(float3 view_direction, float mip_level) {
 	float3 sky_direction = mul(view_direction, scene.data.radiance_inverse_xform);
@@ -196,6 +197,9 @@ void main(uint3 invocation : SV_DispatchThreadID) {
 		float3 specular_factor;
 		rtxdi_nrd_material_factors(normal, surface.view_direction, surface.material.base_color * (1.0 - surface.material.metallic), lerp(float3(0.08 * surface.material.specular), surface.material.base_color, surface.material.metallic), surface.material.roughness, diffuse_factor, specular_factor);
 		output_color += diffuse_radiance.Load(address).rgb * diffuse_factor * scene.data.emissive_exposure_normalization;
+		if (params.ddgi_enabled != 0u) {
+			output_color += indirect_diffuse.Load(address).rgb * scene.data.emissive_exposure_normalization;
+		}
 		specular_color = specular_radiance.Load(address).rgb * specular_factor * scene.data.emissive_exposure_normalization;
 	}
 	float4 fog = float4(0.0, 0.0, 0.0, 1.0);

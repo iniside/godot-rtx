@@ -287,6 +287,77 @@ Vulkan evidence proves initialization/reset, not probe lighting, relocation outp
 GPU readback of scrolling validity, continuous motion, multi-viewport isolation,
 large-coordinate images, or final DDGI/PT/RR composition. These remain required.
 
+## Step 5 native probe lighting and hybrid composition, 2026-09-08
+
+Source baseline: `4bc002bc10b8f2735790f35336d0a5a6925b731a`.
+DDGI now dispatches native probe raygen/miss with the shared material programs,
+TLAS, bindless textures, analytic/emissive light tables and environment. Selected
+cascades trace current rays, perform the SDK update sequence, and supply diffuse
+indirect radiance to camera composition before fog and postprocessing. The
+existing composition replaces raster lighting with emission and RT signals, so
+DDGI is the added diffuse indirect authority. It is not passed through NRD.
+Inactive probes currently retain all rays, including the fixed reactivation rays;
+skipping their random rays is not an implemented optimization.
+
+The camera query reconstructs positions in the shared RT basis. Valid neighboring
+probes are normalized inside the SDK; fine-to-coarse coverage retains zero for
+uncovered weight, preserving the outer grid fade. Contexts own their native
+pipeline/SBT, camera output and descriptor buffer. Bindless uniform sets now
+cache per shader/set because compute and native RT descriptor visibility differ.
+This fixes actual Vulkan descriptor-format errors found by the first dispatch.
+
+GPU readback also exposed an inverted native material-facing interpretation.
+TLAS instance flags already orient the accepted material side. With a single
+plane, a probe above it previously classified 42 hits as backfaces. The corrected
+native facing gives 42 front hits and zero back hits; a probe below gives zero
+front hits and 41 back hits. Public FRONT_FACING accounts separately for front
+culling. Native shadow rays retain the existing opposite-side shadow-culling
+rule used by camera ray queries. An intermediate change to that shadow rule was
+removed; it is not part of this implementation.
+
+Evidence root: `C:/Users/lukas/AppData/Local/Temp/godot-ddgi-step5-20260908`.
+`runtime-1` is a failed intermediate despite process exit 0: descriptor ERRORs
+were present. Subsequent `runtime-2`, gallery and readback captures execute real
+Vulkan work. The first plane image alone did not prove bounced GI. The temporary
+room initially used unsupported runtime BoxMesh geometry; those `room-on/off`
+runs are excluded. `room-baked-on/off` use imported clustered cube meshes, the
+same camera/light and frame 500, and exit 0 without ERROR lines. Viewed images
+show colored indirect light on box faces that are black with DDGI disabled.
+This establishes a composed GI contribution, not reference-image correctness.
+
+`room-moving` records seven GPU snapshots at context frames 110, 121, 130, 181,
+190, 221 and 230, with signed multi-cell movement, continuous movement, a
+nonoverlapping teleport to (-70, 2, -70) and return. At frame 121, the unupdated
+second cascade preserves 3,360 valid probes, matching its 14*16*15 intersecting
+cells. At frames 181 and 190 all four irradiance atlases contain zero old energy.
+At frame 230 lighting has repopulated. Every inspected snapshot reports zero
+valid probes with mismatched traced/current positions and no nonfinite camera
+or irradiance components. Valid-probe ages in these snapshots are at most six
+frames. This is bounded observed evidence, not an exhaustive scheduling proof.
+
+Debug builds offer explicitly requested frame snapshots, per-context unique
+filenames, atlas/position/validity/age readback and a standard-library inspector
+with optional absolute-position CSV. See [DDGI diagnostics](../reference/ddgi-diagnostics.md).
+The readbacks stall the GPU and must not be used as performance measurements.
+The native producer compiler/validator matrix `compile-nonnegative-final` passes
+ten variants (ordinary and double, both sky layouts, raygen/miss and camera
+compute), recording input/dependency/compiler/validator hashes. Environment
+radiance is clamped nonnegative before SDK integration: the earlier GPU readback
+contained small negative filtered sky values.
+
+The first `room-final-double` run failed despite exit 0 and a successful native
+shader compile matrix: C++ had not selected USE_DOUBLE_PRECISION for the DDGI
+producer and camera query. Actual native pipeline layouts consequently differed
+from double-precision material programs. Both shader initializations now receive
+the scene precision define. `room-double-layout-final` exits 0 without ERROR
+lines and its viewed image shows the same room GI behavior as ordinary mode.
+This is not large-coordinate proof. The final build receipt family is
+`editor-layout-final`, `double-layout-final`, `template-layout-final`.
+Earlier `template-final` changed source during compilation and is intermediate;
+the retained `*-nonnegative-final` family passed stable-source builds before the
+final C++ precision wiring correction.
+PT, RR, DLSS delivery and the complete Step 8 matrix remain outstanding.
+
 ## Remaining boundaries
 
 Compiler diagnostics and pipeline creation do not establish dispatched images,

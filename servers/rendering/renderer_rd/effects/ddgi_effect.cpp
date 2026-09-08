@@ -30,13 +30,25 @@
 
 #include "ddgi_effect.h"
 
+#include "core/io/file_access.h"
+#include "core/io/json.h"
 #include "core/math/quaternion.h"
+#include "core/os/os.h"
 #include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
 
 namespace RendererRD {
 
 DDGIEffect::Context::~Context() {
 	RD *rd = RD::get_singleton();
+	if (rd->raytracing_pipeline_is_valid(trace_pipeline)) {
+		rd->free_rid(trace_sbt);
+		rd->free_rid(trace_pipeline);
+	}
+	for (RID resource : { frame_buffer, indirect_radiance }) {
+		if (resource.is_valid()) {
+			rd->free_rid(resource);
+		}
+	}
 	for (Cascade &cascade : cascades) {
 		for (RID resource : { cascade.ray_data, cascade.irradiance, cascade.distance, cascade.probe_data, cascade.traced_data, cascade.validity, cascade.update_frame, cascade.variability, cascade.reset_mask }) {
 			if (resource.is_valid()) {
@@ -50,6 +62,23 @@ DDGIEffect::Context::~Context() {
 }
 
 DDGIEffect::DDGIEffect() {
+	RD::SamplerState sampler_state;
+	sampler_state.min_filter = RD::SAMPLER_FILTER_LINEAR;
+	sampler_state.mag_filter = RD::SAMPLER_FILTER_LINEAR;
+	sampler_state.repeat_u = RD::SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE;
+	sampler_state.repeat_v = RD::SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE;
+	sampler_state.repeat_w = RD::SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE;
+	sampler = RD::get_singleton()->sampler_create(sampler_state);
+	String scene_defines;
+#ifdef REAL_T_IS_DOUBLE
+	scene_defines += "#define USE_DOUBLE_PRECISION\n";
+#endif
+	trace_shader.initialize(Vector<String>{ "\n", "\n#define USE_RADIANCE_OCTMAP_ARRAY\n" }, scene_defines);
+	trace_version = trace_shader.version_create();
+	camera_shader.initialize(Vector<String>{ "\n" }, scene_defines);
+	camera_version = camera_shader.version_create();
+	RID camera = camera_shader.version_get_shader(camera_version, 0);
+	camera_pipeline = camera.is_valid() ? RD::get_singleton()->compute_pipeline_create(camera) : RID();
 	Vector<String> blend_modes;
 	for (int output = 0; output < 2; output++) {
 		for (int rays : { 64, 128, 256 }) {
@@ -58,7 +87,7 @@ DDGIEffect::DDGIEffect() {
 	}
 	blend_shader.initialize(blend_modes);
 	blend_version = blend_shader.version_create();
-	available = true;
+	available = camera_pipeline.is_valid() && sampler.is_valid();
 	for (int i = 0; i < 6; i++) {
 		RID shader = blend_shader.version_get_shader(blend_version, i);
 		blend_pipelines[i] = shader.is_valid() ? RD::get_singleton()->compute_pipeline_create(shader) : RID();
@@ -83,6 +112,11 @@ DDGIEffect::DDGIEffect() {
 }
 
 DDGIEffect::~DDGIEffect() {
+	trace_shader.version_free(trace_version);
+	camera_shader.version_free(camera_version);
+	if (sampler.is_valid()) {
+		RD::get_singleton()->free_rid(sampler);
+	}
 	blend_shader.version_free(blend_version);
 	classify_shader.version_free(classify_version);
 	relocate_shader.version_free(relocate_version);
@@ -107,11 +141,30 @@ DDGIEffect::Context *DDGIEffect::create_context(const RendererEnvironmentStorage
 	ERR_FAIL_COND_V(p_settings.ddgi_rays_per_probe != 64 && p_settings.ddgi_rays_per_probe != 128 && p_settings.ddgi_rays_per_probe != 256, nullptr);
 	ERR_FAIL_COND_V(!Math::is_finite(p_settings.ddgi_probe_spacing) || p_settings.ddgi_probe_spacing <= 0.0f, nullptr);
 	Context *context = memnew(Context);
+#ifdef DEBUG_ENABLED
+	context->diagnostic_prefix = OS::get_singleton()->get_environment("GODOT_DDGI_CAPTURE_PREFIX");
+	if (!context->diagnostic_prefix.is_empty()) {
+		String frames = OS::get_singleton()->get_environment("GODOT_DDGI_CAPTURE_FRAMES");
+		if (frames.is_empty()) {
+			frames = "120";
+		}
+		for (const String &value : frames.split(",")) {
+			int64_t frame = value.to_int();
+			if (value.is_valid_int() && frame > 0 && frame <= UINT32_MAX &&
+					(context->diagnostic_frames.is_empty() || frame > context->diagnostic_frames[context->diagnostic_frames.size() - 1])) {
+				context->diagnostic_frames.push_back(uint32_t(frame));
+			} else {
+				WARN_PRINT("GODOT_DDGI_CAPTURE_FRAMES requires increasing positive 32-bit frame numbers; skipping invalid entry.");
+			}
+		}
+	}
+#endif
 	context->cascade_count = p_settings.ddgi_cascade_count;
 	context->rays_per_probe = p_settings.ddgi_rays_per_probe;
 	context->base_spacing = p_settings.ddgi_probe_spacing;
 	context->volume_buffer = RD::get_singleton()->storage_buffer_create(sizeof(context->descriptors));
-	bool valid = context->volume_buffer.is_valid();
+	context->frame_buffer = RD::get_singleton()->uniform_buffer_create(16);
+	bool valid = context->volume_buffer.is_valid() && context->frame_buffer.is_valid();
 	for (uint32_t i = 0; i < context->cascade_count && valid; i++) {
 		Cascade &cascade = context->cascades[i];
 		cascade.ray_data = _texture(context->rays_per_probe, PROBE_AXIS * PROBE_AXIS, RD::DATA_FORMAT_R32G32B32A32_SFLOAT);
@@ -310,6 +363,135 @@ bool DDGIEffect::finish_update(Context &p_context, uint32_t p_cascade) {
 	cascade.last_update_frame = p_context.frame;
 	cascade.dirty_count = 0;
 	return true;
+}
+
+RID DDGIEffect::get_trace_shader(bool p_radiance_array) {
+	return trace_shader.version_get_shader(trace_version, p_radiance_array ? 1 : 0);
+}
+
+LocalVector<RD::Uniform> DDGIEffect::get_grid_uniforms(const Context &p_context) const {
+	LocalVector<RD::Uniform> uniforms;
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 0, { p_context.volume_buffer }));
+	for (uint32_t binding = 1; binding <= 4; binding++) {
+		RD::Uniform uniform;
+		uniform.uniform_type = RD::UNIFORM_TYPE_TEXTURE;
+		uniform.binding = binding;
+		for (uint32_t i = 0; i < MAX_CASCADES; i++) {
+			const Cascade &cascade = p_context.cascades[MIN(i, p_context.cascade_count - 1)];
+			const RID resources[] = { cascade.irradiance, cascade.distance, cascade.probe_data, cascade.validity };
+			uniform.append_id(resources[binding - 1]);
+		}
+		uniforms.push_back(uniform);
+	}
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_SAMPLER, 5, { sampler }));
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 7, { p_context.frame_buffer }));
+	return uniforms;
+}
+
+void DDGIEffect::update_frame(Context &p_context, uint32_t p_cascade, uint32_t p_layers) {
+	uint32_t data[4] = { p_cascade, p_context.cascade_count, uint32_t(p_context.frame), p_layers };
+	RD::get_singleton()->buffer_update(p_context.frame_buffer, 0, sizeof(data), data);
+}
+
+bool DDGIEffect::render_camera(Context &p_context, RID p_scene_data, RID p_rt_frame, const RID p_surface[6], RID p_depth, const Size2i &p_size, bool p_orthogonal) {
+	RD *rd = RD::get_singleton();
+	if (p_context.camera_size != p_size) {
+		if (p_context.indirect_radiance.is_valid()) {
+			rd->free_rid(p_context.indirect_radiance);
+		}
+		p_context.indirect_radiance = RID();
+		p_context.camera_size = Size2i();
+	}
+	if (p_context.indirect_radiance.is_null()) {
+		RD::TextureFormat format;
+		format.width = p_size.x;
+		format.height = p_size.y;
+		format.format = RD::DATA_FORMAT_R16G16B16A16_SFLOAT;
+		format.usage_bits = RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT | RD::TEXTURE_USAGE_CAN_COPY_FROM_BIT;
+		p_context.indirect_radiance = rd->texture_create(format, RD::TextureView());
+		ERR_FAIL_COND_V(p_context.indirect_radiance.is_null(), false);
+		p_context.camera_size = p_size;
+	}
+	RID shader = camera_shader.version_get_shader(camera_version, 0);
+	LocalVector<RD::Uniform> uniforms;
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 0, { p_scene_data }));
+	for (uint32_t i = 0; i < 6; i++) {
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, i + 1, { p_surface[i] }));
+	}
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 7, { p_depth }));
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 8, { p_rt_frame }));
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 9, { p_context.indirect_radiance }));
+	RID camera_set = UniformSetCacheRD::get_singleton()->get_cache_vec(shader, 0, uniforms);
+	RID grid_set = UniformSetCacheRD::get_singleton()->get_cache_vec(shader, 2, get_grid_uniforms(p_context));
+	ERR_FAIL_COND_V(camera_set.is_null() || grid_set.is_null(), false);
+	uint32_t constants[4] = { uint32_t(p_size.x), uint32_t(p_size.y), uint32_t(p_orthogonal), 0 };
+	RD::ComputeListID list = rd->compute_list_begin();
+	rd->compute_list_bind_compute_pipeline(list, camera_pipeline);
+	rd->compute_list_bind_uniform_set(list, camera_set, 0);
+	rd->compute_list_bind_uniform_set(list, grid_set, 2);
+	rd->compute_list_set_push_constant(list, constants, sizeof(constants));
+	rd->compute_list_dispatch_threads(list, p_size.x, p_size.y, 1);
+	rd->compute_list_end();
+	_capture_diagnostics(p_context);
+	return true;
+}
+
+void DDGIEffect::_capture_diagnostics(Context &p_context) {
+#ifdef DEBUG_ENABLED
+	// Explicit, bounded GPU readback for manual rendering investigations only.
+	// A unique render-buffer suffix keeps simultaneous viewports independent.
+	if (p_context.diagnostic_capture_index >= p_context.diagnostic_frames.size() ||
+			p_context.frame < p_context.diagnostic_frames[p_context.diagnostic_capture_index]) {
+		return;
+	}
+	p_context.diagnostic_capture_index++;
+	String prefix = p_context.diagnostic_prefix + "-" + uitos(p_context.volume_buffer.get_id()) + "-frame-" + uitos(p_context.frame);
+	Dictionary metadata;
+	metadata["frame"] = p_context.frame;
+	metadata["cascade_count"] = p_context.cascade_count;
+	metadata["rays_per_probe"] = p_context.rays_per_probe;
+	metadata["base_spacing"] = p_context.base_spacing;
+	metadata["camera_width"] = p_context.camera_size.x;
+	metadata["camera_height"] = p_context.camera_size.y;
+	metadata["probe_axis"] = PROBE_AXIS;
+	metadata["texture_layer_order"] = "Y layers, Z rows, X columns; little-endian components";
+	Array cascades;
+	auto save = [&](const String &p_name, RID p_texture, uint32_t p_layers) {
+		Ref<FileAccess> file = FileAccess::open(prefix + "-" + p_name + ".bin", FileAccess::WRITE);
+		ERR_FAIL_COND(file.is_null());
+		for (uint32_t layer = 0; layer < p_layers; layer++) {
+			file->store_buffer(RD::get_singleton()->texture_get_data(p_texture, layer));
+		}
+	};
+	for (uint32_t i = 0; i < p_context.cascade_count; i++) {
+		const Cascade &cascade = p_context.cascades[i];
+		Dictionary data;
+		Array minimum;
+		for (uint32_t axis = 0; axis < 3; axis++) {
+			minimum.push_back(cascade.minimum_cell[axis]);
+		}
+		data["minimum_cell"] = minimum;
+		data["last_update_frame"] = cascade.last_update_frame;
+		cascades.push_back(data);
+		String name = "cascade-" + itos(i) + "-";
+		save(name + "rays-rgba32f", cascade.ray_data, PROBE_AXIS);
+		save(name + "irradiance-rgba16f", cascade.irradiance, PROBE_AXIS);
+		save(name + "distance-rgba32f", cascade.distance, PROBE_AXIS);
+		save(name + "position-state-rgba32f", cascade.probe_data, PROBE_AXIS);
+		save(name + "traced-position-state-rgba32f", cascade.traced_data, PROBE_AXIS);
+		save(name + "validity-r32ui", cascade.validity, PROBE_AXIS);
+		save(name + "update-frame-r32ui", cascade.update_frame, PROBE_AXIS);
+	}
+	metadata["cascades"] = cascades;
+	save("camera-rgba16f", p_context.indirect_radiance, 1);
+	Ref<FileAccess> descriptors = FileAccess::open(prefix + "-volume-descriptors.bin", FileAccess::WRITE);
+	ERR_FAIL_COND(descriptors.is_null());
+	descriptors->store_buffer(RD::get_singleton()->buffer_get_data(p_context.volume_buffer));
+	Ref<FileAccess> file = FileAccess::open(prefix + ".json", FileAccess::WRITE);
+	ERR_FAIL_COND(file.is_null());
+	file->store_string(JSON::stringify(metadata, "\t"));
+	print_line("DDGI_CAPTURE " + prefix);
+#endif
 }
 
 } // namespace RendererRD

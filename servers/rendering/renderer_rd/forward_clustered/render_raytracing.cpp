@@ -37,6 +37,7 @@
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
 #include "servers/rendering/renderer_rd/storage_rd/mesh_storage.h"
 #include "servers/rendering/renderer_rd/storage_rd/texture_storage.h"
+#include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
 #include "servers/rendering/rendering_server_globals.h"
 
 using namespace RendererSceneRenderImplementation;
@@ -184,6 +185,70 @@ bool RenderRaytracing::_prepare_ddgi(RTViewportState *p_state) {
 	return true;
 }
 
+bool RenderRaytracing::_render_ddgi(RTViewportState *p_state, RID p_scene_data, RID p_sky) {
+	if (!p_state->ddgi) {
+		return true;
+	}
+	RD *rd = RD::get_singleton();
+	RendererRD::DDGIEffect::Context &context = *p_state->ddgi;
+	RID shader = ddgi_effect->get_trace_shader(owner->is_using_radiance_octmap_array());
+	ERR_FAIL_COND_V(shader.is_null(), false);
+	if (context.material_source_pipeline != p_state->material_pipeline || !rd->raytracing_pipeline_is_valid(context.trace_pipeline)) {
+		if (rd->raytracing_pipeline_is_valid(context.trace_pipeline)) {
+			rd->free_rid(context.trace_sbt);
+			rd->free_rid(context.trace_pipeline);
+		}
+		context.trace_pipeline = RID();
+		context.trace_sbt = RID();
+		RD::PipelineShader entry;
+		entry.shader = shader;
+		ERR_FAIL_COND_V(!create_material_pipeline(p_state, { &entry, 1 }, { &entry, 1 }, 1, context.trace_pipeline, context.trace_sbt), false);
+		context.material_source_pipeline = p_state->material_pipeline;
+	}
+	RID material_set = create_material_uniform_set(p_state, p_scene_data, shader);
+	ERR_FAIL_COND_V(material_set.is_null(), false);
+	RID bindless_set = get_bindless_uniform_set(shader);
+	bool valid = bindless_set.is_valid();
+	const RTLightSnapshot &lights = p_state->light_snapshots[p_state->current_light_snapshot];
+	for (uint32_t cascade_index : context.updates) {
+		if (!valid) {
+			break;
+		}
+		RendererRD::DDGIEffect::Cascade &cascade = context.cascades[cascade_index];
+		valid = ddgi_effect->begin_update(context, cascade_index);
+		if (!valid) {
+			break;
+		}
+		ddgi_effect->update_frame(context, cascade_index, p_state->settings_visible_layers);
+		LocalVector<RD::Uniform> uniforms = ddgi_effect->get_grid_uniforms(context);
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 6, { cascade.ray_data }));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 8, { cascade.traced_data }));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 9, { lights.light_buffer }));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 10, { lights.parameters_buffer }));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 11, { p_sky }));
+		RID grid_set = UniformSetCacheRD::get_singleton()->get_cache_vec(shader, 2, uniforms);
+		if (grid_set.is_null()) {
+			valid = false;
+			break;
+		}
+		RD::RaytracingListID list = rd->raytracing_list_begin();
+		rd->raytracing_list_bind_raytracing_pipeline(list, context.trace_pipeline);
+		rd->raytracing_list_bind_uniform_set(list, material_set, 0);
+		rd->raytracing_list_bind_uniform_set(list, bindless_set, 1);
+		rd->raytracing_list_bind_uniform_set(list, grid_set, 2);
+		register_raytracing_buffer_dependencies(list);
+		rd->raytracing_list_trace_rays(list, 0, context.trace_sbt, context.rays_per_probe, RendererRD::DDGIEffect::PROBE_COUNT, 1);
+		rd->raytracing_list_end();
+		valid = ddgi_effect->finish_update(context, cascade_index);
+	}
+	rd->free_rid(material_set);
+	if (!valid) {
+		memdelete(p_state->ddgi);
+		p_state->ddgi = nullptr;
+	}
+	return valid;
+}
+
 RTViewportState *RenderRaytracing::_get_viewport_state(const RenderDataRD *p_render_data) const {
 	if (!p_render_data || p_render_data->render_buffers.is_null()) {
 		return nullptr;
@@ -201,7 +266,7 @@ void RenderRaytracing::_free_viewport_state_internal(RTViewportState *p_state) {
 		RD::get_singleton()->free_rid(p_state->material_sbt);
 		RD::get_singleton()->free_rid(p_state->material_pipeline);
 	}
-	for (RID resource : { p_state->material_frame_buffer, p_state->decal_buffer }) {
+	for (RID resource : { p_state->material_frame_buffer, p_state->decal_buffer, p_state->material_unused_buffer }) {
 		if (resource.is_valid()) {
 			RD::get_singleton()->free_rid(resource);
 		}
@@ -3464,14 +3529,9 @@ void RenderRaytracing::register_raytracing_buffer_dependencies(RD::RaytracingLis
 	}
 }
 
-bool RenderRaytracing::trace_material_rays(RTViewportState *p_state, RID p_scene_data_buffer, RID p_ray_buffer, RID p_result_buffer, uint32_t p_ray_count) {
-	ERR_FAIL_NULL_V(p_state, false);
+RID RenderRaytracing::create_material_uniform_set(RTViewportState *p_state, RID p_scene_data_buffer, RID p_shader, RID p_ray_buffer, RID p_result_buffer, uint32_t p_ray_count) {
+	ERR_FAIL_NULL_V(p_state, RID());
 	RD *rd = RD::get_singleton();
-	ERR_FAIL_COND_V(!rd->raytracing_pipeline_is_valid(p_state->material_pipeline) || !p_state->material_sbt.is_valid(), false);
-	ERR_FAIL_COND_V(!p_scene_data_buffer.is_valid() || !p_ray_buffer.is_valid() || !p_result_buffer.is_valid(), false);
-	if (p_ray_count == 0) {
-		return true;
-	}
 	struct alignas(16) MaterialFrame {
 		float origin[4] = {};
 		uint32_t counts[4] = {};
@@ -3486,7 +3546,7 @@ bool RenderRaytracing::trace_material_rays(RTViewportState *p_state, RID p_scene
 	if (p_state->material_frame_buffer.is_null()) {
 		p_state->material_frame_buffer = rd->uniform_buffer_create(sizeof(frame));
 	}
-	ERR_FAIL_COND_V(p_state->material_frame_buffer.is_null(), false);
+	ERR_FAIL_COND_V(p_state->material_frame_buffer.is_null(), RID());
 	rd->buffer_update(p_state->material_frame_buffer, 0, sizeof(frame), &frame);
 	if (p_state->decal_buffer.is_null()) {
 		p_state->decal_buffer = rd->storage_buffer_create(16);
@@ -3525,10 +3585,24 @@ bool RenderRaytracing::trace_material_rays(RTViewportState *p_state, RID p_scene
 		}
 	}
 	append(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 21, p_state->frame_constants_buffer);
-	append(RD::UNIFORM_TYPE_STORAGE_BUFFER, 22, p_ray_buffer);
-	append(RD::UNIFORM_TYPE_STORAGE_BUFFER, 23, p_result_buffer);
+	if ((p_ray_buffer.is_null() || p_result_buffer.is_null()) && p_state->material_unused_buffer.is_null()) {
+		p_state->material_unused_buffer = rd->storage_buffer_create(16);
+	}
+	append(RD::UNIFORM_TYPE_STORAGE_BUFFER, 22, p_ray_buffer.is_valid() ? p_ray_buffer : p_state->material_unused_buffer);
+	append(RD::UNIFORM_TYPE_STORAGE_BUFFER, 23, p_result_buffer.is_valid() ? p_result_buffer : p_state->material_unused_buffer);
+	return rd->uniform_set_create(uniforms, p_shader, 0, true);
+}
+
+bool RenderRaytracing::trace_material_rays(RTViewportState *p_state, RID p_scene_data_buffer, RID p_ray_buffer, RID p_result_buffer, uint32_t p_ray_count) {
+	ERR_FAIL_NULL_V(p_state, false);
+	RD *rd = RD::get_singleton();
+	ERR_FAIL_COND_V(!rd->raytracing_pipeline_is_valid(p_state->material_pipeline) || !p_state->material_sbt.is_valid(), false);
+	ERR_FAIL_COND_V(!p_scene_data_buffer.is_valid() || !p_ray_buffer.is_valid() || !p_result_buffer.is_valid(), false);
+	if (p_ray_count == 0) {
+		return true;
+	}
 	RID shader = owner->scene_shader.default_material_shader_ptr->get_hit_shader();
-	RID uniform_set = rd->uniform_set_create(uniforms, shader, 0, true);
+	RID uniform_set = create_material_uniform_set(p_state, p_scene_data_buffer, shader, p_ray_buffer, p_result_buffer, p_ray_count);
 	ERR_FAIL_COND_V(uniform_set.is_null(), false);
 	RID bindless_set = get_bindless_uniform_set(shader);
 	if (bindless_set.is_null()) {

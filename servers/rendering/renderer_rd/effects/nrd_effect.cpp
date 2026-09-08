@@ -30,11 +30,12 @@
 
 #include "nrd_effect.h"
 
+#include "thirdparty/nrd/Include/NRD.h"
+
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
+#include "servers/rendering/renderer_rd/storage_rd/texture_storage.h"
 #include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
 #include "servers/rendering/renderer_scene_render.h"
-
-#include "thirdparty/nrd/Include/NRD.h"
 
 namespace RendererRD {
 
@@ -173,6 +174,7 @@ bool NRDEffect::_process_frame(Context *p_context, const Frame &p_frame, bool p_
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 13, p_frame.directional_lights));
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 14, p_frame.separate_specular.is_valid() ? p_frame.separate_specular : p_context->normal_roughness));
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_SAMPLER, 15, samplers[1]));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 16, p_frame.indirect_diffuse.is_valid() ? p_frame.indirect_diffuse : TextureStorage::get_singleton()->texture_rd_get_default(TextureStorage::DEFAULT_RD_TEXTURE_BLACK)));
 	} else {
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 8, p_context->normal_roughness));
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 9, p_context->view_depth));
@@ -191,8 +193,9 @@ bool NRDEffect::_process_frame(Context *p_context, const Frame &p_frame, bool p_
 		uint32_t fog_legacy_blending;
 		uint32_t separate_specular;
 		float environment_energy;
-		uint32_t padding[3];
-	} push = { uint32_t(p_context->size.x), uint32_t(p_context->size.y), p_frame.orthogonal, p_frame.fog_enabled, p_frame.fog_inverse_length, p_frame.fog_spread, p_frame.fog_legacy_blending, p_frame.separate_specular.is_valid(), p_frame.environment_energy, { 0, 0, 0 } };
+		uint32_t ddgi_enabled;
+		uint32_t padding[2];
+	} push = { uint32_t(p_context->size.x), uint32_t(p_context->size.y), p_frame.orthogonal, p_frame.fog_enabled, p_frame.fog_inverse_length, p_frame.fog_spread, p_frame.fog_legacy_blending, p_frame.separate_specular.is_valid(), p_frame.environment_energy, p_frame.indirect_diffuse.is_valid(), { 0, 0 } };
 	RD *rd = RD::get_singleton();
 	RD::ComputeListID list = rd->compute_list_begin();
 	rd->compute_list_bind_compute_pipeline(list, frame_pipelines[pass]);

@@ -1815,8 +1815,6 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	ERR_FAIL_COND_MSG(!raytracing->_prepare_ddgi(raytracing->_get_viewport_state(p_render_data)), "Camera-following DDGI state preparation failed.");
 	if (rt_settings.raytracing_rendering_mode == RSE::RAYTRACING_RENDERING_MODE_PATH_TRACED) {
 		WARN_PRINT_ONCE("Path Traced mode is not implemented yet. This build continues rendering raster RTXDI with NRD; it does not produce a path-traced reference.");
-	} else if (rt_settings.ddgi_enabled) {
-		WARN_PRINT_ONCE("DDGI settings are stored, but probe lighting is not implemented yet. This build renders RTXDI direct lighting without DDGI.");
 	}
 	if (rt_settings.raytracing_denoiser == RSE::RAYTRACING_DENOISER_DLSS_RR) {
 		if (rb->get_scaling_3d_mode() != RSE::VIEWPORT_SCALING_3D_MODE_DLSS) {
@@ -2063,6 +2061,13 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	ERR_FAIL_COND_MSG(!rt_state->rtxdi_di || rt_state->rtxdi_di->views.is_empty() || rt_state->rtxdi_di->views[0].last_frame_index != surface.frame_index, "RTXDI did not produce lighting for this frame.");
 	frame.noisy_diffuse = rtxdi->get_diffuse_radiance_distance(rt_state, 0);
 	frame.noisy_specular = rtxdi->get_specular_radiance_distance(rt_state, 0);
+	if (rt_state->ddgi) {
+		RENDER_TIMESTAMP("DDGI Probe Lighting");
+		ERR_FAIL_COND_MSG(!raytracing->_render_ddgi(rt_state, frame.scene_data, frame.radiance), "DDGI probe lighting failed.");
+		RENDER_TIMESTAMP("DDGI Camera Irradiance");
+		ERR_FAIL_COND_MSG(!raytracing->ddgi_effect->render_camera(*rt_state->ddgi, frame.scene_data, rt_state->frame_constants_buffer, frame.surface, frame.depth, rb->get_internal_size(), frame.orthogonal), "DDGI camera interpolation failed.");
+		frame.indirect_diffuse = rt_state->ddgi->indirect_radiance;
+	}
 	RENDER_TIMESTAMP("NRD RELAX and HDR Composition");
 	ERR_FAIL_COND_MSG(!nrd_effect->process(rb_data->nrd_context, frame), "NRD frame processing failed.");
 	RENDER_TIMESTAMP("Process Post Opaque Compositor Effects");

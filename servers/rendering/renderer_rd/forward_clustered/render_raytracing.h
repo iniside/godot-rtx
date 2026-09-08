@@ -468,6 +468,7 @@ struct RTViewportState {
 	RID material_pipeline;
 	RID material_sbt;
 	RID material_frame_buffer;
+	RID material_unused_buffer;
 	RID decal_buffer;
 	uint32_t decal_buffer_capacity = 0;
 	uint32_t decal_count = 0;
@@ -487,6 +488,7 @@ class RenderRaytracing {
 	RenderForwardClustered *owner = nullptr;
 	RendererRD::DDGIEffect *ddgi_effect = nullptr;
 	bool _prepare_ddgi(RTViewportState *p_state);
+	bool _render_ddgi(RTViewportState *p_state, RID p_scene_data, RID p_sky);
 	BindlessBlock *bindless_block = nullptr;
 
 	// Caching (chunked sparse caches indexed by RID low bits / 256).
@@ -638,6 +640,7 @@ public:
 	void register_raytracing_buffer_dependencies(RD::RaytracingListID p_list);
 	bool create_material_pipeline(const RTViewportState *p_state, Span<RD::PipelineShader> p_raygen_shaders, Span<RD::PipelineShader> p_miss_shaders, uint32_t p_recursion_depth, RID &r_pipeline, RID &r_sbt) const;
 	bool trace_material_rays(RTViewportState *p_state, RID p_scene_data_buffer, RID p_ray_buffer, RID p_result_buffer, uint32_t p_ray_count);
+	RID create_material_uniform_set(RTViewportState *p_state, RID p_scene_data_buffer, RID p_shader, RID p_ray_buffer = RID(), RID p_result_buffer = RID(), uint32_t p_ray_count = 0);
 
 	RID get_bindless_uniform_set(RID p_shader) const {
 		bindless_block->finalize(p_shader, 1);
