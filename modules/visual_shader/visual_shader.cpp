@@ -1830,13 +1830,7 @@ bool VisualShader::_set(const StringName &p_name, const Variant &p_value) {
 		String what = prop_name.get_slicec('/', 3);
 
 		if (what == "node") {
-			Ref<VisualShaderNode> node = p_value;
-			Vector2 position;
-			if (node.is_valid() && id >= 2 && graph[type].nodes.has(id)) {
-				position = get_node_position(type, id);
-				remove_node(type, id);
-			}
-			add_node(type, node, position, id);
+			add_node(type, p_value, Vector2(), id);
 			return true;
 		} else if (what == "position") {
 			set_node_position(type, id, p_value);
@@ -1964,7 +1958,15 @@ bool VisualShader::_get(const StringName &p_name, Variant &r_ret) const {
 }
 
 void VisualShader::reset_state() {
-	// TODO: Everything needs to be cleared here.
+	for (int i = 0; i < TYPE_MAX; i++) {
+		const Type type = Type(i);
+		const Vector<int> nodes = get_node_list(type);
+		for (int id : nodes) {
+			if (id >= 2) {
+				remove_node(type, id);
+			}
+		}
+	}
 	emit_changed();
 }
 
