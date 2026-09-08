@@ -61,6 +61,21 @@ float4x4 decode_inverse_view(SceneData data) {
 [[vk::binding(15, 0), vk::image_format("r16f")]] RWTexture2D<float> rr_specular_hit_distance;
 [[vk::binding(16, 0)]] Texture2D<float> reflection_hit_distance;
 [[vk::binding(17, 0), vk::image_format("rgba16f")]] RWTexture2D<float4> nrd_motion;
+
+float3 rr_specular_reflectance(float3 f0, float roughness, float normal_dot_view) {
+	float nv = saturate(abs(normal_dot_view));
+	float alpha = saturate(roughness * roughness);
+	float4 x = float4(1.0, nv, nv * nv, nv * nv * nv);
+	float4 y = float4(1.0, alpha, alpha * alpha, alpha * alpha * alpha);
+	float2x2 m1 = float2x2(0.99044, -1.28514, 1.29678, -0.755907);
+	float3x3 m2 = float3x3(1.0, 2.92338, 59.4188, 20.3225, -27.0302, 222.592, 121.563, 626.13, 316.627);
+	float2x2 m3 = float2x2(0.0365463, 3.32707, 9.0632, -9.04756);
+	float3x3 m4 = float3x3(1.0, 3.59685, -1.36772, 9.04401, -16.3174, 9.22949, 5.56589, 19.7886, -20.2123);
+	float bias = dot(mul(m1, x.xy), y.xy) / dot(mul(m2, x.xyw), y.xyw);
+	float scale = dot(mul(m3, x.xy), y.xy) / dot(mul(m4, x.xzw), y.xyw);
+	bias *= saturate(f0.g * 50.0);
+	return f0 * max(scale, 0.0) + max(bias, 0.0);
+}
 #else
 [[vk::binding(8, 0)]] Texture2D<float4> diffuse_radiance;
 [[vk::binding(9, 0)]] Texture2D<float4> specular_radiance;
@@ -226,7 +241,8 @@ void main(uint3 invocation : SV_DispatchThreadID) {
 	normal_roughness[pixel] = float4(view_normal * 0.5 + 0.5, surface.material.roughness * (127.0 / 255.0));
 	bool lit_surface = surface_valid && (flags & 2u) == 0u;
 	rr_diffuse_albedo[pixel] = float4(lit_surface ? surface.material.base_color * (1.0 - surface.material.metallic) : float3(0.0), 1.0);
-	rr_specular_albedo[pixel] = float4(lit_surface ? lerp(float3(0.08 * surface.material.specular), surface.material.base_color, surface.material.metallic) : float3(0.0), 1.0);
+	float3 specular_f0 = lerp(float3(0.08 * surface.material.specular), surface.material.base_color, surface.material.metallic);
+	rr_specular_albedo[pixel] = float4(lit_surface ? rr_specular_reflectance(specular_f0, surface.material.roughness, dot(normal, surface.view_direction)) : float3(0.0), 1.0);
 	rr_normal_roughness[pixel] = float4(normalize(normal), surface_valid ? saturate(surface.material.roughness) : 1.0);
 	float reflection_distance = lit_surface && params.reflection_hit_distance_enabled != 0u ? reflection_hit_distance.Load(address) : 0.0;
 	rr_specular_hit_distance[pixel] = isnan(reflection_distance) || isinf(reflection_distance) ? 0.0 : clamp(reflection_distance, 0.0, 65504.0);

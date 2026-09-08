@@ -57,7 +57,7 @@ public:
 	bool ray_reconstruction = false;
 	bool feature_used = false;
 	bool nis_used = false;
-	bool evaluation_logged[2] = { false, false };
+	uint64_t evaluation_count[2] = {};
 	bool reset_pending = true;
 	Size2i internal_size;
 	bool release_feature() {
@@ -605,14 +605,15 @@ void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext
 			}
 		}
 		const int trace_index = use_dlss_rr ? 1 : 0;
-		if (!context->evaluation_logged[trace_index] && OS::get_singleton()->get_environment("GODOT_DLSS_TRACE_STATS") == "1") {
+		const uint64_t evaluation_count = ++context->evaluation_count[trace_index];
+		if ((evaluation_count <= 8 || evaluation_count % 60 == 0) && OS::get_singleton()->get_environment("GODOT_DLSS_TRACE_STATS") == "1") {
 			char requested_preset = p_params.preset;
 			if (requested_preset == '?') {
 				requested_preset = use_dlss_rr ? StreamlineContext::get().dlss_rr_default_preset : StreamlineContext::get().dlss_default_preset;
 			}
 			const uint32_t preset_parameter = use_dlss_rr ? uint32_t(context->currentDlssDOptions.qualityPreset) : uint32_t(context->currentDlssOptions.qualityPreset);
 			print_line(vformat("DLSS_TRACE viewport=%d feature=%s feature_id=%d requested_preset=%s preset_parameter=%d quality_mode=%d internal=%dx%d output=%dx%d reset=%d result=%s effective_model=unknown", uint32_t(context->viewport), use_dlss_rr ? "RR" : "SR", uint32_t(use_dlss_rr ? sl::kFeatureDLSS_RR : sl::kFeatureDLSS), String::chr(requested_preset), preset_parameter, uint32_t(context->currentDlssOptions.mode), p_params.internal_size.width, p_params.internal_size.height, context->currentDlssOptions.outputWidth, context->currentDlssOptions.outputHeight, int(context->constants.reset == sl::Boolean::eTrue), StreamlineContext::result_to_string(result)));
-			context->evaluation_logged[trace_index] = true;
+			print_line(vformat("DLSS_TEMPORAL viewport=%d feature=%s evaluation=%d frame_token=%d input_reset=%d jitter=(%f,%f)", uint32_t(context->viewport), use_dlss_rr ? "RR" : "SR", evaluation_count, uint32_t(*StreamlineContext::get().last_token), int(p_params.reset_accumulation), p_params.jitter.x, p_params.jitter.y));
 		}
 	}
 
@@ -623,10 +624,11 @@ void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext
 	if (p_params.sharpness > 0.0f && StreamlineContext::get().slNISSetOptions != nullptr && StreamlineContext::get().streamline_capabilities.nis_available) {
 		{ // Set NIS settings
 			sl::NISOptions options;
-			options.hdrMode = sl::NISHDR::eNone;
+			options.hdrMode = sl::NISHDR::eLinear;
 			options.mode = sl::NISMode::eSharpen;
 			options.sharpness = p_params.sharpness;
-			StreamlineContext::get().slNISSetOptions(context->viewport, options);
+			const sl::Result result = StreamlineContext::get().slNISSetOptions(context->viewport, options);
+			ERR_FAIL_COND_MSG(result != sl::Result::eOk, "Failed to call streamline slNISSetOptions. Result: " + String(StreamlineContext::result_to_string(result)));
 		}
 
 		{ // Tag NIS buffers
@@ -649,6 +651,10 @@ void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext
 			sl::Result result = StreamlineContext::get().slEvaluateFeature(sl::kFeatureNIS, *StreamlineContext::get().last_token, inputs, 1, nativeCmdlist);
 			if (result != sl::Result::eOk) {
 				ERR_FAIL_MSG("Failed to call streamline slEvaluateFeature for NIS. Result: " + String(StreamlineContext::result_to_string(result)));
+			}
+			const uint64_t evaluation_count = context->evaluation_count[use_dlss_rr ? 1 : 0];
+			if ((evaluation_count <= 8 || evaluation_count % 60 == 0) && OS::get_singleton()->get_environment("GODOT_DLSS_TRACE_STATS") == "1") {
+				print_line(vformat("DLSS_NIS viewport=%d feature=%s evaluation=%d sharpness=%f hdr=linear result=%s", uint32_t(context->viewport), use_dlss_rr ? "RR" : "SR", evaluation_count, p_params.sharpness, StreamlineContext::result_to_string(result)));
 			}
 		}
 	}
