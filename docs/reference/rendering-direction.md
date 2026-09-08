@@ -1,5 +1,17 @@
 # Docelowy kierunek renderera i TODO
 
+Zakres następnego planu doprecyzowany 2026-09-08 przy `4c0f7f97b5`:
+import mesha → meshlety i automatyczny DAG → scena GPU, raster/RT selection,
+stronicowanie i debug view rzeczywiście wybranych klastrów/trójkątów.
+DAG obejmuje geometrię bez deformacji, także ruch rigid i instancing; obecne
+deformowane meshe zachowują działanie. Foliage i wokselizacja są poza tym planem,
+z pozostawieniem prostych granic danych do przyszłego rozszerzenia. Nowe odbicia
+nie są wymaganiem. Właściciel wymaga prostego sterowania uproszczeniem RT:
+tolerancja błędu i mnożnik poza ekranem, bez analizy wpływu świateł, receiverów
+czy sond. [Research pod plan](../research/2026-09-08-2005-gpu-microgeometry-research-summary.md)
+opisuje kod, rekomendacje i otwarte kontrakty. Źródło zakresu: bieżąca rozmowa;
+dowody techniczne: analiza źródeł i dokumentacji, bez builda/pomiaru GPU.
+
 Zakres domknięcia uzgodniony 2026-09-08: DLSS/RR, path tracing i DDGI.
 VR/XR nie jest wspierane ani objęte naprawami lub weryfikacją tego zadania.
 DDGI nie ma osiągać zgodności obrazu z path tracingiem; porównania służą

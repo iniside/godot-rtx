@@ -1,5 +1,15 @@
 # Project State
 
+GPU-driven microgeometry research (2026-09-08, source `4c0f7f97b5`):
+[the research](../research/2026-09-08-2005-gpu-microgeometry-research-summary.md)
+maps import/flat CLUS, missing DAG/pages, CPU raster submission, static CLAS
+assembly, GPU indirect support and shared hit/emitter contracts. Owner scope:
+nondeforming geometry including rigid movement/instancing; preserve existing
+deformations; exclude foliage/voxels and new reflections. RT simplification uses
+simple error control plus an offscreen multiplier, without light/receiver/probe
+importance algorithms. Source/external research only, no build or GPU claims;
+this is preparation for a plan, not implementation approval.
+
 Owner renderer scope correction (2026-09-08): DLSS/RR, path tracing and
 camera-following DDGI only; no VR/XR work or validation and no requirement for
 DDGI to match path tracing visually. See the amended
