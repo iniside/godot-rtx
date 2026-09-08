@@ -8294,6 +8294,11 @@ void RenderingDevice::submit() {
 	local_device_processing = true;
 }
 
+void RenderingDevice::flush_and_stall() {
+	ERR_RENDER_THREAD_GUARD();
+	_flush_and_stall_for_all_frames();
+}
+
 void RenderingDevice::sync() {
 	ERR_RENDER_THREAD_GUARD();
 	ERR_FAIL_COND_MSG(is_main_instance, "Only local devices can submit and sync.");

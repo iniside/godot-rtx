@@ -272,6 +272,22 @@ Error EditorExportPlatformWindows::export_project(const Ref<EditorExportPreset> 
 		}
 	}
 #endif
+#ifdef STREAMLINE_ENABLED
+	if (String(get_project_setting(p_preset, "rendering/renderer/rendering_method")) != "gl_compatibility" && arch == "x86_64") {
+		const String dependencies[] = { "sl.interposer.dll", "sl.common.dll", "sl.dlss.dll", "sl.dlss_d.dll", "sl.dlss_g.dll", "sl.nis.dll", "sl.pcl.dll", "sl.reflex.dll", "NvLowLatencyVk.dll", "nvngx_dlss.dll", "nvngx_dlssd.dll", "nvngx_dlssg.dll", "streamline.LICENSE.txt", "dlss.LICENSE.txt", "nis.license.txt", "reflex.license.txt", "nvngx_dlss.license.txt", "streamline.runtime_manifest.json" };
+		for (const String &dependency : dependencies) {
+			String source = template_path.get_base_dir().path_join(dependency);
+			String destination = path.get_base_dir().path_join(dependency);
+			if (source != destination) {
+				Error copy_error = da->copy(source, destination, get_chmod_flags());
+				if (copy_error != OK) {
+					add_message(EXPORT_MESSAGE_ERROR, TTR("Prepare Templates"), "Unable to export pinned Streamline runtime dependency: " + source);
+					return copy_error;
+				}
+			}
+		}
+	}
+#endif
 	int export_angle = p_preset->get("application/export_angle");
 	bool include_angle_libs = false;
 	if (export_angle == 0) {

@@ -23,3 +23,18 @@ if env["d3d12"]:
 
 env_streamline.add_source_files(driver_obj, "*.cpp")
 env.drivers_sources += driver_obj
+
+# Runtime downloads are explicit; builds never silently fetch a moving SDK.
+if env["use_streamline"] and env["platform"] == "windows" and env["arch"] == "x86_64":
+    import hashlib
+    import json
+    from pathlib import Path
+
+    vendor = Path(Dir("#thirdparty/streamline").abspath)
+    manifest = json.loads((vendor / "runtime_manifest.json").read_text())
+    for name, digest in manifest.items():
+        source = vendor / "runtime" / name
+        if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest() != digest:
+            raise RuntimeError("Missing or modified pinned Streamline runtime; run python misc/scripts/update_streamline.py: " + name)
+        env.CommandNoCache("#bin/" + name, str(source), Copy("$TARGET", "$SOURCE"))
+    env.CommandNoCache("#bin/streamline.runtime_manifest.json", str(vendor / "runtime_manifest.json"), Copy("$TARGET", "$SOURCE"))

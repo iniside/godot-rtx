@@ -54,6 +54,17 @@ public:
 		RID view_depth;
 		RID diffuse;
 		RID specular;
+		RID rr_diffuse_albedo;
+		RID rr_specular_albedo;
+		RID rr_normal_roughness;
+		RID rr_specular_hit_distance;
+		bool rr_specular_hit_distance_valid = false;
+		bool rr_reset_history = true;
+		RID get_rr_diffuse_albedo() const { return rr_diffuse_albedo; }
+		RID get_rr_specular_albedo() const { return rr_specular_albedo; }
+		RID get_rr_normal_roughness() const { return rr_normal_roughness; }
+		RID get_rr_specular_hit_distance() const { return rr_specular_hit_distance_valid ? rr_specular_hit_distance : RID(); }
+		bool get_rr_reset_history() const { return rr_reset_history; }
 		uint64_t last_frame = UINT64_MAX;
 		~Context();
 	};
@@ -64,6 +75,8 @@ public:
 		RID noisy_diffuse;
 		RID noisy_specular;
 		RID indirect_diffuse;
+		RID camera_radiance;
+		RID reflection_hit_distance;
 		RID scene_data;
 		RID color;
 		RID separate_specular;
@@ -95,13 +108,13 @@ private:
 	RID frame_pipelines[2];
 	RID samplers[2];
 
-	bool _process_frame(Context *p_context, const Frame &p_frame, bool p_compose);
+	bool _process_frame(Context *p_context, const Frame &p_frame, bool p_compose, bool p_denoised = false);
 	static RID _create_texture(const Size2i &p_size, RD::DataFormat p_format);
 
 public:
 	Context *create_context(const Size2i &p_size);
 	bool prepare(Context *p_context, const Frame &p_frame);
-	bool process(Context *p_context, const Frame &p_frame);
+	bool process(Context *p_context, const Frame &p_frame, bool p_denoise = true);
 	NRDEffect(bool p_radiance_array, uint32_t p_roughness_layers);
 	~NRDEffect();
 };

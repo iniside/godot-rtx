@@ -22,6 +22,16 @@ background_mode = 2
 background_energy_multiplier = 0.3
 sky = SubResource("Sky_4c57u")
 tonemap_mode = 3
+raytracing_rendering_mode = 0
+raytracing_denoiser = 0
+ddgi_enabled = true
+ddgi_cascade_count = 4
+ddgi_probe_spacing = 2.0
+ddgi_rays_per_probe = 128
+ddgi_updates_per_frame = 1
+pathtracing_samples_per_pixel = 1
+pathtracing_max_bounces = 8
+pathtracing_accumulate = true
 volumetric_fog_density = 0.025
 
 [sub_resource type="StandardMaterial3D" id="Material_floor"]

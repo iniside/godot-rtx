@@ -75,6 +75,9 @@ RenderRaytracing::~RenderRaytracing() {
 	if (ddgi_effect) {
 		memdelete(ddgi_effect);
 	}
+	if (pathtracing) {
+		memdelete(pathtracing);
+	}
 
 	cleanup_caches();
 
@@ -162,6 +165,10 @@ bool RenderRaytracing::update_viewport_settings(const RenderDataRD *p_render_dat
 
 bool RenderRaytracing::_prepare_ddgi(RTViewportState *p_state) {
 	const RendererEnvironmentStorage::RaytracingSettings &settings = p_state->settings;
+	if (p_state->pathtracing && settings.raytracing_rendering_mode != RSE::RAYTRACING_RENDERING_MODE_PATH_TRACED) {
+		memdelete(p_state->pathtracing);
+		p_state->pathtracing = nullptr;
+	}
 	const bool enabled = settings.ddgi_enabled && settings.raytracing_rendering_mode == RSE::RAYTRACING_RENDERING_MODE_HYBRID;
 	if (p_state->ddgi && (!enabled || p_state->ddgi->cascade_count != uint32_t(settings.ddgi_cascade_count) || p_state->ddgi->rays_per_probe != uint32_t(settings.ddgi_rays_per_probe) || p_state->ddgi->base_spacing != settings.ddgi_probe_spacing)) {
 		memdelete(p_state->ddgi);
@@ -306,6 +313,9 @@ void RenderRaytracing::_free_viewport_state_internal(RTViewportState *p_state) {
 	RenderRTXDI::free_viewport_resources(p_state);
 	if (p_state->ddgi) {
 		memdelete(p_state->ddgi);
+	}
+	if (p_state->pathtracing) {
+		memdelete(p_state->pathtracing);
 	}
 	memdelete(p_state);
 }
@@ -1941,7 +1951,7 @@ void RenderRaytracing::finalize_buffers(RTViewportState *p_state) {
 		if (p_size == 0) {
 			return;
 		}
-		if (p_size > p_capacity) {
+		if (!p_buffer.is_valid() || p_size > p_capacity) {
 			if (p_buffer.is_valid()) {
 				RD::get_singleton()->free_rid(p_buffer);
 			}
@@ -1957,14 +1967,16 @@ void RenderRaytracing::finalize_buffers(RTViewportState *p_state) {
 
 	RT_GeometryData empty_geometry = {};
 	RT_MaterialData empty_material = {};
+	const int32_t empty_motion_index = -1;
+	const RT_InstanceMotionData empty_motion_transform = {};
 	update_or_grow(p_state->geometry_buffer, p_state->geometry_buffer_capacity,
 			geometry_data.is_empty() ? &empty_geometry : geometry_data.ptr(), MAX(geometry_data.size(), 1u) * sizeof(RT_GeometryData));
 	update_or_grow(p_state->material_buffer, p_state->material_buffer_capacity,
 			material_data.is_empty() ? &empty_material : material_data.ptr(), MAX(material_data.size(), 1u) * sizeof(RT_MaterialData));
 	update_or_grow(p_state->motion_index_buffer, p_state->motion_index_buffer_capacity,
-			motion_indices.ptr(), motion_indices.size() * sizeof(int32_t));
+			motion_indices.is_empty() ? &empty_motion_index : motion_indices.ptr(), MAX(motion_indices.size(), 1u) * sizeof(int32_t));
 	update_or_grow(p_state->motion_transform_buffer, p_state->motion_transform_buffer_capacity,
-			motion_transforms.ptr(), motion_transforms.size() * sizeof(RT_InstanceMotionData));
+			motion_transforms.is_empty() ? &empty_motion_transform : motion_transforms.ptr(), MAX(motion_transforms.size(), 1u) * sizeof(RT_InstanceMotionData));
 }
 
 // ---------------------------------------------------------------------------
@@ -2779,7 +2791,8 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			register_emissive_source(inst, inst->data->base, surf->surface_index, surface_counter, geometry_index, 0,
 					surf_data->geometry.primitive_count, final_transform, mat_data);
 
-			if (inst->transform_status == RenderForwardClustered::GeometryInstanceForwardClustered::TransformStatus::MOVED) {
+			if (inst->transform_status == RenderForwardClustered::GeometryInstanceForwardClustered::TransformStatus::MOVED ||
+					(geometry_data[geometry_index].prev_vertex_buffer_address_lo | geometry_data[geometry_index].prev_vertex_buffer_address_hi) != 0) {
 				motion_indices.push_back((int32_t)motion_transforms.size());
 				RT_InstanceMotionData motion = {};
 				Transform3D prev_final = prev_instance_transform;
@@ -2870,7 +2883,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 					geometry_index, 0, merged_sd.geometry.primitive_count, pending.instance_transform, pending.mat_data);
 			material_data.push_back(pending.mat_data->data);
 			geometry_material_programs.push_back(pending.mat_data->hit_shader);
-			if (pending.transform_moved) {
+			if (pending.transform_moved || (merged_sd.geometry.prev_vertex_buffer_address_lo | merged_sd.geometry.prev_vertex_buffer_address_hi) != 0) {
 				Transform3D previous_to_rt = pending.prev_instance_transform;
 				previous_to_rt.origin -= state->rt_origin;
 				motion_indices.push_back((int32_t)motion_transforms.size());

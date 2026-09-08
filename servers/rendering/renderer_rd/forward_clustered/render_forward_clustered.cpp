@@ -183,9 +183,9 @@ void RenderForwardClustered::RenderBufferDataForwardClustered::ensure_fsr2(Rende
 	}
 }
 
-void RenderForwardClustered::RenderBufferDataForwardClustered::ensure_dlss(RendererRD::DLSSEffect *effect) {
+void RenderForwardClustered::RenderBufferDataForwardClustered::ensure_dlss(RendererRD::DLSSEffect *effect, bool p_ray_reconstruction) {
 	if (dlss_context == nullptr) {
-		dlss_context = effect->create_context(render_buffers->get_internal_size(), render_buffers->get_target_size());
+		dlss_context = effect->create_context(render_buffers->get_internal_size(), render_buffers->get_target_size(), p_ray_reconstruction);
 	}
 }
 
@@ -209,6 +209,9 @@ bool RenderForwardClustered::RenderBufferDataForwardClustered::ensure_mfx_tempor
 #endif
 
 void RenderForwardClustered::RenderBufferDataForwardClustered::free_data() {
+	if (dlss_context) {
+		RD::get_singleton()->flush_and_stall();
+	}
 	if (nrd_context) {
 		memdelete(nrd_context);
 		nrd_context = nullptr;
@@ -1713,7 +1716,12 @@ void RenderForwardClustered::_render_3d_upscaling(const RenderDataRD *p_render_d
 		RD::get_singleton()->draw_command_end_label();
 	} else if (p_scale_type == SCALE_3D_DLSS) {
 		RENDER_TIMESTAMP("DLSS");
-		rb_data->ensure_dlss(dlss_effect);
+		RTViewportState *rt_state = raytracing->_get_viewport_state(p_render_data);
+		const bool ray_reconstruction = rt_state->settings.raytracing_denoiser == RSE::RAYTRACING_DENOISER_DLSS_RR;
+		rb->set_upscaler_ready(false);
+		ERR_FAIL_COND_MSG(!dlss_effect->is_available(ray_reconstruction), ray_reconstruction ? "DLSS Ray Reconstruction is unavailable on this device or its runtime is missing. SR is not substituted." : "DLSS Super Resolution is unavailable on this device or its runtime is missing.");
+		ERR_FAIL_COND_MSG(ray_reconstruction && !rb_data->nrd_context, "DLSS Ray Reconstruction requires prepared camera guides.");
+		rb_data->ensure_dlss(dlss_effect, ray_reconstruction);
 
 		RID exposure;
 		if (RSG::camera_attributes->camera_attributes_uses_auto_exposure(p_render_data->camera_attributes)) {
@@ -1736,13 +1744,21 @@ void RenderForwardClustered::_render_3d_upscaling(const RenderDataRD *p_render_d
 			params.exposure = exposure;
 			params.output = rb->get_upscaled_texture(v);
 			params.dlss_g = rb->get_frame_generation();
+			params.dlss_rr = ray_reconstruction;
+			params.orthogonal = p_render_data->scene_data->cam_orthogonal;
+			if (ray_reconstruction) {
+				params.dlss_rr_diffuse_albedo = rb_data->nrd_context->get_rr_diffuse_albedo();
+				params.dlss_rr_specular_albedo = rb_data->nrd_context->get_rr_specular_albedo();
+				params.dlss_rr_normal_roughness = rb_data->nrd_context->get_rr_normal_roughness();
+				params.dlss_rr_specular_hit_dist = rb_data->nrd_context->get_rr_specular_hit_distance();
+			}
 			params.preset = '?'; // FIXME: Unique preset per viewport? Does anyone need this?
 			params.z_near = p_render_data->scene_data->z_near;
 			params.z_far = p_render_data->scene_data->z_far;
 			params.fovy = fovy;
 			params.jitter = jitter;
 			params.delta_time = float(p_time_step);
-			params.reset_accumulation = false; // FIXME: The engine does not provide a way to reset the accumulation.
+			params.reset_accumulation = !rb_data->nrd_context || rb_data->nrd_context->get_rr_reset_history();
 
 			Projection correction;
 			correction.set_depth_correction(true, true, true);
@@ -1756,8 +1772,9 @@ void RenderForwardClustered::_render_3d_upscaling(const RenderDataRD *p_render_d
 			params.reprojection = prev_projection * prev_transform.affine_inverse() * cur_transform * cur_projection.inverse();
 			params.cam_projection = cur_projection;
 			params.cam_transform = cur_transform;
+			params.cam_transform.origin -= rt_state->rt_origin;
 
-			rb->set_upscaler_ready(dlss_effect->is_ready(rb_data->get_dlss_context()));
+			rb->set_upscaler_ready(dlss_effect->is_ready(rb_data->get_dlss_context(), ray_reconstruction));
 			dlss_effect->upscale(params);
 		}
 	} else if (p_scale_type == SCALE_3D_MFX) {
@@ -1813,19 +1830,11 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	}
 	const RendererEnvironmentStorage::RaytracingSettings &rt_settings = raytracing->_get_viewport_state(p_render_data)->settings;
 	ERR_FAIL_COND_MSG(!raytracing->_prepare_ddgi(raytracing->_get_viewport_state(p_render_data)), "Camera-following DDGI state preparation failed.");
-	if (rt_settings.raytracing_rendering_mode == RSE::RAYTRACING_RENDERING_MODE_PATH_TRACED) {
-		WARN_PRINT_ONCE("Path Traced mode is not implemented yet. This build continues rendering raster RTXDI with NRD; it does not produce a path-traced reference.");
-	}
+	const bool path_traced = rt_settings.raytracing_rendering_mode == RSE::RAYTRACING_RENDERING_MODE_PATH_TRACED;
+	const bool raw_path_traced = path_traced && rt_settings.raytracing_denoiser == RSE::RAYTRACING_DENOISER_NONE;
+	ERR_FAIL_COND_MSG(raw_path_traced && (rb->get_internal_size() != rb->get_target_size() || RSE::scaling_3d_mode_type(rb->get_scaling_3d_mode()) == RSE::VIEWPORT_SCALING_3D_TYPE_TEMPORAL || rb->get_use_taa() || rb->get_frame_generation()), "Raw path-traced reference requires native resolution, no temporal upscaler, TAA or frame generation.");
 	if (rt_settings.raytracing_denoiser == RSE::RAYTRACING_DENOISER_DLSS_RR) {
-		if (rb->get_scaling_3d_mode() != RSE::VIEWPORT_SCALING_3D_MODE_DLSS) {
-			WARN_PRINT_ONCE("DLSS Ray Reconstruction requires Viewport.scaling_3d_mode = NVIDIA DLSS, or Project Settings > Rendering > Scaling 3D > Mode > NVIDIA DLSS, and supported hardware.");
-		}
-		WARN_PRINT_ONCE("DLSS Ray Reconstruction is not implemented in the camera renderer yet. This build continues using NRD and the configured upscaler; no RR evaluation occurs.");
-	} else if (rt_settings.raytracing_denoiser == RSE::RAYTRACING_DENOISER_NONE) {
-		WARN_PRINT_ONCE("Raw ray-tracing output is not implemented yet. This build continues using NRD.");
-		if (rt_settings.raytracing_rendering_mode == RSE::RAYTRACING_RENDERING_MODE_PATH_TRACED && (rb->get_internal_size() != rb->get_target_size() || RSE::scaling_3d_mode_type(rb->get_scaling_3d_mode()) == RSE::VIEWPORT_SCALING_3D_TYPE_TEMPORAL || rb->get_use_taa() || rb->get_frame_generation())) {
-			WARN_PRINT_ONCE("Raw path-traced reference requires native resolution, no temporal upscaler, TAA or frame generation. Set Scaling 3D Scale to 1.0 and disable temporal filtering and frame generation.");
-		}
+		ERR_FAIL_COND_MSG(rb->get_scaling_3d_mode() != RSE::VIEWPORT_SCALING_3D_MODE_DLSS, "DLSS Ray Reconstruction requires Viewport.scaling_3d_mode = NVIDIA DLSS, or Project Settings > Rendering > Scaling 3D > Mode > NVIDIA DLSS.");
 	}
 	const bool separate_specular = _compositor_effects_has_flag(p_render_data, RSE::COMPOSITOR_EFFECT_FLAG_NEEDS_SEPARATE_SPECULAR);
 	RendererRD::TextureStorage *texture_storage = RendererRD::TextureStorage::get_singleton();
@@ -1993,16 +2002,18 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		RD::get_singleton()->draw_list_begin(color_only_framebuffer, RD::DRAW_CLEAR_COLOR_0, Vector<Color>({ clear_color }));
 		RD::get_singleton()->draw_list_end();
 	}
-	RENDER_TIMESTAMP("RTXDI Surface");
-	RD::get_singleton()->draw_command_begin_label("RTXDI Surface");
-	Vector<Color> surface_clear;
-	for (uint32_t i = 0; i < 6; i++) {
-		surface_clear.push_back(Color(0, 0, 0, 0));
+	if (!path_traced) {
+		RENDER_TIMESTAMP("RTXDI Surface");
+		RD::get_singleton()->draw_command_begin_label("RTXDI Surface");
+		Vector<Color> surface_clear;
+		for (uint32_t i = 0; i < 6; i++) {
+			surface_clear.push_back(Color(0, 0, 0, 0));
+		}
+		RenderListParameters render_list_params(render_list[RENDER_LIST_OPAQUE].elements.ptr(), render_list[RENDER_LIST_OPAQUE].element_info.ptr(), render_list[RENDER_LIST_OPAQUE].elements.size(), reverse_cull, PASS_MODE_RTXDI_SURFACE, true, p_render_data->directional_light_soft_shadows, rp_uniform_set, get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_WIREFRAME, Vector2(), p_render_data->scene_data->lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, 1, 0, base_specialization);
+		_render_list_with_draw_list(&render_list_params, color_framebuffer, RD::DRAW_CLEAR_ALL, surface_clear, 0.0f, 0u, p_render_data->render_region);
+		RD::get_singleton()->draw_command_end_label();
 	}
-	RenderListParameters render_list_params(render_list[RENDER_LIST_OPAQUE].elements.ptr(), render_list[RENDER_LIST_OPAQUE].element_info.ptr(), render_list[RENDER_LIST_OPAQUE].elements.size(), reverse_cull, PASS_MODE_RTXDI_SURFACE, true, p_render_data->directional_light_soft_shadows, rp_uniform_set, get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_WIREFRAME, Vector2(), p_render_data->scene_data->lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, 1, 0, base_specialization);
-	_render_list_with_draw_list(&render_list_params, color_framebuffer, RD::DRAW_CLEAR_ALL, surface_clear, 0.0f, 0u, p_render_data->render_region);
 	rb_data->commit_rtxdi_surface();
-	RD::get_singleton()->draw_command_end_label();
 	RenderRTXDISurfaceResources surface;
 	surface.samplers = samplers;
 	for (uint32_t attachment = 0; attachment < 6; attachment++) {
@@ -2052,27 +2063,52 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	frame.history_valid = surface.history_valid;
 	frame.orthogonal = surface.orthogonal;
 	frame.time_step = time_step;
-	RENDER_TIMESTAMP("RTXDI Guides");
-	ERR_FAIL_COND_MSG(!nrd_effect->prepare(rb_data->nrd_context, frame), "RTXDI guide preparation failed.");
+	if (path_traced) {
+		if (!raytracing->pathtracing) {
+			raytracing->pathtracing = memnew(RenderPathtracing);
+		}
+		Color background = clear_color;
+		if (p_render_data->camera_attributes.is_valid()) {
+			float exposure = MAX(RSG::camera_attributes->camera_attributes_get_exposure_normalization_factor(p_render_data->camera_attributes), 1e-20f);
+			background.r /= exposure;
+			background.g /= exposure;
+			background.b /= exposure;
+		}
+		RENDER_TIMESTAMP("Path Tracing");
+		ERR_FAIL_COND_MSG(!raytracing->pathtracing->render(*raytracing, *rt_state, frame.scene_data, frame.radiance, screen_size, is_using_radiance_octmap_array(), draw_sky, background), "Native camera path tracing failed.");
+		for (uint32_t attachment = 0; attachment < 6; attachment++) {
+			frame.surface[attachment] = rt_state->pathtracing->get_surface(attachment);
+		}
+		frame.depth = rt_state->pathtracing->get_depth();
+		frame.noisy_diffuse = rt_state->pathtracing->get_diffuse();
+		frame.noisy_specular = rt_state->pathtracing->get_specular();
+		frame.camera_radiance = rt_state->pathtracing->get_radiance();
+		frame.history_valid &= rt_state->pathtracing->history_valid;
+		copy_effects->copy_r32f_to_depth_fb(frame.depth, rb_data->get_depth_fb(), Rect2i(Point2i(), screen_size));
+	}
+	RENDER_TIMESTAMP("Camera Guides");
+	ERR_FAIL_COND_MSG(!nrd_effect->prepare(rb_data->nrd_context, frame), "Camera guide preparation failed.");
 	RENDER_TIMESTAMP("Process Pre Opaque Compositor Effects");
 	_process_compositor_effects(RSE::COMPOSITOR_EFFECT_CALLBACK_TYPE_PRE_OPAQUE, p_render_data);
-	RENDER_TIMESTAMP("RTXDI Direct Lighting");
-	rtxdi->render(surface, rt_state, scene_state.uniform_buffers[opaque_pass_uniform_buffer_index], 0, 1);
-	ERR_FAIL_COND_MSG(!rt_state->rtxdi_di || rt_state->rtxdi_di->views.is_empty() || rt_state->rtxdi_di->views[0].last_frame_index != surface.frame_index, "RTXDI did not produce lighting for this frame.");
-	frame.noisy_diffuse = rtxdi->get_diffuse_radiance_distance(rt_state, 0);
-	frame.noisy_specular = rtxdi->get_specular_radiance_distance(rt_state, 0);
-	if (rt_state->ddgi) {
-		RENDER_TIMESTAMP("DDGI Probe Lighting");
-		ERR_FAIL_COND_MSG(!raytracing->_render_ddgi(rt_state, frame.scene_data, frame.radiance), "DDGI probe lighting failed.");
-		RENDER_TIMESTAMP("DDGI Camera Irradiance");
-		ERR_FAIL_COND_MSG(!raytracing->ddgi_effect->render_camera(*rt_state->ddgi, frame.scene_data, rt_state->frame_constants_buffer, frame.surface, frame.depth, rb->get_internal_size(), frame.orthogonal), "DDGI camera interpolation failed.");
-		frame.indirect_diffuse = rt_state->ddgi->indirect_radiance;
+	if (!path_traced) {
+		RENDER_TIMESTAMP("RTXDI Direct Lighting");
+		rtxdi->render(surface, rt_state, scene_state.uniform_buffers[opaque_pass_uniform_buffer_index], 0, 1);
+		ERR_FAIL_COND_MSG(!rt_state->rtxdi_di || rt_state->rtxdi_di->views.is_empty() || rt_state->rtxdi_di->views[0].last_frame_index != surface.frame_index, "RTXDI did not produce lighting for this frame.");
+		frame.noisy_diffuse = rtxdi->get_diffuse_radiance_distance(rt_state, 0);
+		frame.noisy_specular = rtxdi->get_specular_radiance_distance(rt_state, 0);
+		if (rt_state->ddgi) {
+			RENDER_TIMESTAMP("DDGI Probe Lighting");
+			ERR_FAIL_COND_MSG(!raytracing->_render_ddgi(rt_state, frame.scene_data, frame.radiance), "DDGI probe lighting failed.");
+			RENDER_TIMESTAMP("DDGI Camera Irradiance");
+			ERR_FAIL_COND_MSG(!raytracing->ddgi_effect->render_camera(*rt_state->ddgi, frame.scene_data, rt_state->frame_constants_buffer, frame.surface, frame.depth, rb->get_internal_size(), frame.orthogonal), "DDGI camera interpolation failed.");
+			frame.indirect_diffuse = rt_state->ddgi->indirect_radiance;
+		}
 	}
-	RENDER_TIMESTAMP("NRD RELAX and HDR Composition");
-	ERR_FAIL_COND_MSG(!nrd_effect->process(rb_data->nrd_context, frame), "NRD frame processing failed.");
+	RENDER_TIMESTAMP("Camera HDR Composition");
+	ERR_FAIL_COND_MSG(!nrd_effect->process(rb_data->nrd_context, frame, rt_settings.raytracing_denoiser == RSE::RAYTRACING_DENOISER_NRD), "Camera frame processing failed.");
 	RENDER_TIMESTAMP("Process Post Opaque Compositor Effects");
 	_process_compositor_effects(RSE::COMPOSITOR_EFFECT_CALLBACK_TYPE_POST_OPAQUE, p_render_data);
-	if (draw_sky || draw_sky_fog_only) {
+	if (!path_traced && (draw_sky || draw_sky_fog_only)) {
 		RENDER_TIMESTAMP("Render Sky");
 
 		RD::get_singleton()->draw_command_begin_label("Draw Sky");
@@ -4723,6 +4759,7 @@ RenderForwardClustered::RenderForwardClustered() {
 }
 
 RenderForwardClustered::~RenderForwardClustered() {
+	RD::get_singleton()->flush_and_stall();
 	if (nrd_effect) {
 		memdelete(nrd_effect);
 		nrd_effect = nullptr;

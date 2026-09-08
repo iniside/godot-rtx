@@ -4879,6 +4879,9 @@ void Viewport::set_world_3d(const Ref<World3D> &p_world_3d) {
 		return;
 	}
 
+	// Keep the old scenario alive until the rendering viewport has detached.
+	const Ref<World3D> previous_world = find_world_3d();
+
 	if (is_inside_tree()) {
 		_propagate_exit_world_3d(this);
 	}
@@ -4913,6 +4916,9 @@ void Viewport::_own_world_3d_changed() {
 	ERR_FAIL_COND(world_3d.is_null());
 	ERR_FAIL_COND(own_world_3d.is_null());
 
+	// Keep the old scenario alive until the rendering viewport has detached.
+	const Ref<World3D> previous_world = find_world_3d();
+
 	if (is_inside_tree()) {
 		_propagate_exit_world_3d(this);
 	}
@@ -4935,6 +4941,9 @@ void Viewport::set_use_own_world_3d(bool p_use_own_world_3d) {
 	if (p_use_own_world_3d == own_world_3d.is_valid()) {
 		return;
 	}
+
+	// Keep the old scenario alive until the rendering viewport has detached.
+	const Ref<World3D> previous_world = find_world_3d();
 
 	if (is_inside_tree()) {
 		_propagate_exit_world_3d(this);

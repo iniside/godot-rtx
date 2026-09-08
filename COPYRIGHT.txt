@@ -616,6 +616,18 @@ Comment: SPIRV-Reflect
 Copyright: 2017-2022, Google Inc.
 License: Apache-2.0
 
+Files: thirdparty/streamline/include/*
+Comment: NVIDIA Streamline 2.12.0 headers
+Copyright: 2022-2026, NVIDIA Corporation
+License: Expat
+
+Files: thirdparty/streamline/runtime/nvngx_dlss.dll
+ thirdparty/streamline/runtime/nvngx_dlssd.dll
+ thirdparty/streamline/runtime/nvngx_dlssg.dll
+Comment: NVIDIA DLSS 310.7.0 optional downloaded runtime; full license is shipped alongside the DLLs
+Copyright: 2026, NVIDIA Corporation
+License: NVIDIA-RTX-SDK
+
 Files: thirdparty/swappy-frame-pacing/*
 Comment: Swappy
 Copyright: 2019, The Android Open Source Project
@@ -2402,3 +2414,8 @@ License: Zlib
  2. Altered source versions must be plainly marked as such, and must not be
     misrepresented as being the original software.
  3. This notice may not be removed or altered from any source distribution.
+
+License: NVIDIA-RTX-SDK
+ See thirdparty/streamline/runtime/dlss.LICENSE.txt for the complete NVIDIA
+ RTX SDK license, downloaded by misc/scripts/update_streamline.py and
+ distributed alongside the optional runtime in Windows exports.

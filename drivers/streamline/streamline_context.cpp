@@ -63,6 +63,7 @@
 
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
+#include "core/string/print_string.h"
 
 StreamlineContext &StreamlineContext::get() {
 	static StreamlineContext _context;
@@ -324,6 +325,12 @@ const char *StreamlineContext::result_to_string(sl::Result result) {
 	}
 }
 
+static void streamline_log_to_engine(sl::LogType p_type, const char *p_message) {
+	if (p_message) {
+		print_line(vformat("Streamline[%d] %s", uint32_t(p_type), String::utf8(p_message)));
+	}
+}
+
 void StreamlineContext::initialize(bool d3d12) {
 	StreamlineContext::get().is_game = true;
 	if (Engine::get_singleton()->is_editor_hint() || Engine::get_singleton()->is_project_manager_hint()) {
@@ -361,11 +368,13 @@ void StreamlineContext::initialize(bool d3d12) {
 
 	pref.renderAPI = d3d12 ? sl::RenderAPI::eD3D12 : sl::RenderAPI::eVulkan;
 	pref.applicationId = 0x90d07004;
-	pref.flags = sl::PreferenceFlags::eAllowOTA | sl::PreferenceFlags::eLoadDownloadedPlugins | sl::PreferenceFlags::eDisableCLStateTracking;
+	// Keep shipping behavior tied to the pinned redistributable manifest.
+	pref.flags = sl::PreferenceFlags::eDisableCLStateTracking;
 
 	if (bool(GLOBAL_GET("rendering/streamline/streamline_log"))) {
 		pref.logLevel = sl::LogLevel::eVerbose;
-		pref.showConsole = true;
+		pref.showConsole = false;
+		pref.logMessageCallback = streamline_log_to_engine;
 	} else {
 		pref.logLevel = sl::LogLevel::eOff;
 		pref.showConsole = false;

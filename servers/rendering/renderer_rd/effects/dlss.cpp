@@ -35,6 +35,8 @@
 #endif
 
 #ifdef ENABLE_DLSS
+#include "core/os/os.h"
+#include "core/string/print_string.h"
 #include "drivers/streamline/streamline_context.h"
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
 #include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
@@ -52,6 +54,34 @@ namespace RendererRD {
 class DLSSContextInner : public DLSSContext {
 public:
 	sl::ViewportHandle viewport;
+	bool ray_reconstruction = false;
+	bool feature_used = false;
+	bool nis_used = false;
+	bool evaluation_logged[2] = { false, false };
+	bool reset_pending = true;
+	Size2i internal_size;
+	bool release_feature() {
+		if (!feature_used) {
+			return true;
+		}
+		auto &sl = StreamlineContext::get();
+		ERR_FAIL_NULL_V(sl.slFreeResources, false);
+		if (ray_reconstruction && sl.slDLSSDSetOptions) {
+			sl::DLSSDOptions off;
+			off.mode = sl::DLSSMode::eOff;
+			const auto result = sl.slDLSSDSetOptions(viewport, off);
+			ERR_FAIL_COND_V_MSG(result != sl::Result::eOk, false, StreamlineContext::result_to_string(result));
+		} else if (!ray_reconstruction && sl.slDLSSSetOptions) {
+			sl::DLSSOptions off;
+			off.mode = sl::DLSSMode::eOff;
+			const auto result = sl.slDLSSSetOptions(viewport, off);
+			ERR_FAIL_COND_V_MSG(result != sl::Result::eOk, false, StreamlineContext::result_to_string(result));
+		}
+		const auto result = sl.slFreeResources(ray_reconstruction ? sl::kFeatureDLSS_RR : sl::kFeatureDLSS, viewport);
+		ERR_FAIL_COND_V_MSG(result != sl::Result::eOk, false, StreamlineContext::result_to_string(result));
+		feature_used = false;
+		return true;
+	}
 	sl::Constants constants;
 	sl::DLSSOptions currentDlssOptions;
 	sl::DLSSOptimalSettings currentOptimalSettings;
@@ -146,7 +176,21 @@ static Vector<unsigned int> g_dlss_freeViewportIndices;
 static unsigned int g_dlss_viewportIndex = 1;
 
 DLSSContextInner::~DLSSContextInner() {
-	g_dlss_freeViewportIndices.push_back((unsigned int)viewport);
+	RD::get_singleton()->flush_and_stall();
+	if (StreamlineContext::get().dlssg_viewport == viewport) {
+		StreamlineContext::get().dlssg_disable();
+	}
+	bool released = release_feature();
+	if (nis_used && StreamlineContext::get().slFreeResources) {
+		const auto result = StreamlineContext::get().slFreeResources(sl::kFeatureNIS, viewport);
+		if (result != sl::Result::eOk) {
+			ERR_PRINT(StreamlineContext::result_to_string(result));
+			released = false;
+		}
+	}
+	if (released) {
+		g_dlss_freeViewportIndices.push_back((unsigned int)viewport);
+	}
 }
 
 DLSSContextInner::DLSSContextInner() {
@@ -167,14 +211,17 @@ DLSSEffect::DLSSEffect() {
 }
 
 DLSSEffect::~DLSSEffect() {
+	RD::get_singleton()->flush_and_stall();
 	// Deinitialize motion vector decode
 	shaders.mvec_decode_shader.version_free(shaders.mvec_decode_version);
 }
 
-DLSSContext *DLSSEffect::create_context(Size2i p_internal_size, Size2i p_target_size) {
+DLSSContext *DLSSEffect::create_context(Size2i p_internal_size, Size2i p_target_size, bool p_ray_reconstruction) {
 	DLSSContextInner *context = memnew(RendererRD::DLSSContextInner);
 
-	context->currentDlssOptions.mode = context->find_optimal_mode(p_target_size.width, p_target_size.height, p_internal_size.width, p_internal_size.height, context->currentOptimalSettings);
+	context->ray_reconstruction = p_ray_reconstruction;
+	context->internal_size = p_internal_size;
+	context->currentDlssOptions.mode = context->find_optimal_mode(p_target_size.width, p_target_size.height, p_internal_size.width, p_internal_size.height, context->currentOptimalSettings, p_ray_reconstruction);
 	context->currentDlssOptions.outputWidth = p_target_size.width;
 	context->currentDlssOptions.outputHeight = p_target_size.height;
 
@@ -207,6 +254,7 @@ static sl::float3 sl_convert_vector(const Vector3 &vec) {
 
 void DLSSEffect::upscale(const DLSSContext::Parameters &p_params) {
 	DLSSContextInner *context = (DLSSContextInner *)p_params.context;
+	ERR_FAIL_NULL(context);
 
 	// Delay enablement
 	if (context->delay > 0) {
@@ -214,16 +262,26 @@ void DLSSEffect::upscale(const DLSSContext::Parameters &p_params) {
 		return;
 	}
 
-	// If DLSS is not loaded, escape early
-	if (StreamlineContext::get().slDLSSSetOptions == nullptr) {
-		return;
+	ERR_FAIL_COND_MSG(!is_available(p_params.dlss_rr), p_params.dlss_rr ? "DLSS Ray Reconstruction is unavailable; SR is not substituted." : "DLSS Super Resolution is unavailable.");
+	ERR_FAIL_COND_MSG(p_params.dlss_rr && (!p_params.dlss_rr_diffuse_albedo.is_valid() || !p_params.dlss_rr_specular_albedo.is_valid() || !p_params.dlss_rr_normal_roughness.is_valid()), "DLSS RR requires diffuse/specular albedo and unpacked normal/roughness guides.");
+
+	const bool use_dlss_rr = p_params.dlss_rr;
+	if (context->ray_reconstruction != use_dlss_rr || context->internal_size != p_params.internal_size) {
+		RD::get_singleton()->flush_and_stall();
+		ERR_FAIL_COND(!context->release_feature());
+		context->ray_reconstruction = use_dlss_rr;
+		context->internal_size = p_params.internal_size;
+		context->currentDlssOptions.mode = context->find_optimal_mode(context->currentDlssOptions.outputWidth, context->currentDlssOptions.outputHeight, p_params.internal_size.width, p_params.internal_size.height, context->currentOptimalSettings, use_dlss_rr);
+		context->reset_pending = true;
 	}
+	ERR_FAIL_COND(context->currentDlssOptions.mode == sl::DLSSMode::eOff);
 
 	// Begin frame if needed.
 	if (StreamlineContext::get().last_token == nullptr) {
 		StreamlineContext::get().get_new_frame_token();
 	}
 
+	ERR_FAIL_NULL(StreamlineContext::get().last_token);
 	context->last_parameters = p_params;
 	context->last_effect = this;
 
@@ -269,12 +327,16 @@ void DLSSEffect::upscale(const DLSSContext::Parameters &p_params) {
 	}
 
 	// Inject DLSS into the render graph
-	RD::CallbackResource res[8]; // Increased for DLSS-RR buffers
+	RD::CallbackResource res[9]; // Increased for DLSS-RR buffers
 	int num_resources = 0;
 	res[num_resources++].rid = p_params.color;
 	res[num_resources++].rid = p_params.output;
 	res[num_resources++].rid = p_params.depth;
 	res[num_resources++].rid = p_params.velocity;
+
+	if (p_params.exposure.is_valid()) {
+		res[num_resources++].rid = p_params.exposure;
+	}
 
 	// Add DLSS-RR buffers if provided
 	if (p_params.dlss_rr) {
@@ -295,6 +357,7 @@ void DLSSEffect::upscale(const DLSSContext::Parameters &p_params) {
 	for (int i = 0; i < num_resources; i++) {
 		res[i].usage = RD::CALLBACK_RESOURCE_USAGE_TEXTURE_SAMPLE;
 	}
+	res[1].usage = RD::CALLBACK_RESOURCE_USAGE_STORAGE_IMAGE_READ_WRITE;
 	RD::get_singleton()->driver_callback_add((RDD::DriverCallback)DLSSEffect::_upscale_internal_graph_callback, p_params.context, VectorView<RD::CallbackResource>(res, num_resources));
 }
 
@@ -306,6 +369,7 @@ void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext
 	// Helper function for tagging resources.
 	auto assignResource = [context](sl::Resource *resources, sl::ResourceTag *resourceTags, int &numResources, RID textureRID, sl::BufferType bufferType, sl::ResourceLifecycle lifecycle) {
 		if (!textureRID.is_valid() || textureRID.is_null()) {
+			resourceTags[numResources++] = sl::ResourceTag(nullptr, bufferType, lifecycle);
 			return;
 		}
 
@@ -316,6 +380,9 @@ void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext
 		uint64_t texture_state = DLSS_VK_IMAGE_LAYOUT_SHADER_READ_ONLY;
 		if (context->is_d3d12) {
 			texture_state = DLSS_D3D12_RESOURCE_STATE_NON_PIXEL_SR;
+		}
+		if (textureRID == context->last_parameters.output) {
+			texture_state = context->is_d3d12 ? 0x8 : 1; // UAV / VK_IMAGE_LAYOUT_GENERAL.
 		}
 		uint64_t texture_vkformat = RD::get_singleton()->get_driver_resource(RD::DriverResource::DRIVER_RESOURCE_TEXTURE_DATA_FORMAT, textureRID);
 		uint64_t texture_usage_flags = RD::get_singleton()->get_driver_resource(RD::DriverResource::DRIVER_RESOURCE_TEXTURE_USAGE_FLAGS, textureRID);
@@ -340,8 +407,7 @@ void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext
 	};
 
 	// Set DLSS or DLSS-RR options depending on mode
-	bool use_dlss_rr = p_params.dlss_rr && StreamlineContext::get().slDLSSDSetOptions != nullptr && StreamlineContext::get().streamline_capabilities.dlss_rr_available;
-
+	const bool use_dlss_rr = p_params.dlss_rr;
 	if (use_dlss_rr) {
 		// Set DLSS-RR (Ray Reconstruction) options
 		context->currentDlssDOptions.mode = context->currentDlssOptions.mode;
@@ -444,8 +510,8 @@ void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext
 		context->constants.motionVectorsJittered = sl::Boolean::eFalse;
 		context->constants.jitterOffset = sl::float2(p_params.jitter.x, p_params.jitter.y);
 		context->constants.mvecScale = sl::float2(1.0f, 1.0f);
-		context->constants.orthographicProjection = sl::Boolean::eFalse;
-		context->constants.reset = p_params.reset_accumulation ? sl::Boolean::eTrue : sl::Boolean::eFalse;
+		context->constants.orthographicProjection = p_params.orthogonal ? sl::Boolean::eTrue : sl::Boolean::eFalse;
+		context->constants.reset = (p_params.reset_accumulation || context->reset_pending) ? sl::Boolean::eTrue : sl::Boolean::eFalse;
 		sl::Result result = StreamlineContext::get().slSetConstants(context->constants, *StreamlineContext::get().last_token, context->viewport);
 		if (result != sl::Result::eOk) {
 			ERR_FAIL_MSG("Failed to call streamline slSetConstants. Result: " + String(StreamlineContext::result_to_string(result)));
@@ -454,14 +520,17 @@ void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext
 
 	// Tag resources
 	if (StreamlineContext::get().slSetTag != nullptr) {
-		sl::Resource resources[10];
-		sl::ResourceTag resourceTags[10];
+		sl::Resource resources[11];
+		sl::ResourceTag resourceTags[11];
 		int numResources = 0;
 
 		assignResource(resources, resourceTags, numResources, p_params.color, sl::kBufferTypeScalingInputColor, sl::ResourceLifecycle::eValidUntilPresent);
 		assignResource(resources, resourceTags, numResources, p_params.output, sl::kBufferTypeScalingOutputColor, sl::ResourceLifecycle::eValidUntilPresent);
 		assignResource(resources, resourceTags, numResources, p_params.depth, sl::kBufferTypeDepth, sl::ResourceLifecycle::eValidUntilPresent);
 		assignResource(resources, resourceTags, numResources, p_params.velocity, sl::kBufferTypeMotionVectors, sl::ResourceLifecycle::eValidUntilPresent);
+
+		assignResource(resources, resourceTags, numResources, p_params.exposure, sl::kBufferTypeExposure, sl::ResourceLifecycle::eValidUntilPresent);
+		resourceTags[numResources++] = sl::ResourceTag(nullptr, sl::kBufferTypeSpecularMotionVectors, sl::ResourceLifecycle::eValidUntilPresent);
 
 		// Tag DLSS-RR specific buffers if enabled
 		if (use_dlss_rr) {
@@ -471,6 +540,11 @@ void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext
 			// kBufferTypeNormalRoughness for packed normal+roughness (XYZ=normal, W=roughness)
 			assignResource(resources, resourceTags, numResources, p_params.dlss_rr_normal_roughness, sl::kBufferTypeNormalRoughness, sl::ResourceLifecycle::eValidUntilPresent);
 			assignResource(resources, resourceTags, numResources, p_params.dlss_rr_specular_hit_dist, sl::kBufferTypeSpecularHitDistance, sl::ResourceLifecycle::eValidUntilPresent);
+		} else {
+			resourceTags[numResources++] = sl::ResourceTag(nullptr, sl::kBufferTypeAlbedo, sl::ResourceLifecycle::eValidUntilPresent);
+			resourceTags[numResources++] = sl::ResourceTag(nullptr, sl::kBufferTypeSpecularAlbedo, sl::ResourceLifecycle::eValidUntilPresent);
+			resourceTags[numResources++] = sl::ResourceTag(nullptr, sl::kBufferTypeNormalRoughness, sl::ResourceLifecycle::eValidUntilPresent);
+			resourceTags[numResources++] = sl::ResourceTag(nullptr, sl::kBufferTypeSpecularHitDistance, sl::ResourceLifecycle::eValidUntilPresent);
 		}
 
 		sl::Result result = StreamlineContext::get().slSetTag(context->viewport, resourceTags, numResources, nativeCmdlist);
@@ -513,23 +587,36 @@ void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext
 
 	// Evaluate DLSS Super Resolution or DLSS Ray Reconstruction
 	if (context->currentDlssOptions.mode != sl::DLSSMode::eOff) {
+		context->feature_used = true;
 		const sl::BaseStructure *inputs[] = { &context->viewport };
 		sl::Result result;
 
-		if (use_dlss_rr && StreamlineContext::get().streamline_capabilities.dlss_rr_available) {
+		if (use_dlss_rr) {
 			// Use DLSS Ray Reconstruction
 			result = StreamlineContext::get().slEvaluateFeature(sl::kFeatureDLSS_RR, *StreamlineContext::get().last_token, inputs, 1, nativeCmdlist);
 			if (result != sl::Result::eOk) {
 				ERR_FAIL_MSG("Failed to call streamline slEvaluateFeature for DLSS Ray Reconstruction. Result: " + String(StreamlineContext::result_to_string(result)));
 			}
-		} else if (StreamlineContext::get().streamline_capabilities.dlss_available) {
+		} else {
 			// Use regular DLSS
 			result = StreamlineContext::get().slEvaluateFeature(sl::kFeatureDLSS, *StreamlineContext::get().last_token, inputs, 1, nativeCmdlist);
 			if (result != sl::Result::eOk) {
 				ERR_FAIL_MSG("Failed to call streamline slEvaluateFeature for DLSS Super Resolution. Result: " + String(StreamlineContext::result_to_string(result)));
 			}
 		}
+		const int trace_index = use_dlss_rr ? 1 : 0;
+		if (!context->evaluation_logged[trace_index] && OS::get_singleton()->get_environment("GODOT_DLSS_TRACE_STATS") == "1") {
+			char requested_preset = p_params.preset;
+			if (requested_preset == '?') {
+				requested_preset = use_dlss_rr ? StreamlineContext::get().dlss_rr_default_preset : StreamlineContext::get().dlss_default_preset;
+			}
+			const uint32_t preset_parameter = use_dlss_rr ? uint32_t(context->currentDlssDOptions.qualityPreset) : uint32_t(context->currentDlssOptions.qualityPreset);
+			print_line(vformat("DLSS_TRACE viewport=%d feature=%s feature_id=%d requested_preset=%s preset_parameter=%d quality_mode=%d internal=%dx%d output=%dx%d reset=%d result=%s effective_model=unknown", uint32_t(context->viewport), use_dlss_rr ? "RR" : "SR", uint32_t(use_dlss_rr ? sl::kFeatureDLSS_RR : sl::kFeatureDLSS), String::chr(requested_preset), preset_parameter, uint32_t(context->currentDlssOptions.mode), p_params.internal_size.width, p_params.internal_size.height, context->currentDlssOptions.outputWidth, context->currentDlssOptions.outputHeight, int(context->constants.reset == sl::Boolean::eTrue), StreamlineContext::result_to_string(result)));
+			context->evaluation_logged[trace_index] = true;
+		}
 	}
+
+	context->reset_pending = false;
 
 	// NIS support
 	// **********
@@ -557,6 +644,7 @@ void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext
 		}
 
 		{ // Evaluate NIS
+			context->nis_used = true;
 			const sl::BaseStructure *inputs[] = { &context->viewport };
 			sl::Result result = StreamlineContext::get().slEvaluateFeature(sl::kFeatureNIS, *StreamlineContext::get().last_token, inputs, 1, nativeCmdlist);
 			if (result != sl::Result::eOk) {
@@ -571,7 +659,18 @@ void RendererRD::DLSSEffect::_upscale_internal_graph_callback(RenderingDeviceDri
 	self->last_effect->_upscale_internal(p_command_buffer, self->last_parameters);
 }
 
-bool DLSSEffect::is_ready(DLSSContext *p_context) {
+bool DLSSEffect::is_available(bool p_ray_reconstruction) const {
+	const auto &sl = StreamlineContext::get();
+	if (!sl.slSetConstants || !sl.slSetTag || !sl.slEvaluateFeature || !sl.slFreeResources || !sl.slGetNewFrameToken) {
+		return false;
+	}
+	return p_ray_reconstruction ? sl.streamline_capabilities.dlss_rr_available && sl.slDLSSDSetOptions && sl.slDLSSDGetOptimalSettings : sl.streamline_capabilities.dlss_available && sl.slDLSSSetOptions && sl.slDLSSGetOptimalSettings;
+}
+
+bool DLSSEffect::is_ready(DLSSContext *p_context, bool p_ray_reconstruction) {
+	if (!p_context || !is_available(p_ray_reconstruction)) {
+		return false;
+	}
 	DLSSContextInner *context = (DLSSContextInner *)p_context;
 	if (context->currentDlssOptions.mode == sl::DLSSMode::eOff) {
 		return false; // unsupported mode.
@@ -584,11 +683,14 @@ bool DLSSEffect::is_ready(DLSSContext *p_context) {
 #else
 DLSSEffect::DLSSEffect() {}
 DLSSEffect::~DLSSEffect() {}
-DLSSContext *DLSSEffect::create_context(Size2i p_internal_size, Size2i p_target_size) {
+DLSSContext *DLSSEffect::create_context(Size2i p_internal_size, Size2i p_target_size, bool p_ray_reconstruction) {
 	return nullptr;
 }
 void DLSSEffect::upscale(const DLSSContext::Parameters &p_params) {}
-bool DLSSEffect::is_ready(DLSSContext *p_context) {
+bool DLSSEffect::is_available(bool p_ray_reconstruction) const {
+	return false;
+}
+bool DLSSEffect::is_ready(DLSSContext *p_context, bool p_ray_reconstruction) {
 	return false;
 }
 void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext::Parameters &p_params) {}

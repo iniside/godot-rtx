@@ -30,6 +30,10 @@ struct Params {
 	uint separate_specular;
 	float environment_energy;
 	uint ddgi_enabled;
+	uint camera_radiance_enabled;
+	uint camera_radiance_full;
+	uint reflection_hit_distance_enabled;
+	uint pad0;
 	uint pad1;
 	uint pad2;
 };
@@ -50,6 +54,11 @@ float4x4 decode_inverse_view(SceneData data) {
 [[vk::binding(9, 0), vk::image_format("r32f")]] RWTexture2D<float> nrd_view_depth;
 [[vk::binding(10, 0), vk::image_format("rg16f")]] RWTexture2D<float2> velocity;
 [[vk::binding(11, 0), vk::image_format("rgba8")]] RWTexture2D<float4> normal_roughness;
+[[vk::binding(12, 0), vk::image_format("rgba16f")]] RWTexture2D<float4> rr_diffuse_albedo;
+[[vk::binding(13, 0), vk::image_format("rgba16f")]] RWTexture2D<float4> rr_specular_albedo;
+[[vk::binding(14, 0), vk::image_format("rgba16f")]] RWTexture2D<float4> rr_normal_roughness;
+[[vk::binding(15, 0), vk::image_format("r16f")]] RWTexture2D<float> rr_specular_hit_distance;
+[[vk::binding(16, 0)]] Texture2D<float> reflection_hit_distance;
 #else
 [[vk::binding(8, 0)]] Texture2D<float4> diffuse_radiance;
 [[vk::binding(9, 0)]] Texture2D<float4> specular_radiance;
@@ -99,6 +108,7 @@ struct DirectionalLights {
 [[vk::binding(14, 0), vk::image_format("rgba16f")]] RWTexture2D<float4> separate_specular;
 [[vk::binding(15, 0)]] SamplerState environment_sampler;
 [[vk::binding(16, 0)]] Texture2D<float4> indirect_diffuse;
+[[vk::binding(17, 0)]] Texture2D<float4> camera_radiance;
 
 float3 fog_sample_radiance(float3 view_direction, float mip_level) {
 	float3 sky_direction = mul(view_direction, scene.data.radiance_inverse_xform);
@@ -159,8 +169,15 @@ void main(uint3 invocation : SV_DispatchThreadID) {
 	packed.ambient_occlusion = surface_motion.Load(address).w;
 	uint flags = packed.classification.x;
 	bool surface_valid = (flags & 1u) != 0u && depth > 0.0;
-	float4 view_position = mul(float4(uv * 2.0 - 1.0, depth, 1.0), scene.data.inv_projection_matrix);
+	float4 view_position = mul(float4(uv * 2.0 - 1.0, surface_valid ? depth : 0.5, 1.0), scene.data.inv_projection_matrix);
 	view_position /= view_position.w;
+	if (!surface_valid) {
+		if (params.orthogonal != 0u) {
+			view_position.z = -scene.data.z_far;
+		} else {
+			view_position.xyz *= scene.data.z_far / max(-view_position.z, 1e-6);
+		}
+	}
 	float4x4 inverse_view = decode_inverse_view(scene.data);
 	float3 camera_direction = float3(inverse_view[0][2], inverse_view[1][2], inverse_view[2][2]);
 	float3 view_direction = normalize(params.orthogonal != 0u ? camera_direction : -mul((float3x3)inverse_view, view_position.xyz));
@@ -183,8 +200,14 @@ void main(uint3 invocation : SV_DispatchThreadID) {
 	velocity[pixel] = motion;
 	float3 view_normal = mul(normal, (float3x3)inverse_view);
 	normal_roughness[pixel] = float4(view_normal * 0.5 + 0.5, surface.material.roughness * (127.0 / 255.0));
+	bool lit_surface = surface_valid && (flags & 2u) == 0u;
+	rr_diffuse_albedo[pixel] = float4(lit_surface ? surface.material.base_color * (1.0 - surface.material.metallic) : float3(0.0), 1.0);
+	rr_specular_albedo[pixel] = float4(lit_surface ? lerp(float3(0.08 * surface.material.specular), surface.material.base_color, surface.material.metallic) : float3(0.0), 1.0);
+	rr_normal_roughness[pixel] = float4(normalize(normal), surface_valid ? saturate(surface.material.roughness) : 1.0);
+	float reflection_distance = lit_surface && params.reflection_hit_distance_enabled != 0u ? reflection_hit_distance.Load(address) : 0.0;
+	rr_specular_hit_distance[pixel] = isnan(reflection_distance) || isinf(reflection_distance) ? 0.0 : clamp(reflection_distance, 0.0, 65504.0);
 #else
-	if (!surface_valid) {
+	if (!surface_valid && params.camera_radiance_enabled == 0u) {
 		if (params.separate_specular != 0u) {
 			separate_specular[pixel] = float4(0.0);
 		}
@@ -192,7 +215,10 @@ void main(uint3 invocation : SV_DispatchThreadID) {
 	}
 	float3 output_color = surface.material.emission;
 	float3 specular_color = float3(0.0);
-	if ((flags & 2u) == 0u) {
+	bool use_camera_radiance = params.camera_radiance_full != 0u || (!surface_valid && params.camera_radiance_enabled != 0u);
+	if (use_camera_radiance) {
+		output_color = camera_radiance.Load(address).rgb * scene.data.emissive_exposure_normalization;
+	} else if ((flags & 2u) == 0u) {
 		float3 diffuse_factor;
 		float3 specular_factor;
 		rtxdi_nrd_material_factors(normal, surface.view_direction, surface.material.base_color * (1.0 - surface.material.metallic), lerp(float3(0.08 * surface.material.specular), surface.material.base_color, surface.material.metallic), surface.material.roughness, diffuse_factor, specular_factor);
@@ -227,7 +253,7 @@ void main(uint3 invocation : SV_DispatchThreadID) {
 	specular_color *= fog.a;
 	specular_color = any(isnan(specular_color)) || any(isinf(specular_color)) ? float3(0.0) : clamp(specular_color, 0.0, 65504.0);
 	if (params.separate_specular != 0u) {
-		separate_specular[pixel] = float4(specular_color, surface.material.metallic);
+		separate_specular[pixel] = float4(specular_color, use_camera_radiance ? 0.0 : surface.material.metallic);
 	} else {
 		output_color += specular_color;
 	}

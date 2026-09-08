@@ -39,6 +39,7 @@
 #include "core/templates/vector.h"
 #include "servers/rendering/renderer_rd/bindless_block.h"
 #include "servers/rendering/renderer_rd/effects/ddgi_effect.h"
+#include "servers/rendering/renderer_rd/forward_clustered/render_pathtracing.h"
 #include "servers/rendering/renderer_rd/shaders/raytracing/multimesh_merge.glsl.gen.h"
 #include "servers/rendering/rendering_device.h"
 #include "servers/rendering/storage/environment_storage.h"
@@ -480,6 +481,7 @@ struct RTViewportState {
 	RID environment_texture;
 	RenderRTXDIViewportResources *rtxdi_di = nullptr;
 	RendererRD::DDGIEffect::Context *ddgi = nullptr;
+	RenderPathtracing::Context *pathtracing = nullptr;
 };
 
 class RenderRaytracing {
@@ -487,6 +489,7 @@ class RenderRaytracing {
 
 	RenderForwardClustered *owner = nullptr;
 	RendererRD::DDGIEffect *ddgi_effect = nullptr;
+	RenderPathtracing *pathtracing = nullptr;
 	bool _prepare_ddgi(RTViewportState *p_state);
 	bool _render_ddgi(RTViewportState *p_state, RID p_scene_data, RID p_sky);
 	BindlessBlock *bindless_block = nullptr;

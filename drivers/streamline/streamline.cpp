@@ -249,11 +249,11 @@ bool Streamline::get_capability(StreamlineCapabilityType p_capability_type) {
 	_THREAD_SAFE_METHOD_
 	switch (p_capability_type) {
 		case STREAMLINE_CAPABILITY_DLSS:
-			return StreamlineContext::get().streamline_capabilities.dlss_available;
+			return StreamlineContext::get().streamline_capabilities.dlss_available && StreamlineContext::get().slDLSSSetOptions && StreamlineContext::get().slDLSSGetOptimalSettings && StreamlineContext::get().slEvaluateFeature && StreamlineContext::get().slSetTag && StreamlineContext::get().slSetConstants && StreamlineContext::get().slFreeResources;
 		case STREAMLINE_CAPABILITY_DLSS_G:
 			return StreamlineContext::get().streamline_capabilities.dlss_g_available;
 		case STREAMLINE_CAPABILITY_DLSS_RR:
-			return StreamlineContext::get().streamline_capabilities.dlss_rr_available;
+			return StreamlineContext::get().streamline_capabilities.dlss_rr_available && StreamlineContext::get().slDLSSDSetOptions && StreamlineContext::get().slDLSSDGetOptimalSettings && StreamlineContext::get().slEvaluateFeature && StreamlineContext::get().slSetTag && StreamlineContext::get().slSetConstants && StreamlineContext::get().slFreeResources;
 		case STREAMLINE_CAPABILITY_NIS:
 			return StreamlineContext::get().streamline_capabilities.nis_available;
 		case STREAMLINE_CAPABILITY_REFLEX:

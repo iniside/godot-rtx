@@ -1,0 +1,19 @@
+{
+  "dlss.LICENSE.txt": "21b5daec892b12bea692e66bc8fe45cf5902ccaf3a7b831e78050d8859881c37",
+  "nis.license.txt": "f80ecfbce8a84a5b4c1c59dc5a9f0ee9cf5a989c9fba3a9486ee874f7595a454",
+  "NvLowLatencyVk.dll": "2a77dc3e1c724b7eea5755be0ae7423752e79a2459fae72181a9f00e3507e5d6",
+  "nvngx_dlss.dll": "be6e434a94ca32499515eb62ca0e6c274526055d568d0426e4c652dcdfb6ee6e",
+  "nvngx_dlss.license.txt": "3027f23ca5a46dd9cb8183fbd522983a86f64d7daac5982912bf9f214671f294",
+  "nvngx_dlssd.dll": "f4e97624f70fbb769acb11ebd751b512ecc9463d4bd6aef04896d3956e6084a0",
+  "nvngx_dlssg.dll": "135eaf0733c1e37381a8c28abcf7a862404a54132b81787c04e35d09efc5e36f",
+  "reflex.license.txt": "ebf83c07fb3b2939908c3795d887afde3161c89a28ba391724efc784ce1bdabe",
+  "sl.common.dll": "c57930ef5a8a3fe9be85efdf71a61d8107c1148e8a6aed456464547128f7f4ae",
+  "sl.dlss.dll": "a997022d2b93601e0eefc3ddb3067c36df386dd3163ae71e11095191fb14f8e4",
+  "sl.dlss_d.dll": "35e4f8fc8396a08514a4493b87ba507445f886dad4b7c6c024d3305824236be6",
+  "sl.dlss_g.dll": "1fec3f8fdfc59d78c4445c276c1a0fb798bf251985f348597dc2b44d0c995e52",
+  "sl.interposer.dll": "2a79db6857ae8c75bbd871a9489c48bc6a39f7fcc88b9b02afd53d0376cbec66",
+  "sl.nis.dll": "82ac2d3936ad24856b2219ce43016e7428539bf9dfc217a690a3cc8b05adaf63",
+  "sl.pcl.dll": "699ab461e64e95189a7fe6a21c79ad237cf56b60ea748cb6c840cd5431ba91d1",
+  "sl.reflex.dll": "7e6e4ccc4b561bd449fb0da90709d9b96b08c3f6f4697362caaa359e72a58a67",
+  "streamline.LICENSE.txt": "7b6f23e7d6f3ad6292f9308d2b42cdc3d82ae4e9b2abb55f230279d83bedd43d"
+}

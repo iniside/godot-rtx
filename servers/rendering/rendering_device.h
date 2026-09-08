@@ -1991,6 +1991,8 @@ public:
 
 	void submit();
 	void sync();
+	// Native resource owners must drain callbacks before invalidating their userdata.
+	void flush_and_stall();
 
 	enum MemoryType {
 		MEMORY_TEXTURES,

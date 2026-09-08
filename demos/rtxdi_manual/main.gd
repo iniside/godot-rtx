@@ -3,6 +3,11 @@ extends Node3D
 @export_enum("gallery", "shadows", "energy", "unsupported") var preset := "gallery"
 @export_enum("all", "directional", "point", "spot", "area", "environment", "emission") var light_mode := "all"
 @export var expanded_multimesh := false
+@export_enum("hybrid_nrd", "hybrid_rr", "pt_nrd", "pt_rr", "pt_raw") var renderer_mode := "hybrid_nrd"
+
+const RENDERER_MODES := ["hybrid_nrd", "hybrid_rr", "pt_nrd", "pt_rr", "pt_raw"]
+var mode_notice := ""
+var nrd_dlss_sr := false
 
 var camera: Camera3D
 var alternate_camera: Camera3D
@@ -28,6 +33,8 @@ func _ready() -> void:
 			capture_delay = float(argument.trim_prefix("--delay="))
 		elif argument.begins_with("--light="):
 			light_mode = argument.trim_prefix("--light=")
+		elif argument.begins_with("--mode="):
+			renderer_mode = argument.trim_prefix("--mode=")
 		elif argument == "--still":
 			animate = false
 		elif argument == "--expanded":
@@ -55,14 +62,64 @@ func _ready() -> void:
 		emitter.visible = light_mode in ["all", "emission"]
 	if "--fog" in OS.get_cmdline_user_args():
 		environment.volumetric_fog_enabled = true
+	_select_renderer(renderer_mode)
+	if "--sr" in OS.get_cmdline_user_args():
+		_toggle_sr()
 	if "--dual" in OS.get_cmdline_user_args():
 		_toggle_secondary()
-	if "--upscale" in OS.get_cmdline_user_args():
-		get_viewport().scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR2
-		get_viewport().scaling_3d_scale = 0.67
+	if "--upscale" in OS.get_cmdline_user_args() and renderer_mode != "pt_raw":
+		_toggle_resolution()
 	if preset == "shadows":
 		print("MANUAL_SHADOWS columns=back/front/disabled/double-sided/mirrored/negative-local-MultiMesh rows=up/down mm_threshold=", ProjectSettings.get_setting("rendering/raytracing/multimesh_merged_blas_max_triangles"))
 	print("MANUAL_DEMO preset=", preset, " light=", light_mode, " binary=", Engine.get_version_info(), " renderer=", RenderingServer.get_current_rendering_method(), " driver=", RenderingServer.get_current_rendering_driver_name(), " size=", get_viewport().get_visible_rect().size)
+
+func _configure_viewport(viewport: Viewport) -> void:
+	viewport.use_taa = false
+	viewport.frame_generation = false
+	viewport.scaling_3d_scale = 1.0
+	viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_DLSS if renderer_mode.ends_with("rr") or nrd_dlss_sr else Viewport.SCALING_3D_MODE_BILINEAR
+
+func _select_renderer(mode: String) -> void:
+	if mode not in RENDERER_MODES:
+		mode_notice = "Unknown mode: " + mode
+		return
+	renderer_mode = mode
+	nrd_dlss_sr = false
+	_configure_viewport(get_viewport())
+	if is_instance_valid(secondary):
+		_configure_viewport(secondary.get_child(0) as SubViewport)
+	environment.raytracing_rendering_mode = Environment.RAYTRACING_RENDERING_MODE_PATH_TRACED if mode.begins_with("pt_") else Environment.RAYTRACING_RENDERING_MODE_HYBRID
+	environment.raytracing_denoiser = Environment.RAYTRACING_DENOISER_NONE if mode == "pt_raw" else (Environment.RAYTRACING_DENOISER_DLSS_RR if mode.ends_with("rr") else Environment.RAYTRACING_DENOISER_NRD)
+	mode_notice = "Native resolution; temporal AA and frame generation disabled."
+	if mode == "pt_raw":
+		animate = false
+		environment.pathtracing_accumulate = true
+		mode_notice = "Raw progressive PT: motion paused; Space resumes. Disable fog with F for surface comparison."
+	elif mode.ends_with("rr"):
+		mode_notice = "RR requested with DLSS scaling; renderer Output reports unavailable configurations."
+	print("MANUAL_RENDERER mode=", mode, " spp=", environment.pathtracing_samples_per_pixel, " bounces=", environment.pathtracing_max_bounces)
+
+func _toggle_sr() -> void:
+	if not renderer_mode.ends_with("nrd"):
+		mode_notice = "Ordinary DLSS SR is available here with NRD modes (1 or 3)."
+		return
+	nrd_dlss_sr = not nrd_dlss_sr
+	_configure_viewport(get_viewport())
+	if is_instance_valid(secondary):
+		_configure_viewport(secondary.get_child(0) as SubViewport)
+	mode_notice = "DLSS SR requested; renderer Output reports availability." if nrd_dlss_sr else "Native NRD preview."
+
+func _toggle_resolution() -> void:
+	if renderer_mode == "pt_raw":
+		mode_notice = "Raw PT keeps native resolution without temporal upscaling."
+		return
+	if not renderer_mode.ends_with("rr") and not nrd_dlss_sr:
+		get_viewport().scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR2
+	get_viewport().scaling_3d_scale = 0.67 if get_viewport().scaling_3d_scale == 1.0 else 1.0
+	if is_instance_valid(secondary):
+		var viewport := secondary.get_child(0) as SubViewport
+		viewport.scaling_3d_mode = get_viewport().scaling_3d_mode
+		viewport.scaling_3d_scale = get_viewport().scaling_3d_scale
 
 func _toggle_secondary() -> void:
 	if is_instance_valid(secondary):
@@ -75,6 +132,9 @@ func _toggle_secondary() -> void:
 	add_child(secondary)
 	var viewport := SubViewport.new()
 	viewport.size = Vector2i(384, 216)
+	_configure_viewport(viewport)
+	viewport.scaling_3d_mode = get_viewport().scaling_3d_mode
+	viewport.scaling_3d_scale = get_viewport().scaling_3d_scale
 	viewport.world_3d = get_world_3d()
 	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	secondary.add_child(viewport)
@@ -88,6 +148,10 @@ func _toggle_secondary() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
+			KEY_1, KEY_2, KEY_3, KEY_4, KEY_5:
+				_select_renderer(RENDERER_MODES[event.keycode - KEY_1])
+			KEY_T:
+				_toggle_sr()
 			KEY_ESCAPE:
 				get_tree().quit()
 			KEY_SPACE:
@@ -125,8 +189,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					deformer.queue_free()
 					deformer = null
 			KEY_U:
-				get_viewport().scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR2
-				get_viewport().scaling_3d_scale = 0.67 if get_viewport().scaling_3d_scale == 1.0 else 1.0
+				_toggle_resolution()
 			KEY_F12:
 				_capture("user://manual-%d.png" % Time.get_unix_time_from_system(), false)
 		print("MANUAL_ACTION key=", event.keycode, " frame=", Engine.get_frames_drawn(), " lights=", lights.size(), " size=", get_window().size)
@@ -147,7 +210,7 @@ func _process(delta: float) -> void:
 	var active := get_viewport().get_camera_3d()
 	var direction := Vector3(float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A)), float(Input.is_physical_key_pressed(KEY_E)) - float(Input.is_physical_key_pressed(KEY_Q)), float(Input.is_physical_key_pressed(KEY_S)) - float(Input.is_physical_key_pressed(KEY_W)))
 	active.position += active.basis * direction * delta * 6.0
-	hud.text = "RTXDI / NRD manual demo  |  %s / %s\nRMB + WASD/QE move  |  Space motion  C cut  V second view\nF fog  U FSR2  Z resize  L remove light  R reorder  B shadows\nO offscreen caster  Del remove deformer  F12 capture  Esc quit\n%s  |  motion %s" % [preset, light_mode, get_viewport().get_visible_rect().size, animate]
+	hud.text = "RT comparison | %s / %s | %s\n1 Hybrid NRD  2 Hybrid RR  3 PT NRD  4 PT RR  5 Raw PT\nT NRD + DLSS SR  U resolution/FSR2  F fog  Space motion\nRMB + WASD/QE move  C cut  V second view  Z resize\nL remove light  R reorder  B shadows  O offscreen  Del deformer\nF12 capture  Esc quit | %s | motion %s | PT %d spp / %d bounces\n%s" % [preset, light_mode, renderer_mode, get_viewport().get_visible_rect().size, animate, environment.pathtracing_samples_per_pixel, environment.pathtracing_max_bounces, mode_notice]
 	if not capture_path.is_empty() and elapsed >= capture_delay and not capturing:
 		capturing = true
 		_capture(capture_path, true)

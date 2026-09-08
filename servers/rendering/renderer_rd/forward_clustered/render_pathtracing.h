@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  dlss.h                                                                */
+/*  render_pathtracing.h                                                   */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,70 +30,42 @@
 
 #pragma once
 
-#include "servers/rendering/renderer_rd/shaders/effects/motion_vector_decode.glsl.gen.h"
+#include "servers/rendering/renderer_rd/shaders/raytracing/pathtracing.slang.gen.h"
 
-namespace RendererRD {
+namespace RendererSceneRenderImplementation {
 
-class DLSSEffect;
-class DLSSContext {
+class RenderRaytracing;
+struct RTViewportState;
+
+class RenderPathtracing {
 public:
-	struct Parameters {
-		DLSSContext *context;
-		Size2i internal_size;
-		RID color;
-		RID depth;
-		RID velocity;
-		RID reactive;
-		RID exposure;
-		RID output;
-		float z_near = 0.0f;
-		float z_far = 0.0f;
-		float fovy = 0.0f;
-		bool reverse_depth = true;
-		bool orthogonal = false;
-		Vector2 jitter;
-		float delta_time = 0.0f;
-		float sharpness = 0.0f;
-		char preset = '?';
-		bool reset_accumulation = false;
-		Projection reprojection;
-		Projection cam_projection;
-		Transform3D cam_transform;
-		bool dlss_g = false;
+	struct Context {
+		Size2i size;
+		RID images[11];
+		RID frame_buffer;
+		RID pipeline;
+		RID sbt;
+		RID material_source_pipeline;
+		uint64_t history_epoch = UINT64_MAX;
+		uint32_t accumulated_samples = 0;
+		uint32_t frame = 0;
+		bool history_valid = false;
+		~Context();
+		RID get_radiance() const { return images[1]; }
+		RID get_diffuse() const { return images[2]; }
+		RID get_specular() const { return images[3]; }
+		RID get_surface(uint32_t p_index) const { return images[4 + p_index]; }
+		RID get_depth() const { return images[10]; }
+	};
 
-		// DLSS Ray Reconstruction buffers
-		bool dlss_rr = false; // Enable DLSS-RR mode instead of regular DLSS
-		bool dlss_rr_alpha_upscaling = false; // Upscale alpha channel (needed for depth reconstruction)
-		RID dlss_rr_diffuse_albedo; // Diffuse albedo buffer (RGB)
-		RID dlss_rr_specular_albedo; // Specular albedo buffer (RGB)
-		RID dlss_rr_normal_roughness; // World-space normal (XYZ) + roughness (W)
-		RID dlss_rr_specular_hit_dist; // Specular hit distance (R16F, -1 = sky)
-	} last_parameters;
-	DLSSEffect *last_effect = nullptr;
-	bool is_d3d12 = false;
-	int delay = 4; // Warmup frames before DLSS evaluates (Vulkan stability workaround).
-
-	virtual ~DLSSContext() {}
-};
-
-class DLSSEffect {
-public:
-	struct Shaders {
-		MotionVectorDecodeShaderRD mvec_decode_shader;
-		RID mvec_decode_version;
-		RID mvec_decode_pipeline;
-	} shaders;
-
-	DLSSEffect();
-	~DLSSEffect();
-	DLSSContext *create_context(Size2i p_internal_size, Size2i p_target_size, bool p_ray_reconstruction = false);
-	void upscale(const DLSSContext::Parameters &p_params);
-	bool is_ready(DLSSContext *context, bool p_ray_reconstruction = false);
-	bool is_available(bool p_ray_reconstruction = false) const;
+	RenderPathtracing();
+	~RenderPathtracing();
+	bool render(RenderRaytracing &p_raytracing, RTViewportState &p_state, RID p_scene_data, RID p_sky, const Size2i &p_size, bool p_sky_array, bool p_draw_sky, const Color &p_background);
 
 private:
-	void _upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext::Parameters &p_params);
-	static void _upscale_internal_graph_callback(RenderingDeviceDriver *p_driver, RDD::CommandBufferID p_command_buffer, void *p_userdata);
+	PathtracingShaderRD shader;
+	RID version;
+	Context *_create_context(const Size2i &p_size);
 };
 
-} // namespace RendererRD
+} // namespace RendererSceneRenderImplementation

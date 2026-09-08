@@ -53,7 +53,7 @@ NRDEffect::Context::~Context() {
 			}
 		}
 	}
-	for (RID resource : { normal_roughness, view_depth, diffuse, specular }) {
+	for (RID resource : { normal_roughness, view_depth, diffuse, specular, rr_diffuse_albedo, rr_specular_albedo, rr_normal_roughness, rr_specular_hit_distance }) {
 		if (resource.is_valid()) {
 			rd->free_rid(resource);
 		}
@@ -144,7 +144,12 @@ NRDEffect::Context *NRDEffect::create_context(const Size2i &p_size) {
 	context->view_depth = _create_texture(p_size, RD::DATA_FORMAT_R32_SFLOAT);
 	context->diffuse = _create_texture(p_size, RD::DATA_FORMAT_R16G16B16A16_SFLOAT);
 	context->specular = _create_texture(p_size, RD::DATA_FORMAT_R16G16B16A16_SFLOAT);
+	context->rr_diffuse_albedo = _create_texture(p_size, RD::DATA_FORMAT_R16G16B16A16_SFLOAT);
+	context->rr_specular_albedo = _create_texture(p_size, RD::DATA_FORMAT_R16G16B16A16_SFLOAT);
+	context->rr_normal_roughness = _create_texture(p_size, RD::DATA_FORMAT_R16G16B16A16_SFLOAT);
+	context->rr_specular_hit_distance = _create_texture(p_size, RD::DATA_FORMAT_R16_SFLOAT);
 	valid &= context->normal_roughness.is_valid() && context->view_depth.is_valid() && context->diffuse.is_valid() && context->specular.is_valid();
+	valid &= context->rr_diffuse_albedo.is_valid() && context->rr_specular_albedo.is_valid() && context->rr_normal_roughness.is_valid() && context->rr_specular_hit_distance.is_valid();
 	nrd::RelaxSettings settings;
 	settings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::OFF;
 	valid &= nrd::SetDenoiserSettings(*context->instance, 0, &settings) == nrd::Result::SUCCESS;
@@ -155,7 +160,7 @@ NRDEffect::Context *NRDEffect::create_context(const Size2i &p_size) {
 	return context;
 }
 
-bool NRDEffect::_process_frame(Context *p_context, const Frame &p_frame, bool p_compose) {
+bool NRDEffect::_process_frame(Context *p_context, const Frame &p_frame, bool p_compose, bool p_denoised) {
 	const uint32_t pass = p_compose ? 1 : 0;
 	RID shader = frame_shader.version_get_shader(shader_version, pass);
 	ERR_FAIL_COND_V(shader.is_null() || frame_pipelines[pass].is_null(), false);
@@ -166,20 +171,27 @@ bool NRDEffect::_process_frame(Context *p_context, const Frame &p_frame, bool p_
 	}
 	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 7, p_frame.depth));
 	if (p_compose) {
-		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 8, p_context->diffuse));
-		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 9, p_context->specular));
+		RID black = TextureStorage::get_singleton()->texture_rd_get_default(TextureStorage::DEFAULT_RD_TEXTURE_BLACK);
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 8, p_denoised ? p_context->diffuse : (p_frame.noisy_diffuse.is_valid() ? p_frame.noisy_diffuse : black)));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 9, p_denoised ? p_context->specular : (p_frame.noisy_specular.is_valid() ? p_frame.noisy_specular : black)));
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 10, p_frame.color));
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 11, p_frame.fog));
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 12, p_frame.radiance));
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 13, p_frame.directional_lights));
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 14, p_frame.separate_specular.is_valid() ? p_frame.separate_specular : p_context->normal_roughness));
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_SAMPLER, 15, samplers[1]));
-		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 16, p_frame.indirect_diffuse.is_valid() ? p_frame.indirect_diffuse : TextureStorage::get_singleton()->texture_rd_get_default(TextureStorage::DEFAULT_RD_TEXTURE_BLACK)));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 16, p_frame.indirect_diffuse.is_valid() ? p_frame.indirect_diffuse : black));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 17, p_frame.camera_radiance.is_valid() ? p_frame.camera_radiance : black));
 	} else {
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 8, p_context->normal_roughness));
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 9, p_context->view_depth));
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 10, p_frame.velocity));
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 11, p_frame.normal_roughness));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 12, p_context->rr_diffuse_albedo));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 13, p_context->rr_specular_albedo));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 14, p_context->rr_normal_roughness));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 15, p_context->rr_specular_hit_distance));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 16, p_frame.reflection_hit_distance.is_valid() ? p_frame.reflection_hit_distance : TextureStorage::get_singleton()->texture_rd_get_default(TextureStorage::DEFAULT_RD_TEXTURE_BLACK)));
 	}
 	RID uniform_set = UniformSetCacheRD::get_singleton()->get_cache_vec(shader, 0, uniforms);
 	ERR_FAIL_COND_V(uniform_set.is_null(), false);
@@ -194,8 +206,11 @@ bool NRDEffect::_process_frame(Context *p_context, const Frame &p_frame, bool p_
 		uint32_t separate_specular;
 		float environment_energy;
 		uint32_t ddgi_enabled;
-		uint32_t padding[2];
-	} push = { uint32_t(p_context->size.x), uint32_t(p_context->size.y), p_frame.orthogonal, p_frame.fog_enabled, p_frame.fog_inverse_length, p_frame.fog_spread, p_frame.fog_legacy_blending, p_frame.separate_specular.is_valid(), p_frame.environment_energy, p_frame.indirect_diffuse.is_valid(), { 0, 0 } };
+		uint32_t camera_radiance_enabled;
+		uint32_t camera_radiance_full;
+		uint32_t reflection_hit_distance_enabled;
+		uint32_t padding[3];
+	} push = { uint32_t(p_context->size.x), uint32_t(p_context->size.y), p_frame.orthogonal, p_frame.fog_enabled, p_frame.fog_inverse_length, p_frame.fog_spread, p_frame.fog_legacy_blending, p_frame.separate_specular.is_valid(), p_frame.environment_energy, p_frame.indirect_diffuse.is_valid(), p_frame.camera_radiance.is_valid(), p_frame.camera_radiance.is_valid() && !p_denoised, p_frame.reflection_hit_distance.is_valid(), { 0, 0, 0 } };
 	RD *rd = RD::get_singleton();
 	RD::ComputeListID list = rd->compute_list_begin();
 	rd->compute_list_bind_compute_pipeline(list, frame_pipelines[pass]);
@@ -208,11 +223,19 @@ bool NRDEffect::_process_frame(Context *p_context, const Frame &p_frame, bool p_
 
 bool NRDEffect::prepare(Context *p_context, const Frame &p_frame) {
 	ERR_FAIL_NULL_V(p_context, false);
-	return _process_frame(p_context, p_frame, false);
+	p_context->rr_specular_hit_distance_valid = false;
+	p_context->rr_reset_history = !p_frame.history_valid;
+	ERR_FAIL_COND_V(!_process_frame(p_context, p_frame, false), false);
+	p_context->rr_specular_hit_distance_valid = p_frame.reflection_hit_distance.is_valid();
+	return true;
 }
 
-bool NRDEffect::process(Context *p_context, const Frame &p_frame) {
+bool NRDEffect::process(Context *p_context, const Frame &p_frame, bool p_denoise) {
 	ERR_FAIL_NULL_V(p_context, false);
+	if (!p_denoise) {
+		p_context->last_frame = UINT64_MAX;
+		return _process_frame(p_context, p_frame, true, false);
+	}
 	nrd::CommonSettings common;
 	Projection correction;
 	correction.set_depth_correction(false, false, true);
@@ -319,7 +342,7 @@ bool NRDEffect::process(Context *p_context, const Frame &p_frame) {
 		rd->compute_list_end();
 		rd->draw_command_end_label();
 	}
-	ERR_FAIL_COND_V(!_process_frame(p_context, p_frame, true), false);
+	ERR_FAIL_COND_V(!_process_frame(p_context, p_frame, true, true), false);
 	p_context->last_frame = p_frame.frame_index;
 	return true;
 }

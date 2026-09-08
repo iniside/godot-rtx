@@ -356,15 +356,17 @@ This is not large-coordinate proof. The final build receipt family is
 Earlier `template-final` changed source during compilation and is intermediate;
 the retained `*-nonnegative-final` family passed stable-source builds before the
 final C++ precision wiring correction.
-PT, RR, DLSS delivery and the complete Step 8 matrix remain outstanding.
+At the end of Step 5, PT, RR and DLSS delivery were still outstanding.
+Their subsequent implementation, GPU evidence and remaining verification limits
+are recorded in [the September 8 integration status](2026-09-08-ddgi-pt-rr-runtime-status.md).
 
 ## Remaining boundaries
 
-Compiler diagnostics and pipeline creation do not establish dispatched images,
-moving-origin history, translated scenes near 1e8, the MultiMesh transition on
-GPU, lifecycle execution, template/export or final DDGI/PT/RR behavior. These
-remain obligations in Step 8. Native writes outside every RD command remain
-outside the observable resource-generation boundary; no per-frame fallback exists.
+Compiler diagnostics and pipeline creation alone do not establish GPU behavior.
+The September 8 status separately records dispatched PT/RR images, translated
+scenes near 1e8, lifecycle and delivery evidence, with explicit unverified cases.
+Native writes outside every RD command remain outside the observable
+resource-generation boundary; no per-frame fallback exists.
 
 Initial machine inspection: RTX 4090, driver 616.64, 24,564 MiB VRAM. No driver
 or NVIDIA App changes were made. Official DLSS delivery findings and the SR/RR
