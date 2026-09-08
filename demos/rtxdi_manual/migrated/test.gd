@@ -8,7 +8,7 @@ extends Node3D
 @onready var state: Label = $HUD/State
 
 const DDGI_SEQUENCE_FRAMES := 96
-const DDGI_MOTION_FRAMES := 32
+const DDGI_MOTION_FRAMES := 8
 
 var elapsed := 0.0
 var animate := true
