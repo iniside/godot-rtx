@@ -245,6 +245,7 @@ bool RenderRaytracing::_render_ddgi(RTViewportState *p_state, RID p_scene_data, 
 			valid = false;
 			break;
 		}
+		RENDER_TIMESTAMP(vformat("DDGI Cascade %d Trace", cascade_index));
 		RD::RaytracingListID list = rd->raytracing_list_begin();
 		rd->raytracing_list_bind_raytracing_pipeline(list, context.trace_pipeline);
 		rd->raytracing_list_bind_uniform_set(list, material_set, 0);

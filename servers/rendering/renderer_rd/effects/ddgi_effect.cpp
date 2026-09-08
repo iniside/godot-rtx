@@ -35,6 +35,7 @@
 #include "core/math/quaternion.h"
 #include "core/os/os.h"
 #include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
+#include "servers/rendering/rendering_server_globals.h"
 
 namespace RendererRD {
 
@@ -224,7 +225,10 @@ bool DDGIEffect::_state(Context &p_context, uint32_t p_cascade, StateMode p_mode
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 8, { cascade.update_frame }));
 	}
 	uint32_t constants[4] = { p_cascade, uint32_t(p_context.frame), 0, 0 };
-	return _dispatch(state_shader.version_get_shader(state_version, p_mode), state_pipelines[p_mode], uniforms, constants, sizeof(constants), PROBE_COUNT / 32);
+	RENDER_TIMESTAMP(vformat("DDGI Cascade %d State %s", p_cascade, p_mode == STATE_RESET ? "Reset" : (p_mode == STATE_PREPARE ? "Prepare" : "Finish")));
+	bool dispatched = _dispatch(state_shader.version_get_shader(state_version, p_mode), state_pipelines[p_mode], uniforms, constants, sizeof(constants), PROBE_COUNT / 32);
+	RENDER_TIMESTAMP("DDGI State Complete");
+	return dispatched;
 }
 
 bool DDGIEffect::prepare(Context &p_context, const Vector3 &p_camera, const Vector3 &p_rt_origin, uint64_t p_history_epoch, int p_update_budget) {
@@ -350,6 +354,7 @@ bool DDGIEffect::finish_update(Context &p_context, uint32_t p_cascade) {
 	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 1, { cascade.ray_data }));
 	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 4, { cascade.probe_data }));
 	uint32_t constants[6] = { p_cascade, 0, 0, 0, 0, 0 };
+	RENDER_TIMESTAMP(vformat("DDGI Cascade %d Classify", p_cascade));
 	if (!_dispatch(classify_shader.version_get_shader(classify_version, 0), classify_pipeline, uniforms, constants, sizeof(constants), PROBE_COUNT / 32)) {
 		return false;
 	}
@@ -361,10 +366,12 @@ bool DDGIEffect::finish_update(Context &p_context, uint32_t p_cascade) {
 			blend_uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 5, { cascade.variability }));
 		}
 		int variant = ray_variant + output * 3;
+		RENDER_TIMESTAMP(vformat("DDGI Cascade %d Blend %s", p_cascade, output == 0 ? "Irradiance" : "Distance"));
 		if (!_dispatch(blend_shader.version_get_shader(blend_version, variant), blend_pipelines[variant], blend_uniforms, constants, sizeof(constants), PROBE_AXIS, PROBE_AXIS, PROBE_AXIS)) {
 			return false;
 		}
 	}
+	RENDER_TIMESTAMP(vformat("DDGI Cascade %d Relocate", p_cascade));
 	if (!_dispatch(relocate_shader.version_get_shader(relocate_version, 0), relocate_pipeline, uniforms, constants, sizeof(constants), PROBE_COUNT / 32) || !_state(p_context, p_cascade, STATE_FINISH)) {
 		return false;
 	}

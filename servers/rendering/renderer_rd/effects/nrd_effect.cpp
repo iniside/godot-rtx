@@ -36,6 +36,7 @@
 #include "servers/rendering/renderer_rd/storage_rd/texture_storage.h"
 #include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
 #include "servers/rendering/renderer_scene_render.h"
+#include "servers/rendering/rendering_server_globals.h"
 
 namespace RendererRD {
 
@@ -212,12 +213,14 @@ bool NRDEffect::_process_frame(Context *p_context, const Frame &p_frame, bool p_
 		uint32_t padding[3];
 	} push = { uint32_t(p_context->size.x), uint32_t(p_context->size.y), p_frame.orthogonal, p_frame.fog_enabled, p_frame.fog_inverse_length, p_frame.fog_spread, p_frame.fog_legacy_blending, p_frame.separate_specular.is_valid(), p_frame.environment_energy, p_frame.indirect_diffuse.is_valid(), p_frame.camera_radiance.is_valid(), p_frame.camera_radiance.is_valid() && !p_denoised, p_frame.reflection_hit_distance.is_valid(), { 0, 0, 0 } };
 	RD *rd = RD::get_singleton();
+	RENDER_TIMESTAMP(p_compose ? "NRD Compose" : "NRD Prepare Guides");
 	RD::ComputeListID list = rd->compute_list_begin();
 	rd->compute_list_bind_compute_pipeline(list, frame_pipelines[pass]);
 	rd->compute_list_bind_uniform_set(list, uniform_set, 0);
 	rd->compute_list_set_push_constant(list, &push, sizeof(push));
 	rd->compute_list_dispatch_threads(list, p_context->size.x, p_context->size.y, 1);
 	rd->compute_list_end();
+	RENDER_TIMESTAMP(p_compose ? "NRD Compose Complete" : "NRD Prepare Guides Complete");
 	return true;
 }
 
@@ -271,6 +274,7 @@ bool NRDEffect::process(Context *p_context, const Frame &p_frame, bool p_denoise
 	}
 	for (uint32_t i = 0; i < dispatch_count; i++) {
 		const nrd::DispatchDesc &dispatch = dispatches[i];
+		RENDER_TIMESTAMP(vformat("NRD Dispatch %d %s", i, dispatch.name));
 		ERR_FAIL_UNSIGNED_INDEX_V(dispatch.pipelineIndex, p_context->pipelines.size(), false);
 		RID shader = p_context->shaders[dispatch.pipelineIndex];
 		LocalVector<RD::Uniform> resources;

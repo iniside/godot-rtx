@@ -30,8 +30,10 @@
 #include "render_rtxdi.h"
 
 #include "render_raytracing.h"
+
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
 #include "servers/rendering/renderer_rd/storage_rd/texture_storage.h"
+#include "servers/rendering/rendering_server_globals.h"
 
 namespace RendererSceneRenderImplementation {
 
@@ -271,7 +273,9 @@ void RenderRTXDI::render(const RenderRTXDISurfaceResources &p_surface, RTViewpor
 	}
 
 	RD *rd = RD::get_singleton();
+	static const char *const pass_timestamps[PASS_MAX] = { "RTXDI Initial Sampling", "RTXDI Temporal Resampling", "RTXDI Spatial Resampling", "RTXDI Final Shading" };
 	for (uint32_t pass = 0; pass < PASS_MAX; pass++) {
+		RENDER_TIMESTAMP(pass_timestamps[pass]);
 		RD::ComputeListID compute_list = rd->compute_list_begin();
 		raytracing->register_compute_buffer_dependencies(compute_list);
 		rd->compute_list_bind_compute_pipeline(compute_list, shader.pipeline[pass]);
@@ -281,6 +285,7 @@ void RenderRTXDI::render(const RenderRTXDISurfaceResources &p_surface, RTViewpor
 		rd->compute_list_end();
 		rd->free_rid(uniform_sets[pass]);
 	}
+	RENDER_TIMESTAMP("RTXDI Dispatches Complete");
 	view_resources.last_frame_index = p_surface.frame_index;
 	view_resources.camera_history_epoch = p_state->camera_history_epoch;
 }
