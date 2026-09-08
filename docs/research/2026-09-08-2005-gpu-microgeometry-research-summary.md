@@ -12,6 +12,9 @@ niezwiązane zmiany dokumentacji i scen pozostają własnością innych prac.
 To materiał do napisania planu, nie zatwierdzony plan wykonawczy. Nie zmieniono
 silnika, nie uruchomiono buildów, automatycznych testów ani pomiarów GPU.
 Rekomendacje poniżej nie są dowodem poprawności ani przyspieszenia implementacji.
+Trzy analizy źródeł zakończono. Próba osobnego świeżego review commita
+`1c720084755f56643f4c151d3bef3828478fbde9` została zablokowana przez harness
+(`agent thread limit reached`); raport nie ma końcowego niezależnego werdyktu.
 
 ## 1. Zakres właściciela
 
