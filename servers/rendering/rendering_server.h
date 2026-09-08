@@ -615,6 +615,7 @@ public:
 
 	virtual int viewport_get_render_info(RID p_viewport, RSE::ViewportRenderInfoType p_type, RSE::ViewportRenderInfo p_info) = 0;
 
+	virtual void viewport_set_ddgi_debug_freeze_anchor(RID p_viewport, bool p_enabled) = 0;
 	virtual void viewport_set_debug_draw(RID p_viewport, RSE::ViewportDebugDraw p_draw) = 0;
 
 	virtual void viewport_set_measure_render_time(RID p_viewport, bool p_enable) = 0;

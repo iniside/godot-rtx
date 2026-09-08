@@ -4311,6 +4311,14 @@
 				Sets the clear mode of a viewport.
 			</description>
 		</method>
+		<method name="viewport_set_ddgi_debug_freeze_anchor">
+			<return type="void" />
+			<param index="0" name="viewport" type="RID" />
+			<param index="1" name="enabled" type="bool" />
+			<description>
+				Sets whether the viewport freezes its camera-following DDGI anchor. Camera motion and lighting updates continue. A recreated DDGI context latches the current camera position.
+			</description>
+		</method>
 		<method name="viewport_set_debug_draw">
 			<return type="void" />
 			<param index="0" name="viewport" type="RID" />
@@ -5748,6 +5756,18 @@
 		<constant name="VIEWPORT_DEBUG_DRAW_INTERNAL_BUFFER" value="26" enum="ViewportDebugDraw">
 			Internal buffer is drawn instead of regular scene so you can see the per-pixel output that will be used by post-processing effects.
 			[b]Note:[/b] Only supported when using the Forward+ or Mobile rendering methods.
+		</constant>
+		<constant name="VIEWPORT_DEBUG_DRAW_DDGI_PROBES" value="29" enum="ViewportDebugDraw">
+			Relocated GPU probes and world-aligned cascade bounds. Requires hybrid DDGI. Only available with hybrid DDGI in Forward+.
+		</constant>
+		<constant name="VIEWPORT_DEBUG_DRAW_DDGI_PROBE_STATE" value="30" enum="ViewportDebugDraw">
+			Magenta: recycled this frame. Red: invalid/new. Gray: inactive. Green to blue: usable, from recent to 120 or more frames since a successful update. Validity does not measure convergence. Only available with hybrid DDGI in Forward+.
+		</constant>
+		<constant name="VIEWPORT_DEBUG_DRAW_DDGI_CASCADE_WEIGHTS" value="31" enum="ViewportDebugDraw">
+			Actual cascade contributions: red, green, blue, yellow, cyan, orange. Magenta is uncovered weight. The seven bars at the bottom sample the center: contributions above, confidence below, with uncovered weight last. Only available with hybrid DDGI in Forward+.
+		</constant>
+		<constant name="VIEWPORT_DEBUG_DRAW_DDGI_INDIRECT" value="32" enum="ViewportDebugDraw">
+			Material-weighted DDGI camera radiance before composition and denoising. Fixed exposure 1, Reinhard encoding followed by sRGB. Only available with hybrid DDGI in Forward+.
 		</constant>
 		<constant name="VIEWPORT_VRS_DISABLED" value="0" enum="ViewportVRSMode">
 			Variable rate shading is disabled.

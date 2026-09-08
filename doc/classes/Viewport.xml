@@ -338,6 +338,9 @@
 		<member name="canvas_transform" type="Transform2D" setter="set_canvas_transform" getter="get_canvas_transform">
 			The canvas transform of the viewport, useful for changing the on-screen positions of all child [CanvasItem]s. This is relative to the global canvas transform of the viewport.
 		</member>
+		<member name="ddgi_debug_freeze_anchor" type="bool" setter="set_ddgi_debug_freeze_anchor" getter="is_ddgi_debug_freeze_anchor" default="false">
+			Freezes this viewport's camera-following DDGI anchor while camera motion and lighting updates continue. Recreated DDGI contexts latch the current camera position. Only supported with hybrid DDGI in Forward+.
+		</member>
 		<member name="debug_draw" type="int" setter="set_debug_draw" getter="get_debug_draw" enum="Viewport.DebugDraw" default="0">
 			The overlay mode for test rendered geometry in debug purposes.
 		</member>
@@ -787,6 +790,18 @@
 		<constant name="DEBUG_DRAW_AREA_LIGHT_ATLAS" value="28" enum="DebugDraw">
 			Draws the atlas used by [AreaLight3D] nodes in the upper left quadrant of the [Viewport].
 			[b]Note:[/b] Only supported when using the Forward+ or Mobile rendering method.
+		</constant>
+		<constant name="DEBUG_DRAW_DDGI_PROBES" value="29" enum="DebugDraw">
+			Relocated GPU probes and world-aligned cascade bounds. Requires hybrid DDGI. Only available with hybrid DDGI in Forward+.
+		</constant>
+		<constant name="DEBUG_DRAW_DDGI_PROBE_STATE" value="30" enum="DebugDraw">
+			Magenta: recycled this frame. Red: invalid/new. Gray: inactive. Green to blue: usable, from recent to 120 or more frames since a successful update. Validity does not measure convergence. Only available with hybrid DDGI in Forward+.
+		</constant>
+		<constant name="DEBUG_DRAW_DDGI_CASCADE_WEIGHTS" value="31" enum="DebugDraw">
+			Actual cascade contributions: red, green, blue, yellow, cyan, orange. Magenta is uncovered weight. The seven bars at the bottom sample the center: contributions above, confidence below, with uncovered weight last. Only available with hybrid DDGI in Forward+.
+		</constant>
+		<constant name="DEBUG_DRAW_DDGI_INDIRECT" value="32" enum="DebugDraw">
+			Material-weighted DDGI camera radiance before composition and denoising. Fixed exposure 1, Reinhard encoding followed by sRGB. Only available with hybrid DDGI in Forward+.
 		</constant>
 		<constant name="DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST" value="0" enum="DefaultCanvasItemTextureFilter">
 			The texture filter reads from the nearest pixel only. This makes the texture look pixelated from up close, and grainy from a distance (due to mipmaps not being sampled).

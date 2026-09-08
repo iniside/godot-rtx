@@ -112,6 +112,10 @@ DDGIEffect::DDGIEffect() {
 }
 
 DDGIEffect::~DDGIEffect() {
+	debug_pipeline.clear();
+	if (debug_version.is_valid()) {
+		debug_shader.version_free(debug_version);
+	}
 	trace_shader.version_free(trace_version);
 	camera_shader.version_free(camera_version);
 	if (sampler.is_valid()) {
@@ -226,6 +230,8 @@ bool DDGIEffect::_state(Context &p_context, uint32_t p_cascade, StateMode p_mode
 bool DDGIEffect::prepare(Context &p_context, const Vector3 &p_camera, const Vector3 &p_rt_origin, uint64_t p_history_epoch, int p_update_budget) {
 	ERR_FAIL_COND_V(!p_camera.is_finite() || !p_rt_origin.is_finite(), false);
 	p_context.frame++;
+	p_context.camera_rendered = false;
+	p_context.camera_scene_data = RID();
 	p_context.updates.clear();
 	bool reset_cascade[MAX_CASCADES] = {};
 	uint32_t reset_mask[PROBE_COUNT];
@@ -287,6 +293,9 @@ bool DDGIEffect::prepare(Context &p_context, const Vector3 &p_camera, const Vect
 				cascade.initialized = false;
 			}
 			return false;
+		}
+		if (reset_cascade[i]) {
+			p_context.cascades[i].reset_frame = p_context.frame;
 		}
 		p_context.cascades[i].initialized = true;
 	}
@@ -432,7 +441,76 @@ bool DDGIEffect::render_camera(Context &p_context, RID p_scene_data, RID p_rt_fr
 	rd->compute_list_set_push_constant(list, constants, sizeof(constants));
 	rd->compute_list_dispatch_threads(list, p_size.x, p_size.y, 1);
 	rd->compute_list_end();
+	p_context.camera_scene_data = p_scene_data;
+	p_context.camera_rendered = true;
 	_capture_diagnostics(p_context);
+	return true;
+}
+
+bool DDGIEffect::render_debug(Context &p_context, RID p_framebuffer, RID p_rt_frame, const RID p_surface[6], RID p_depth, const Size2i &p_output_size, bool p_orthogonal, uint32_t p_mode) {
+	ERR_FAIL_COND_V(p_mode > 3 || !p_context.camera_rendered || p_context.camera_scene_data.is_null(), false);
+	RD *rd = RD::get_singleton();
+	if (debug_version.is_null()) {
+		String defines;
+#ifdef REAL_T_IS_DOUBLE
+		defines += "#define USE_DOUBLE_PRECISION\n";
+#endif
+		debug_shader.initialize(Vector<String>{ "\n" }, defines);
+		debug_version = debug_shader.version_create();
+		RID shader = debug_shader.version_get_shader(debug_version, 0);
+		ERR_FAIL_COND_V(shader.is_null(), false);
+		debug_pipeline.setup(shader, RD::RENDER_PRIMITIVE_TRIANGLES, RD::PipelineRasterizationState(), RD::PipelineMultisampleState(), RD::PipelineDepthStencilState(), RD::PipelineColorBlendState::create_disabled());
+	}
+	RID shader = debug_shader.version_get_shader(debug_version, 0);
+	ERR_FAIL_COND_V(shader.is_null(), false);
+	LocalVector<RD::Uniform> uniforms;
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 0, { p_context.camera_scene_data }));
+	for (uint32_t i = 0; i < 6; i++) {
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, i + 1, { p_surface[i] }));
+	}
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 7, { p_depth }));
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 8, { p_rt_frame }));
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 9, { p_context.indirect_radiance }));
+	RID camera_set = UniformSetCacheRD::get_singleton()->get_cache_vec(shader, 0, uniforms);
+	RID debug_sets[MAX_CASCADES];
+	uint32_t reset_cascades = 0;
+	for (uint32_t i = 0; i < p_context.cascade_count; i++) {
+		const Cascade &cascade = p_context.cascades[i];
+		LocalVector<RD::Uniform> debug_uniforms;
+		debug_uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 0, { cascade.update_frame }));
+		debug_uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 1, { cascade.reset_mask }));
+		debug_sets[i] = UniformSetCacheRD::get_singleton()->get_cache_vec(shader, 1, debug_uniforms);
+		ERR_FAIL_COND_V(debug_sets[i].is_null(), false);
+		if (cascade.reset_frame == p_context.frame) {
+			reset_cascades |= 1u << i;
+		}
+	}
+	RID grid_set = UniformSetCacheRD::get_singleton()->get_cache_vec(shader, 2, get_grid_uniforms(p_context));
+	ERR_FAIL_COND_V(camera_set.is_null() || grid_set.is_null(), false);
+	RID pipeline = debug_pipeline.get_render_pipeline(RD::INVALID_FORMAT_ID, rd->framebuffer_get_format(p_framebuffer));
+	ERR_FAIL_COND_V(pipeline.is_null(), false);
+	uint32_t constants[8] = { uint32_t(p_output_size.x), uint32_t(p_output_size.y), uint32_t(p_context.camera_size.x), uint32_t(p_context.camera_size.y), p_mode, 0, reset_cascades, uint32_t(p_orthogonal) };
+	RD::DrawListID list = rd->draw_list_begin(p_framebuffer);
+	rd->draw_list_bind_render_pipeline(list, pipeline);
+	rd->draw_list_bind_uniform_set(list, camera_set, 0);
+	rd->draw_list_bind_uniform_set(list, debug_sets[0], 1);
+	rd->draw_list_bind_uniform_set(list, grid_set, 2);
+	if (p_mode <= 1) {
+		for (int cascade = int(p_context.cascade_count) - 1; cascade >= 0; cascade--) {
+			rd->draw_list_bind_uniform_set(list, debug_sets[cascade], 1);
+			constants[5] = uint32_t(cascade);
+			constants[4] = 4;
+			rd->draw_list_set_push_constant(list, constants, sizeof(constants));
+			rd->draw_list_draw(list, false, 12, 6);
+			constants[4] = p_mode;
+			rd->draw_list_set_push_constant(list, constants, sizeof(constants));
+			rd->draw_list_draw(list, false, PROBE_COUNT, 6);
+		}
+	} else {
+		rd->draw_list_set_push_constant(list, constants, sizeof(constants));
+		rd->draw_list_draw(list, false, 1, 6);
+	}
+	rd->draw_list_end();
 	return true;
 }
 

@@ -104,10 +104,15 @@ public:
 class RenderSceneBuffers : public RefCounted {
 	GDCLASS(RenderSceneBuffers, RefCounted);
 
+	bool ddgi_debug_freeze_anchor = false;
+
 protected:
 	static void _bind_methods();
 
 public:
+	void set_ddgi_debug_freeze_anchor(bool p_enabled) { ddgi_debug_freeze_anchor = p_enabled; }
+	bool is_ddgi_debug_freeze_anchor() const { return ddgi_debug_freeze_anchor; }
+
 	RenderSceneBuffers() {}
 	virtual ~RenderSceneBuffers() {}
 

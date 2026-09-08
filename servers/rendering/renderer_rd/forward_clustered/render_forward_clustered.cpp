@@ -1829,7 +1829,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		rb_data->invalidate_raytracing_history();
 	}
 	const RendererEnvironmentStorage::RaytracingSettings &rt_settings = raytracing->_get_viewport_state(p_render_data)->settings;
-	ERR_FAIL_COND_MSG(!raytracing->_prepare_ddgi(raytracing->_get_viewport_state(p_render_data)), "Camera-following DDGI state preparation failed.");
+	ERR_FAIL_COND_MSG(!raytracing->_prepare_ddgi(raytracing->_get_viewport_state(p_render_data), rb->is_ddgi_debug_freeze_anchor()), "Camera-following DDGI state preparation failed.");
 	const bool path_traced = rt_settings.raytracing_rendering_mode == RSE::RAYTRACING_RENDERING_MODE_PATH_TRACED;
 	const bool raw_path_traced = path_traced && rt_settings.raytracing_denoiser == RSE::RAYTRACING_DENOISER_NONE;
 	ERR_FAIL_COND_MSG(raw_path_traced && (rb->get_internal_size() != rb->get_target_size() || RSE::scaling_3d_mode_type(rb->get_scaling_3d_mode()) == RSE::VIEWPORT_SCALING_3D_TYPE_TEMPORAL || rb->get_use_taa() || rb->get_frame_generation()), "Raw path-traced reference requires native resolution, no temporal upscaler, TAA or frame generation.");
@@ -2176,6 +2176,23 @@ void RenderForwardClustered::_render_buffers_debug_draw(const RenderDataRD *p_re
 	RendererSceneRenderRD::_render_buffers_debug_draw(p_render_data);
 
 	RID render_target = rb->get_render_target();
+
+	if (get_debug_draw_mode() >= RSE::VIEWPORT_DEBUG_DRAW_DDGI_PROBES && get_debug_draw_mode() <= RSE::VIEWPORT_DEBUG_DRAW_DDGI_INDIRECT) {
+		RTViewportState *state = raytracing ? raytracing->_get_viewport_state(p_render_data) : nullptr;
+		RID framebuffer = texture_storage->render_target_get_rd_framebuffer(render_target);
+		Size2i size = texture_storage->render_target_get_size(render_target);
+		if (!state || !state->ddgi || !state->ddgi->camera_rendered || rb->get_view_count() != 1 || state->settings.raytracing_rendering_mode != RSE::RAYTRACING_RENDERING_MODE_HYBRID) {
+			RD::get_singleton()->draw_list_begin(framebuffer, RD::DRAW_CLEAR_COLOR_ALL, Vector<Color>{ Color(0, 0, 0, 1) });
+			RD::get_singleton()->draw_list_end();
+			return;
+		}
+		RID surface[6];
+		for (uint32_t i = 0; i < 6; i++) {
+			surface[i] = rb_data->get_rtxdi_surface_texture(i);
+		}
+		ERR_FAIL_COND_MSG(!raytracing->ddgi_effect->render_debug(*state->ddgi, framebuffer, state->frame_constants_buffer, surface, rb_data->get_rtxdi_surface_depth(), size, state->camera_orthogonal, uint32_t(get_debug_draw_mode() - RSE::VIEWPORT_DEBUG_DRAW_DDGI_PROBES)), "DDGI debug drawing failed.");
+		return;
+	}
 
 	if (get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_SSAO && rb->has_texture(RB_SCOPE_SSAO, RB_FINAL)) {
 		RID final = rb->get_texture_slice(RB_SCOPE_SSAO, RB_FINAL, 0, 0);

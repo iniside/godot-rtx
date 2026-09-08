@@ -32,9 +32,11 @@
 
 #include "core/math/vector3.h"
 #include "core/templates/local_vector.h"
+#include "servers/rendering/renderer_rd/pipeline_cache_rd.h"
 #include "servers/rendering/renderer_rd/shaders/effects/ddgi_blend.slang.gen.h"
 #include "servers/rendering/renderer_rd/shaders/effects/ddgi_camera.slang.gen.h"
 #include "servers/rendering/renderer_rd/shaders/effects/ddgi_classify.slang.gen.h"
+#include "servers/rendering/renderer_rd/shaders/effects/ddgi_debug.slang.gen.h"
 #include "servers/rendering/renderer_rd/shaders/effects/ddgi_relocate.slang.gen.h"
 #include "servers/rendering/renderer_rd/shaders/effects/ddgi_state.slang.gen.h"
 #include "servers/rendering/renderer_rd/shaders/raytracing/ddgi_trace.slang.gen.h"
@@ -72,6 +74,7 @@ public:
 		bool initialized = false;
 		uint32_t dirty_count = PROBE_COUNT;
 		uint64_t last_update_frame = 0;
+		uint64_t reset_frame = 0;
 		bool update_started = false;
 		RID ray_data;
 		RID irradiance;
@@ -85,6 +88,8 @@ public:
 	};
 
 	struct Context {
+		Vector3 debug_anchor;
+		bool debug_anchor_frozen = false;
 		Cascade cascades[MAX_CASCADES];
 		VolumeDescriptor descriptors[MAX_CASCADES];
 		RID volume_buffer;
@@ -93,6 +98,8 @@ public:
 		RID trace_sbt;
 		RID material_source_pipeline;
 		RID indirect_radiance;
+		RID camera_scene_data;
+		bool camera_rendered = false;
 		Size2i camera_size;
 		uint32_t cascade_count = 0;
 		uint32_t rays_per_probe = 0;
@@ -121,6 +128,8 @@ public:
 	void update_frame(Context &p_context, uint32_t p_cascade, uint32_t p_layers);
 	bool render_camera(Context &p_context, RID p_scene_data, RID p_rt_frame, const RID p_surface[6], RID p_depth, const Size2i &p_size, bool p_orthogonal);
 
+	bool render_debug(Context &p_context, RID p_framebuffer, RID p_rt_frame, const RID p_surface[6], RID p_depth, const Size2i &p_output_size, bool p_orthogonal, uint32_t p_mode);
+
 private:
 	enum StateMode { STATE_RESET,
 		STATE_PREPARE,
@@ -132,6 +141,9 @@ private:
 	DdgiStateShaderRD state_shader;
 	DdgiTraceShaderRD trace_shader;
 	DdgiCameraShaderRD camera_shader;
+	DdgiDebugShaderRD debug_shader;
+	RID debug_version;
+	PipelineCacheRD debug_pipeline;
 	RID blend_version;
 	RID classify_version;
 	RID relocate_version;

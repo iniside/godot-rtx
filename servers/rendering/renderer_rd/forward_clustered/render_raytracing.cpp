@@ -165,7 +165,7 @@ bool RenderRaytracing::update_viewport_settings(const RenderDataRD *p_render_dat
 	return camera_settings_changed || camera_changed || origin_changed;
 }
 
-bool RenderRaytracing::_prepare_ddgi(RTViewportState *p_state) {
+bool RenderRaytracing::_prepare_ddgi(RTViewportState *p_state, bool p_freeze_anchor) {
 	const RendererEnvironmentStorage::RaytracingSettings &settings = p_state->settings;
 	if (p_state->pathtracing && settings.raytracing_rendering_mode != RSE::RAYTRACING_RENDERING_MODE_PATH_TRACED) {
 		memdelete(p_state->pathtracing);
@@ -186,7 +186,12 @@ bool RenderRaytracing::_prepare_ddgi(RTViewportState *p_state) {
 		p_state->ddgi = ddgi_effect->create_context(settings);
 	}
 	ERR_FAIL_NULL_V(p_state->ddgi, false);
-	if (!ddgi_effect->prepare(*p_state->ddgi, p_state->camera_transform.origin, p_state->rt_origin, p_state->ddgi_history_epoch, settings.ddgi_updates_per_frame)) {
+	RendererRD::DDGIEffect::Context &context = *p_state->ddgi;
+	if (!p_freeze_anchor || !context.debug_anchor_frozen) {
+		context.debug_anchor = p_state->camera_transform.origin;
+	}
+	context.debug_anchor_frozen = p_freeze_anchor;
+	if (!ddgi_effect->prepare(context, context.debug_anchor, p_state->rt_origin, p_state->ddgi_history_epoch, settings.ddgi_updates_per_frame)) {
 		memdelete(p_state->ddgi);
 		p_state->ddgi = nullptr;
 		return false;

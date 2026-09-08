@@ -4628,6 +4628,11 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 			camera->set_cull_mask(layers);
 			view_display_menu->get_popup()->set_item_checked(idx, current);
 		} break;
+		case VIEW_DDGI_FREEZE_ANCHOR: {
+			bool enabled = !viewport->is_ddgi_debug_freeze_anchor();
+			viewport->set_ddgi_debug_freeze_anchor(enabled);
+			view_display_menu->get_popup()->set_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_DDGI_FREEZE_ANCHOR), enabled);
+		} break;
 		case VIEW_DISPLAY_NORMAL:
 		case VIEW_DISPLAY_WIREFRAME:
 		case VIEW_DISPLAY_OVERDRAW:
@@ -4656,6 +4661,10 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 		case VIEW_DISPLAY_DEBUG_CLUSTER_REFLECTION_PROBES:
 		case VIEW_DISPLAY_DEBUG_OCCLUDERS:
 		case VIEW_DISPLAY_MOTION_VECTORS:
+		case VIEW_DISPLAY_DEBUG_DDGI_PROBES:
+		case VIEW_DISPLAY_DEBUG_DDGI_PROBE_STATE:
+		case VIEW_DISPLAY_DEBUG_DDGI_CASCADE_WEIGHTS:
+		case VIEW_DISPLAY_DEBUG_DDGI_INDIRECT:
 		case VIEW_DISPLAY_INTERNAL_BUFFER: {
 			static const int display_options[] = {
 				VIEW_DISPLAY_NORMAL,
@@ -4687,6 +4696,10 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 				VIEW_DISPLAY_DEBUG_OCCLUDERS,
 				VIEW_DISPLAY_MOTION_VECTORS,
 				VIEW_DISPLAY_INTERNAL_BUFFER,
+				VIEW_DISPLAY_DEBUG_DDGI_PROBES,
+				VIEW_DISPLAY_DEBUG_DDGI_PROBE_STATE,
+				VIEW_DISPLAY_DEBUG_DDGI_CASCADE_WEIGHTS,
+				VIEW_DISPLAY_DEBUG_DDGI_INDIRECT,
 				VIEW_MAX
 			};
 			static const Viewport::DebugDraw debug_draw_modes[] = {
@@ -4719,6 +4732,10 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 				Viewport::DEBUG_DRAW_OCCLUDERS,
 				Viewport::DEBUG_DRAW_MOTION_VECTORS,
 				Viewport::DEBUG_DRAW_INTERNAL_BUFFER,
+				Viewport::DEBUG_DRAW_DDGI_PROBES,
+				Viewport::DEBUG_DRAW_DDGI_PROBE_STATE,
+				Viewport::DEBUG_DRAW_DDGI_CASCADE_WEIGHTS,
+				Viewport::DEBUG_DRAW_DDGI_INDIRECT,
 			};
 
 			for (int idx = 0; display_options[idx] != VIEW_MAX; idx++) {
@@ -6866,6 +6883,16 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 			TTRC("Represents motion vectors with colored lines in the direction of motion. Gray dots represent areas with no per-pixel motion."));
 	_add_advanced_debug_draw_mode_item(display_submenu, TTRC("Internal Buffer"), VIEW_DISPLAY_INTERNAL_BUFFER, SupportedRenderingMethods::FORWARD_PLUS_MOBILE,
 			TTRC("Shows the scene rendered in linear colorspace before any tonemapping or post-processing."));
+	display_submenu->add_separator();
+	_add_advanced_debug_draw_mode_item(display_submenu, TTRC("DDGI Probes"), VIEW_DISPLAY_DEBUG_DDGI_PROBES, SupportedRenderingMethods::FORWARD_PLUS,
+			TTRC("Relocated GPU probes and world-aligned cascade bounds. Requires hybrid DDGI."));
+	_add_advanced_debug_draw_mode_item(display_submenu, TTRC("DDGI Probe State"), VIEW_DISPLAY_DEBUG_DDGI_PROBE_STATE, SupportedRenderingMethods::FORWARD_PLUS,
+			TTRC("Magenta: recycled this frame. Red: invalid/new. Gray: inactive. Green to blue: usable, from recent to 120 or more frames since a successful update. Validity does not measure convergence."));
+	_add_advanced_debug_draw_mode_item(display_submenu, TTRC("DDGI Cascade Weights"), VIEW_DISPLAY_DEBUG_DDGI_CASCADE_WEIGHTS, SupportedRenderingMethods::FORWARD_PLUS,
+			TTRC("Actual cascade contributions: red, green, blue, yellow, cyan, orange. Magenta is uncovered weight. The seven bars at the bottom sample the center: contributions above, confidence below, with uncovered weight last."));
+	_add_advanced_debug_draw_mode_item(display_submenu, TTRC("DDGI Indirect"), VIEW_DISPLAY_DEBUG_DDGI_INDIRECT, SupportedRenderingMethods::FORWARD_PLUS,
+			TTRC("Material-weighted DDGI camera radiance before composition and denoising. Fixed exposure 1, Reinhard encoding followed by sRGB."));
+	view_display_menu->get_popup()->add_check_item(TTRC("Freeze DDGI Anchor"), VIEW_DDGI_FREEZE_ANCHOR);
 	view_display_menu->get_popup()->add_submenu_node_item(TTRC("Display Advanced..."), display_submenu, VIEW_DISPLAY_ADVANCED);
 
 	view_display_menu->get_popup()->add_separator();

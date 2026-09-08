@@ -11,7 +11,14 @@
 [[vk::binding(5, 2)]] SamplerState ddgi_sampler;
 [[vk::binding(7, 2)]] ConstantBuffer<uint4> ddgi_frame;
 
-float3 ddgi_query(float3 position, float3 normal, float3 view_direction) {
+struct DDGIQueryWeights {
+	float contribution[6];
+	float confidence[6];
+	float uncovered;
+};
+
+float3 ddgi_query(float3 position, float3 normal, float3 view_direction, out DDGIQueryWeights weights) {
+	weights = (DDGIQueryWeights)0;
 	float3 result = 0.0;
 	float remaining = 1.0;
 	for (uint cascade = 0u; cascade < ddgi_frame.y; cascade++) {
@@ -23,12 +30,18 @@ float3 ddgi_query(float3 position, float3 normal, float3 view_direction) {
 		resources.bilinearSampler = ddgi_sampler;
 		float4 sample = ddgi_sample_cascade(position, normal, view_direction, UnpackDDGIVolumeDescGPU(ddgi_volumes[cascade]), resources);
 		float weight = remaining * sample.a;
+		weights.contribution[cascade] = weight;
+		weights.confidence[cascade] = sample.a;
 		result += sample.rgb * weight;
 		remaining *= 1.0 - sample.a;
 	}
-	// Each SDK query already normalizes its valid neighboring probes. Uncovered
-	// cascade weight represents zero irradiance, preserving the outer edge fade.
+	weights.uncovered = remaining;
 	return result;
+}
+
+float3 ddgi_query(float3 position, float3 normal, float3 view_direction) {
+	DDGIQueryWeights weights;
+	return ddgi_query(position, normal, view_direction, weights);
 }
 
 #endif

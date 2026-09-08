@@ -490,7 +490,7 @@ class RenderRaytracing {
 	RenderForwardClustered *owner = nullptr;
 	RendererRD::DDGIEffect *ddgi_effect = nullptr;
 	RenderPathtracing *pathtracing = nullptr;
-	bool _prepare_ddgi(RTViewportState *p_state);
+	bool _prepare_ddgi(RTViewportState *p_state, bool p_freeze_anchor);
 	bool _render_ddgi(RTViewportState *p_state, RID p_scene_data, RID p_sky);
 	BindlessBlock *bindless_block = nullptr;
 

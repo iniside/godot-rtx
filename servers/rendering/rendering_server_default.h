@@ -807,6 +807,7 @@ public:
 	FUNC2(viewport_set_mesh_lod_threshold, RID, float)
 
 	FUNC3R(int, viewport_get_render_info, RID, RSE::ViewportRenderInfoType, RSE::ViewportRenderInfo)
+	FUNC2(viewport_set_ddgi_debug_freeze_anchor, RID, bool)
 	FUNC2(viewport_set_debug_draw, RID, RSE::ViewportDebugDraw)
 
 	FUNC2(viewport_set_measure_render_time, RID, bool)

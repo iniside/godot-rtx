@@ -304,6 +304,7 @@ void RendererViewport::_configure_3d_render_buffers(Viewport *p_viewport) {
 			rb_config.set_use_frame_generation(p_viewport->frame_generation);
 			rb_config.set_use_debanding(p_viewport->use_debanding);
 
+			p_viewport->render_buffers->set_ddgi_debug_freeze_anchor(p_viewport->ddgi_debug_freeze_anchor);
 			p_viewport->render_buffers->configure(&rb_config);
 		}
 	}
@@ -1593,6 +1594,15 @@ int RendererViewport::viewport_get_render_info(RID p_viewport, RSE::ViewportRend
 	}
 
 	return viewport->render_info.info[p_type][p_info];
+}
+
+void RendererViewport::viewport_set_ddgi_debug_freeze_anchor(RID p_viewport, bool p_enabled) {
+	Viewport *viewport = viewport_owner.get_or_null(p_viewport);
+	ERR_FAIL_NULL(viewport);
+	viewport->ddgi_debug_freeze_anchor = p_enabled;
+	if (viewport->render_buffers.is_valid()) {
+		viewport->render_buffers->set_ddgi_debug_freeze_anchor(p_enabled);
+	}
 }
 
 void RendererViewport::viewport_set_debug_draw(RID p_viewport, RSE::ViewportDebugDraw p_draw) {

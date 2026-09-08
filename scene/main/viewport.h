@@ -193,6 +193,10 @@ public:
 		DEBUG_DRAW_INTERNAL_BUFFER,
 		DEBUG_DRAW_CLUSTER_AREA_LIGHTS,
 		DEBUG_DRAW_AREA_LIGHT_ATLAS,
+		DEBUG_DRAW_DDGI_PROBES,
+		DEBUG_DRAW_DDGI_PROBE_STATE,
+		DEBUG_DRAW_DDGI_CASCADE_WEIGHTS,
+		DEBUG_DRAW_DDGI_INDIRECT,
 	};
 
 	enum DefaultCanvasItemTextureFilter {
@@ -316,6 +320,7 @@ private:
 	RID texture_rid;
 
 	DebugDraw debug_draw = DEBUG_DRAW_DISABLED;
+	bool ddgi_debug_freeze_anchor = false;
 
 	int positional_shadow_atlas_size = 2048;
 	bool positional_shadow_atlas_16_bits = true;
@@ -682,6 +687,8 @@ public:
 
 	void set_debug_draw(DebugDraw p_debug_draw);
 	DebugDraw get_debug_draw() const;
+	void set_ddgi_debug_freeze_anchor(bool p_enabled);
+	bool is_ddgi_debug_freeze_anchor() const;
 
 	int get_render_info(RenderInfoType p_type, RenderInfo p_info);
 
