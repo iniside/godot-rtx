@@ -721,7 +721,7 @@ String ShaderCompiler::_dump_slang_call(const SL::OperatorNode *p_node, int p_le
 				types.push_back(types[1]);
 				arguments.push_back("(" + footprint_coordinates[1] + " - " + footprint_coordinates[0] + ")");
 				arguments.push_back("(" + footprint_coordinates[2] + " - " + footprint_coordinates[0] + ")");
-				String helper = _slang_helper(result_type, "godot_rt_texture_query_lod", types, "float lod = rt_texture_lod(a0, a1, a2, a3); return float2(lod, lod);");
+				String helper = _slang_helper(result_type, "godot_rt_texture_query_lod", types, "return rt_texture_lod(a0, a1, a2, a3);");
 				return helper + "(" + String(", ").join(arguments) + ")";
 			}
 			String coordinate = "a1";
@@ -769,7 +769,7 @@ String ShaderCompiler::_dump_slang_call(const SL::OperatorNode *p_node, int p_le
 						helper_types.push_back(types[1]);
 						helper_arguments.push_back("(" + footprint_coordinates[1] + " - " + footprint_coordinates[0] + ")");
 						helper_arguments.push_back("(" + footprint_coordinates[2] + " - " + footprint_coordinates[0] + ")");
-						body = "return a0.SampleLevel(a1, " + coordinate + ", rt_texture_lod(a0, " + coordinate + ", " + dx_argument + ", " + dy_argument + ")" + (method == "SampleBias" ? " + a3" : "") + ");";
+						body = "return a0.SampleLevel(a1, " + coordinate + ", rt_texture_lod(a0, " + coordinate + ", " + dx_argument + ", " + dy_argument + ").y" + (method == "SampleBias" ? " + a3" : "") + ");";
 					} else {
 						body = "\n#ifdef GODOT_VERTEX_STAGE\nreturn a0.SampleLevel(a1, " + coordinate + ", 0.0);\n#else\nreturn a0." + method + "(a1, " + coordinate;
 						if (method == "SampleBias") {

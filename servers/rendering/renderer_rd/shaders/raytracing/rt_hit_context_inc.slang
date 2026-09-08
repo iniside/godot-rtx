@@ -233,7 +233,7 @@ void rt_ray_footprint(GeometryHitInput hit, GeometryTriangle triangle, float3 ra
 float rt_texture_footprint(float3 dimensions, float3 dx, float3 dy) {
 	dx *= dimensions;
 	dy *= dimensions;
-	return max(0.0, 0.5 * log2(max(max(dot(dx, dx), dot(dy, dy)), 1e-12)));
+	return 0.5 * log2(max(max(dot(dx, dx), dot(dy, dy)), 1e-12));
 }
 
 float2 rt_cube_coordinate(float3 coordinate, uint face) {
@@ -241,70 +241,70 @@ float2 rt_cube_coordinate(float3 coordinate, uint face) {
 	return projected.xy / max(abs(projected.z), 1e-12) * 0.5;
 }
 
-float rt_texture_lod(Texture2D<float4> texture_value, float2 coordinate, float2 dx, float2 dy) {
+float2 rt_texture_lod(Texture2D<float4> texture_value, float2 coordinate, float2 dx, float2 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, levels);
 	float lod = rt_texture_footprint(float3(width, height, 1u), float3(dx.xy, 0.0), float3(dy.xy, 0.0));
-	return min(lod, float(max(levels, 1u) - 1u));
+	return float2(clamp(lod, 0.0, float(max(levels, 1u) - 1u)), lod);
 }
 
-float rt_texture_lod(Texture2D<int4> texture_value, float2 coordinate, float2 dx, float2 dy) {
+float2 rt_texture_lod(Texture2D<int4> texture_value, float2 coordinate, float2 dx, float2 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, levels);
 	float lod = rt_texture_footprint(float3(width, height, 1u), float3(dx.xy, 0.0), float3(dy.xy, 0.0));
-	return min(lod, float(max(levels, 1u) - 1u));
+	return float2(clamp(lod, 0.0, float(max(levels, 1u) - 1u)), lod);
 }
 
-float rt_texture_lod(Texture2D<uint4> texture_value, float2 coordinate, float2 dx, float2 dy) {
+float2 rt_texture_lod(Texture2D<uint4> texture_value, float2 coordinate, float2 dx, float2 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, levels);
 	float lod = rt_texture_footprint(float3(width, height, 1u), float3(dx.xy, 0.0), float3(dy.xy, 0.0));
-	return min(lod, float(max(levels, 1u) - 1u));
+	return float2(clamp(lod, 0.0, float(max(levels, 1u) - 1u)), lod);
 }
 
-float rt_texture_lod(Texture2DArray<float4> texture_value, float3 coordinate, float3 dx, float3 dy) {
+float2 rt_texture_lod(Texture2DArray<float4> texture_value, float3 coordinate, float3 dx, float3 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, depth, levels);
 	float lod = rt_texture_footprint(float3(width, height, 1u), float3(dx.xy, 0.0), float3(dy.xy, 0.0));
-	return min(lod, float(max(levels, 1u) - 1u));
+	return float2(clamp(lod, 0.0, float(max(levels, 1u) - 1u)), lod);
 }
 
-float rt_texture_lod(Texture2DArray<int4> texture_value, float3 coordinate, float3 dx, float3 dy) {
+float2 rt_texture_lod(Texture2DArray<int4> texture_value, float3 coordinate, float3 dx, float3 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, depth, levels);
 	float lod = rt_texture_footprint(float3(width, height, 1u), float3(dx.xy, 0.0), float3(dy.xy, 0.0));
-	return min(lod, float(max(levels, 1u) - 1u));
+	return float2(clamp(lod, 0.0, float(max(levels, 1u) - 1u)), lod);
 }
 
-float rt_texture_lod(Texture2DArray<uint4> texture_value, float3 coordinate, float3 dx, float3 dy) {
+float2 rt_texture_lod(Texture2DArray<uint4> texture_value, float3 coordinate, float3 dx, float3 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, depth, levels);
 	float lod = rt_texture_footprint(float3(width, height, 1u), float3(dx.xy, 0.0), float3(dy.xy, 0.0));
-	return min(lod, float(max(levels, 1u) - 1u));
+	return float2(clamp(lod, 0.0, float(max(levels, 1u) - 1u)), lod);
 }
 
-float rt_texture_lod(Texture3D<float4> texture_value, float3 coordinate, float3 dx, float3 dy) {
+float2 rt_texture_lod(Texture3D<float4> texture_value, float3 coordinate, float3 dx, float3 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, depth, levels);
 	float lod = rt_texture_footprint(float3(width, height, depth), dx, dy);
-	return min(lod, float(max(levels, 1u) - 1u));
+	return float2(clamp(lod, 0.0, float(max(levels, 1u) - 1u)), lod);
 }
 
-float rt_texture_lod(Texture3D<int4> texture_value, float3 coordinate, float3 dx, float3 dy) {
+float2 rt_texture_lod(Texture3D<int4> texture_value, float3 coordinate, float3 dx, float3 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, depth, levels);
 	float lod = rt_texture_footprint(float3(width, height, depth), dx, dy);
-	return min(lod, float(max(levels, 1u) - 1u));
+	return float2(clamp(lod, 0.0, float(max(levels, 1u) - 1u)), lod);
 }
 
-float rt_texture_lod(Texture3D<uint4> texture_value, float3 coordinate, float3 dx, float3 dy) {
+float2 rt_texture_lod(Texture3D<uint4> texture_value, float3 coordinate, float3 dx, float3 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, depth, levels);
 	float lod = rt_texture_footprint(float3(width, height, depth), dx, dy);
-	return min(lod, float(max(levels, 1u) - 1u));
+	return float2(clamp(lod, 0.0, float(max(levels, 1u) - 1u)), lod);
 }
 
-float rt_texture_lod(TextureCube<float4> texture_value, float3 coordinate, float3 dx, float3 dy) {
+float2 rt_texture_lod(TextureCube<float4> texture_value, float3 coordinate, float3 dx, float3 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, levels);
 	float3 direction = abs(coordinate.xyz);
@@ -313,10 +313,10 @@ float rt_texture_lod(TextureCube<float4> texture_value, float3 coordinate, float
 	float2 gradient_x = rt_cube_coordinate(coordinate.xyz + dx.xyz, face) - center;
 	float2 gradient_y = rt_cube_coordinate(coordinate.xyz + dy.xyz, face) - center;
 	float lod = rt_texture_footprint(float3(width, height, 1u), float3(gradient_x, 0.0), float3(gradient_y, 0.0));
-	return min(lod, float(max(levels, 1u) - 1u));
+	return float2(clamp(lod, 0.0, float(max(levels, 1u) - 1u)), lod);
 }
 
-float rt_texture_lod(TextureCubeArray<float4> texture_value, float4 coordinate, float4 dx, float4 dy) {
+float2 rt_texture_lod(TextureCubeArray<float4> texture_value, float4 coordinate, float4 dx, float4 dy) {
 	uint width, height, depth, levels;
 	texture_value.GetDimensions(0u, width, height, depth, levels);
 	float3 direction = abs(coordinate.xyz);
@@ -325,7 +325,7 @@ float rt_texture_lod(TextureCubeArray<float4> texture_value, float4 coordinate, 
 	float2 gradient_x = rt_cube_coordinate(coordinate.xyz + dx.xyz, face) - center;
 	float2 gradient_y = rt_cube_coordinate(coordinate.xyz + dy.xyz, face) - center;
 	float lod = rt_texture_footprint(float3(width, height, 1u), float3(gradient_x, 0.0), float3(gradient_y, 0.0));
-	return min(lod, float(max(levels, 1u) - 1u));
+	return float2(clamp(lod, 0.0, float(max(levels, 1u) - 1u)), lod);
 }
 
 void rt_initialize_vertex(GeometryHitInput hit, GeometryTriangle triangle, uint index) {

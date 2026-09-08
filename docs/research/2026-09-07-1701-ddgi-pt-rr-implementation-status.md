@@ -21,8 +21,8 @@ Automated tests are not authorized. The full implementation is not complete.
 |---|---|---|
 | 1. Public settings and per-buffer ownership | Source review PASS | `8aa9a77747`; ordinary editor builds |
 | 2. Common RT coordinates and temporal basis | Final round 2 source PASS and proof PASS | `eecc668b45` + correction `28dbaa3dd2` |
-| 3. Shared native RT hit materials | Final round 2 REJECT; owner authorized remaining fix beyond cap | `d3936e37b7` + `faa1f8dcfe`; bounded proof audit running |
-| 4. Pinned DDGI import and moving cascades | Pending | Depends on step 3 |
+| 3. Shared native RT hit materials | LOD correction compiled; dispatched image validation remains | `d3936e37b7` + `faa1f8dcfe` and follow-up below |
+| 4. Pinned DDGI import and moving cascades | In progress | Pinned shader import and native wrappers |
 | 5. DDGI lighting and hybrid composition | Pending | Depends on step 4 |
 | 6. True camera-ray PT | Pending | Depends on step 5 |
 | 7. RR / DLSS lifecycle and composition | Pending | Depends on camera producers |
@@ -103,7 +103,24 @@ standalone-container exit alone is insufficient: actual nonempty artifacts and
 separate validator receipts were checked. Existing re-spirv unsupported-operation
 and material-envelope messages remain recorded; no error-free image is claimed.
 
-## Step 3 evidence awaiting review
+## Step 3 LOD follow-up, 2026-09-08
+
+The remaining correction preserves raw footprint lambda through SampleBias and
+returns separate clamped/unclamped textureQueryLod components. All eleven texture
+helper overloads and both compiler consumers use the same contract.
+
+Evidence: `C:/Users/lukas/AppData/Local/Temp/godot-ddgi-step3-lod-fix-20260908`.
+Ordinary editor, double editor and template_debug receipts report exit 0 and
+stable source hashes. Native ordinary/double stages produce eight nonempty
+SPIR-V artifacts with successful compiler and spirv-val results. The copied
+compiler driver now returns failure for missing stages, compilation failure or
+validator failure; the old exit-only driver remains historical evidence.
+The Vulkan material containing positive/negative bias and textureQueryLod creates
+one pipeline/SBT on RTX 4090 and exits 0 with no ERROR lines; original fixture
+bytes are restored. This fixture lacks a real mip chain and no native ray consumer
+is connected yet, so actual selected mips and hit images remain unverified.
+
+## Step 3 historical review evidence
 
 Frozen `d3936e37b7f8e3c900416da0a2e70ee40096fa4d`, baseline `28dbaa3dd2`:
 31 source/shader files, +1958/-791. Fresh `ddgi_step3_review_r1` returned REJECT
@@ -123,9 +140,20 @@ preserve raw footprint LOD through bias and the unclamped query component, then
 clamp only final sampled/clamped-query values. The owner explicitly overrode the
 review-round cap with "ani sie waz naprawiaj, z goal mozesz isc ponad limit" and
 directed the remaining fix and continued goal execution. Additional correction
-and fresh review are authorized. Resuming the original writer currently hits the
-harness thread limit while the independent proof audit is active. That audit
-examines retained compilation/pipeline-creation claims, not overall correctness.
+and fresh review are authorized. The original writer resumed after the proof
+auditor completed, overcoming the temporary active-context limit.
+
+`ddgi_step3_proof_final` passed bounded retained claims at `faa1f8dcfe`: all 48
+artifact hashes, identical stable 35-source maps and frozen-source correspondence,
+three actual build/link completions, eight nonempty native SPIR-V artifacts and
+individual compiler/validator passes, 12 pinned dependencies per variant, five
+positive reload creation markers and the gallery's three programs/15 geometries.
+It separately rejected using `compile_hit_closure.py` process exit as a gate:
+compiler/validator failures or zero matched stages still fall through with exit 0.
+The inspected successful individual receipts remain valid. A new diagnostic
+runner must enforce the expected stage set, successful results and nonempty
+artifacts; original evidence remains immutable. No ray dispatch, image/mip output
+or GPU-observed TBN/decal-history behavior is proved by this audit.
 
 Confirmed round 1 defects:
 
