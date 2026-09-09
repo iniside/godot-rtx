@@ -65,6 +65,13 @@ these resource diagnostics; it is not GPU rendering evidence.
 .\bin\godot.windows.editor.x86_64.exe --path demos/rtxdi_manual --rendering-driver vulkan --gpu-profile res://microgeometry_stress/scene.tscn -- --orbit
 ```
 
+The live HUD updates four times per second in both still and orbit modes.
+FPS and frame milliseconds use elapsed wall time, including when `--fixed-fps`
+sets the simulation delta. CPU render and GPU milliseconds show the latest
+completed viewport measurements. CPU render includes worker waits; it is not
+main-thread active time or the sum of worker CPU time. Updating the HUD does
+not scan the instance population.
+
 Optional `--capture=user://microgeometry-stress.png --delay=10` captures the
 single viewport after population and the requested delay. The capture log
 records the PNG save result; a successful save does not establish image quality.

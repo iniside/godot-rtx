@@ -14,6 +14,9 @@ const CELL_MARGIN := 0.25
 var orbit := false
 var orbit_angle := 0.0
 var camera_radius := 0.0
+var hud_sample_started_usec := 0
+var hud_frames := 0
+var viewport_rid: RID
 
 func _ready() -> void:
 	set_process(false)
@@ -85,7 +88,10 @@ func _ready() -> void:
 		return
 	$HUD/State.text = "Lucy: %d | Thai: %d | Native mesh instances: %d\nShared imported DAGs | %s camera | 2 m object height" % [counts.x, counts.y, native_instances, "orbiting" if orbit else "still"]
 	print("MICRO_STRESS_RENDERER method=", RenderingServer.get_current_rendering_method(), " driver=", RenderingServer.get_current_rendering_driver_name(), " orbit=", orbit)
-	set_process(orbit)
+	viewport_rid = get_viewport().get_viewport_rid()
+	RenderingServer.viewport_set_measure_render_time(viewport_rid, true)
+	hud_sample_started_usec = Time.get_ticks_usec()
+	set_process(true)
 	if not capture_path.is_empty():
 		_capture(capture_path, capture_delay)
 
@@ -114,9 +120,21 @@ func _imported_mesh(packed: PackedScene, label: String) -> ArrayMesh:
 	return mesh
 
 func _process(delta: float) -> void:
-	orbit_angle += delta * 0.08
-	camera.position = Vector3(sin(orbit_angle) * camera_radius, camera_radius * 0.8, cos(orbit_angle) * camera_radius)
-	camera.look_at(Vector3(0.0, OBJECT_HEIGHT * 0.5, 0.0))
+	if orbit:
+		orbit_angle += delta * 0.08
+		camera.position = Vector3(sin(orbit_angle) * camera_radius, camera_radius * 0.8, cos(orbit_angle) * camera_radius)
+		camera.look_at(Vector3(0.0, OBJECT_HEIGHT * 0.5, 0.0))
+	hud_frames += 1
+	var now := Time.get_ticks_usec()
+	var elapsed := now - hud_sample_started_usec
+	if elapsed >= 250000:
+		var fps := hud_frames * 1000000.0 / elapsed
+		var frame_ms := elapsed / (hud_frames * 1000.0)
+		var cpu_ms := RenderingServer.viewport_get_measured_render_time_cpu(viewport_rid)
+		var gpu_ms := RenderingServer.viewport_get_measured_render_time_gpu(viewport_rid)
+		$HUD/Performance.text = "FPS: %.1f | Frame: %.2f ms\nCPU render (incl. waits): %.2f ms | GPU: %.2f ms" % [fps, frame_ms, cpu_ms, gpu_ms]
+		hud_frames = 0
+		hud_sample_started_usec = now
 
 func _capture(path: String, delay: float) -> void:
 	await get_tree().create_timer(delay).timeout

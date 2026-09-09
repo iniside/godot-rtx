@@ -71,3 +71,13 @@ theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 4
 theme_override_font_sizes/font_size = 16
 text = "Dense microgeometry scene loading..."
+
+[node name="Performance" type="Label" parent="HUD"]
+offset_left = 16.0
+offset_top = 62.0
+offset_right = 1000.0
+offset_bottom = 112.0
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 16
+text = "FPS: -- | Frame: -- ms\nCPU render (incl. waits): -- ms | GPU: -- ms"
