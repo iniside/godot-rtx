@@ -9,7 +9,7 @@ gate, not implementation/runtime evidence.
 
 ## Input evidence
 
-GLB header/JSON inspected directly, no importer or rendering success claimed:
+GLB header/JSON inspected directly; actual import evidence appears below:
 
 - Size: 202136944 bytes; GLB version 2.
 - SHA256: `6992f4b0f141f8c30ae9fc911d9d8ee34f24ff18bb2db9feefac795e291fe0c2`.
@@ -28,10 +28,9 @@ existing payload integrity. Fix commit `0f3f9757c22056b7fd4df1ad9b851860b0ee306d
 shares canonical resources after preparation, preserves cached mesh identities,
 and validates existing page digests. Both affected objects compiled; fresh final
 round 2 returned PASS against the frozen fix, original and cumulative history.
-All 16 owned C++ object targets compiled successfully. Full editor
-link remains blocked by the two old RT call signatures at render_raytracing.cpp
-1418/1421, awaiting planned runtime migration. Import execution and GPU validation
-have not run.
+All 16 owned C++ object targets compiled successfully. At this step, full editor link stopped at two old RT call signatures; Step 5
+subsequently removed that blocker. Import execution is recorded below; GPU
+validation remains outstanding.
 Step 3 RD/graph/backend work ran in a disjoint independent context while Step 1
 owned scene/import/RS attachment files. Its buffer-level API does not depend on
 the new asset schema. Legacy static AS callers temporarily prevent a full editor
@@ -96,20 +95,57 @@ the verified pinned compiler. Final source and proof reviews both returned PASS
 at `ec399801bfb9bfeab4bd7e1867ebbc13a06b36d1`, including original and cumulative
 history. Fresh pinned disassembly and exact incremental object-build receipts
 are retained.
-Actual
-import/rendering is not validated. Frozen ABI: GPUAsset 120, GPUGroup 48,
+At the Step 4 gate, actual import/rendering had not run. Frozen ABI: GPUAsset 120, GPUGroup 48,
 SelectedCluster 64, Task 72,
-Parameters 432, native InstanceData 192/224 bytes. Existing full static buffers
-remain for unmigrated RT consumers. Cuts are transient; frozen inspection needs
+Parameters 432, native InstanceData 192/224 bytes. At this gate, full static buffers remained for unmigrated RT consumers. Cuts are transient; frozen inspection needs
 group pins before retaining them across storage updates.
 
-Step 5 implementation is active from `ec399801bfb9bfeab4bd7e1867ebbc13a06b36d1`:
-selected RT geometry/AS, shared hit decoding and emitter identities, simple
-Environment controls, and final static GPU allocation migration.
-Step 6 is pending. No implementation or validation success is claimed for them.
+Step 5 committed `ec9a584644c14c889b91ac1c939d2eb98feedaab`, baseline
+`ec399801bfb9bfeab4bd7e1867ebbc13a06b36d1`. Shared resident CLAS and GPU-selected
+per-instance BLAS/TLAS replace the old static cluster assembly. Selected payload
+hit decoding preserves native material consumers and original emitter identities.
+Environment controls default to 4 output-image pixels and a 2x offscreen
+multiplier. Static exact GPU buffers are recreated for native consumers and
+retired after completed use; public RD RID exposure pins them.
+Full ordinary Windows editor/console build 04 passed in 42.17 seconds with
+`accesskit=no d3d12=no`; source hashes remained unchanged. Host receipts:
+`C:/Users/lukas/AppData/Local/Temp/godot-micro-step5-host-20260909/`.
+The shader closure reports 56 current pinned compiler/SPIR-V variants in
+`C:/Users/lukas/AppData/Local/Temp/godot-micro-selected-step5-20260909/final-current-source-closure.json`.
+Fresh source and proof reviews are running; these are not yet review PASS claims.
+Cut membership history feedback is asynchronous and can lag the changed GPU cut
+by in-flight frames. Dense cluster membership storage and real GPU behavior
+remain unvalidated.
 
-Continue Step 5, its fresh review and final Step 6 validation. All prior owner
-authorization remains in effect. The final linked editor, dragon import/reimport,
-export/PCK, double/template and real GPU checks remain outstanding.
+## Actual dragon import
+
+Manual fixture committed `b9bd0e7f5f3b11288e8e388dab2212fcdf73254d`. Initial
+headless native import passed in 82.661853 seconds; an explicit native reimport
+passed in 67.038237 seconds. Builder times were 30.502 and 24.674 seconds.
+Resource loading and instantiation observed one surface with external
+MicroGeometry, 163762 clusters, 81649 leaf clusters, 10057 groups, 17 levels,
+one terminal group and 9737 pages. The 14422982 triangles are summed across
+all DAG levels, not the source or selected cut.
+The 296370993-byte `.mgdata` was reused byte-identically on reimport; SHA256
+`7ab3d860fcfa6fc6803924a457b9133cf919d618e81f1c321d083fe23ebc4066`.
+The regenerated `.scn` changed hash; whole-scene determinism is not claimed.
+Input bytes and timestamp were preserved.
+
+Evidence: `C:/Users/lukas/AppData/Local/Temp/godot-dragon-import-5c0c6ff0291d42adb35826fef8a50cc1/`.
+Execution used an immutable intermediate Step 5 build 03 snapshot, executable
+SHA256 `a1232f8b34de247b6e829c4190ca267a5d938065f3124831f373a7c4b3fc03e0`;
+importer/format sources were stable, but this is not final Step 5 GPU evidence.
+Four glTF packed-byte-stride warnings occurred. Diagnostic reimport using
+`--editor --script` produced shutdown leaks/errors; that command is not in the
+shipped fixture instructions. The shipped stats-only inspector subsequently
+passed in 3.399673 seconds with empty stderr. An editor documentation parser
+error caused by the self-closing tutorials element was corrected separately in
+`22089c9781` and included in build 04. Fixture source review is running; proof
+audit remains pending. No automated test suite was authored or run.
+
+Step 6 remains pending: selected raster/RT cluster debug views and frozen
+selection, counters, real Vulkan rendering, export/PCK, native save/load and OBJ,
+and required double/template build coverage. Continue review closure and this
+remaining implementation under the existing owner authorization.
 
 Existing unrelated dirty scenes/documents and the source dragon are preserved.

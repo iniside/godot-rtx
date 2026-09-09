@@ -1,22 +1,21 @@
 # Project State
 
-GPU-driven microgeometry implementation (2026-09-09, `fd74e8ca4f`):
+GPU-driven microgeometry implementation (2026-09-09, `ec9a584644`):
 [authorized plan](../plans/2026-09-09-0900-gpu-microgeometry-plan.md) and
 [execution evidence](../research/2026-09-09-0900-gpu-microgeometry-implementation-status.md).
-Paged native resource/importer and pinned meshoptimizer DAG builder are committed;
-16 affected C++ objects compiled; final importer review passed at `0f3f9757c2`.
-RD indirect-count and GPU AS APIs passed final source review at `57fa1e2e07`.
-Page residency/persistent scene records are committed at `0f4733e65e`; seven
-owned objects compiled and final review passed after fixes at `f97a605510`.
-GPU selection/native raster source and pinned compiler proof passed final reviews
-at `ec399801bf`; selected RT integration is now in progress. Runtime integration
-is incomplete: old RT callers prevent the full link; dragon import and GPU
-validation have not run. Owner scope:
+Importer, paged storage, RD/GPU AS APIs and GPU selection/native raster passed
+final source reviews; raster pinned compiler proof passed at `ec399801bf`.
+Selected RT integration and simple error/offscreen controls are committed;
+ordinary editor/console build passes, with source/proof reviews pending.
+Actual dragon import/reimport passed in 82.66/67.04 seconds, yielding 17 DAG
+levels and 9737 pages with byte-identical reused `.mgdata`; the diagnostic
+reimport command had shutdown warnings. Import evidence uses an immutable
+intermediate binary, not final GPU runtime proof. Debug views, real GPU checks,
+export/PCK and double/template coverage remain outstanding. Owner scope:
 nondeforming geometry including rigid movement/instancing; preserve existing
 deformations; exclude foliage/voxels and new reflections. RT simplification uses
 simple error control plus an offscreen multiplier, without light/receiver/probe
-importance algorithms. Implementation is authorized; these intermediate commits
-do not establish a working GPU microgeometry renderer.
+importance algorithms. Implementation remains authorized and incomplete.
 
 Owner renderer scope correction (2026-09-08): DLSS/RR, path tracing and
 camera-following DDGI only; no VR/XR work or validation and no requirement for
