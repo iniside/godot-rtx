@@ -52,8 +52,6 @@ struct SelectionParameters {
 	uint record_work;
 	uint unit_count;
 	uint bin_count;
-	uint level;
-	uint mode;
 	float error;
 	float offscreen_multiplier;
 	float near_plane;
@@ -91,6 +89,11 @@ struct DrawCommand {
 	int vertex_offset;
 	uint first_instance;
 };
+struct PushConstant {
+	uint mode;
+	uint level;
+};
+[[vk::push_constant]] ConstantBuffer<PushConstant> push;
 [[vk::binding(0, 0)]] StructuredBuffer<SelectionParameters> parameter_buffer;
 #define parameters parameter_buffer[0]
 [[vk::binding(1, 0)]] StructuredBuffer<SelectionTask> tasks;
@@ -284,11 +287,11 @@ void request_group(uint64_t p_asset, uint p_group) {
 [numthreads(64, 1, 1)]
 void main(uint3 id : SV_DispatchThreadID) {
 	uint index = id.x + id.y * 65536u;
-	if (parameters.mode == 12) {
+	if (push.mode == 12) {
 		if (index < parameters.bin_count) { counts[index] += initial_counts[index]; }
 		return;
 	}
-	if (parameters.mode == 13) {
+	if (push.mode == 13) {
 		uint bin_index = 0;
 		for (uint bin = 1; bin < parameters.bin_count; bin++) {
 			if (bins[bin].offset <= index) { bin_index = bin; }
@@ -307,7 +310,7 @@ void main(uint3 id : SV_DispatchThreadID) {
 		commands[index] = command;
 		return;
 	}
-	if (parameters.mode == 0) {
+	if (push.mode == 0) {
 		if (index >= parameters.task_count) { return; }
 		SelectionTask task = tasks[index];
 		MicroGeometryInstance instance = instances[uint(task.instance) - 1];
@@ -354,7 +357,7 @@ void main(uint3 id : SV_DispatchThreadID) {
 		raster_instances[index] = raster;
 		return;
 	}
-	if (parameters.mode == 1) {
+	if (push.mode == 1) {
 		if (index >= parameters.unit_count) { return; }
 		uint previous_count = unit_states[index].committed_count;
 		SelectionState state = {};
@@ -363,11 +366,11 @@ void main(uint3 id : SV_DispatchThreadID) {
 		unit_states[index] = state;
 		return;
 	}
-	if (parameters.mode == 14) {
+	if (push.mode == 14) {
 		if (index < parameters.unit_count) { unit_states[index].published_frontier_count = min(unit_states[index].queue_count, units[index].queue_capacity); }
 		return;
 	}
-	if (parameters.mode == 3 || parameters.mode == 9) {
+	if (push.mode == 3 || push.mode == 9) {
 		if (index >= parameters.unit_count) { return; }
 		SelectionUnit unit = units[index];
 		SelectionTask task = tasks[unit.task];
@@ -376,7 +379,7 @@ void main(uint3 id : SV_DispatchThreadID) {
 			unit_states[index].committed_count = 0;
 			return;
 		}
-		if (parameters.mode == 9) {
+		if (push.mode == 9) {
 			if ((unit_states[index].status & 7) == 0) {
 				unit_states[index].committed_count = unit_states[index].candidate_count;
 			}
@@ -405,12 +408,16 @@ void main(uint3 id : SV_DispatchThreadID) {
 		}
 		return;
 	}
-	bool queue_work = parameters.mode == 4 || parameters.mode == 5;
+	bool queue_work = push.mode == 4 || push.mode == 5;
 	if (index >= (queue_work ? parameters.queue_work : parameters.record_work)) { return; }
 	uint unit_index = unit_for_work(index, queue_work);
 	SelectionUnit unit = units[unit_index];
-	SelectionTask task = tasks[unit.task];
 	uint relative = index - (queue_work ? unit.queue_offset : unit.record_offset);
+	if (queue_work) {
+		uint published_count = push.mode == 4 ? unit_states[unit_index].published_frontier_count : min(unit_states[unit_index].queue_count, unit.queue_capacity);
+		if (relative >= published_count) { return; }
+	}
+	SelectionTask task = tasks[unit.task];
 	uint source_multimesh;
 	if (validity[unit.task] == 0 || !resolve_multimesh(task, unit.ordinal, source_multimesh)) { return; }
 	MicroGeometryInstance instance = instances[uint(task.instance) - 1];
@@ -418,7 +425,7 @@ void main(uint3 id : SV_DispatchThreadID) {
 	MicroGeometryAsset asset = *((MicroGeometryAsset*)instance.asset_address);
 	bool force_finest = surface.force_finest != 0;
 	bool finest = (parameters.flags & 32) != 0 && force_finest;
-	if (parameters.mode == 2) {
+	if (push.mode == 2) {
 		if (relative >= unit_states[unit_index].committed_count) { return; }
 		uint2 record = committed[index];
 		MicroGeometryCluster cluster = ((MicroGeometryCluster*)asset.clusters)[record.x];
@@ -430,13 +437,11 @@ void main(uint3 id : SV_DispatchThreadID) {
 		return;
 	}
 	if (queue_work) {
-		uint published_count = parameters.mode == 4 ? unit_states[unit_index].published_frontier_count : min(unit_states[unit_index].queue_count, unit.queue_capacity);
-		if (relative >= published_count) { return; }
 		uint slot = frontier[index];
 		uint group_id = sparse_states[slot].x - 1;
 		MicroGeometryGroup group = ((MicroGeometryGroup*)asset.groups)[group_id];
-		if (parameters.mode == 4) {
-			if (group.depth != parameters.level) { return; }
+		if (push.mode == 4) {
+			if (group.depth != push.level) { return; }
 			float3 center;
 			float scale;
 			view_bounds(task, instance, source_multimesh, group.center, 1, false, center, scale);
@@ -501,11 +506,11 @@ void main(uint3 id : SV_DispatchThreadID) {
 		}
 		return;
 	}
-	if (parameters.mode == 6) {
+	if (push.mode == 6) {
 		if ((unit_states[unit_index].status & 7) == 0 && relative < unit_states[unit_index].candidate_count) { committed[index] = candidate[index]; }
 		return;
 	}
-	bool recovery = parameters.mode == 11;
+	bool recovery = push.mode == 11;
 	uint count = recovery ? unit_states[unit_index].rejected_count : unit_states[unit_index].committed_count;
 	if (relative >= min(count, unit.record_capacity)) { return; }
 	uint2 cut = recovery ? rejected[index] : committed[index];

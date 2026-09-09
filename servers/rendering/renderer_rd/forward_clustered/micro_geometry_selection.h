@@ -70,8 +70,6 @@ public:
 		uint32_t record_work = 0;
 		uint32_t unit_count = 0;
 		uint32_t bin_count = 0;
-		uint32_t level = 0;
-		uint32_t mode = 0;
 		float error = 1;
 		float offscreen_multiplier = 1;
 		float near_plane = 0;
@@ -207,6 +205,12 @@ public:
 	~MicroGeometrySelection();
 
 private:
+	struct PushConstant {
+		uint32_t mode;
+		uint32_t level;
+	};
+	static_assert(sizeof(PushConstant) == 8);
+
 	MicroGeometrySelectShaderRD shader;
 	MicroGeometryHzbShaderRD hzb_shader;
 	RID version;
@@ -220,11 +224,12 @@ private:
 	static Capacity *_capacity_entry(CapacityFeedback *p_feedback, uint32_t p_index, bool p_create);
 	static void _retire_capacity(CapacityFeedback *p_feedback);
 	static void _capacity_feedback(const Vector<uint8_t> &p_bytes, Ref<RefCounted> p_feedback);
-	void _dispatch(Pass *p_pass, uint32_t p_mode, uint32_t p_items, RID p_hzb);
+	RID _prepare_dispatch(Pass *p_pass, RID p_hzb);
+	void _dispatch(Pass *p_pass, uint32_t p_mode, uint32_t p_items, RID p_uniform_set, uint32_t p_level = 0);
 };
 
 static_assert(sizeof(MicroGeometrySelection::Task) == 64);
 static_assert(sizeof(MicroGeometrySelection::Unit) == 32);
-static_assert(sizeof(MicroGeometrySelection::Parameters) == 432);
+static_assert(sizeof(MicroGeometrySelection::Parameters) == 424);
 
 } //namespace RendererSceneRenderImplementation
