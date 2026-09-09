@@ -33,6 +33,8 @@
 #include "render_rtxdi.h"
 
 #include "core/config/project_settings.h"
+#include "core/io/marshalls.h"
+#include "core/object/callable_mp.h"
 #include "servers/rendering/renderer_rd/environment/fog.h"
 #include "servers/rendering/renderer_rd/framebuffer_cache_rd.h"
 #include "servers/rendering/renderer_rd/storage_rd/light_storage.h"
@@ -208,7 +210,26 @@ bool RenderForwardClustered::RenderBufferDataForwardClustered::ensure_mfx_tempor
 }
 #endif
 
+void RenderForwardClustered::RenderBufferDataForwardClustered::micro_geometry_stats_received(const Vector<uint8_t> &p_bytes, Ref<RenderBufferDataForwardClustered> p_data, uint64_t p_epoch) {
+	if (p_data->micro_geometry_stats_epoch != p_epoch) {
+		return;
+	}
+	p_data->micro_geometry_stats_pending = false;
+	if (p_bytes.size() >= 8) {
+		p_data->micro_geometry_clusters = decode_uint32(p_bytes.ptr());
+		p_data->micro_geometry_triangles = decode_uint32(p_bytes.ptr() + 4);
+	}
+}
+
 void RenderForwardClustered::RenderBufferDataForwardClustered::free_data() {
+	if (frozen_micro_geometry) {
+		memdelete(frozen_micro_geometry);
+		frozen_micro_geometry = nullptr;
+	}
+	micro_geometry_stats_epoch++;
+	micro_geometry_stats_pending = false;
+	micro_geometry_clusters = 0;
+	micro_geometry_triangles = 0;
 	if (micro_geometry_depth.texture.is_valid()) {
 		RD::get_singleton()->free_rid(micro_geometry_depth.texture);
 		micro_geometry_depth.texture = RID();
@@ -431,6 +452,7 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 	Vector<MicroGeometrySelection::Task> tasks;
 	Vector<uint64_t> coarse_counts;
 	Vector<uint64_t> possible_counts;
+	Vector<uint64_t> snapshot_key;
 	MicroGeometrySelection::Parameters parameters;
 	uint64_t group_work = 0, cluster_work = 0, coarse_work = 0;
 	uint32_t levels = 0;
@@ -515,10 +537,14 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 			uint32_t probes[2] = { 0xffff, 0xffff };
 			for (uint32_t probe = 0; probe < scene_state.voxelgis_used; probe++) {
 				for (uint32_t slot = 0; slot < 2; slot++) {
-					if (scene_state.voxelgi_ids[probe] == instance->voxel_gi_instances[slot]) { probes[slot] = probe; }
+					if (scene_state.voxelgi_ids[probe] == instance->voxel_gi_instances[slot]) {
+						probes[slot] = probe;
+					}
 				}
 			}
-			if (probes[0] == 0xffff) { SWAP(probes[0], probes[1]); }
+			if (probes[0] == 0xffff) {
+				SWAP(probes[0], probes[1]);
+			}
 			task.gi_offset = probes[0] | (probes[1] << 16);
 			task.flags |= INSTANCE_DATA_FLAG_USE_VOXEL_GI;
 		}
@@ -529,6 +555,10 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 		possible_counts.write[bin_index] += uint64_t(task.cluster_count) * instances;
 		levels = MAX(levels, uint32_t(metadata.roots.size()));
 		tasks.push_back(task);
+		const auto &surface_record = raytracing->persistent_surfaces[uint32_t(task.surface) - 1].data;
+		for (uint64_t value : { task.instance, task.surface, task.asset, uint64_t(task.multimesh_count), uint64_t(task.flags), uint64_t(task.bin), uint64_t(task.gi_offset), task.indirect_command, uint64_t(record.visible), uint64_t(record.layer_mask), uint64_t(record.shadows), record.scenario, surface_record.material_generation, uint64_t(surface_record.material_slot), uint64_t(reinterpret_cast<uintptr_t>(bin.shader)), bin.material.get_id(), uint64_t(bin.flags), uint64_t(bin.mirror), uint64_t(bin.double_sided) }) {
+			snapshot_key.push_back(value);
+		}
 		pass->surfaces.insert(surface->persistent_surface);
 		if (surface->material) {
 			surface->material->set_as_used();
@@ -550,7 +580,17 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 			}
 		}
 	}
+	if (pass->render_buffers && pass->render_buffers->frozen_micro_geometry && (!p_render_data->render_buffers->is_micro_geometry_debug_freeze() || tasks.is_empty())) {
+		memdelete(pass->render_buffers->frozen_micro_geometry);
+		pass->render_buffers->frozen_micro_geometry = nullptr;
+	}
 	if (tasks.is_empty() || group_work > UINT32_MAX || cluster_work > UINT32_MAX || coarse_work > UINT32_MAX) {
+		if (pass->render_buffers) {
+			pass->render_buffers->micro_geometry_clusters = 0;
+			pass->render_buffers->micro_geometry_triangles = 0;
+			pass->render_buffers->micro_geometry_stats_epoch++;
+			pass->render_buffers->micro_geometry_stats_pending = false;
+		}
 		if (!tasks.is_empty()) {
 			ERR_PRINT("Microgeometry traversal address range exhausted.");
 		}
@@ -619,7 +659,42 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 	}
 	Vector<RID> dependencies;
 	raytracing->get_persistent_buffer_dependencies(dependencies);
+	snapshot_key.push_back(parameters.scenario);
+	snapshot_key.push_back(parameters.layer_mask);
+	if (pass->render_buffers && pass->render_buffers->frozen_micro_geometry) {
+		auto *frozen = pass->render_buffers->frozen_micro_geometry;
+		if (frozen->snapshot_key == snapshot_key) {
+			pass->gpu = frozen;
+			pass->owns_gpu = false;
+			parameters.task_count = frozen->data.task_count;
+			parameters.bin_count = frozen->data.bin_count;
+			parameters.flags |= frozen->data.flags & 8;
+			frozen->data = parameters;
+			return pass;
+		}
+		memdelete(frozen);
+		pass->render_buffers->frozen_micro_geometry = nullptr;
+	}
 	pass->gpu = micro_geometry->create(tasks, bins, parameters, levels, sizeof(SceneState::InstanceData), raytracing->get_persistent_instance_buffer(), raytracing->get_persistent_surface_buffer(), dependencies);
+	if (pass->gpu && camera_pass && p_render_data->render_buffers->is_micro_geometry_debug_freeze()) {
+		pass->gpu->snapshot_key = snapshot_key;
+		for (const auto &task : tasks) {
+			RID asset = RID::from_uint64(task.asset);
+			if (pass->gpu->assets.has(asset)) {
+				continue;
+			}
+			storage->acquire(storage->get_source(asset));
+			pass->gpu->assets.push_back(asset);
+			for (uint32_t group = 0; group < task.group_count; group++) {
+				if (storage->is_group_ready(asset, group)) {
+					storage->pin_group(asset, group);
+					pass->gpu->pins.push_back({ asset, group });
+				}
+			}
+		}
+		pass->render_buffers->frozen_micro_geometry = pass->gpu;
+		pass->owns_gpu = false;
+	}
 	if (!pass->gpu) {
 		memdelete(pass);
 		return nullptr;
@@ -636,6 +711,15 @@ void RenderForwardClustered::_select_micro_geometry(MicroGeometryRasterPass *p_p
 	p_pass->gpu->dependencies.clear();
 	raytracing->get_persistent_buffer_dependencies(p_pass->gpu->dependencies);
 	p_pass->gpu->dependencies.append_array(p_pass->task_dependencies);
+	MicroGeometryRasterParameters raster;
+	raster.page_pool = RD::get_singleton()->buffer_get_device_address(RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage()->get_pool());
+	raster.selected_cluster_color = get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_MICRO_GEOMETRY_RASTER;
+	RD::get_singleton()->buffer_update(p_pass->gpu->raster_parameters, 0, sizeof(raster), &raster);
+	if (p_pass->gpu->frozen) {
+		micro_geometry->update_frozen(p_pass->gpu);
+		p_pass->dispatched = true;
+		return;
+	}
 	RID depth;
 	if ((p_pass->gpu->data.flags & 2) != 0 && p_pass->render_buffers && p_pass->render_buffers->is_rtxdi_surface_history_valid() && p_pass->render_buffers->micro_geometry_depth.texture.is_valid()) {
 		p_pass->gpu->data.flags |= 4;
@@ -676,9 +760,15 @@ void RenderForwardClustered::_render_micro_geometry(RD::DrawListID p_list, RD::F
 		key.primitive_type = RSE::PRIMITIVE_TRIANGLES;
 		key.version = versions[p_parameters->pass_mode];
 		if (p_parameters->view_count > 1) {
-			if (key.version == SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS) { key.version = SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS_MULTIVIEW; }
-			if (key.version == SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS) { key.version = SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_MULTIVIEW; }
-			if (key.version == SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_AND_VOXEL_GI) { key.version = SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_AND_VOXEL_GI_MULTIVIEW; }
+			if (key.version == SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS) {
+				key.version = SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS_MULTIVIEW;
+			}
+			if (key.version == SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS) {
+				key.version = SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_MULTIVIEW;
+			}
+			if (key.version == SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_AND_VOXEL_GI) {
+				key.version = SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_AND_VOXEL_GI_MULTIVIEW;
+			}
 		}
 		key.wireframe = p_parameters->force_wireframe;
 		auto cull = (bin.mirror != p_parameters->reverse_cull) ? SceneShaderForwardClustered::ShaderData::CULL_VARIANT_REVERSED : SceneShaderForwardClustered::ShaderData::CULL_VARIANT_NORMAL;
@@ -696,7 +786,9 @@ void RenderForwardClustered::_render_micro_geometry(RD::DrawListID p_list, RD::F
 			key.cull_mode = key.ubershader ? RD::POLYGON_CULL_DISABLED : cull_mode;
 			key.shader_specialization = key.ubershader ? SceneShaderForwardClustered::ShaderSpecialization{} : specialization;
 			pipeline = shader->pipeline_hash_map.get_pipeline(key, key.hash(), key.ubershader, key.ubershader ? RSE::PIPELINE_SOURCE_DRAW : RSE::PIPELINE_SOURCE_SPECIALIZATION);
-			if (pipeline.is_valid()) { break; }
+			if (pipeline.is_valid()) {
+				break;
+			}
 		}
 		if (pipeline.is_null()) {
 			continue;
@@ -1050,7 +1142,7 @@ void RenderForwardClustered::_render_list_with_draw_list(RenderListParameters *p
 	_render_list(draw_list, fb_format, p_params, 0, p_params->element_count);
 	RD::get_singleton()->draw_list_end();
 	MicroGeometryRasterPass *pass = p_params->micro_geometry;
-	if (pass && pass->render_buffers && p_params->view_count == 1) {
+	if (pass && !pass->gpu->frozen && pass->render_buffers && p_params->view_count == 1) {
 		auto &pyramid = pass->render_buffers->micro_geometry_depth;
 		RID depth = pass->render_buffers->get_rtxdi_surface_depth();
 		const Size2i size(pass->gpu->data.hzb_width, pass->gpu->data.hzb_height);
@@ -1071,6 +1163,19 @@ void RenderForwardClustered::_render_list_with_draw_list(RenderListParameters *p
 	}
 	if (pass) {
 		micro_geometry->submit_feedback(pass->gpu);
+		if (!pass->owns_gpu && !pass->gpu->frozen) {
+			if (!micro_geometry->freeze(pass->gpu)) {
+				pass->render_buffers->frozen_micro_geometry = nullptr;
+				pass->owns_gpu = true;
+			}
+		}
+		if (pass->render_buffers && !pass->render_buffers->micro_geometry_stats_pending) {
+			Ref<RenderBufferDataForwardClustered> data(pass->render_buffers);
+			data->micro_geometry_stats_pending = true;
+			if (RD::get_singleton()->buffer_get_data_async(pass->gpu->statistics, callable_mp_static(&RenderBufferDataForwardClustered::micro_geometry_stats_received).bind(data, data->micro_geometry_stats_epoch)) != OK) {
+				data->micro_geometry_stats_pending = false;
+			}
+		}
 	}
 }
 
@@ -2154,7 +2259,7 @@ void RenderForwardClustered::_render_3d_upscaling(const RenderDataRD *p_render_d
 		}
 
 		RD::get_singleton()->draw_command_begin_label("MetalFX Temporal");
-		// Scale to ±0.5.
+		// Scale to Â±0.5.
 		Vector2 jitter = p_render_data->scene_data->taa_jitter * 0.5f;
 		jitter *= Vector2(1.0, -1.0); // Flip y-axis as bottom left is origin.
 
@@ -2194,6 +2299,13 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	ERR_FAIL_COND(rb_data.is_null());
 	if (raytracing->update_viewport_settings(p_render_data)) {
 		rb_data->invalidate_raytracing_history();
+	}
+	const RSE::ViewportDebugDraw micro_debug_mode = get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_MICRO_GEOMETRY_RASTER || get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_MICRO_GEOMETRY_RT ? get_debug_draw_mode() : RSE::VIEWPORT_DEBUG_DRAW_DISABLED;
+	if (rb_data->micro_geometry_debug_mode != micro_debug_mode) {
+		rb_data->micro_geometry_debug_mode = micro_debug_mode;
+		rb_data->invalidate_raytracing_history();
+		raytracing->_get_viewport_state(p_render_data)->camera_history_epoch++;
+		raytracing->_get_viewport_state(p_render_data)->pathtracing_history_epoch++;
 	}
 	const RendererEnvironmentStorage::RaytracingSettings &rt_settings = raytracing->_get_viewport_state(p_render_data)->settings;
 	const bool path_traced = rt_settings.raytracing_rendering_mode == RSE::RAYTRACING_RENDERING_MODE_PATH_TRACED;
@@ -2543,6 +2655,30 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	_debug_draw_cluster(rb);
 	RENDER_TIMESTAMP("Tonemap");
 	_render_buffers_post_process_and_tonemap(p_render_data);
+	if (get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_MICRO_GEOMETRY_RT) {
+		if (!raytracing->pathtracing) {
+			raytracing->pathtracing = memnew(RenderPathtracing);
+		}
+		RENDER_TIMESTAMP("Microgeometry RT Debug");
+		ERR_FAIL_COND_MSG(!raytracing->pathtracing->render(*raytracing, *rt_state, frame.scene_data, frame.radiance, screen_size, is_using_radiance_octmap_array(), false, Color(), true), "Microgeometry RT debug rays failed.");
+	}
+	if (p_render_data->render_info) {
+		auto statistics = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage()->get_statistics();
+		uint64_t geometry_bytes = statistics.pool_bytes + statistics.metadata_bytes + statistics.retired_metadata_bytes + statistics.io_bytes + statistics.feedback_bytes + statistics.acceleration_structure_bytes + raytracing->get_persistent_memory_bytes() + statistics.raster_selection_bytes + raytracing->get_micro_geometry_memory_bytes();
+		uint64_t as_bytes = statistics.acceleration_structure_bytes + raytracing->get_micro_geometry_as_memory_bytes();
+		uint64_t values[] = {
+			rb_data->micro_geometry_clusters, rb_data->micro_geometry_triangles,
+			rt_state->micro_geometry ? rt_state->micro_geometry->selected_clusters : 0,
+			rt_state->micro_geometry ? rt_state->micro_geometry->selected_triangles : 0,
+			statistics.resident_pages, statistics.pending_pages, statistics.pool_bytes / 1024,
+			geometry_bytes / 1024, as_bytes / 1024, statistics.clas_builds,
+			rt_state->micro_geometry ? rt_state->micro_geometry->completed_builds : 0,
+			statistics.pressure
+		};
+		for (uint32_t index = 0; index < sizeof(values) / sizeof(values[0]); index++) {
+			p_render_data->render_info->info[RSE::VIEWPORT_RENDER_INFO_TYPE_VISIBLE][RSE::VIEWPORT_RENDER_INFO_MICRO_GEOMETRY_RASTER_CLUSTERS + index] = MIN(values[index], uint64_t(INT32_MAX));
+		}
+	}
 	_render_buffers_debug_draw(p_render_data);
 }
 
@@ -2558,6 +2694,24 @@ void RenderForwardClustered::_render_buffers_debug_draw(const RenderDataRD *p_re
 	RendererSceneRenderRD::_render_buffers_debug_draw(p_render_data);
 
 	RID render_target = rb->get_render_target();
+
+	if (get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_MICRO_GEOMETRY_RASTER || get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_MICRO_GEOMETRY_RT) {
+		RTViewportState *state = raytracing ? raytracing->_get_viewport_state(p_render_data) : nullptr;
+		RID source;
+		if (get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_MICRO_GEOMETRY_RASTER && state && state->settings.raytracing_rendering_mode == RSE::RAYTRACING_RENDERING_MODE_HYBRID) {
+			source = rb_data->get_rtxdi_surface_texture(RenderBufferDataForwardClustered::RTXDI_SURFACE_BASE);
+		} else if (get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_MICRO_GEOMETRY_RT && state && state->pathtracing && state->pathtracing->micro_geometry_debug) {
+			source = state->pathtracing->get_radiance();
+		}
+		RID framebuffer = texture_storage->render_target_get_rd_framebuffer(render_target);
+		if (source.is_valid()) {
+			copy_effects->copy_to_fb_rect(source, framebuffer, Rect2(Vector2(), texture_storage->render_target_get_size(render_target)), false, false);
+		} else {
+			RD::get_singleton()->draw_list_begin(framebuffer, RD::DRAW_CLEAR_COLOR_ALL, Vector<Color>{ Color(0, 0, 0, 1) });
+			RD::get_singleton()->draw_list_end();
+		}
+		return;
+	}
 
 	if (get_debug_draw_mode() >= RSE::VIEWPORT_DEBUG_DRAW_DDGI_PROBES && get_debug_draw_mode() <= RSE::VIEWPORT_DEBUG_DRAW_DDGI_INDIRECT) {
 		RTViewportState *state = raytracing ? raytracing->_get_viewport_state(p_render_data) : nullptr;

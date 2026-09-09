@@ -781,6 +781,20 @@ void RenderingDevice::blas_get_cluster_build_sizes(const ClusterBottomLevelBuild
 	driver->blas_get_cluster_build_sizes(p_input, r_sizes);
 }
 
+uint64_t RenderingDevice::acceleration_structure_get_memory_usage(RID p_acceleration_structure) {
+	ERR_RENDER_THREAD_GUARD_V(0);
+	AccelerationStructure *structure = acceleration_structure_owner.get_or_null(p_acceleration_structure);
+	ERR_FAIL_NULL_V(structure, 0);
+	uint64_t bytes = driver->acceleration_structure_get_memory_usage(structure->driver_id);
+	if (structure->scratch_buffer) {
+		bytes += driver->buffer_get_allocation_size(structure->scratch_buffer);
+	}
+	for (const auto &buffer : structure->instance_buffers) {
+		bytes += driver->buffer_get_allocation_size(buffer.driver_id);
+	}
+	return bytes;
+}
+
 uint64_t RenderingDevice::acceleration_structure_get_device_address(RID p_acceleration_structure) {
 	ERR_RENDER_THREAD_GUARD_V(0);
 	AccelerationStructure *acceleration_structure = acceleration_structure_owner.get_or_null(p_acceleration_structure);

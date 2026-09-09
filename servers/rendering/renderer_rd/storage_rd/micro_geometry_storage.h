@@ -34,8 +34,8 @@
 #include "core/templates/hash_map.h"
 #include "core/templates/rid_owner.h"
 #include "servers/rendering/micro_geometry_data.h"
-#include "servers/rendering/rendering_device.h"
 #include "servers/rendering/renderer_rd/shaders/forward_clustered/micro_geometry_page.slang.gen.h"
+#include "servers/rendering/rendering_device.h"
 
 namespace RendererRD {
 
@@ -141,10 +141,17 @@ public:
 		uint32_t pending_pages = 0;
 		uint64_t pressure = 0;
 		uint64_t failed_reads = 0;
+		uint64_t clas_builds = 0;
+		uint64_t raster_selection_bytes = 0;
 	};
 
 private:
-	enum PageStatus { ABSENT, REQUESTED, READING, UPLOADING, RESIDENT, FAILED };
+	enum PageStatus { ABSENT,
+		REQUESTED,
+		READING,
+		UPLOADING,
+		RESIDENT,
+		FAILED };
 	struct Page {
 		LocalVector<RID> clas_resources;
 		RID clas_storage;
@@ -256,6 +263,8 @@ public:
 	RID get_pool() const { return pool; }
 	void get_dependencies(RID p_asset, Vector<RID> &r_dependencies) const;
 	Statistics get_statistics() const;
+	void add_raster_selection_memory(uint64_t p_bytes) { statistics.raster_selection_bytes += p_bytes; }
+	void remove_raster_selection_memory(uint64_t p_bytes) { statistics.raster_selection_bytes -= p_bytes; }
 	bool set_page_count(uint32_t p_count);
 	~MicroGeometryStorage();
 };

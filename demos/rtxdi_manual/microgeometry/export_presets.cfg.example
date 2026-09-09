@@ -1,0 +1,16 @@
+[preset.0]
+
+name="Microgeometry Selected Scene"
+platform="Windows Desktop"
+dedicated_server=false
+custom_features=""
+export_filter="scenes"
+export_files=PackedStringArray("res://microgeometry/scene.tscn")
+include_filter=""
+exclude_filter="microgeometry/manual_export.gd"
+export_path=""
+
+[preset.0.options]
+
+binary_format/embed_pck=false
+shader_baker/enabled=true

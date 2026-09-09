@@ -3933,6 +3933,17 @@ bool Viewport::is_ddgi_debug_freeze_anchor() const {
 	return ddgi_debug_freeze_anchor;
 }
 
+void Viewport::set_micro_geometry_debug_freeze(bool p_enabled) {
+	ERR_MAIN_THREAD_GUARD;
+	micro_geometry_debug_freeze = p_enabled;
+	RS::get_singleton()->viewport_set_micro_geometry_debug_freeze(viewport, p_enabled);
+}
+
+bool Viewport::is_micro_geometry_debug_freeze() const {
+	ERR_READ_THREAD_GUARD_V(false);
+	return micro_geometry_debug_freeze;
+}
+
 int Viewport::get_render_info(RenderInfoType p_type, RenderInfo p_info) {
 	ERR_READ_THREAD_GUARD_V(0);
 	return RS::get_singleton()->viewport_get_render_info(viewport, RSE::ViewportRenderInfoType(p_type), RSE::ViewportRenderInfo(p_info));
@@ -5229,6 +5240,8 @@ void Viewport::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_ddgi_debug_freeze_anchor", "enabled"), &Viewport::set_ddgi_debug_freeze_anchor);
 	ClassDB::bind_method(D_METHOD("is_ddgi_debug_freeze_anchor"), &Viewport::is_ddgi_debug_freeze_anchor);
+	ClassDB::bind_method(D_METHOD("set_micro_geometry_debug_freeze", "enabled"), &Viewport::set_micro_geometry_debug_freeze);
+	ClassDB::bind_method(D_METHOD("is_micro_geometry_debug_freeze"), &Viewport::is_micro_geometry_debug_freeze);
 	ClassDB::bind_method(D_METHOD("set_debug_draw", "debug_draw"), &Viewport::set_debug_draw);
 	ClassDB::bind_method(D_METHOD("get_debug_draw"), &Viewport::get_debug_draw);
 
@@ -5404,15 +5417,16 @@ void Viewport::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "snap_2d_transforms_to_pixel"), "set_snap_2d_transforms_to_pixel", "is_snap_2d_transforms_to_pixel_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "snap_2d_vertices_to_pixel"), "set_snap_2d_vertices_to_pixel", "is_snap_2d_vertices_to_pixel_enabled");
 	ADD_GROUP("Rendering", "");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "msaa_2d", PROPERTY_HINT_ENUM, String::utf8("Disabled (Fastest),2× (Average),4× (Slow),8× (Slowest)")), "set_msaa_2d", "get_msaa_2d");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "msaa_3d", PROPERTY_HINT_ENUM, String::utf8("Disabled (Fastest),2× (Average),4× (Slow),8× (Slowest)")), "set_msaa_3d", "get_msaa_3d");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "msaa_2d", PROPERTY_HINT_ENUM, String::utf8("Disabled (Fastest),2Ã— (Average),4Ã— (Slow),8Ã— (Slowest)")), "set_msaa_2d", "get_msaa_2d");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "msaa_3d", PROPERTY_HINT_ENUM, String::utf8("Disabled (Fastest),2Ã— (Average),4Ã— (Slow),8Ã— (Slowest)")), "set_msaa_3d", "get_msaa_3d");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "screen_space_aa", PROPERTY_HINT_ENUM, "Disabled (Fastest),FXAA (Fast),SMAA (Average)"), "set_screen_space_aa", "get_screen_space_aa");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "use_taa"), "set_use_taa", "is_using_taa");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "use_debanding"), "set_use_debanding", "is_using_debanding");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "use_occlusion_culling"), "set_use_occlusion_culling", "is_using_occlusion_culling");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "mesh_lod_threshold", PROPERTY_HINT_RANGE, "0,1024,0.1"), "set_mesh_lod_threshold", "get_mesh_lod_threshold");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "ddgi_debug_freeze_anchor"), "set_ddgi_debug_freeze_anchor", "is_ddgi_debug_freeze_anchor");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "debug_draw", PROPERTY_HINT_ENUM, "Disabled,Unshaded,Lighting,Overdraw,Wireframe,Normal Buffer,VoxelGI Albedo,VoxelGI Lighting,VoxelGI Emission,Shadow Atlas,Directional Shadow Map,Scene Luminance,SSAO,SSIL,Directional Shadow Splits,Decal Atlas,SDFGI Cascades,SDFGI Probes,VoxelGI/SDFGI Buffer,Disable Mesh LOD,OmniLight3D Cluster,SpotLight3D Cluster,Decal Cluster,ReflectionProbe Cluster,Occlusion Culling Buffer,Motion Vectors,Internal Buffer,AreaLight3D Cluster,AreaLight3D Atlas,DDGI Probes,DDGI Probe State,DDGI Cascade Weights,DDGI Indirect"), "set_debug_draw", "get_debug_draw");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "micro_geometry_debug_freeze"), "set_micro_geometry_debug_freeze", "is_micro_geometry_debug_freeze");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "debug_draw", PROPERTY_HINT_ENUM, "Disabled,Unshaded,Lighting,Overdraw,Wireframe,Normal Buffer,VoxelGI Albedo,VoxelGI Lighting,VoxelGI Emission,Shadow Atlas,Directional Shadow Map,Scene Luminance,SSAO,SSIL,Directional Shadow Splits,Decal Atlas,SDFGI Cascades,SDFGI Probes,VoxelGI/SDFGI Buffer,Disable Mesh LOD,OmniLight3D Cluster,SpotLight3D Cluster,Decal Cluster,ReflectionProbe Cluster,Occlusion Culling Buffer,Motion Vectors,Internal Buffer,AreaLight3D Cluster,AreaLight3D Atlas,DDGI Probes,DDGI Probe State,DDGI Cascade Weights,DDGI Indirect,Microgeometry Raster,Microgeometry RT"), "set_debug_draw", "get_debug_draw");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "use_hdr_2d"), "set_use_hdr_2d", "is_using_hdr_2d");
 
 #ifndef _3D_DISABLED
@@ -5428,7 +5442,7 @@ void Viewport::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "scaling_3d_scale", PROPERTY_HINT_RANGE, "0.25,2.0,0.01"), "set_scaling_3d_scale", "get_scaling_3d_scale");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "frame_generation"), "set_frame_generation", "get_frame_generation");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "texture_mipmap_bias", PROPERTY_HINT_RANGE, "-2,2,0.001"), "set_texture_mipmap_bias", "get_texture_mipmap_bias");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "anisotropic_filtering_level", PROPERTY_HINT_ENUM, String::utf8("Disabled (Fastest),2× (Faster),4× (Fast),8× (Average),16x (Slow)")), "set_anisotropic_filtering_level", "get_anisotropic_filtering_level");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "anisotropic_filtering_level", PROPERTY_HINT_ENUM, String::utf8("Disabled (Fastest),2Ã— (Faster),4Ã— (Fast),8Ã— (Average),16x (Slow)")), "set_anisotropic_filtering_level", "get_anisotropic_filtering_level");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "fsr_sharpness", PROPERTY_HINT_RANGE, "0,2,0.01"), "set_fsr_sharpness", "get_fsr_sharpness");
 	ADD_GROUP("Variable Rate Shading", "vrs_");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "vrs_mode", PROPERTY_HINT_ENUM, "Disabled,Texture,XR"), "set_vrs_mode", "get_vrs_mode");
@@ -5518,6 +5532,18 @@ void Viewport::_bind_methods() {
 	BIND_ENUM_CONSTANT(RENDER_INFO_RT_BLAS_REFITS);
 	BIND_ENUM_CONSTANT(RENDER_INFO_RT_TRIANGLES_BUILT);
 	BIND_ENUM_CONSTANT(RENDER_INFO_RT_TRIANGLES_REFIT);
+	BIND_ENUM_CONSTANT(RENDER_INFO_MICRO_GEOMETRY_RASTER_CLUSTERS);
+	BIND_ENUM_CONSTANT(RENDER_INFO_MICRO_GEOMETRY_RASTER_TRIANGLES);
+	BIND_ENUM_CONSTANT(RENDER_INFO_MICRO_GEOMETRY_RT_CLUSTERS);
+	BIND_ENUM_CONSTANT(RENDER_INFO_MICRO_GEOMETRY_RT_TRIANGLES);
+	BIND_ENUM_CONSTANT(RENDER_INFO_MICRO_GEOMETRY_RESIDENT_PAGES);
+	BIND_ENUM_CONSTANT(RENDER_INFO_MICRO_GEOMETRY_PENDING_PAGES);
+	BIND_ENUM_CONSTANT(RENDER_INFO_MICRO_GEOMETRY_PAGE_POOL_KIB);
+	BIND_ENUM_CONSTANT(RENDER_INFO_MICRO_GEOMETRY_GEOMETRY_MEMORY_KIB);
+	BIND_ENUM_CONSTANT(RENDER_INFO_MICRO_GEOMETRY_AS_MEMORY_KIB);
+	BIND_ENUM_CONSTANT(RENDER_INFO_MICRO_GEOMETRY_CLAS_BUILDS);
+	BIND_ENUM_CONSTANT(RENDER_INFO_MICRO_GEOMETRY_BLAS_BUILDS);
+	BIND_ENUM_CONSTANT(RENDER_INFO_MICRO_GEOMETRY_RESIDENCY_PRESSURE);
 	BIND_ENUM_CONSTANT(RENDER_INFO_MAX);
 
 	BIND_ENUM_CONSTANT(RENDER_INFO_TYPE_VISIBLE);
@@ -5558,6 +5584,8 @@ void Viewport::_bind_methods() {
 	BIND_ENUM_CONSTANT(DEBUG_DRAW_DDGI_PROBE_STATE);
 	BIND_ENUM_CONSTANT(DEBUG_DRAW_DDGI_CASCADE_WEIGHTS);
 	BIND_ENUM_CONSTANT(DEBUG_DRAW_DDGI_INDIRECT);
+	BIND_ENUM_CONSTANT(DEBUG_DRAW_MICRO_GEOMETRY_RASTER);
+	BIND_ENUM_CONSTANT(DEBUG_DRAW_MICRO_GEOMETRY_RT);
 
 	BIND_ENUM_CONSTANT(DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST);
 	BIND_ENUM_CONSTANT(DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_LINEAR);

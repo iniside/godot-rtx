@@ -6734,7 +6734,6 @@ uint32_t RenderingDeviceDriverVulkan::acceleration_structure_get_scratch_size_by
 
 // ----- CLUSTER ACCELERATION STRUCTURE -----
 
-
 bool RenderingDeviceDriverVulkan::clas_is_supported() {
 #if VULKAN_RAYTRACING_ENABLED
 	return cluster_acceleration_structure_capabilities.cluster_acceleration_structure_support &&
@@ -6837,6 +6836,12 @@ void RenderingDeviceDriverVulkan::blas_get_cluster_build_sizes(const ClusterBott
 	r_sizes.acceleration_structure_size = sizes.accelerationStructureSize + cluster_acceleration_structure_capabilities.limits.cluster_bottom_level_byte_alignment;
 	r_sizes.build_scratch_size = sizes.buildScratchSize + cluster_acceleration_structure_capabilities.limits.cluster_scratch_byte_alignment;
 #endif
+}
+
+uint64_t RenderingDeviceDriverVulkan::acceleration_structure_get_memory_usage(AccelerationStructureID p_acceleration_structure) {
+	const AccelerationStructureInfo *accel_info = (const AccelerationStructureInfo *)p_acceleration_structure.id;
+	ERR_FAIL_NULL_V(accel_info, 0);
+	return accel_info->buffer ? buffer_get_allocation_size(accel_info->buffer) : 0;
 }
 
 uint64_t RenderingDeviceDriverVulkan::acceleration_structure_get_device_address(AccelerationStructureID p_acceleration_structure) {

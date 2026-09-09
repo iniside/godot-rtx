@@ -39,8 +39,8 @@
 #include "servers/rendering/renderer_rd/effects/nrd_effect.h"
 #include "servers/rendering/renderer_rd/effects/ss_effects.h"
 #include "servers/rendering/renderer_rd/effects/taa.h"
-#include "servers/rendering/renderer_rd/forward_clustered/render_raytracing.h"
 #include "servers/rendering/renderer_rd/forward_clustered/micro_geometry_selection.h"
+#include "servers/rendering/renderer_rd/forward_clustered/render_raytracing.h"
 #include "servers/rendering/renderer_rd/forward_clustered/scene_shader_forward_clustered.h"
 #include "servers/rendering/renderer_rd/renderer_scene_render_rd.h"
 #include "servers/rendering/renderer_rd/shaders/forward_clustered/best_fit_normal.glsl.gen.h"
@@ -77,7 +77,6 @@
 namespace RendererSceneRenderImplementation {
 
 class RenderRTXDI;
-
 
 class RenderForwardClustered : public RendererSceneRenderRD {
 	friend SceneShaderForwardClustered;
@@ -155,6 +154,13 @@ public:
 		ClusterBuilderRD *cluster_builder = nullptr;
 		RendererRD::NRDEffect::Context *nrd_context = nullptr;
 		MicroGeometrySelection::DepthPyramid micro_geometry_depth;
+		MicroGeometrySelection::Pass *frozen_micro_geometry = nullptr;
+		uint32_t micro_geometry_clusters = 0;
+		uint32_t micro_geometry_triangles = 0;
+		uint64_t micro_geometry_stats_epoch = 0;
+		bool micro_geometry_stats_pending = false;
+		RSE::ViewportDebugDraw micro_geometry_debug_mode = RSE::VIEWPORT_DEBUG_DRAW_DISABLED;
+		static void micro_geometry_stats_received(const Vector<uint8_t> &p_bytes, Ref<RenderBufferDataForwardClustered> p_data, uint64_t p_epoch);
 		enum RTXDISurfaceAttachment {
 			RTXDI_SURFACE_BASE,
 			RTXDI_SURFACE_SHADING,
@@ -273,7 +279,12 @@ protected:
 		MicroGeometrySelection::Pass *gpu = nullptr;
 		RenderBufferDataForwardClustered *render_buffers = nullptr;
 		bool dispatched = false;
-		~MicroGeometryRasterPass() { if (gpu) { memdelete(gpu); } }
+		bool owns_gpu = true;
+		~MicroGeometryRasterPass() {
+			if (gpu && owns_gpu) {
+				memdelete(gpu);
+			}
+		}
 	};
 	void _select_micro_geometry(MicroGeometryRasterPass *p_pass);
 	void _render_micro_geometry(RD::DrawListID p_list, RD::FramebufferFormatID p_framebuffer_format, RenderListParameters *p_parameters);

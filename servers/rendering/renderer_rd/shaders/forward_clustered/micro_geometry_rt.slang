@@ -186,6 +186,11 @@ void main(uint3 p_dispatch : SV_DispatchThreadID) {
 			cached_membership[offset + cluster_index] = current;
 		}
 		active_count += (mode == PREPARE_CUT ? previous : current) != 0u ? 1u : 0u;
+		if (prepare && current != 0u) {
+			MicroGeometryCluster cluster = ((MicroGeometryCluster*)asset.clusters)[cluster_index];
+			InterlockedAdd(dirty_counts[2], 1u);
+			InterlockedAdd(dirty_counts[3], cluster.triangle_count);
+		}
 		if (current != 0u && (prepare || mode == RESTORE_CUT)) {
 			references[offset + reference_count] = ((uint64_t*)task.clas_addresses)[cluster_index];
 			reference_count++;

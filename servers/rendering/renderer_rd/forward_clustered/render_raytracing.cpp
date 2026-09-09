@@ -30,8 +30,8 @@
 
 #include "core/config/project_settings.h"
 #include "core/io/marshalls.h"
-#include "core/object/callable_mp.h"
 #include "core/math/math_funcs.h"
+#include "core/object/callable_mp.h"
 #include "servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h"
 #include "servers/rendering/renderer_rd/forward_clustered/render_rtxdi.h"
 #include "servers/rendering/renderer_rd/storage_rd/light_storage.h"
@@ -184,7 +184,7 @@ bool RenderRaytracing::update_viewport_settings(const RenderDataRD *p_render_dat
 
 bool RenderRaytracing::_prepare_ddgi(RTViewportState *p_state, bool p_freeze_anchor) {
 	const RendererEnvironmentStorage::RaytracingSettings &settings = p_state->settings;
-	if (p_state->pathtracing && settings.raytracing_rendering_mode != RSE::RAYTRACING_RENDERING_MODE_PATH_TRACED) {
+	if (p_state->pathtracing && settings.raytracing_rendering_mode != RSE::RAYTRACING_RENDERING_MODE_PATH_TRACED && owner->get_debug_draw_mode() != RSE::VIEWPORT_DEBUG_DRAW_MICRO_GEOMETRY_RT) {
 		memdelete(p_state->pathtracing);
 		p_state->pathtracing = nullptr;
 	}
@@ -293,6 +293,9 @@ RTViewportState *RenderRaytracing::_get_viewport_state(const RenderDataRD *p_ren
 void RenderRaytracing::_free_viewport_state_internal(RTViewportState *p_state) {
 	if (!p_state) {
 		return;
+	}
+	if (p_state->micro_geometry && p_state->tlas.is_valid()) {
+		retired_tlas_memory.push_back({ RD::get_singleton()->acceleration_structure_get_memory_usage(p_state->tlas), RD::get_singleton()->get_pending_submission_serial() });
 	}
 	_retire_micro_geometry(p_state->micro_geometry);
 	p_state->micro_geometry = nullptr;
@@ -451,14 +454,12 @@ void RenderRaytracing::cleanup_caches() {
 	}
 	surface_chunks.clear();
 
-
 	for (const RTDeferredResourceFree &deferred : deferred_resource_frees) {
 		if (deferred.resource.is_valid()) {
 			rd->free_rid(deferred.resource);
 		}
 	}
 	deferred_resource_frees.clear();
-
 
 	// Free all cached deformed surface data.
 	{
@@ -641,6 +642,13 @@ RTMergedMMEntry *RenderRaytracing::_access_merged_mm_slot(RID &r_handle) {
 // ---------------------------------------------------------------------------
 
 void RenderRaytracing::prepare_frame() {
+	for (uint32_t index = 0; index < retired_tlas_memory.size();) {
+		if (retired_tlas_memory[index].submission <= RD::get_singleton()->get_completed_submission_serial()) {
+			retired_tlas_memory.remove_at(index);
+		} else {
+			index++;
+		}
+	}
 	geometry_buffer_dependencies.clear();
 	blass.clear();
 	blas_transforms.clear();
@@ -1111,7 +1119,7 @@ static void _fill_surface_geometry_data(
 	geom.uv_scale_packed = (uint32_t(Math::make_half_float(uv_scale.y)) << 16) | Math::make_half_float(uv_scale.x);
 	geom.uv2_scale_packed = (uint32_t(Math::make_half_float(uv_scale.w)) << 16) | Math::make_half_float(uv_scale.z);
 
-	// Index format (no device address — caller fills those in)
+	// Index format (no device address â€” caller fills those in)
 	if (index_buffer.is_valid() && index_count > 0) {
 		bool is_16bit = vertex_count <= 65536 && vertex_count > 0;
 		geom.index_format = is_16bit ? RT_INDEX_FORMAT_UINT16 : RT_INDEX_FORMAT_UINT32;
@@ -1751,10 +1759,26 @@ void RenderRaytracing::_micro_group_feedback(const Vector<uint8_t> &p_bytes, uin
 	memdelete(feedback);
 }
 
-void RenderRaytracing::_micro_cut_feedback(const Vector<uint8_t> &p_bytes, uint64_t p_build, uint64_t p_generation) {
+void RenderRaytracing::_micro_cut_feedback(const Vector<uint8_t> &p_bytes, uint64_t p_build, uint64_t p_generation, bool p_restore) {
 	auto *build = reinterpret_cast<RTMicroGeometryBuild *>(p_build);
-	if (build->candidate_pending && build->cut_generation == p_generation) {
-		build->candidate_changed = p_bytes.size() < 8 || decode_uint32(p_bytes.ptr() + 4) != 0;
+	if (p_restore) {
+		if (p_bytes.size() >= 4) {
+			build->completed_builds += decode_uint32(p_bytes.ptr());
+		}
+	} else if (build->cut_generation == p_generation) {
+		if (build->candidate_pending) {
+			build->candidate_changed = p_bytes.size() < 8 || decode_uint32(p_bytes.ptr() + 4) != 0;
+		}
+		if (p_bytes.size() >= 16) {
+			build->candidate_builds = decode_uint32(p_bytes.ptr());
+			build->candidate_clusters = decode_uint32(p_bytes.ptr() + 8);
+			build->candidate_triangles = decode_uint32(p_bytes.ptr() + 12);
+			if (!build->candidate_pending) {
+				build->selected_clusters = build->candidate_clusters;
+				build->selected_triangles = build->candidate_triangles;
+				build->completed_builds += build->candidate_builds;
+			}
+		}
 	}
 	build->pending_feedback--;
 }
@@ -1873,6 +1897,7 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 		RD::ClusterBuildSizes sizes;
 		rd->blas_get_cluster_build_sizes(build->input, sizes);
 		build->scratch = allocate(sizes.build_scratch_size);
+		build->as_memory_bytes += MAX(sizes.build_scratch_size, uint64_t(16));
 		bool complete = build->selection != nullptr && micro_rt_pipeline.is_valid() && sizes.build_scratch_size != 0;
 		for (RID resource : { build->tasks, build->blas_addresses, build->membership, build->cached_membership, build->references, build->dirty_infos, build->dirty_destinations, build->dirty_counts, build->tlas_instances, build->group_usage, build->scratch }) {
 			complete &= resource.is_valid();
@@ -1883,6 +1908,9 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 			if (previous && previous->signature == signature && previous->has_committed_cut) {
 				rd->buffer_copy(previous->cached_membership, build->cached_membership, 0, 0, cluster_work * 4);
 				build->restore_committed_cut = true;
+				build->selected_clusters = previous->selected_clusters;
+				build->selected_triangles = previous->selected_triangles;
+				build->completed_builds = previous->completed_builds;
 				for (RID asset : build->assets) {
 					const auto &metadata = storage->get_source(asset)->get_metadata();
 					for (uint32_t group = 0; group < uint32_t(metadata.groups.size()); group++) {
@@ -1898,13 +1926,9 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 				complete &= blas.is_valid();
 				build->blas.push_back(blas);
 				if (blas.is_valid()) {
-					RD::ClusterBottomLevelBuildInput allocation;
-					allocation.max_acceleration_structure_count = 1;
-					allocation.max_total_cluster_count = build->input.max_cluster_count_per_acceleration_structure;
-					allocation.max_cluster_count_per_acceleration_structure = build->input.max_cluster_count_per_acceleration_structure;
-					RD::ClusterBuildSizes allocation_sizes;
-					rd->blas_get_cluster_build_sizes(allocation, allocation_sizes);
-					build->memory_bytes += allocation_sizes.acceleration_structure_size;
+					const uint64_t bytes = rd->acceleration_structure_get_memory_usage(blas);
+					build->memory_bytes += bytes;
+					build->as_memory_bytes += bytes;
 				}
 			}
 		}
@@ -1916,6 +1940,7 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 		p_state->micro_geometry = build;
 	}
 	RTMicroGeometryBuild *build = p_state->micro_geometry;
+	build->frozen = p_render_data->render_buffers->is_micro_geometry_debug_freeze();
 	for (uint32_t index = 0; index < uint32_t(p_rt_tasks.size()); index++) {
 		build->task_data.write[index].motion_base = p_rt_tasks[index].motion_base;
 	}
@@ -1988,7 +2013,7 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 		mode = RTMicroGeometryBuild::RESTORE_CUT;
 	} else if (!build->has_committed_cut) {
 		mode = RTMicroGeometryBuild::INITIAL_CUT;
-	} else if (build->pending_feedback == 0) {
+	} else if (!build->frozen && build->pending_feedback == 0) {
 		mode = build->candidate_pending ? RTMicroGeometryBuild::PUBLISH_CUT : RTMicroGeometryBuild::PREPARE_CUT;
 	}
 	const bool select = mode == RTMicroGeometryBuild::PREPARE_CUT || mode == RTMicroGeometryBuild::INITIAL_CUT;
@@ -2101,18 +2126,26 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 				build->pins = build->candidate_pins;
 				build->candidate_pins.clear();
 				build->candidate_pending = false;
+				build->selected_clusters = build->candidate_clusters;
+				build->selected_triangles = build->candidate_triangles;
+				build->completed_builds += build->candidate_builds;
 			}
 		}
 	}
 	if (select) {
-		build->pending_feedback += mode == RTMicroGeometryBuild::PREPARE_CUT ? 2 : 1;
+		build->pending_feedback += 2;
 		build->candidate_pending = mode == RTMicroGeometryBuild::PREPARE_CUT;
 		build->candidate_changed = false;
 		if (rd->buffer_get_data_async(build->group_usage, callable_mp_static(&RenderRaytracing::_micro_group_feedback).bind(uint64_t(feedback))) != OK) {
 			_micro_group_feedback(Vector<uint8_t>(), uint64_t(feedback));
 		}
-		if (mode == RTMicroGeometryBuild::PREPARE_CUT && rd->buffer_get_data_async(build->dirty_counts, callable_mp_static(&RenderRaytracing::_micro_cut_feedback).bind(uint64_t(build), build->cut_generation)) != OK) {
-			_micro_cut_feedback(Vector<uint8_t>(), uint64_t(build), build->cut_generation);
+		if (rd->buffer_get_data_async(build->dirty_counts, callable_mp_static(&RenderRaytracing::_micro_cut_feedback).bind(uint64_t(build), build->cut_generation, false)) != OK) {
+			_micro_cut_feedback(Vector<uint8_t>(), uint64_t(build), build->cut_generation, false);
+		}
+	} else if (mode == RTMicroGeometryBuild::RESTORE_CUT && error == OK) {
+		build->pending_feedback++;
+		if (rd->buffer_get_data_async(build->dirty_counts, callable_mp_static(&RenderRaytracing::_micro_cut_feedback).bind(uint64_t(build), build->cut_generation, true)) != OK) {
+			_micro_cut_feedback(Vector<uint8_t>(), uint64_t(build), build->cut_generation, true);
 		}
 	}
 	ERR_FAIL_COND_V(error != OK, false);
@@ -2121,7 +2154,6 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 
 bool RenderRaytracing::build_acceleration_structures(RTViewportState *p_state, const LocalVector<RID> &p_dirty_blas_list, const LocalVector<RID> &p_dirty_blas_update_list) {
 	RENDER_TIMESTAMP("BLAS Build");
-
 
 	for (const RID &blas_rid : p_dirty_blas_list) {
 		if (blas_rid.is_valid()) {
@@ -2140,6 +2172,9 @@ bool RenderRaytracing::build_acceleration_structures(RTViewportState *p_state, c
 	uint32_t needed = MAX(blass.size(), (uint32_t)1);
 	if (!p_state->tlas.is_valid() || needed > p_state->tlas_max_instances) {
 		if (p_state->tlas.is_valid()) {
+			if (p_state->micro_geometry) {
+				retired_tlas_memory.push_back({ RD::get_singleton()->acceleration_structure_get_memory_usage(p_state->tlas), RD::get_singleton()->get_pending_submission_serial() });
+			}
 			RD::get_singleton()->free_rid(p_state->tlas);
 		}
 		p_state->tlas_max_instances = needed * 2;
@@ -2321,21 +2356,21 @@ bool RenderRaytracing::_build_merged_mm_blas(
 	bool has_tangent = surface_format & RSE::ARRAY_FORMAT_TANGENT;
 	bool has_tbn = has_normal;
 
-	// Layout of uncompressed vertex buffer: [float3 positions × V] + [packed TBN × V].
+	// Layout of uncompressed vertex buffer: [float3 positions Ã— V] + [packed TBN Ã— V].
 	// normal_stride = 8 when both normal+tangent present (two uint16x2 packed), 4 with normal only.
 	uint32_t tbn_stride = 0;
 	if (has_normal && has_tangent) {
-		tbn_stride = 8; // 2 × uint32 (normal oct, tangent oct+sign)
+		tbn_stride = 8; // 2 Ã— uint32 (normal oct, tangent oct+sign)
 	} else if (has_normal) {
-		tbn_stride = 4; // 1 × uint32 (normal oct only)
+		tbn_stride = 4; // 1 Ã— uint32 (normal oct only)
 	}
 	// Byte offset of the TBN block in the source vertex buffer.
 	uint32_t src_tbn_byte_offset = vertex_count * 12; // after all float3 positions
 
-	// Merged vertex buffer: [float3 pos × N*V] + [packed TBN × N*V] (if TBN present).
+	// Merged vertex buffer: [float3 pos Ã— N*V] + [packed TBN Ã— N*V] (if TBN present).
 	uint32_t merged_vtx_bytes = p_mm_count * vertex_count * 12 + (has_tbn ? p_mm_count * vertex_count * tbn_stride : 0);
 
-	// Attribute buffer: attribute_stride bytes × V, replicated N times.
+	// Attribute buffer: attribute_stride bytes Ã— V, replicated N times.
 	RTSurfaceData meta_sd;
 	_fill_surface_geometry_data(p_mesh_surface, false, &meta_sd);
 	uint32_t attrib_stride = meta_sd.geometry.attribute_stride;
@@ -2971,7 +3006,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			}
 
 			RID mm_gpu_buffer = mesh_storage->multimesh_get_gpu_buffer(mm_rid);
-			// Populate data cache now — first access triggers GPU readback, safe here.
+			// Populate data cache now â€” first access triggers GPU readback, safe here.
 			mesh_storage->multimesh_get_local_data_ptr(mm_rid);
 
 			bool transform_moved = (inst->transform_status ==
@@ -3223,7 +3258,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 	}
 
 	// -----------------------------------------------------------------------
-	// Phase 2: GPU compute — merged MultiMesh BLAS dispatches.
+	// Phase 2: GPU compute â€” merged MultiMesh BLAS dispatches.
 	// -----------------------------------------------------------------------
 	RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();
 
@@ -3273,7 +3308,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			}
 #endif
 		} else {
-			// Fallback: expanded TLAS — one entry per instance, shared BLAS.
+			// Fallback: expanded TLAS â€” one entry per instance, shared BLAS.
 			const float *mm_data = mesh_storage->multimesh_get_local_data_ptr(pending.mm_rid);
 			if (!mm_data) {
 				continue;
@@ -4248,10 +4283,39 @@ uint64_t RenderRaytracing::get_micro_geometry_memory_bytes() const {
 	for (const auto &entry : viewport_states) {
 		if (entry.value->micro_geometry) {
 			bytes += entry.value->micro_geometry->memory_bytes;
+			if (entry.value->tlas.is_valid()) {
+				bytes += RD::get_singleton()->acceleration_structure_get_memory_usage(entry.value->tlas);
+			}
 		}
 	}
 	for (const auto *build : retired_micro_geometry) {
 		bytes += build->memory_bytes;
+	}
+	for (const auto &retired : retired_tlas_memory) {
+		if (retired.submission > RD::get_singleton()->get_completed_submission_serial()) {
+			bytes += retired.bytes;
+		}
+	}
+	return bytes;
+}
+
+uint64_t RenderRaytracing::get_micro_geometry_as_memory_bytes() const {
+	uint64_t bytes = 0;
+	for (const auto &entry : viewport_states) {
+		if (entry.value->micro_geometry) {
+			bytes += entry.value->micro_geometry->as_memory_bytes;
+			if (entry.value->tlas.is_valid()) {
+				bytes += RD::get_singleton()->acceleration_structure_get_memory_usage(entry.value->tlas);
+			}
+		}
+	}
+	for (const auto *build : retired_micro_geometry) {
+		bytes += build->as_memory_bytes;
+	}
+	for (const auto &retired : retired_tlas_memory) {
+		if (retired.submission > RD::get_singleton()->get_completed_submission_serial()) {
+			bytes += retired.bytes;
+		}
 	}
 	return bytes;
 }

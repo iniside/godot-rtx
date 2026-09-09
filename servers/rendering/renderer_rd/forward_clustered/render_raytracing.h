@@ -30,10 +30,7 @@
 
 #pragma once
 
-#include "servers/rendering/renderer_rd/storage_rd/micro_geometry_storage.h"
 #include "micro_geometry_selection.h"
-#include "servers/rendering/renderer_rd/shaders/forward_clustered/micro_geometry_rt.slang.gen.h"
-#include "servers/rendering/renderer_rd/shaders/raytracing/geometry_positions.slang.gen.h"
 
 #include "core/math/projection.h"
 #include "core/math/transform_3d.h"
@@ -45,7 +42,10 @@
 #include "servers/rendering/renderer_rd/bindless_block.h"
 #include "servers/rendering/renderer_rd/effects/ddgi_effect.h"
 #include "servers/rendering/renderer_rd/forward_clustered/render_pathtracing.h"
+#include "servers/rendering/renderer_rd/shaders/forward_clustered/micro_geometry_rt.slang.gen.h"
+#include "servers/rendering/renderer_rd/shaders/raytracing/geometry_positions.slang.gen.h"
 #include "servers/rendering/renderer_rd/shaders/raytracing/multimesh_merge.glsl.gen.h"
+#include "servers/rendering/renderer_rd/storage_rd/micro_geometry_storage.h"
 #include "servers/rendering/rendering_device.h"
 #include "servers/rendering/storage/environment_storage.h"
 
@@ -281,7 +281,6 @@ struct RTSurfaceData {
 	RID position_parameters;
 	RT_GeometryData geometry = {};
 	uint64_t blas_size = 0;
-
 };
 
 struct RTDeferredResourceFree {
@@ -367,16 +366,16 @@ struct RTDeformedCacheEntry {
 
 /// Cache entry for a per-(MultiMesh, surface) merged BLAS.
 /// All vertex data (positions, normals, tangents, UVs, colors) is fully baked per-instance
-/// so the hit shader uses the standard code path — no special per-instance lookups.
+/// so the hit shader uses the standard code path â€” no special per-instance lookups.
 struct RTMergedMMEntry {
-	// Merged vertex buffer: [float3 pos × N*V] + [packed TBN × N*V] (if mesh has normals).
+	// Merged vertex buffer: [float3 pos Ã— N*V] + [packed TBN Ã— N*V] (if mesh has normals).
 	// The BLAS reads only the position section; the hit shader reads TBN via normal_byte_offset.
 	RID merged_vtx_buffer;
 	RID previous_position_buffer;
 	uint32_t previous_position_capacity_bytes = 0;
 	uint32_t vtx_capacity_bytes = 0;
 
-	// Merged attribute buffer: [UV + color × N*V] replicated per instance.
+	// Merged attribute buffer: [UV + color Ã— N*V] replicated per instance.
 	RID merged_attr_buffer;
 	uint32_t attr_capacity_bytes = 0;
 
@@ -516,6 +515,14 @@ struct RTMicroGeometryBuild {
 	bool restore_committed_cut = false;
 	bool candidate_pending = false;
 	bool candidate_changed = false;
+	bool frozen = false;
+	uint32_t selected_clusters = 0;
+	uint32_t selected_triangles = 0;
+	uint32_t candidate_clusters = 0;
+	uint32_t candidate_triangles = 0;
+	uint32_t candidate_builds = 0;
+	uint64_t completed_builds = 0;
+	uint64_t as_memory_bytes = 0;
 	MicroGeometrySelection::Pass *selection = nullptr;
 	Vector<MicroGeometrySelection::Task> selection_tasks;
 	Vector<RTMicroGeometryTask> task_data;
@@ -628,10 +635,15 @@ class RenderRaytracing {
 	RID geometry_positions_version;
 	RID geometry_positions_pipeline;
 	Vector<RTMicroGeometryBuild *> retired_micro_geometry;
+	struct RetiredTLASMemory {
+		uint64_t bytes = 0;
+		uint64_t submission = 0;
+	};
+	LocalVector<RetiredTLASMemory> retired_tlas_memory;
 	void _retire_micro_geometry(RTMicroGeometryBuild *p_build);
 	void _free_micro_geometry(RTMicroGeometryBuild *p_build);
 	static void _micro_group_feedback(const Vector<uint8_t> &p_bytes, uint64_t p_feedback);
-	static void _micro_cut_feedback(const Vector<uint8_t> &p_bytes, uint64_t p_build, uint64_t p_generation);
+	static void _micro_cut_feedback(const Vector<uint8_t> &p_bytes, uint64_t p_build, uint64_t p_generation, bool p_restore);
 	bool _prepare_micro_geometry(RTViewportState *p_state, const RenderDataRD *p_render_data, const Vector<MicroGeometrySelection::Task> &p_tasks, const Vector<RTMicroGeometryTask> &p_rt_tasks, uint32_t p_levels);
 	bool _build_micro_geometry(RTViewportState *p_state);
 	RendererRD::DDGIEffect *ddgi_effect = nullptr;
@@ -731,7 +743,6 @@ class RenderRaytracing {
 	void _update_persistent_material(RID p_material, RTMaterialData *p_data, uint64_t p_generation);
 	void _free_persistent_buffers();
 
-
 	RTViewportState *_get_or_create_viewport_state(const RenderDataRD *p_render_data);
 	RTViewportState *_get_viewport_state(const RenderDataRD *p_render_data) const;
 	void _free_viewport_state_internal(RTViewportState *p_state);
@@ -810,8 +821,8 @@ public:
 	uint64_t get_persistent_scene_generation() const { return persistent_scene_generation; }
 	uint64_t get_persistent_memory_bytes() const;
 	uint64_t get_micro_geometry_memory_bytes() const;
+	uint64_t get_micro_geometry_as_memory_bytes() const;
 	void get_persistent_buffer_dependencies(Vector<RID> &r_buffers) const;
-
 
 	void cleanup_caches();
 

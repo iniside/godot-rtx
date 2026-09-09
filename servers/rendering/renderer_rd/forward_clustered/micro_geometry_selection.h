@@ -1,10 +1,11 @@
 #pragma once
 
-#include "core/typedefs.h"
+#include "core/templates/hash_set.h"
 #include "core/templates/local_vector.h"
 #include "core/templates/vector.h"
-#include "servers/rendering/renderer_rd/shaders/forward_clustered/micro_geometry_select.slang.gen.h"
+#include "core/typedefs.h"
 #include "servers/rendering/renderer_rd/shaders/forward_clustered/micro_geometry_hzb.slang.gen.h"
+#include "servers/rendering/renderer_rd/shaders/forward_clustered/micro_geometry_select.slang.gen.h"
 #include "servers/rendering/renderer_rd/storage_rd/micro_geometry_storage.h"
 
 namespace RendererSceneRenderImplementation {
@@ -85,6 +86,17 @@ public:
 		uint32_t pad = 0;
 	};
 	struct Pass {
+		struct Pin {
+			RID asset;
+			uint32_t group = 0;
+		};
+		Vector<Pin> pins;
+		Vector<RID> assets;
+		Vector<uint64_t> snapshot_key;
+		bool frozen = false;
+		bool recovered = false;
+		bool raster_memory_accounted = false;
+		RID statistics;
 		LocalVector<RID> resources;
 		Vector<RID> dependencies;
 		RID tasks;
@@ -124,6 +136,8 @@ public:
 	Pass *create(const Vector<Task> &p_tasks, const Vector<Bin> &p_bins, const Parameters &p_parameters, uint32_t p_levels, uint32_t p_native_stride, RID p_instances, RID p_surfaces, const Vector<RID> &p_dependencies);
 	void select(Pass *p_pass, RID p_hzb);
 	void recover(Pass *p_pass, RID p_hzb);
+	void update_frozen(Pass *p_pass);
+	bool freeze(Pass *p_pass);
 	void build_depth_pyramid(DepthPyramid &r_pyramid, RID p_depth, const Size2i &p_size);
 	RID get_raster_uniform_set(Pass *p_pass, RID p_shader);
 	void add_draw_dependencies(Pass *p_pass, RD::DrawListID p_list);
@@ -145,4 +159,4 @@ private:
 static_assert(sizeof(MicroGeometrySelection::Task) == 72);
 static_assert(sizeof(MicroGeometrySelection::Parameters) == 432);
 
-}
+} //namespace RendererSceneRenderImplementation

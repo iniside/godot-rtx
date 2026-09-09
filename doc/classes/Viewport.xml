@@ -341,6 +341,9 @@
 		<member name="ddgi_debug_freeze_anchor" type="bool" setter="set_ddgi_debug_freeze_anchor" getter="is_ddgi_debug_freeze_anchor" default="false">
 			Freezes this viewport's camera-following DDGI anchor while camera motion and lighting updates continue. Recreated DDGI contexts latch the current camera position. Only supported with hybrid DDGI in Forward+.
 		</member>
+		<member name="micro_geometry_debug_freeze" type="bool" setter="set_micro_geometry_debug_freeze" getter="is_micro_geometry_debug_freeze" default="false">
+			Freezes the current microgeometry raster selection and committed ray tracing cut for inspection. Camera and rigid-object transforms remain live. Topology, material, and resource reload changes capture a new selection. Only supported in Forward+.
+		</member>
 		<member name="debug_draw" type="int" setter="set_debug_draw" getter="get_debug_draw" enum="Viewport.DebugDraw" default="0">
 			The overlay mode for test rendered geometry in debug purposes.
 		</member>
@@ -497,16 +500,16 @@
 			Texture to use when [member vrs_mode] is set to [constant Viewport.VRS_TEXTURE].
 			The texture [i]must[/i] use a lossless compression format so that colors can be matched precisely. The following VRS densities are mapped to various colors, with brighter colors representing a lower level of shading precision:
 			[codeblock lang=text]
-			- 1×1 = rgb(0, 0, 0)     - #000000
-			- 1×2 = rgb(0, 85, 0)    - #005500
-			- 2×1 = rgb(85, 0, 0)    - #550000
-			- 2×2 = rgb(85, 85, 0)   - #555500
-			- 2×4 = rgb(85, 170, 0)  - #55aa00
-			- 4×2 = rgb(170, 85, 0)  - #aa5500
-			- 4×4 = rgb(170, 170, 0) - #aaaa00
-			- 4×8 = rgb(170, 255, 0) - #aaff00 - Not supported on most hardware
-			- 8×4 = rgb(255, 170, 0) - #ffaa00 - Not supported on most hardware
-			- 8×8 = rgb(255, 255, 0) - #ffff00 - Not supported on most hardware
+			- 1Ã—1 = rgb(0, 0, 0)     - #000000
+			- 1Ã—2 = rgb(0, 85, 0)    - #005500
+			- 2Ã—1 = rgb(85, 0, 0)    - #550000
+			- 2Ã—2 = rgb(85, 85, 0)   - #555500
+			- 2Ã—4 = rgb(85, 170, 0)  - #55aa00
+			- 4Ã—2 = rgb(170, 85, 0)  - #aa5500
+			- 4Ã—4 = rgb(170, 170, 0) - #aaaa00
+			- 4Ã—8 = rgb(170, 255, 0) - #aaff00 - Not supported on most hardware
+			- 8Ã—4 = rgb(255, 170, 0) - #ffaa00 - Not supported on most hardware
+			- 8Ã—8 = rgb(255, 255, 0) - #ffff00 - Not supported on most hardware
 			[/codeblock]
 		</member>
 		<member name="vrs_update_mode" type="int" setter="set_vrs_update_mode" getter="get_vrs_update_mode" enum="Viewport.VRSUpdateMode" default="1">
@@ -595,13 +598,13 @@
 			Multisample antialiasing mode disabled. This is the default value, and is also the fastest setting.
 		</constant>
 		<constant name="MSAA_2X" value="1" enum="MSAA">
-			Use 2× Multisample Antialiasing. This has a moderate performance cost. It helps reduce aliasing noticeably, but 4× MSAA still looks substantially better.
+			Use 2Ã— Multisample Antialiasing. This has a moderate performance cost. It helps reduce aliasing noticeably, but 4Ã— MSAA still looks substantially better.
 		</constant>
 		<constant name="MSAA_4X" value="2" enum="MSAA">
-			Use 4× Multisample Antialiasing. This has a significant performance cost, and is generally a good compromise between performance and quality.
+			Use 4Ã— Multisample Antialiasing. This has a significant performance cost, and is generally a good compromise between performance and quality.
 		</constant>
 		<constant name="MSAA_8X" value="3" enum="MSAA">
-			Use 8× Multisample Antialiasing. This has a very high performance cost. The difference between 4× and 8× MSAA may not always be visible in real gameplay conditions. Likely unsupported on low-end and older hardware.
+			Use 8Ã— Multisample Antialiasing. This has a very high performance cost. The difference between 4Ã— and 8Ã— MSAA may not always be visible in real gameplay conditions. Likely unsupported on low-end and older hardware.
 		</constant>
 		<constant name="MSAA_MAX" value="4" enum="MSAA">
 			Represents the size of the [enum MSAA] enum.
@@ -610,16 +613,16 @@
 			Anisotropic filtering is disabled.
 		</constant>
 		<constant name="ANISOTROPY_2X" value="1" enum="AnisotropicFiltering">
-			Use 2× anisotropic filtering.
+			Use 2Ã— anisotropic filtering.
 		</constant>
 		<constant name="ANISOTROPY_4X" value="2" enum="AnisotropicFiltering">
-			Use 4× anisotropic filtering. This is the default value.
+			Use 4Ã— anisotropic filtering. This is the default value.
 		</constant>
 		<constant name="ANISOTROPY_8X" value="3" enum="AnisotropicFiltering">
-			Use 8× anisotropic filtering.
+			Use 8Ã— anisotropic filtering.
 		</constant>
 		<constant name="ANISOTROPY_16X" value="4" enum="AnisotropicFiltering">
-			Use 16× anisotropic filtering.
+			Use 16Ã— anisotropic filtering.
 		</constant>
 		<constant name="ANISOTROPY_MAX" value="5" enum="AnisotropicFiltering">
 			Represents the size of the [enum AnisotropicFiltering] enum.
@@ -660,7 +663,43 @@
 		<constant name="RENDER_INFO_RT_TRIANGLES_REFIT" value="7" enum="RenderInfo">
 			Total triangles processed by BLAS refits this frame (ray tracing only).
 		</constant>
-		<constant name="RENDER_INFO_MAX" value="8" enum="RenderInfo">
+		<constant name="RENDER_INFO_MICRO_GEOMETRY_RASTER_CLUSTERS" value="8" enum="RenderInfo">
+			Most recently available GPU-reported number of microgeometry clusters selected for rasterization. The value may be delayed by asynchronous GPU readback.
+		</constant>
+		<constant name="RENDER_INFO_MICRO_GEOMETRY_RASTER_TRIANGLES" value="9" enum="RenderInfo">
+			Most recently available GPU-reported number of triangles in the microgeometry raster selection. The value may be delayed by asynchronous GPU readback.
+		</constant>
+		<constant name="RENDER_INFO_MICRO_GEOMETRY_RT_CLUSTERS" value="10" enum="RenderInfo">
+			Most recently available GPU-reported number of microgeometry clusters in the committed ray tracing cut. The value may be delayed by asynchronous GPU readback.
+		</constant>
+		<constant name="RENDER_INFO_MICRO_GEOMETRY_RT_TRIANGLES" value="11" enum="RenderInfo">
+			Most recently available GPU-reported number of triangles in the committed microgeometry ray tracing cut. The value may be delayed by asynchronous GPU readback.
+		</constant>
+		<constant name="RENDER_INFO_MICRO_GEOMETRY_RESIDENT_PAGES" value="12" enum="RenderInfo">
+			Global number of resident pages in shared microgeometry storage.
+		</constant>
+		<constant name="RENDER_INFO_MICRO_GEOMETRY_PENDING_PAGES" value="13" enum="RenderInfo">
+			Global number of requested, reading, or uploading pages in shared microgeometry storage.
+		</constant>
+		<constant name="RENDER_INFO_MICRO_GEOMETRY_PAGE_POOL_KIB" value="14" enum="RenderInfo">
+			Global size in KiB of the shared microgeometry page pool.
+		</constant>
+		<constant name="RENDER_INFO_MICRO_GEOMETRY_GEOMETRY_MEMORY_KIB" value="15" enum="RenderInfo">
+			Global microgeometry memory in KiB, including the page pool, metadata, I/O, feedback, persistent records, raster selections, ray tracing cut caches, and retiring allocations. This includes acceleration structure allocations also reported by [constant RENDER_INFO_MICRO_GEOMETRY_AS_MEMORY_KIB], so the two values must not be added together.
+		</constant>
+		<constant name="RENDER_INFO_MICRO_GEOMETRY_AS_MEMORY_KIB" value="16" enum="RenderInfo">
+			Global microgeometry acceleration structure memory in KiB, including CLAS storage and build buffers, retiring allocations, and all viewport BLAS, TLAS, instance, and scratch buffers.
+		</constant>
+		<constant name="RENDER_INFO_MICRO_GEOMETRY_CLAS_BUILDS" value="17" enum="RenderInfo">
+			Cumulative global number of cluster acceleration structures submitted for building by shared microgeometry storage.
+		</constant>
+		<constant name="RENDER_INFO_MICRO_GEOMETRY_BLAS_BUILDS" value="18" enum="RenderInfo">
+			Cumulative number of GPU-selected dirty microgeometry BLAS builds for this viewport's current cut cache. The value resets when topology or material changes rebuild the cache.
+		</constant>
+		<constant name="RENDER_INFO_MICRO_GEOMETRY_RESIDENCY_PRESSURE" value="19" enum="RenderInfo">
+			Cumulative global count of microgeometry page-pool exhaustion and feedback overflow events.
+		</constant>
+		<constant name="RENDER_INFO_MAX" value="20" enum="RenderInfo">
 			Represents the size of the [enum RenderInfo] enum.
 		</constant>
 		<constant name="RENDER_INFO_TYPE_VISIBLE" value="0" enum="RenderInfoType">
@@ -802,6 +841,12 @@
 		</constant>
 		<constant name="DEBUG_DRAW_DDGI_INDIRECT" value="32" enum="DebugDraw">
 			Material-weighted DDGI camera radiance before composition and denoising. Fixed exposure 1, Reinhard encoding followed by sRGB. Only available with hybrid DDGI in Forward+.
+		</constant>
+		<constant name="DEBUG_DRAW_MICRO_GEOMETRY_RASTER" value="33" enum="DebugDraw">
+			Colors the microgeometry clusters actually selected for rasterization using stable cluster IDs. Only supported in Forward+.
+		</constant>
+		<constant name="DEBUG_DRAW_MICRO_GEOMETRY_RT" value="34" enum="DebugDraw">
+			Colors triangles in the committed microgeometry ray tracing cut using stable IDs. Debug rays inspect the same selected RT triangles. Only supported in Forward+.
 		</constant>
 		<constant name="DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST" value="0" enum="DefaultCanvasItemTextureFilter">
 			The texture filter reads from the nearest pixel only. This makes the texture look pixelated from up close, and grainy from a distance (due to mipmaps not being sampled).

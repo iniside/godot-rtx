@@ -2912,6 +2912,7 @@ void RenderingServer::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("viewport_get_render_info", "viewport", "type", "info"), &RenderingServer::viewport_get_render_info);
 	ClassDB::bind_method(D_METHOD("viewport_set_ddgi_debug_freeze_anchor", "viewport", "enabled"), &RenderingServer::viewport_set_ddgi_debug_freeze_anchor);
+	ClassDB::bind_method(D_METHOD("viewport_set_micro_geometry_debug_freeze", "viewport", "enabled"), &RenderingServer::viewport_set_micro_geometry_debug_freeze);
 	ClassDB::bind_method(D_METHOD("viewport_set_debug_draw", "viewport", "draw"), &RenderingServer::viewport_set_debug_draw);
 
 	ClassDB::bind_method(D_METHOD("viewport_set_measure_render_time", "viewport", "enable"), &RenderingServer::viewport_set_measure_render_time);
@@ -2988,6 +2989,18 @@ void RenderingServer::_bind_methods() {
 	BIND_ENUM_CONSTANT(RSE::VIEWPORT_RENDER_INFO_RT_BLAS_REFITS);
 	BIND_ENUM_CONSTANT(RSE::VIEWPORT_RENDER_INFO_RT_TRIANGLES_BUILT);
 	BIND_ENUM_CONSTANT(RSE::VIEWPORT_RENDER_INFO_RT_TRIANGLES_REFIT);
+	BIND_ENUM_CONSTANT(RSE::VIEWPORT_RENDER_INFO_MICRO_GEOMETRY_RASTER_CLUSTERS);
+	BIND_ENUM_CONSTANT(RSE::VIEWPORT_RENDER_INFO_MICRO_GEOMETRY_RASTER_TRIANGLES);
+	BIND_ENUM_CONSTANT(RSE::VIEWPORT_RENDER_INFO_MICRO_GEOMETRY_RT_CLUSTERS);
+	BIND_ENUM_CONSTANT(RSE::VIEWPORT_RENDER_INFO_MICRO_GEOMETRY_RT_TRIANGLES);
+	BIND_ENUM_CONSTANT(RSE::VIEWPORT_RENDER_INFO_MICRO_GEOMETRY_RESIDENT_PAGES);
+	BIND_ENUM_CONSTANT(RSE::VIEWPORT_RENDER_INFO_MICRO_GEOMETRY_PENDING_PAGES);
+	BIND_ENUM_CONSTANT(RSE::VIEWPORT_RENDER_INFO_MICRO_GEOMETRY_PAGE_POOL_KIB);
+	BIND_ENUM_CONSTANT(RSE::VIEWPORT_RENDER_INFO_MICRO_GEOMETRY_GEOMETRY_MEMORY_KIB);
+	BIND_ENUM_CONSTANT(RSE::VIEWPORT_RENDER_INFO_MICRO_GEOMETRY_AS_MEMORY_KIB);
+	BIND_ENUM_CONSTANT(RSE::VIEWPORT_RENDER_INFO_MICRO_GEOMETRY_CLAS_BUILDS);
+	BIND_ENUM_CONSTANT(RSE::VIEWPORT_RENDER_INFO_MICRO_GEOMETRY_BLAS_BUILDS);
+	BIND_ENUM_CONSTANT(RSE::VIEWPORT_RENDER_INFO_MICRO_GEOMETRY_RESIDENCY_PRESSURE);
 	BIND_ENUM_CONSTANT(RSE::VIEWPORT_RENDER_INFO_MAX);
 
 	BIND_ENUM_CONSTANT(RSE::VIEWPORT_RENDER_INFO_TYPE_VISIBLE);
@@ -3026,6 +3039,8 @@ void RenderingServer::_bind_methods() {
 	BIND_ENUM_CONSTANT(RSE::VIEWPORT_DEBUG_DRAW_DDGI_PROBE_STATE);
 	BIND_ENUM_CONSTANT(RSE::VIEWPORT_DEBUG_DRAW_DDGI_CASCADE_WEIGHTS);
 	BIND_ENUM_CONSTANT(RSE::VIEWPORT_DEBUG_DRAW_DDGI_INDIRECT);
+	BIND_ENUM_CONSTANT(RSE::VIEWPORT_DEBUG_DRAW_MICRO_GEOMETRY_RASTER);
+	BIND_ENUM_CONSTANT(RSE::VIEWPORT_DEBUG_DRAW_MICRO_GEOMETRY_RT);
 
 	BIND_ENUM_CONSTANT(RSE::VIEWPORT_VRS_DISABLED);
 	BIND_ENUM_CONSTANT(RSE::VIEWPORT_VRS_TEXTURE);
@@ -3757,7 +3772,7 @@ Error RenderingServer::init() {
 	GLOBAL_DEF_RST("rendering/driver/depth_prepass/disable_for_vendors", "PowerVR,Mali,Adreno,Apple");
 
 	GLOBAL_DEF_RST("rendering/textures/default_filters/use_nearest_mipmap_filter", false);
-	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/textures/default_filters/anisotropic_filtering_level", PROPERTY_HINT_ENUM, String::utf8("Disabled (Fastest),2× (Faster),4× (Fast),8× (Average),16× (Slow)")), 2);
+	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/textures/default_filters/anisotropic_filtering_level", PROPERTY_HINT_ENUM, String::utf8("Disabled (Fastest),2Ã— (Faster),4Ã— (Fast),8Ã— (Average),16Ã— (Slow)")), 2);
 
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/camera/depth_of_field/depth_of_field_bokeh_shape", PROPERTY_HINT_ENUM, "Box (Fast),Hexagon (Average),Circle (Slowest)"), 1);
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/camera/depth_of_field/depth_of_field_bokeh_quality", PROPERTY_HINT_ENUM, "Very Low (Fastest),Low (Fast),Medium (Average),High (Slow)"), 1);
@@ -3780,8 +3795,8 @@ Error RenderingServer::init() {
 	// Move the project setting definitions here so they are available when we init the rendering internals.
 	GLOBAL_DEF_BASIC("rendering/viewport/hdr_2d", false);
 
-	GLOBAL_DEF_BASIC(PropertyInfo(Variant::INT, "rendering/anti_aliasing/quality/msaa_2d", PROPERTY_HINT_ENUM, String::utf8("Disabled (Fastest),2× (Average),4× (Slow),8× (Slowest)")), 0);
-	GLOBAL_DEF_BASIC(PropertyInfo(Variant::INT, "rendering/anti_aliasing/quality/msaa_3d", PROPERTY_HINT_ENUM, String::utf8("Disabled (Fastest),2× (Average),4× (Slow),8× (Slowest)")), 0);
+	GLOBAL_DEF_BASIC(PropertyInfo(Variant::INT, "rendering/anti_aliasing/quality/msaa_2d", PROPERTY_HINT_ENUM, String::utf8("Disabled (Fastest),2Ã— (Average),4Ã— (Slow),8Ã— (Slowest)")), 0);
+	GLOBAL_DEF_BASIC(PropertyInfo(Variant::INT, "rendering/anti_aliasing/quality/msaa_3d", PROPERTY_HINT_ENUM, String::utf8("Disabled (Fastest),2Ã— (Average),4Ã— (Slow),8Ã— (Slowest)")), 0);
 
 	GLOBAL_DEF("rendering/anti_aliasing/screen_space_roughness_limiter/enabled", true);
 	GLOBAL_DEF(PropertyInfo(Variant::FLOAT, "rendering/anti_aliasing/screen_space_roughness_limiter/amount", PROPERTY_HINT_RANGE, "0.01,4.0,0.01"), 0.25);

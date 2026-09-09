@@ -1,0 +1,150 @@
+[gd_scene load_steps=14 format=3]
+
+[ext_resource type="Script" path="res://microgeometry/scene.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://microgeometry/xyzrgb_dragon.glb" id="2_dragon"]
+[ext_resource type="PackedScene" path="res://geometry_parts/deformer.tscn" id="3_deformer"]
+[ext_resource type="Texture2D" path="res://textures/masked_checker.svg" id="4_masked"]
+[ext_resource type="Mesh" path="res://microgeometry/seam_grid.obj" id="5_seam_grid"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_micro"]
+sky_top_color = Color(0.08, 0.12, 0.2, 1)
+sky_horizon_color = Color(0.42, 0.5, 0.62, 1)
+ground_bottom_color = Color(0.025, 0.03, 0.04, 1)
+ground_horizon_color = Color(0.32, 0.36, 0.42, 1)
+sun_angle_max = 20.0
+
+[sub_resource type="Sky" id="Sky_micro"]
+sky_material = SubResource("ProceduralSkyMaterial_micro")
+
+[sub_resource type="Environment" id="Environment_micro"]
+raytracing_geometry_error = 4.0
+raytracing_geometry_offscreen_multiplier = 2.0
+rtxdi_resolution = 2
+ddgi_resolution = 2
+ddgi_cascade_count = 4
+ddgi_updates_per_frame = 2
+background_mode = 2
+sky = SubResource("Sky_micro")
+tonemap_mode = 4
+
+[sub_resource type="StandardMaterial3D" id="Material_floor"]
+albedo_color = Color(0.24, 0.27, 0.31, 1)
+roughness = 0.78
+
+[sub_resource type="BoxMesh" id="Mesh_floor"]
+material = SubResource("Material_floor")
+size = Vector3(32, 0.2, 32)
+
+[sub_resource type="StandardMaterial3D" id="Material_masked"]
+transparency = 2
+alpha_scissor_threshold = 0.5
+alpha_antialiasing_mode = 0
+cull_mode = 2
+albedo_texture = ExtResource("4_masked")
+roughness = 0.65
+
+[sub_resource type="QuadMesh" id="Mesh_masked"]
+material = SubResource("Material_masked")
+size = Vector2(3, 3)
+
+[sub_resource type="StandardMaterial3D" id="Material_dragon_emissive"]
+albedo_color = Color(0.02, 0.02, 0.02, 1)
+roughness = 0.4
+emission_enabled = true
+emission = Color(0.1, 0.45, 1, 1)
+emission_energy_multiplier = 4.0
+
+[node name="MicrogeometryManual" type="Node3D"]
+script = ExtResource("1_script")
+dragon_emissive_material = SubResource("Material_dragon_emissive")
+dragon_masked_material = SubResource("Material_masked")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_micro")
+
+[node name="Geometry" type="Node3D" parent="."]
+
+[node name="Floor" type="MeshInstance3D" parent="Geometry"]
+position = Vector3(0, -0.1, 0)
+mesh = SubResource("Mesh_floor")
+
+[node name="Dragon" parent="Geometry" instance=ExtResource("2_dragon")]
+transform = Transform3D(0.025, 0, 0, 0, 0.025, 0, 0, 0, 0.025, 0, 1.40033, 0)
+
+[node name="MovingDragon" parent="Geometry" instance=ExtResource("2_dragon")]
+transform = Transform3D(0.012, 0, 0, 0, 0.012, 0, 0, 0, 0.012, -4.5, 0.67216, 2)
+
+[node name="OffscreenDragon" parent="Geometry" instance=ExtResource("2_dragon")]
+transform = Transform3D(0.0170502, 0, 0.0104537, 0, 0.02, 0, -0.0104537, 0, 0.0170502, 10, 1.12027, -1)
+
+[node name="DragonMultiMesh" type="MultiMeshInstance3D" parent="Geometry"]
+
+[node name="ImportedMaterialSeam" type="MeshInstance3D" parent="Geometry"]
+position = Vector3(0, 0.05, -5.5)
+mesh = ExtResource("5_seam_grid")
+
+[node name="MaskedPanel" type="MeshInstance3D" parent="Geometry"]
+position = Vector3(-4, 2, -1.5)
+mesh = SubResource("Mesh_masked")
+
+[node name="DeformingCaster" parent="Geometry" instance=ExtResource("3_deformer")]
+position = Vector3(6, 0.8, -1.5)
+scale = Vector3(0.75, 0.75, 0.75)
+
+[node name="Lights" type="Node3D" parent="."]
+
+[node name="Sun" type="DirectionalLight3D" parent="Lights"]
+rotation_degrees = Vector3(-55, -35, 0)
+light_energy = 1.2
+shadow_enabled = true
+directional_shadow_max_distance = 80.0
+
+[node name="Fill" type="OmniLight3D" parent="Lights"]
+position = Vector3(-4, 5, 5)
+light_color = Color(0.45, 0.65, 1, 1)
+light_energy = 6.0
+shadow_enabled = true
+omni_range = 14.0
+
+[node name="Cameras" type="Node3D" parent="."]
+
+[node name="Camera" type="Camera3D" parent="Cameras"]
+position = Vector3(0, 2.8, 8)
+current = true
+fov = 55.0
+far = 200.0
+
+[node name="SecondaryView" type="SubViewportContainer" parent="."]
+visible = false
+offset_left = 880.0
+offset_top = 484.0
+offset_right = 1264.0
+offset_bottom = 700.0
+
+[node name="SubViewport" type="SubViewport" parent="SecondaryView"]
+handle_input_locally = false
+size = Vector2i(384, 216)
+render_target_update_mode = 0
+
+[node name="Camera" type="Camera3D" parent="SecondaryView/SubViewport"]
+position = Vector3(-8, 4.5, 7)
+current = true
+fov = 60.0
+far = 200.0
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="State" type="Label" parent="HUD"]
+offset_left = 16.0
+offset_top = 14.0
+offset_right = 900.0
+offset_bottom = 230.0
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 16
+text = "Microgeometry manual fixture loading..."
+
+[editable path="Geometry/Dragon"]
+[editable path="Geometry/MovingDragon"]
+[editable path="Geometry/OffscreenDragon"]
+[editable path="Geometry/DeformingCaster"]

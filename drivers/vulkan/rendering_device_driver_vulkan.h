@@ -738,7 +738,6 @@ public:
 
 		// Cluster bottom level only.
 		bool cluster_bottom_level = false;
-
 	};
 
 	virtual AccelerationStructureID blas_create(VectorView<AccelerationStructureGeometry> p_geometries, BitField<AccelerationStructureFlagBits> p_flags) override final;
@@ -747,6 +746,7 @@ public:
 	virtual void acceleration_structure_free(AccelerationStructureID p_acceleration_structure) override final;
 	virtual uint32_t acceleration_structure_get_scratch_size_bytes(AccelerationStructureID p_acceleration_structure) override final;
 	virtual uint64_t acceleration_structure_get_device_address(AccelerationStructureID p_acceleration_structure) override final;
+	virtual uint64_t acceleration_structure_get_memory_usage(AccelerationStructureID p_acceleration_structure) override final;
 
 	virtual bool clas_is_supported() override final;
 	virtual ClusterAccelerationStructureLimits clas_get_limits() override final;

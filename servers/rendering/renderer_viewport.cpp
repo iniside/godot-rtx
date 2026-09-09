@@ -305,6 +305,7 @@ void RendererViewport::_configure_3d_render_buffers(Viewport *p_viewport) {
 			rb_config.set_use_debanding(p_viewport->use_debanding);
 
 			p_viewport->render_buffers->set_ddgi_debug_freeze_anchor(p_viewport->ddgi_debug_freeze_anchor);
+			p_viewport->render_buffers->set_micro_geometry_debug_freeze(p_viewport->micro_geometry_debug_freeze);
 			p_viewport->render_buffers->configure(&rb_config);
 		}
 	}
@@ -1602,6 +1603,15 @@ void RendererViewport::viewport_set_ddgi_debug_freeze_anchor(RID p_viewport, boo
 	viewport->ddgi_debug_freeze_anchor = p_enabled;
 	if (viewport->render_buffers.is_valid()) {
 		viewport->render_buffers->set_ddgi_debug_freeze_anchor(p_enabled);
+	}
+}
+
+void RendererViewport::viewport_set_micro_geometry_debug_freeze(RID p_viewport, bool p_enabled) {
+	Viewport *viewport = viewport_owner.get_or_null(p_viewport);
+	ERR_FAIL_NULL(viewport);
+	viewport->micro_geometry_debug_freeze = p_enabled;
+	if (viewport->render_buffers.is_valid()) {
+		viewport->render_buffers->set_micro_geometry_debug_freeze(p_enabled);
 	}
 }
 

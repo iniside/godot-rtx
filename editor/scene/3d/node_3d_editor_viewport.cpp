@@ -3694,7 +3694,7 @@ void Node3DEditorViewport::_notification(int p_what) {
 			}
 
 			if (show_info) {
-				const String viewport_size = vformat(U"%d × %d", viewport->get_size().x * viewport->get_scaling_3d_scale(), viewport->get_size().y * viewport->get_scaling_3d_scale());
+				const String viewport_size = vformat(U"%d Ã— %d", viewport->get_size().x * viewport->get_scaling_3d_scale(), viewport->get_size().y * viewport->get_scaling_3d_scale());
 				String text;
 				text += vformat(TTR("X: %s"), rtos(current_camera->get_position().x).pad_decimals(1)) + "\n";
 				text += vformat(TTR("Y: %s"), rtos(current_camera->get_position().y).pad_decimals(1)) + "\n";
@@ -3720,6 +3720,27 @@ void Node3DEditorViewport::_notification(int p_what) {
 					text += "\n" + vformat(TTR("RT TLAS Instances: %d"), rt_tlas) + "\n";
 					text += vformat(TTR("RT BLAS Builds: %d (%d tris)"), rt_blas_builds, rt_tris_built) + "\n";
 					text += vformat(TTR("RT BLAS Refits: %d (%d tris)"), rt_blas_refits, rt_tris_refit);
+				}
+
+				int micro_raster_clusters = viewport->get_render_info(Viewport::RENDER_INFO_TYPE_VISIBLE, Viewport::RENDER_INFO_MICRO_GEOMETRY_RASTER_CLUSTERS);
+				int micro_raster_triangles = viewport->get_render_info(Viewport::RENDER_INFO_TYPE_VISIBLE, Viewport::RENDER_INFO_MICRO_GEOMETRY_RASTER_TRIANGLES);
+				int micro_rt_clusters = viewport->get_render_info(Viewport::RENDER_INFO_TYPE_VISIBLE, Viewport::RENDER_INFO_MICRO_GEOMETRY_RT_CLUSTERS);
+				int micro_rt_triangles = viewport->get_render_info(Viewport::RENDER_INFO_TYPE_VISIBLE, Viewport::RENDER_INFO_MICRO_GEOMETRY_RT_TRIANGLES);
+				int micro_resident_pages = viewport->get_render_info(Viewport::RENDER_INFO_TYPE_VISIBLE, Viewport::RENDER_INFO_MICRO_GEOMETRY_RESIDENT_PAGES);
+				int micro_pending_pages = viewport->get_render_info(Viewport::RENDER_INFO_TYPE_VISIBLE, Viewport::RENDER_INFO_MICRO_GEOMETRY_PENDING_PAGES);
+				int micro_page_pool_kib = viewport->get_render_info(Viewport::RENDER_INFO_TYPE_VISIBLE, Viewport::RENDER_INFO_MICRO_GEOMETRY_PAGE_POOL_KIB);
+				int micro_geometry_memory_kib = viewport->get_render_info(Viewport::RENDER_INFO_TYPE_VISIBLE, Viewport::RENDER_INFO_MICRO_GEOMETRY_GEOMETRY_MEMORY_KIB);
+				int micro_as_memory_kib = viewport->get_render_info(Viewport::RENDER_INFO_TYPE_VISIBLE, Viewport::RENDER_INFO_MICRO_GEOMETRY_AS_MEMORY_KIB);
+				int micro_clas_builds = viewport->get_render_info(Viewport::RENDER_INFO_TYPE_VISIBLE, Viewport::RENDER_INFO_MICRO_GEOMETRY_CLAS_BUILDS);
+				int micro_blas_builds = viewport->get_render_info(Viewport::RENDER_INFO_TYPE_VISIBLE, Viewport::RENDER_INFO_MICRO_GEOMETRY_BLAS_BUILDS);
+				int micro_residency_pressure = viewport->get_render_info(Viewport::RENDER_INFO_TYPE_VISIBLE, Viewport::RENDER_INFO_MICRO_GEOMETRY_RESIDENCY_PRESSURE);
+				if (micro_raster_clusters > 0 || micro_rt_clusters > 0 || micro_resident_pages > 0 || micro_pending_pages > 0 || micro_geometry_memory_kib > 0 || micro_as_memory_kib > 0 || micro_clas_builds > 0 || micro_blas_builds > 0 || micro_residency_pressure > 0) {
+					text += "\n\n" + vformat(TTR("Microgeometry Raster: %d clusters, %d triangles"), micro_raster_clusters, micro_raster_triangles) + "\n";
+					text += vformat(TTR("Microgeometry RT: %d clusters, %d triangles"), micro_rt_clusters, micro_rt_triangles) + "\n";
+					text += vformat(TTR("Microgeometry Pages: %d resident, %d pending"), micro_resident_pages, micro_pending_pages) + "\n";
+					text += vformat(TTR("Microgeometry Memory: %d KiB geometry, %d KiB AS, %d KiB pool"), micro_geometry_memory_kib, micro_as_memory_kib, micro_page_pool_kib) + "\n";
+					text += vformat(TTR("Microgeometry Builds: %d CLAS, %d BLAS"), micro_clas_builds, micro_blas_builds) + "\n";
+					text += vformat(TTR("Microgeometry Residency Pressure: %d"), micro_residency_pressure);
 				}
 
 				info_label->set_text(text);
@@ -4633,6 +4654,11 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 			viewport->set_ddgi_debug_freeze_anchor(enabled);
 			view_display_menu->get_popup()->set_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_DDGI_FREEZE_ANCHOR), enabled);
 		} break;
+		case VIEW_MICRO_GEOMETRY_DEBUG_FREEZE: {
+			bool enabled = !viewport->is_micro_geometry_debug_freeze();
+			viewport->set_micro_geometry_debug_freeze(enabled);
+			view_display_menu->get_popup()->set_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_MICRO_GEOMETRY_DEBUG_FREEZE), enabled);
+		} break;
 		case VIEW_DISPLAY_NORMAL:
 		case VIEW_DISPLAY_WIREFRAME:
 		case VIEW_DISPLAY_OVERDRAW:
@@ -4665,6 +4691,8 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 		case VIEW_DISPLAY_DEBUG_DDGI_PROBE_STATE:
 		case VIEW_DISPLAY_DEBUG_DDGI_CASCADE_WEIGHTS:
 		case VIEW_DISPLAY_DEBUG_DDGI_INDIRECT:
+		case VIEW_DISPLAY_DEBUG_MICRO_GEOMETRY_RASTER:
+		case VIEW_DISPLAY_DEBUG_MICRO_GEOMETRY_RT:
 		case VIEW_DISPLAY_INTERNAL_BUFFER: {
 			static const int display_options[] = {
 				VIEW_DISPLAY_NORMAL,
@@ -4700,6 +4728,8 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 				VIEW_DISPLAY_DEBUG_DDGI_PROBE_STATE,
 				VIEW_DISPLAY_DEBUG_DDGI_CASCADE_WEIGHTS,
 				VIEW_DISPLAY_DEBUG_DDGI_INDIRECT,
+				VIEW_DISPLAY_DEBUG_MICRO_GEOMETRY_RASTER,
+				VIEW_DISPLAY_DEBUG_MICRO_GEOMETRY_RT,
 				VIEW_MAX
 			};
 			static const Viewport::DebugDraw debug_draw_modes[] = {
@@ -4736,6 +4766,8 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 				Viewport::DEBUG_DRAW_DDGI_PROBE_STATE,
 				Viewport::DEBUG_DRAW_DDGI_CASCADE_WEIGHTS,
 				Viewport::DEBUG_DRAW_DDGI_INDIRECT,
+				Viewport::DEBUG_DRAW_MICRO_GEOMETRY_RASTER,
+				Viewport::DEBUG_DRAW_MICRO_GEOMETRY_RT,
 			};
 
 			for (int idx = 0; display_options[idx] != VIEW_MAX; idx++) {
@@ -6892,7 +6924,13 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 			TTRC("Actual cascade contributions: red, green, blue, yellow, cyan, orange. Magenta is uncovered weight. The seven bars at the bottom sample the center: contributions above, confidence below, with uncovered weight last."));
 	_add_advanced_debug_draw_mode_item(display_submenu, TTRC("DDGI Indirect"), VIEW_DISPLAY_DEBUG_DDGI_INDIRECT, SupportedRenderingMethods::FORWARD_PLUS,
 			TTRC("Material-weighted DDGI camera radiance before composition and denoising. Fixed exposure 1, Reinhard encoding followed by sRGB."));
+	display_submenu->add_separator();
+	_add_advanced_debug_draw_mode_item(display_submenu, TTRC("Microgeometry Raster"), VIEW_DISPLAY_DEBUG_MICRO_GEOMETRY_RASTER, SupportedRenderingMethods::FORWARD_PLUS,
+			TTRC("Colors the microgeometry clusters actually selected for rasterization."));
+	_add_advanced_debug_draw_mode_item(display_submenu, TTRC("Microgeometry RT"), VIEW_DISPLAY_DEBUG_MICRO_GEOMETRY_RT, SupportedRenderingMethods::FORWARD_PLUS,
+			TTRC("Colors the selected ray tracing microgeometry triangles."));
 	view_display_menu->get_popup()->add_check_item(TTRC("Freeze DDGI Anchor"), VIEW_DDGI_FREEZE_ANCHOR);
+	view_display_menu->get_popup()->add_check_item(TTRC("Freeze Microgeometry Selection"), VIEW_MICRO_GEOMETRY_DEBUG_FREEZE);
 	view_display_menu->get_popup()->add_submenu_node_item(TTRC("Display Advanced..."), display_submenu, VIEW_DISPLAY_ADVANCED);
 
 	view_display_menu->get_popup()->add_separator();
@@ -7019,7 +7057,7 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	locked_label->hide();
 
 	zoom_limit_label = memnew(Label);
-	zoom_limit_label->set_text(TTRC(U"To zoom further, change the camera's clipping planes (View → Settings...)"));
+	zoom_limit_label->set_text(TTRC(U"To zoom further, change the camera's clipping planes (View â†’ Settings...)"));
 	zoom_limit_label->set_name("ZoomLimitMessageLabel");
 	zoom_limit_label->add_theme_color_override(SceneStringName(font_color), Color(1, 1, 1, 1));
 	zoom_limit_label->hide();

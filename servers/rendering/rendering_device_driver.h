@@ -807,6 +807,7 @@ public:
 	virtual void acceleration_structure_free(AccelerationStructureID p_acceleration_structure) = 0;
 	virtual uint32_t acceleration_structure_get_scratch_size_bytes(AccelerationStructureID p_acceleration_structure) = 0;
 	virtual uint64_t acceleration_structure_get_device_address(AccelerationStructureID p_acceleration_structure) { return 0; }
+	virtual uint64_t acceleration_structure_get_memory_usage(AccelerationStructureID p_acceleration_structure) { return 0; }
 
 	// ----- CLUSTER ACCELERATION STRUCTURE -----
 

@@ -1,5 +1,6 @@
 #include "micro_geometry_selection.h"
 
+#include "core/io/marshalls.h"
 #include "servers/rendering/renderer_rd/storage_rd/mesh_storage.h"
 #include "servers/rendering/renderer_rd/storage_rd/texture_storage.h"
 #include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
@@ -7,6 +8,16 @@
 using namespace RendererSceneRenderImplementation;
 
 MicroGeometrySelection::Pass::~Pass() {
+	auto *storage = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage();
+	if (raster_memory_accounted) {
+		storage->remove_raster_selection_memory(memory_bytes);
+	}
+	for (const Pin &pin : pins) {
+		storage->unpin_group(pin.asset, pin.group);
+	}
+	for (RID asset : assets) {
+		storage->release(asset);
+	}
 	if (feedback.is_valid()) {
 		RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage()->feedback_free(feedback);
 	}
@@ -81,6 +92,7 @@ MicroGeometrySelection::Pass *MicroGeometrySelection::create(const Vector<Task> 
 	pass->counts = _buffer(*pass, uint64_t(p_bins.size()) * 4, nullptr, RD::STORAGE_BUFFER_USAGE_DISPATCH_INDIRECT);
 	pass->initial_counts = _buffer(*pass, uint64_t(p_bins.size()) * 4);
 	pass->capacity_state = _buffer(*pass, 16);
+	pass->statistics = _buffer(*pass, 16);
 	pass->commands = _buffer(*pass, uint64_t(pass->selected_capacity) * 20, nullptr, RD::STORAGE_BUFFER_USAGE_DISPATCH_INDIRECT);
 	pass->selected = _buffer(*pass, uint64_t(pass->selected_capacity) * sizeof(MicroGeometrySelectedCluster));
 	pass->native_instances = _buffer(*pass, uint64_t(p_tasks.size()) * p_native_stride);
@@ -91,7 +103,7 @@ MicroGeometrySelection::Pass *MicroGeometrySelection::create(const Vector<Task> 
 			pass->resources.push_back(uniform);
 		}
 	}
-	for (RID required : { pass->tasks, pass->bins, pass->group_states, pass->rejected, pass->validity, pass->counts, pass->initial_counts, pass->capacity_state, pass->commands, pass->selected, pass->native_instances, pass->parameters, pass->raster_parameters }) {
+	for (RID required : { pass->tasks, pass->bins, pass->group_states, pass->rejected, pass->validity, pass->counts, pass->initial_counts, pass->capacity_state, pass->commands, pass->selected, pass->native_instances, pass->parameters, pass->raster_parameters, pass->statistics }) {
 		if (required.is_null()) {
 			memdelete(pass);
 			return nullptr;
@@ -109,6 +121,10 @@ MicroGeometrySelection::Pass *MicroGeometrySelection::create(const Vector<Task> 
 	MicroGeometryRasterParameters raster;
 	raster.page_pool = RD::get_singleton()->buffer_get_device_address(storage->get_pool());
 	RD::get_singleton()->buffer_update(pass->raster_parameters, 0, sizeof(raster), &raster);
+	if ((pass->data.flags & 32) == 0) {
+		storage->add_raster_selection_memory(pass->memory_bytes);
+		pass->raster_memory_accounted = true;
+	}
 	return pass;
 }
 
@@ -128,6 +144,7 @@ void MicroGeometrySelection::_dispatch(Pass *p_pass, uint32_t p_mode, uint32_t p
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, binding++, buffer));
 	}
 	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 15, p_hzb));
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 16, p_pass->statistics));
 	RID uniform_set = UniformSetCacheRD::get_singleton()->get_cache_vec(shader.version_get_shader(version, 0), 0, uniforms);
 	RD::ComputeListID list = RD::get_singleton()->compute_list_begin();
 	RD::get_singleton()->compute_list_bind_compute_pipeline(list, pipeline);
@@ -148,6 +165,8 @@ void MicroGeometrySelection::select(Pass *p_pass, RID p_hzb) {
 		p_pass->requests = p_pass->requests_fallback;
 		RD::get_singleton()->buffer_clear(p_pass->requests, 0, sizeof(RendererRD::MicroGeometryStorage::FeedbackHeader));
 	}
+	p_pass->recovered = false;
+	RD::get_singleton()->buffer_clear(p_pass->statistics, 0, 16);
 	RD::get_singleton()->draw_command_begin_label("Microgeometry Selection");
 	RD::get_singleton()->buffer_clear(p_pass->counts, 0, MAX(16u, p_pass->data.bin_count * 4));
 	RD::get_singleton()->buffer_clear(p_pass->initial_counts, 0, MAX(16u, p_pass->data.bin_count * 4));
@@ -169,8 +188,51 @@ void MicroGeometrySelection::select(Pass *p_pass, RID p_hzb) {
 
 void MicroGeometrySelection::recover(Pass *p_pass, RID p_hzb) {
 	ERR_FAIL_NULL(p_pass);
+	p_pass->recovered = true;
 	RD::get_singleton()->buffer_clear(p_pass->counts, 0, MAX(16u, p_pass->data.bin_count * 4));
 	_dispatch(p_pass, 6, p_pass->data.flags & 8 ? p_pass->data.coarse_work : p_pass->data.cluster_work, p_hzb);
+}
+
+void MicroGeometrySelection::update_frozen(Pass *p_pass) {
+	ERR_FAIL_NULL(p_pass);
+	p_pass->requests = p_pass->requests_fallback;
+	_dispatch(p_pass, 0, p_pass->data.task_count, RID());
+}
+
+bool MicroGeometrySelection::freeze(Pass *p_pass) {
+	ERR_FAIL_NULL_V(p_pass, false);
+	if (p_pass->recovered) {
+		_dispatch(p_pass, 7, p_pass->data.bin_count, RID());
+	}
+	_dispatch(p_pass, 8, p_pass->selected_capacity, RID());
+	Vector<uint8_t> counts = RD::get_singleton()->buffer_get_data(p_pass->counts);
+	Vector<uint8_t> selected = RD::get_singleton()->buffer_get_data(p_pass->selected);
+	ERR_FAIL_COND_V(counts.size() < int64_t(p_pass->data.bin_count) * 4 || selected.size() < int64_t(p_pass->selected_capacity) * int64_t(sizeof(MicroGeometrySelectedCluster)), false);
+	auto *storage = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage();
+	HashMap<RID, HashSet<uint32_t>> used;
+	for (uint32_t bin = 0; bin < p_pass->bin_data.size(); bin++) {
+		uint32_t count = decode_uint32(counts.ptr() + bin * 4);
+		ERR_FAIL_COND_V(count > p_pass->bin_data[bin].capacity, false);
+		for (uint32_t index = 0; index < count; index++) {
+			MicroGeometrySelectedCluster record;
+			memcpy(&record, selected.ptr() + uint64_t(p_pass->bin_data[bin].offset + index) * sizeof(record), sizeof(record));
+			RID asset = RID::from_uint64(record.asset);
+			Ref<MicroGeometryData> source = storage->get_source(asset);
+			ERR_FAIL_COND_V(source.is_null() || record.cluster >= uint32_t(source->get_metadata().clusters.size()), false);
+			used[asset].insert(source->get_metadata().clusters[record.cluster].group);
+		}
+	}
+	for (uint32_t index = 0; index < p_pass->pins.size();) {
+		const Pass::Pin &pin = p_pass->pins[index];
+		if (!used.has(pin.asset) || !used[pin.asset].has(pin.group)) {
+			storage->unpin_group(pin.asset, pin.group);
+			p_pass->pins.remove_at(index);
+		} else {
+			index++;
+		}
+	}
+	p_pass->frozen = true;
+	return true;
 }
 
 void MicroGeometrySelection::build_depth_pyramid(DepthPyramid &r_pyramid, RID p_depth, const Size2i &p_size) {

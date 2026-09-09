@@ -106,7 +106,7 @@ RenderPathtracing::Context *RenderPathtracing::_create_context(const Size2i &p_s
 	return context;
 }
 
-bool RenderPathtracing::render(RenderRaytracing &p_raytracing, RTViewportState &p_state, RID p_scene_data, RID p_sky, const Size2i &p_size, bool p_sky_array, bool p_draw_sky, const Color &p_background) {
+bool RenderPathtracing::render(RenderRaytracing &p_raytracing, RTViewportState &p_state, RID p_scene_data, RID p_sky, const Size2i &p_size, bool p_sky_array, bool p_draw_sky, const Color &p_background, bool p_micro_geometry_debug) {
 	RD *rd = RD::get_singleton();
 	if (p_state.pathtracing && p_state.pathtracing->size != p_size) {
 		memdelete(p_state.pathtracing);
@@ -133,11 +133,12 @@ bool RenderPathtracing::render(RenderRaytracing &p_raytracing, RTViewportState &
 		context.history_epoch = UINT64_MAX;
 		context.accumulated_samples = 0;
 	}
-	const bool raw = p_state.settings.raytracing_denoiser == RSE::RAYTRACING_DENOISER_NONE;
+	const bool raw = !p_micro_geometry_debug && p_state.settings.raytracing_denoiser == RSE::RAYTRACING_DENOISER_NONE;
 	const bool accumulate = raw && p_state.settings.pathtracing_accumulate;
 	uint32_t samples = raw ? uint32_t(p_state.settings.pathtracing_samples_per_pixel) : 1;
 	const uint64_t history_epoch = raw ? p_state.pathtracing_history_epoch : p_state.camera_history_epoch;
-	context.history_valid = context.history_epoch == history_epoch;
+	context.history_valid = context.history_epoch == history_epoch && context.micro_geometry_debug == p_micro_geometry_debug;
+	context.micro_geometry_debug = p_micro_geometry_debug;
 	if (!accumulate || !context.history_valid || context.accumulated_samples > UINT32_MAX - samples) {
 		context.accumulated_samples = 0;
 	}
@@ -148,7 +149,7 @@ bool RenderPathtracing::render(RenderRaytracing &p_raytracing, RTViewportState &
 		float background[4];
 	} frame = {
 		{ uint32_t(p_size.x), uint32_t(p_size.y), context.frame, context.accumulated_samples },
-		{ samples, uint32_t(p_state.settings.pathtracing_max_bounces), uint32_t(accumulate), p_state.settings_visible_layers },
+		{ samples, p_micro_geometry_debug ? 0u : uint32_t(p_state.settings.pathtracing_max_bounces), uint32_t(accumulate), p_state.settings_visible_layers },
 		{ float(raw), 3.402823466e+38f, float(p_state.camera_orthogonal), float(p_draw_sky) },
 		{ p_background.r, p_background.g, p_background.b, p_background.a },
 	};

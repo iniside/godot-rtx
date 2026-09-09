@@ -105,6 +105,7 @@ class RenderSceneBuffers : public RefCounted {
 	GDCLASS(RenderSceneBuffers, RefCounted);
 
 	bool ddgi_debug_freeze_anchor = false;
+	bool micro_geometry_debug_freeze = false;
 
 protected:
 	static void _bind_methods();
@@ -112,6 +113,8 @@ protected:
 public:
 	void set_ddgi_debug_freeze_anchor(bool p_enabled) { ddgi_debug_freeze_anchor = p_enabled; }
 	bool is_ddgi_debug_freeze_anchor() const { return ddgi_debug_freeze_anchor; }
+	void set_micro_geometry_debug_freeze(bool p_enabled) { micro_geometry_debug_freeze = p_enabled; }
+	bool is_micro_geometry_debug_freeze() const { return micro_geometry_debug_freeze; }
 
 	RenderSceneBuffers() {}
 	virtual ~RenderSceneBuffers() {}

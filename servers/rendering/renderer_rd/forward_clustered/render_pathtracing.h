@@ -50,6 +50,7 @@ public:
 		uint32_t accumulated_samples = 0;
 		uint32_t frame = 0;
 		bool history_valid = false;
+		bool micro_geometry_debug = false;
 		~Context();
 		RID get_radiance() const { return images[1]; }
 		RID get_diffuse() const { return images[2]; }
@@ -60,7 +61,7 @@ public:
 
 	RenderPathtracing();
 	~RenderPathtracing();
-	bool render(RenderRaytracing &p_raytracing, RTViewportState &p_state, RID p_scene_data, RID p_sky, const Size2i &p_size, bool p_sky_array, bool p_draw_sky, const Color &p_background);
+	bool render(RenderRaytracing &p_raytracing, RTViewportState &p_state, RID p_scene_data, RID p_sky, const Size2i &p_size, bool p_sky_array, bool p_draw_sky, const Color &p_background, bool p_micro_geometry_debug = false);
 
 private:
 	PathtracingShaderRD shader;

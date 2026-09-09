@@ -153,6 +153,18 @@ public:
 		RENDER_INFO_RT_BLAS_REFITS,
 		RENDER_INFO_RT_TRIANGLES_BUILT,
 		RENDER_INFO_RT_TRIANGLES_REFIT,
+		RENDER_INFO_MICRO_GEOMETRY_RASTER_CLUSTERS,
+		RENDER_INFO_MICRO_GEOMETRY_RASTER_TRIANGLES,
+		RENDER_INFO_MICRO_GEOMETRY_RT_CLUSTERS,
+		RENDER_INFO_MICRO_GEOMETRY_RT_TRIANGLES,
+		RENDER_INFO_MICRO_GEOMETRY_RESIDENT_PAGES,
+		RENDER_INFO_MICRO_GEOMETRY_PENDING_PAGES,
+		RENDER_INFO_MICRO_GEOMETRY_PAGE_POOL_KIB,
+		RENDER_INFO_MICRO_GEOMETRY_GEOMETRY_MEMORY_KIB,
+		RENDER_INFO_MICRO_GEOMETRY_AS_MEMORY_KIB,
+		RENDER_INFO_MICRO_GEOMETRY_CLAS_BUILDS,
+		RENDER_INFO_MICRO_GEOMETRY_BLAS_BUILDS,
+		RENDER_INFO_MICRO_GEOMETRY_RESIDENCY_PRESSURE,
 		RENDER_INFO_MAX
 	};
 
@@ -197,6 +209,8 @@ public:
 		DEBUG_DRAW_DDGI_PROBE_STATE,
 		DEBUG_DRAW_DDGI_CASCADE_WEIGHTS,
 		DEBUG_DRAW_DDGI_INDIRECT,
+		DEBUG_DRAW_MICRO_GEOMETRY_RASTER,
+		DEBUG_DRAW_MICRO_GEOMETRY_RT,
 	};
 
 	enum DefaultCanvasItemTextureFilter {
@@ -321,6 +335,7 @@ private:
 
 	DebugDraw debug_draw = DEBUG_DRAW_DISABLED;
 	bool ddgi_debug_freeze_anchor = false;
+	bool micro_geometry_debug_freeze = false;
 
 	int positional_shadow_atlas_size = 2048;
 	bool positional_shadow_atlas_16_bits = true;
@@ -689,6 +704,8 @@ public:
 	DebugDraw get_debug_draw() const;
 	void set_ddgi_debug_freeze_anchor(bool p_enabled);
 	bool is_ddgi_debug_freeze_anchor() const;
+	void set_micro_geometry_debug_freeze(bool p_enabled);
+	bool is_micro_geometry_debug_freeze() const;
 
 	int get_render_info(RenderInfoType p_type, RenderInfo p_info);
 

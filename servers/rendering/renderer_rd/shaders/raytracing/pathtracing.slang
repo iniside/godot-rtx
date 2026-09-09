@@ -32,6 +32,19 @@ void main() {
 		for (uint bounce = 0u; bounce < max(pt.settings.y, 1u); bounce++) {
 			RTHitPayload hit = pt_trace(ray, pt.settings.w, 0u, width, spread);
 			if (bounce == 0u && sample == 0u) { pt_write_primary(pixel, hit, ray); }
+			if (pt.settings.y == 0u) {
+				radiance = hit.hit != 0u ? float3(0.12) : float3(0.0);
+				if (hit.hit != 0u && hit.cluster_id >= 0) {
+					GeometryData geometry = geometries[hit.geometry_index];
+					if ((geometry.flags & FLAG_CLUSTERED) != 0u && geometry.micro_asset_address != 0) {
+						MicroGeometrySelectedCluster selected = (MicroGeometrySelectedCluster)0;
+						selected.asset = ((MicroGeometryAsset*)geometry.micro_asset_address)->identity;
+						selected.cluster = uint(hit.cluster_id);
+						radiance = micro_geometry_cluster_color(selected);
+					}
+				}
+				break;
+			}
 			if (bounce == 1u) {
 				float distance = hit.hit != 0u ? hit.hit_distance : NRD_FP16_MAX;
 				diffuse_distance += distance; specular_distance += distance;

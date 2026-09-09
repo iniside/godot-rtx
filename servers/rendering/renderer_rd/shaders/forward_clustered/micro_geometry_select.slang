@@ -91,6 +91,7 @@ struct DrawCommand {
 [[vk::binding(13, 0)]] RWStructuredBuffer<RasterInstance> raster_instances;
 [[vk::binding(14, 0)]] RWByteAddressBuffer requests;
 [[vk::binding(15, 0)]] Texture2D<float> hzb;
+[[vk::binding(16, 0)]] RWStructuredBuffer<uint> statistics;
 
 uint task_for_work(uint p_index, uint p_kind) {
 	uint begin = 0, end = parameters.task_count;
@@ -233,6 +234,29 @@ bool cut_cluster(SelectionTask p_task, MicroGeometryAsset p_asset, MicroGeometry
 [numthreads(64, 1, 1)]
 void main(uint3 id : SV_DispatchThreadID) {
 	uint index = id.x + id.y * 65536u;
+	if (parameters.mode == 7) {
+		if (index < parameters.bin_count) { counts[index] += initial_counts[index]; }
+		return;
+	}
+	if (parameters.mode == 8) {
+		uint bin_index = 0;
+		for (uint bin = 1; bin < parameters.bin_count; bin++) {
+			if (bins[bin].offset <= index) { bin_index = bin; }
+		}
+		SelectionBin bin = bins[bin_index];
+		if (index < bin.offset || index - bin.offset >= min(counts[bin_index], bin.capacity)) { return; }
+		MicroGeometrySelectedCluster record = selected[index];
+		MicroGeometryAsset asset = *((MicroGeometryAsset*)record.asset_address);
+		MicroGeometryCluster cluster = ((MicroGeometryCluster*)asset.clusters)[record.cluster];
+		DrawCommand command;
+		command.index_count = cluster.triangle_count * 3;
+		command.instance_count = 1;
+		command.first_index = 0;
+		command.vertex_offset = 0;
+		command.first_instance = index;
+		commands[index] = command;
+		return;
+	}
 	if (parameters.mode == 0) {
 		if (index >= parameters.task_count) { return; }
 		SelectionTask task = tasks[index];
@@ -386,6 +410,8 @@ void main(uint3 id : SV_DispatchThreadID) {
 	record.material_slot = surface.material_slot;
 	record.raster_instance = task_index;
 	selected[selected_offset] = record;
+	InterlockedAdd(statistics[0], 1);
+	InterlockedAdd(statistics[1], cluster.triangle_count);
 	DrawCommand command;
 	command.index_count = cluster.triangle_count * 3;
 	command.instance_count = 1;

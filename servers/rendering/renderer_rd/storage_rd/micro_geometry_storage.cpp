@@ -202,6 +202,7 @@ bool MicroGeometryStorage::_build_page_clas(Asset &r_asset, uint32_t p_page, con
 	if (rd->clas_build(input, page.clas_storage, addresses, {}, scratch, source, count_buffer, { &geometry_dependency, 1 }) != OK) {
 		return false;
 	}
+	statistics.clas_builds += source_page.cluster_count;
 	page.clas_submission = rd->get_pending_submission_serial();
 	return true;
 }

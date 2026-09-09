@@ -30,8 +30,6 @@
 
 #pragma once
 
-#include "servers/rendering/rendering_shader_compile_request.h"
-
 #include "core/object/worker_thread_pool.h"
 #include "core/os/condition_variable.h"
 #include "core/os/thread_safe.h"
@@ -46,6 +44,7 @@
 #include "servers/rendering/rendering_device_driver.h"
 #include "servers/rendering/rendering_device_enums.h"
 #include "servers/rendering/rendering_device_graph.h"
+#include "servers/rendering/rendering_shader_compile_request.h"
 
 class RDTextureFormat;
 class RDTextureView;
@@ -1436,6 +1435,7 @@ public:
 	void clas_get_build_sizes(const ClusterBuildInput &p_input, ClusterBuildSizes &r_sizes);
 	void blas_get_cluster_build_sizes(const ClusterBottomLevelBuildInput &p_input, ClusterBuildSizes &r_sizes);
 	uint64_t acceleration_structure_get_device_address(RID p_acceleration_structure);
+	uint64_t acceleration_structure_get_memory_usage(RID p_acceleration_structure);
 	RID blas_create_from_clusters(uint32_t p_max_cluster_count, uint32_t p_max_cluster_count_per_acceleration_structure);
 
 	typedef int64_t HitShaderBindingTableRange;
@@ -1637,7 +1637,6 @@ private:
 	void _draw_list_draw_indirect(DrawListID p_list, bool p_use_indices, RID p_buffer, uint32_t p_offset, uint32_t p_draw_count, uint32_t p_stride, RID p_count_buffer, uint32_t p_count_offset);
 
 public:
-
 	void draw_list_set_viewport(DrawListID p_list, const Rect2 &p_rect);
 	void draw_list_enable_scissor(DrawListID p_list, const Rect2 &p_rect);
 	void draw_list_disable_scissor(DrawListID p_list);

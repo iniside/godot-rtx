@@ -112,6 +112,7 @@ public:
 		uint64_t last_pass = 0;
 
 		bool ddgi_debug_freeze_anchor = false;
+		bool micro_geometry_debug_freeze = false;
 		RSE::ViewportDebugDraw debug_draw = RSE::VIEWPORT_DEBUG_DRAW_DISABLED;
 
 		RSE::ViewportClearMode clear_mode = RSE::VIEWPORT_CLEAR_ALWAYS;
@@ -294,6 +295,7 @@ public:
 
 	virtual int viewport_get_render_info(RID p_viewport, RSE::ViewportRenderInfoType p_type, RSE::ViewportRenderInfo p_info);
 	void viewport_set_ddgi_debug_freeze_anchor(RID p_viewport, bool p_enabled);
+	void viewport_set_micro_geometry_debug_freeze(RID p_viewport, bool p_enabled);
 	virtual void viewport_set_debug_draw(RID p_viewport, RSE::ViewportDebugDraw p_draw);
 
 	void viewport_set_measure_render_time(RID p_viewport, bool p_enable);
