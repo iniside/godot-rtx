@@ -2,6 +2,12 @@
 #VERSION_DEFINES
 #include "micro_geometry_inc.slang"
 
+static const uint PREPARE_CUT = 0u;
+static const uint PUBLISH_CUT = 1u;
+static const uint UPDATE_TRANSFORMS = 2u;
+static const uint RESTORE_CUT = 3u;
+static const uint INITIAL_CUT = 4u;
+
 struct MicroRTTask {
 	uint64_t clas_addresses;
 	uint64_t instance;
@@ -103,6 +109,7 @@ void main(uint3 p_dispatch : SV_DispatchThreadID) {
 		}
 	}
 	MicroRTTask task = tasks[begin];
+	uint mode = task.pad1;
 	if (geometry < task.geometry_base || geometry - task.geometry_base >= task.instance_count) {
 		return;
 	}
@@ -128,50 +135,67 @@ void main(uint3 p_dispatch : SV_DispatchThreadID) {
 	if (asset.identity != instance.asset || asset.ready == 0u || task.cluster_count != asset.cluster_count || task.group_count != asset.group_count) {
 		return;
 	}
-	for (uint cluster_index = 0u; cluster_index < task.cluster_count; cluster_index++) {
-		membership[offset + cluster_index] = 0u;
-	}
-	uint2 bin = bins[task.selection_bin];
-	uint selected_count = selection_counts[task.selection_bin];
-	bool valid = selected_count <= bin.y;
-	for (uint selected_index = 0u; selected_index < min(selected_count, bin.y); selected_index++) {
-		MicroGeometrySelectedCluster record = selected[bin.x + selected_index];
-		if (record.instance != task.instance || record.surface != task.surface || record.multimesh_instance != ordinal) {
-			continue;
+	bool prepare = mode == PREPARE_CUT || mode == INITIAL_CUT;
+	bool valid = true;
+	if (prepare) {
+		for (uint cluster_index = 0u; cluster_index < task.cluster_count; cluster_index++) {
+			membership[offset + cluster_index] = 0u;
 		}
-		if (record.asset != instance.asset || record.asset_address != instance.asset_address || record.bin != task.selection_bin || record.cluster >= task.cluster_count) {
-			valid = false;
-			continue;
+		uint2 bin = bins[task.selection_bin];
+		uint selected_count = selection_counts[task.selection_bin];
+		valid = selected_count <= bin.y;
+		for (uint selected_index = 0u; selected_index < min(selected_count, bin.y); selected_index++) {
+			MicroGeometrySelectedCluster record = selected[bin.x + selected_index];
+			if (record.instance != task.instance || record.surface != task.surface || record.multimesh_instance != ordinal) {
+				continue;
+			}
+			if (record.asset != instance.asset || record.asset_address != instance.asset_address || record.bin != task.selection_bin || record.cluster >= task.cluster_count) {
+				valid = false;
+				continue;
+			}
+			MicroGeometryCluster cluster = ((MicroGeometryCluster*)asset.clusters)[record.cluster];
+			if (cluster.page >= asset.page_count || cluster.group >= task.group_count) {
+				valid = false;
+				continue;
+			}
+			MicroGeometryPage page = ((MicroGeometryPage*)asset.pages)[cluster.page];
+			if ((page.ready & 3u) != 3u || page.slot == 0xffffffffu || page.generation == 0u || page.generation != record.page_generation || ((uint64_t*)task.clas_addresses)[record.cluster] == 0) {
+				valid = false;
+				continue;
+			}
+			membership[offset + record.cluster] = page.generation;
 		}
-		MicroGeometryCluster cluster = ((MicroGeometryCluster*)asset.clusters)[record.cluster];
-		if (cluster.page >= asset.page_count || cluster.group >= task.group_count) {
-			valid = false;
-			continue;
-		}
-		MicroGeometryPage page = ((MicroGeometryPage*)asset.pages)[cluster.page];
-		if ((page.ready & 3u) != 3u || page.slot == 0xffffffffu || page.generation == 0u || page.generation != record.page_generation || ((uint64_t*)task.clas_addresses)[record.cluster] == 0) {
-			valid = false;
-			continue;
-		}
-		membership[offset + record.cluster] = page.generation;
 	}
 	uint reference_count = 0u;
-	bool rebuild = task.pad0 != 0u;
+	uint active_count = 0u;
+	bool rebuild = mode == RESTORE_CUT || mode == INITIAL_CUT;
 	bool changed = false;
 	for (uint cluster_index = 0u; cluster_index < task.cluster_count; cluster_index++) {
-		uint current = valid ? membership[offset + cluster_index] : 0u;
 		uint previous = cached_membership[offset + cluster_index];
+		uint current = mode == UPDATE_TRANSFORMS || mode == RESTORE_CUT ? previous : (valid ? membership[offset + cluster_index] : 0u);
+		if (mode == RESTORE_CUT && current != 0u) {
+			MicroGeometryCluster cluster = ((MicroGeometryCluster*)asset.clusters)[cluster_index];
+			current = ((MicroGeometryPage*)asset.pages)[cluster.page].generation;
+		}
 		rebuild = rebuild || current != previous;
 		changed = changed || ((current != 0u) != (previous != 0u));
-		cached_membership[offset + cluster_index] = current;
-		if (current != 0u) {
+		if (prepare) {
+			membership[offset + cluster_index] = current;
+		}
+		if (mode == PUBLISH_CUT || mode == RESTORE_CUT || mode == INITIAL_CUT) {
+			cached_membership[offset + cluster_index] = current;
+		}
+		active_count += (mode == PREPARE_CUT ? previous : current) != 0u ? 1u : 0u;
+		if (current != 0u && (prepare || mode == RESTORE_CUT)) {
 			references[offset + reference_count] = ((uint64_t*)task.clas_addresses)[cluster_index];
 			reference_count++;
-			MicroGeometryCluster cluster = ((MicroGeometryCluster*)asset.clusters)[cluster_index];
-			group_usage[group_offset + cluster.group] = 1u;
+			if (prepare) {
+				MicroGeometryCluster cluster = ((MicroGeometryCluster*)asset.clusters)[cluster_index];
+				group_usage[group_offset + cluster.group] = 1u;
+			}
 		}
 	}
-	if (changed) {
+	if (prepare && changed) {
 		InterlockedOr(dirty_counts[1], 1u);
 	}
 	float4x4 multimesh = micro_rt_multimesh_transform(instance, ordinal, false);
@@ -185,9 +209,9 @@ void main(uint3 p_dispatch : SV_DispatchThreadID) {
 	}
 	output.custom_index_mask = geometry | ((task.instance_mask & 255u) << 24u);
 	output.sbt_offset_flags = geometry | ((flags & 255u) << 24u);
-	output.blas_address = reference_count != 0u ? blas_addresses[geometry] : uint64_t(0);
+	output.blas_address = active_count != 0u ? blas_addresses[geometry] : uint64_t(0);
 	tlas_instances[geometry] = output;
-	if (rebuild && reference_count != 0u) {
+	if ((prepare || mode == RESTORE_CUT) && rebuild && reference_count != 0u) {
 		uint destination;
 		InterlockedAdd(dirty_counts[0], 1u, destination);
 		MicroRTBuildInfo info;

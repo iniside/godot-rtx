@@ -496,15 +496,33 @@ struct RTMicroGeometryPin {
 };
 
 struct RTMicroGeometryBuild {
+	struct RetiredPins {
+		Vector<RTMicroGeometryPin> pins;
+		uint64_t submission = 0;
+	};
+	enum Mode {
+		PREPARE_CUT,
+		PUBLISH_CUT,
+		UPDATE_TRANSFORMS,
+		RESTORE_CUT,
+		INITIAL_CUT,
+	};
 	uint64_t signature = 0;
+	uint64_t cut_generation = 0;
 	uint64_t memory_bytes = 0;
 	uint64_t retirement = 0;
 	uint32_t pending_feedback = 0;
+	bool has_committed_cut = false;
+	bool restore_committed_cut = false;
+	bool candidate_pending = false;
+	bool candidate_changed = false;
 	MicroGeometrySelection::Pass *selection = nullptr;
 	Vector<MicroGeometrySelection::Task> selection_tasks;
 	Vector<RTMicroGeometryTask> task_data;
 	Vector<RID> assets;
 	Vector<RTMicroGeometryPin> pins;
+	Vector<RTMicroGeometryPin> candidate_pins;
+	Vector<RetiredPins> retired_pins;
 	Vector<RTMicroGeometryPin> finest_pins;
 	Vector<RID> blas;
 	Vector<RID> resources;
@@ -526,6 +544,8 @@ struct RTMicroGeometryBuild {
 
 struct RTMicroGeometryFeedback {
 	RTMicroGeometryBuild *build = nullptr;
+	uint64_t cut_generation = 0;
+	bool published = false;
 	Vector<RTMicroGeometryPin> pins;
 };
 
@@ -610,8 +630,8 @@ class RenderRaytracing {
 	Vector<RTMicroGeometryBuild *> retired_micro_geometry;
 	void _retire_micro_geometry(RTMicroGeometryBuild *p_build);
 	void _free_micro_geometry(RTMicroGeometryBuild *p_build);
-	static void _micro_group_feedback(const Vector<uint8_t> &p_bytes, uint64_t p_owner, uint64_t p_feedback);
-	static void _micro_history_feedback(const Vector<uint8_t> &p_bytes, uint64_t p_owner, uint64_t p_build);
+	static void _micro_group_feedback(const Vector<uint8_t> &p_bytes, uint64_t p_feedback);
+	static void _micro_cut_feedback(const Vector<uint8_t> &p_bytes, uint64_t p_build, uint64_t p_generation);
 	bool _prepare_micro_geometry(RTViewportState *p_state, const RenderDataRD *p_render_data, const Vector<MicroGeometrySelection::Task> &p_tasks, const Vector<RTMicroGeometryTask> &p_rt_tasks, uint32_t p_levels);
 	bool _build_micro_geometry(RTViewportState *p_state);
 	RendererRD::DDGIEffect *ddgi_effect = nullptr;

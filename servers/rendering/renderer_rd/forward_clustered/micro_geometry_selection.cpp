@@ -101,10 +101,10 @@ MicroGeometrySelection::Pass *MicroGeometrySelection::create(const Vector<Task> 
 	pass->memory_bytes += sizeof(MicroGeometryRasterParameters);
 	auto *storage = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage();
 	pass->feedback = storage->feedback_create();
-	pass->requests = storage->feedback_begin(pass->feedback);
-	if (pass->requests.is_null()) {
-		pass->requests = _buffer(*pass, sizeof(RendererRD::MicroGeometryStorage::FeedbackHeader));
-		RD::get_singleton()->buffer_clear(pass->requests, 0, sizeof(RendererRD::MicroGeometryStorage::FeedbackHeader));
+	pass->requests_fallback = _buffer(*pass, sizeof(RendererRD::MicroGeometryStorage::FeedbackHeader));
+	if (pass->requests_fallback.is_null()) {
+		memdelete(pass);
+		return nullptr;
 	}
 	MicroGeometryRasterParameters raster;
 	raster.page_pool = RD::get_singleton()->buffer_get_device_address(storage->get_pool());
@@ -142,6 +142,12 @@ void MicroGeometrySelection::_dispatch(Pass *p_pass, uint32_t p_mode, uint32_t p
 
 void MicroGeometrySelection::select(Pass *p_pass, RID p_hzb) {
 	ERR_FAIL_NULL(p_pass);
+	p_pass->requests = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage()->feedback_begin(p_pass->feedback);
+	p_pass->feedback_active = p_pass->requests.is_valid();
+	if (!p_pass->feedback_active) {
+		p_pass->requests = p_pass->requests_fallback;
+		RD::get_singleton()->buffer_clear(p_pass->requests, 0, sizeof(RendererRD::MicroGeometryStorage::FeedbackHeader));
+	}
 	RD::get_singleton()->draw_command_begin_label("Microgeometry Selection");
 	RD::get_singleton()->buffer_clear(p_pass->counts, 0, MAX(16u, p_pass->data.bin_count * 4));
 	RD::get_singleton()->buffer_clear(p_pass->initial_counts, 0, MAX(16u, p_pass->data.bin_count * 4));
@@ -219,7 +225,8 @@ void MicroGeometrySelection::add_draw_dependencies(Pass *p_pass, RD::DrawListID 
 }
 
 void MicroGeometrySelection::submit_feedback(Pass *p_pass) {
-	if (p_pass->feedback.is_valid()) {
+	if (p_pass->feedback_active) {
 		RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage()->feedback_submit(p_pass->feedback);
+		p_pass->feedback_active = false;
 	}
 }

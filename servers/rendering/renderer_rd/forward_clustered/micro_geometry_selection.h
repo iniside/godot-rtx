@@ -102,6 +102,8 @@ public:
 		RID raster_parameters;
 		RID feedback;
 		RID requests;
+		RID requests_fallback;
+		bool feedback_active = false;
 		RID persistent_instances;
 		RID persistent_surfaces;
 		Vector<Bin> bin_data;

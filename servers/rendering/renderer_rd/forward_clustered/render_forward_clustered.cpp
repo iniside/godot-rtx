@@ -2196,7 +2196,6 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		rb_data->invalidate_raytracing_history();
 	}
 	const RendererEnvironmentStorage::RaytracingSettings &rt_settings = raytracing->_get_viewport_state(p_render_data)->settings;
-	ERR_FAIL_COND_MSG(!raytracing->_prepare_ddgi(raytracing->_get_viewport_state(p_render_data), rb->is_ddgi_debug_freeze_anchor()), "Camera-following DDGI state preparation failed.");
 	const bool path_traced = rt_settings.raytracing_rendering_mode == RSE::RAYTRACING_RENDERING_MODE_PATH_TRACED;
 	const bool raw_path_traced = path_traced && rt_settings.raytracing_denoiser == RSE::RAYTRACING_DENOISER_NONE;
 	ERR_FAIL_COND_MSG(raw_path_traced && (rb->get_internal_size() != rb->get_target_size() || RSE::scaling_3d_mode_type(rb->get_scaling_3d_mode()) == RSE::VIEWPORT_SCALING_3D_TYPE_TEMPORAL || rb->get_use_taa() || rb->get_frame_generation()), "Raw path-traced reference requires native resolution, no temporal upscaler, TAA or frame generation.");
@@ -2365,8 +2364,11 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		clear_color = p_default_bg_color.srgb_to_linear();
 	}
 
+	const uint64_t camera_history_epoch = raytracing->_get_viewport_state(p_render_data)->camera_history_epoch;
 	RTViewportState *rt_state = raytracing->build_tlas(p_render_data);
 	ERR_FAIL_NULL(rt_state);
+	const bool geometry_history_changed = camera_history_epoch != rt_state->camera_history_epoch;
+	ERR_FAIL_COND_MSG(!raytracing->_prepare_ddgi(rt_state, rb->is_ddgi_debug_freeze_anchor()), "Camera-following DDGI state preparation failed.");
 	_pre_opaque_render(p_render_data);
 	SceneShaderForwardClustered::ShaderSpecialization base_specialization = scene_shader.default_specialization;
 	base_specialization.cluster_has_area_light = current_cluster_builder->get_cluster_count_by_type(ClusterBuilderRD::ELEMENT_TYPE_AREA_LIGHT) != 0;
@@ -2401,7 +2403,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	surface.current_depth = rb_data->get_rtxdi_surface_depth();
 	surface.previous_depth = rb_data->get_rtxdi_surface_depth(true);
 	surface.size = lighting_size;
-	surface.history_valid = rb_data->is_rtxdi_surface_history_valid();
+	surface.history_valid = rb_data->is_rtxdi_surface_history_valid() && !geometry_history_changed;
 	surface.orthogonal = rb_data->is_rtxdi_surface_camera_orthogonal();
 	surface.frame_index = rb_data->get_rtxdi_surface_frame_index();
 	RendererRD::NRDEffect::Frame frame;

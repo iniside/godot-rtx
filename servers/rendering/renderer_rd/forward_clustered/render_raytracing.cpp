@@ -1679,6 +1679,14 @@ void RenderRaytracing::_free_micro_geometry(RTMicroGeometryBuild *p_build) {
 	for (const auto &pin : p_build->pins) {
 		storage->unpin_group(pin.asset, pin.group);
 	}
+	for (const auto &pin : p_build->candidate_pins) {
+		storage->unpin_group(pin.asset, pin.group);
+	}
+	for (const auto &retired : p_build->retired_pins) {
+		for (const auto &pin : retired.pins) {
+			storage->unpin_group(pin.asset, pin.group);
+		}
+	}
 	for (const auto &pin : p_build->finest_pins) {
 		storage->unpin_group(pin.asset, pin.group);
 	}
@@ -1699,12 +1707,13 @@ void RenderRaytracing::_free_micro_geometry(RTMicroGeometryBuild *p_build) {
 	memdelete(p_build);
 }
 
-void RenderRaytracing::_micro_group_feedback(const Vector<uint8_t> &p_bytes, uint64_t p_owner, uint64_t p_feedback) {
+void RenderRaytracing::_micro_group_feedback(const Vector<uint8_t> &p_bytes, uint64_t p_feedback) {
 	RTMicroGeometryFeedback *feedback = reinterpret_cast<RTMicroGeometryFeedback *>(p_feedback);
 	RTMicroGeometryBuild *build = feedback->build;
 	auto *storage = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage();
+	Vector<RTMicroGeometryPin> &pins = feedback->published ? build->pins : build->candidate_pins;
 	if (p_bytes.size() < int64_t(build->selection->data.group_work) * 4) {
-		build->pins.append_array(feedback->pins);
+		pins.append_array(feedback->pins);
 		build->pending_feedback--;
 		memdelete(feedback);
 		return;
@@ -1725,10 +1734,16 @@ void RenderRaytracing::_micro_group_feedback(const Vector<uint8_t> &p_bytes, uin
 			}
 		}
 	}
-	for (const auto &pin : build->pins) {
-		storage->unpin_group(pin.asset, pin.group);
+	if (feedback->cut_generation == build->cut_generation) {
+		for (const auto &pin : pins) {
+			storage->unpin_group(pin.asset, pin.group);
+		}
+		pins = used;
+	} else {
+		for (const auto &pin : used) {
+			storage->unpin_group(pin.asset, pin.group);
+		}
 	}
-	build->pins = used;
 	for (const auto &pin : feedback->pins) {
 		storage->unpin_group(pin.asset, pin.group);
 	}
@@ -1736,20 +1751,10 @@ void RenderRaytracing::_micro_group_feedback(const Vector<uint8_t> &p_bytes, uin
 	memdelete(feedback);
 }
 
-void RenderRaytracing::_micro_history_feedback(const Vector<uint8_t> &p_bytes, uint64_t p_owner, uint64_t p_build) {
-	auto *renderer = reinterpret_cast<RenderRaytracing *>(p_owner);
+void RenderRaytracing::_micro_cut_feedback(const Vector<uint8_t> &p_bytes, uint64_t p_build, uint64_t p_generation) {
 	auto *build = reinterpret_cast<RTMicroGeometryBuild *>(p_build);
-	if (p_bytes.size() >= 8 && decode_uint32(p_bytes.ptr() + 4) != 0) {
-		for (auto &entry : renderer->viewport_states) {
-			RTViewportState *state = entry.value;
-			if (state->micro_geometry == build) {
-				state->scene_generation++;
-				state->camera_history_epoch++;
-				state->pathtracing_history_epoch++;
-				state->ddgi_history_epoch++;
-				state->light_history_valid = false;
-			}
-		}
+	if (build->candidate_pending && build->cut_generation == p_generation) {
+		build->candidate_changed = p_bytes.size() < 8 || decode_uint32(p_bytes.ptr() + 4) != 0;
 	}
 	build->pending_feedback--;
 }
@@ -1763,6 +1768,17 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 		return true;
 	}
 	uint64_t signature = _rt_scene_hash(p_tasks.ptr(), p_tasks.size() * sizeof(MicroGeometrySelection::Task), blass.size());
+	signature = _rt_scene_hash(&p_state->settings.mode_generation, sizeof(p_state->settings.mode_generation), signature);
+	const uint64_t environment = p_state->settings_environment.get_id();
+	signature = _rt_scene_hash(&environment, sizeof(environment), signature);
+	signature = _rt_scene_hash(&p_state->settings.geometry_error, sizeof(p_state->settings.geometry_error), signature);
+	signature = _rt_scene_hash(&p_state->settings.geometry_offscreen_multiplier, sizeof(p_state->settings.geometry_offscreen_multiplier), signature);
+	signature = _rt_scene_hash(&p_state->settings_visible_layers, sizeof(p_state->settings_visible_layers), signature);
+	for (const auto &task : p_tasks) {
+		const auto &surface = persistent_surfaces[uint32_t(task.surface) - 1].data;
+		signature = _rt_scene_hash(&surface.material, sizeof(surface.material), signature);
+		signature = _rt_scene_hash(&surface.material_generation, sizeof(surface.material_generation), signature);
+	}
 	for (auto task : p_rt_tasks) {
 		task.motion_base = 0;
 		signature = _rt_scene_hash(&task, sizeof(task), signature);
@@ -1864,10 +1880,17 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 		if (complete) {
 			build->memory_bytes += build->selection->memory_bytes;
 			rd->buffer_clear(build->cached_membership, 0, MAX(uint32_t(cluster_work * 4), 16u));
-			if (previous && previous->signature == signature) {
+			if (previous && previous->signature == signature && previous->has_committed_cut) {
 				rd->buffer_copy(previous->cached_membership, build->cached_membership, 0, 0, cluster_work * 4);
-				for (auto &task : build->task_data) {
-					task.padding[0] = 1;
+				build->restore_committed_cut = true;
+				for (RID asset : build->assets) {
+					const auto &metadata = storage->get_source(asset)->get_metadata();
+					for (uint32_t group = 0; group < uint32_t(metadata.groups.size()); group++) {
+						if (storage->is_group_ready(asset, group, true)) {
+							storage->pin_group(asset, group);
+							build->pins.push_back({ asset, group });
+						}
+					}
 				}
 			}
 			for (uint32_t index = 0; index < build->input.max_acceleration_structure_count; index++) {
@@ -1950,19 +1973,50 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 	RTMicroGeometryBuild *build = p_state->micro_geometry;
 	RD *rd = RD::get_singleton();
 	auto *storage = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage();
-	RTMicroGeometryFeedback *feedback = memnew(RTMicroGeometryFeedback);
-	feedback->build = build;
-	for (RID asset : build->assets) {
-		const auto &metadata = storage->get_source(asset)->get_metadata();
-		for (uint32_t group = 0; group < uint32_t(metadata.groups.size()); group++) {
-			if (storage->is_group_ready(asset, group, true)) {
-				storage->pin_group(asset, group);
-				feedback->pins.push_back({ asset, group });
+	for (uint32_t index = 0; index < uint32_t(build->retired_pins.size());) {
+		if (build->retired_pins[index].submission <= rd->get_completed_submission_serial()) {
+			for (const auto &pin : build->retired_pins[index].pins) {
+				storage->unpin_group(pin.asset, pin.group);
 			}
+			build->retired_pins.remove_at(index);
+		} else {
+			index++;
 		}
 	}
-	micro_selection->select(build->selection, RID());
-	micro_selection->submit_feedback(build->selection);
+	RTMicroGeometryBuild::Mode mode = RTMicroGeometryBuild::UPDATE_TRANSFORMS;
+	if (build->restore_committed_cut) {
+		mode = RTMicroGeometryBuild::RESTORE_CUT;
+	} else if (!build->has_committed_cut) {
+		mode = RTMicroGeometryBuild::INITIAL_CUT;
+	} else if (build->pending_feedback == 0) {
+		mode = build->candidate_pending ? RTMicroGeometryBuild::PUBLISH_CUT : RTMicroGeometryBuild::PREPARE_CUT;
+	}
+	const bool select = mode == RTMicroGeometryBuild::PREPARE_CUT || mode == RTMicroGeometryBuild::INITIAL_CUT;
+	if (mode == RTMicroGeometryBuild::INITIAL_CUT || (mode == RTMicroGeometryBuild::PUBLISH_CUT && build->candidate_changed)) {
+		p_state->scene_generation++;
+		p_state->camera_history_epoch++;
+		p_state->pathtracing_history_epoch++;
+		p_state->ddgi_history_epoch++;
+		p_state->light_history_valid = false;
+	}
+	RTMicroGeometryFeedback *feedback = nullptr;
+	if (select) {
+		feedback = memnew(RTMicroGeometryFeedback);
+		feedback->build = build;
+		feedback->cut_generation = ++build->cut_generation;
+		feedback->published = mode == RTMicroGeometryBuild::INITIAL_CUT;
+		for (RID asset : build->assets) {
+			const auto &metadata = storage->get_source(asset)->get_metadata();
+			for (uint32_t group = 0; group < uint32_t(metadata.groups.size()); group++) {
+				if (storage->is_group_ready(asset, group, true)) {
+					storage->pin_group(asset, group);
+					feedback->pins.push_back({ asset, group });
+				}
+			}
+		}
+		micro_selection->select(build->selection, RID());
+		micro_selection->submit_feedback(build->selection);
+	}
 	LocalVector<RD::AccelerationStructureGPUInstance> instances;
 	LocalVector<uint64_t> addresses;
 	instances.resize(blass.size());
@@ -1982,12 +2036,16 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 	}
 	rd->buffer_update(build->blas_addresses, 0, addresses.size() * 8, addresses.ptr());
 	rd->buffer_update(build->tlas_instances, 0, instances.size() * sizeof(RD::AccelerationStructureGPUInstance), instances.ptr());
-	rd->buffer_update(build->tasks, 0, build->task_data.size() * sizeof(RTMicroGeometryTask), build->task_data.ptr());
 	for (auto &task : build->task_data) {
-		task.padding[0] = 0;
+		task.padding[1] = mode;
 	}
-	rd->buffer_clear(build->dirty_counts, 0, 16);
-	rd->buffer_clear(build->group_usage, 0, MAX(build->selection->data.group_work * 4, 16u));
+	rd->buffer_update(build->tasks, 0, build->task_data.size() * sizeof(RTMicroGeometryTask), build->task_data.ptr());
+	if (select || mode == RTMicroGeometryBuild::RESTORE_CUT) {
+		rd->buffer_clear(build->dirty_counts, 0, 16);
+	}
+	if (select) {
+		rd->buffer_clear(build->group_usage, 0, MAX(build->selection->data.group_work * 4, 16u));
+	}
 	LocalVector<RD::Uniform> uniforms;
 	uint32_t binding = 0;
 	for (RID buffer : { build->tasks, build->selection->selected, build->selection->bins, build->selection->counts, persistent_instance_buffer, build->blas_addresses, build->membership, build->cached_membership, build->references, build->dirty_infos, build->dirty_destinations, build->dirty_counts, build->tlas_instances, p_state->motion_transform_buffer, build->group_usage }) {
@@ -2027,13 +2085,35 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 	RD::ClusterAddressRegion destinations = { build->dirty_destinations, 0, 8, uint64_t(build->input.max_acceleration_structure_count) * 8 };
 	RD::ClusterAddressRegion infos = { build->dirty_infos, 0, sizeof(RD::ClusterBottomLevelBuildInfo), uint64_t(build->input.max_acceleration_structure_count) * sizeof(RD::ClusterBottomLevelBuildInfo) };
 	RD::ClusterAddressRegion count = { build->dirty_counts, 0, 4, 4 };
-	const Error error = rd->blas_build_from_clusters(build->input, build->blas, destinations, infos, count, build->scratch, address_dependencies, build->clas_dependencies);
-	build->pending_feedback += 2;
-	if (rd->buffer_get_data_async(build->group_usage, callable_mp_static(&RenderRaytracing::_micro_group_feedback).bind(uint64_t(this), uint64_t(feedback))) != OK) {
-		_micro_group_feedback(Vector<uint8_t>(), uint64_t(this), uint64_t(feedback));
+	Error error = OK;
+	if (mode == RTMicroGeometryBuild::PUBLISH_CUT || mode == RTMicroGeometryBuild::RESTORE_CUT || mode == RTMicroGeometryBuild::INITIAL_CUT) {
+		error = rd->blas_build_from_clusters(build->input, build->blas, destinations, infos, count, build->scratch, address_dependencies, build->clas_dependencies);
+		if (error == OK) {
+			build->has_committed_cut = true;
+			build->restore_committed_cut = false;
+			if (mode == RTMicroGeometryBuild::PUBLISH_CUT) {
+				if (!build->pins.is_empty()) {
+					RTMicroGeometryBuild::RetiredPins retired;
+					retired.pins = build->pins;
+					retired.submission = rd->get_pending_submission_serial();
+					build->retired_pins.push_back(retired);
+				}
+				build->pins = build->candidate_pins;
+				build->candidate_pins.clear();
+				build->candidate_pending = false;
+			}
+		}
 	}
-	if (rd->buffer_get_data_async(build->dirty_counts, callable_mp_static(&RenderRaytracing::_micro_history_feedback).bind(uint64_t(this), uint64_t(build))) != OK) {
-		_micro_history_feedback(Vector<uint8_t>(), uint64_t(this), uint64_t(build));
+	if (select) {
+		build->pending_feedback += mode == RTMicroGeometryBuild::PREPARE_CUT ? 2 : 1;
+		build->candidate_pending = mode == RTMicroGeometryBuild::PREPARE_CUT;
+		build->candidate_changed = false;
+		if (rd->buffer_get_data_async(build->group_usage, callable_mp_static(&RenderRaytracing::_micro_group_feedback).bind(uint64_t(feedback))) != OK) {
+			_micro_group_feedback(Vector<uint8_t>(), uint64_t(feedback));
+		}
+		if (mode == RTMicroGeometryBuild::PREPARE_CUT && rd->buffer_get_data_async(build->dirty_counts, callable_mp_static(&RenderRaytracing::_micro_cut_feedback).bind(uint64_t(build), build->cut_generation)) != OK) {
+			_micro_cut_feedback(Vector<uint8_t>(), uint64_t(build), build->cut_generation);
+		}
 	}
 	ERR_FAIL_COND_V(error != OK, false);
 	return rd->tlas_build_from_buffer(p_state->tlas, build->tlas_instances, 0, blass.size(), dependencies) == OK;
@@ -2670,6 +2750,8 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 		if (source.is_null()) {
 			return false;
 		}
+		uses_time |= shader->rt_uses_time();
+		uses_previous_time |= shader->rt_uses_previous_time();
 		if (!storage->is_ready(asset, true)) {
 			return true;
 		}

@@ -183,6 +183,7 @@ bool frustum_visible(SelectionTask p_task, MicroGeometryInstance p_instance, uin
 	float radius, nearest;
 	float2 low, high;
 	view_bounds(p_task, p_instance, p_multimesh, p_center, p_radius, false, center, radius);
+	if ((parameters.flags & 32) != 0 && center.z - radius >= 0) { return false; }
 	if (!projected_bounds(center, radius, false, low, high, nearest)) { return true; }
 	return all(high >= 0) && all(low <= 1) && nearest >= 0;
 }
@@ -306,7 +307,8 @@ void main(uint3 id : SV_DispatchThreadID) {
 			float3 center;
 			float scale;
 			view_bounds(task, instance, source_multimesh, group.center, 1, false, center, scale);
-			float distance = parameters.projection[15] != 0 ? 1 : max(0.00001, -center.z - group.radius * scale);
+			float depth = (parameters.flags & 32) != 0 ? abs(center.z) : -center.z;
+			float distance = parameters.projection[15] != 0 ? 1 : max(0.00001, depth - group.radius * scale);
 			float error = group.error * scale * abs(parameters.projection[5]) * parameters.output_height * 0.5 / distance;
 			float target_error = parameters.error;
 			float instance_center[3];
