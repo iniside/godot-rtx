@@ -12,11 +12,19 @@ The owner renewed the two remaining corrections after the review-limit stop;
 far-plane classification. Fresh source and bounded compiler-proof reviews pass;
 ordinary editor/console build 08 and four refreshed shader variants pass.
 Step 6 debug views and the visual scene in `demos/rtxdi_manual/microgeometry`
-are present as uncommitted work; their final review remains pending. The owner
+are checkpointed at `cab0af3d04` with Unicode correction `45f5eae299`;
+their final review remains pending. The owner
 stopped correctness/appearance verification and prioritized CPU/GPU performance.
 [Initial measurements and active instrumentation](../research/2026-09-09-1456-microgeometry-performance-status.md)
-show 38.210 ms GPU with live selection and 27.066 ms when frozen; the broad
-TLAS Build interval dominates, but its internal cause is not yet isolated.
+show 38.210 ms GPU with live selection and 27.066 ms when frozen. Instrumented
+Vulkan runs isolate GPU cost in RT cut preparation/publication and transform
+updates, while native TLAS construction is small. Moving-scene RTXDI CPU
+intervals are about 19 ms each versus 0.7-0.9 ms still; main profiling reports
+render threading disabled. Two earlier moving profiles exhausted timestamp
+capacity and are invalid; replacement profiles exit 0 without errors. The owner
+requires minimal main work, worker-based rendering preparation and a central
+sync/submission point; GPU async compute is a separate scheduling direction.
+No threading or shader performance fix has landed yet.
 Actual dragon import/reimport passed in 82.66/67.04 seconds, yielding 17 DAG
 levels and 9737 pages with byte-identical reused `.mgdata`; the diagnostic
 reimport command had shutdown warnings. Import evidence uses an immutable
