@@ -94,6 +94,8 @@ void main(inout RTHitPayload payload, BuiltInTriangleIntersectionAttributes attr
 	payload.hit_distance = RayTCurrent();
 	payload.cone_width = max(payload.cone_width + payload.hit_distance * payload.cone_spread, 0.0);
 	payload.geometry_index = hit.geometry_index;
+	payload.cluster_id = hit.cluster_id;
+	payload.local_primitive_index = hit.primitive_id;
 	geometry_resolve_primitive(hit.geometry, hit.cluster_id, hit.primitive_id, payload.primitive_index);
 	payload.barycentrics = attributes.barycentrics;
 	payload.front_face = native_front || ((payload.ray_flags & 2u) != 0u && RT_CULL_MODE == 0) ? 1u : 0u;

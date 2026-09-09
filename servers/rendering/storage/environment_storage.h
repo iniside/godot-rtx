@@ -38,6 +38,8 @@ public:
 	struct RaytracingSettings {
 		RSE::RaytracingRenderingMode raytracing_rendering_mode = RSE::RAYTRACING_RENDERING_MODE_HYBRID;
 		RSE::RaytracingDenoiser raytracing_denoiser = RSE::RAYTRACING_DENOISER_NRD;
+		float geometry_error = 4.0f;
+		float geometry_offscreen_multiplier = 2.0f;
 		int rtxdi_local_light_samples = 8;
 		RSE::RTXDIResolution rtxdi_resolution = RSE::RTXDI_RESOLUTION_FULL;
 		RSE::DDGIResolution ddgi_resolution = RSE::DDGI_RESOLUTION_FULL;
@@ -337,6 +339,9 @@ public:
 	RaytracingSettings environment_get_raytracing_settings(RID p_env) const;
 
 	void environment_set_raytracing(RID p_env, RSE::RaytracingRenderingMode p_mode, RSE::RaytracingDenoiser p_denoiser, int p_rtxdi_local_light_samples, RSE::RTXDIResolution p_rtxdi_resolution);
+	void environment_set_raytracing_geometry(RID p_env, float p_geometry_error, float p_offscreen_multiplier);
+	float environment_get_raytracing_geometry_error(RID p_env) const;
+	float environment_get_raytracing_geometry_offscreen_multiplier(RID p_env) const;
 	void environment_set_ddgi(RID p_env, bool p_enabled, int p_cascade_count, float p_probe_spacing, int p_rays_per_probe, int p_updates_per_frame, RSE::DDGIResolution p_resolution);
 	void environment_set_pathtracing(RID p_env, int p_samples_per_pixel, int p_max_bounces, bool p_accumulate);
 

@@ -222,6 +222,7 @@ void request_group(uint64_t p_asset, uint p_group) {
 }
 
 bool cut_cluster(SelectionTask p_task, MicroGeometryAsset p_asset, MicroGeometryCluster p_cluster, uint p_multimesh, bool p_coarse) {
+	if ((parameters.flags & 32) != 0 && surfaces[uint(p_task.surface) - 1].force_finest != 0) { return p_cluster.refined_group == 0xffffffff; }
 	if (p_coarse) { return ((MicroGeometryGroup*)p_asset.groups)[p_cluster.group].parent_count == 0; }
 	uint base = p_task.group_offset + p_multimesh * p_task.group_count;
 	return group_states[base + p_cluster.group] != 0 && (p_cluster.refined_group == 0xffffffff || group_states[base + p_cluster.refined_group] == 0);
@@ -241,6 +242,13 @@ void main(uint3 id : SV_DispatchThreadID) {
 		if (valid) {
 			MicroGeometryAsset asset = *((MicroGeometryAsset*)instance.asset_address);
 			valid = asset.identity == instance.asset && (asset.ready & 1) != 0 && asset.group_count == task.group_count && asset.cluster_count == task.cluster_count;
+			if ((parameters.flags & 32) != 0 && surface.force_finest != 0) {
+				for (uint group_id = 0; group_id < asset.group_count; group_id++) {
+					MicroGeometryGroup group = ((MicroGeometryGroup*)asset.groups)[group_id];
+					MicroGeometryCluster cluster = ((MicroGeometryCluster*)asset.clusters)[group.first_cluster];
+					if (cluster.refined_group == 0xffffffff && ((MicroGeometrySurface*)asset.surfaces)[cluster.surface].source_surface == surface.source_surface && ((((uint*)asset.group_states)[group_id] & 3) != 3)) { valid = false; request_group(asset.identity, group_id); }
+				}
+			}
 		}
 		validity[index] = valid ? 1 : 0;
 		RasterInstance raster = {};
@@ -301,7 +309,10 @@ void main(uint3 id : SV_DispatchThreadID) {
 			float distance = parameters.projection[15] != 0 ? 1 : max(0.00001, -center.z - group.radius * scale);
 			float error = group.error * scale * abs(parameters.projection[5]) * parameters.output_height * 0.5 / distance;
 			float target_error = parameters.error;
-			if ((parameters.flags & 32) != 0 && !frustum_visible(task, instance, source_multimesh, group.center, group.radius)) { target_error *= parameters.offscreen_multiplier; }
+			float instance_center[3];
+			for (uint axis = 0; axis < 3; axis++) { instance_center[axis] = instance.aabb_position[axis] + instance.aabb_size[axis] * 0.5; }
+			float instance_radius = length(float3(instance.aabb_size[0], instance.aabb_size[1], instance.aabb_size[2])) * 0.5;
+			if ((parameters.flags & 32) != 0 && !frustum_visible(task, instance, source_multimesh, instance_center, instance_radius)) { target_error *= parameters.offscreen_multiplier; }
 			bool wanted = group.parent_count == 0 || (task.flags & 2) != 0 || surfaces[uint(task.surface) - 1].force_finest != 0 || error > target_error;
 			uint ready_mask = (parameters.flags & 16) != 0 ? 3 : 1;
 			bool ready = (((uint*)asset.group_states)[group_id] & ready_mask) == ready_mask;
@@ -336,7 +347,7 @@ void main(uint3 id : SV_DispatchThreadID) {
 	MicroGeometryInstance instance = instances[uint(task.instance) - 1];
 	MicroGeometryInstanceSurface surface = surfaces[uint(task.surface) - 1];
 	MicroGeometryAsset asset = *((MicroGeometryAsset*)instance.asset_address);
-	if (coarse) {
+	if (coarse && !((parameters.flags & 32) != 0 && surface.force_finest != 0)) {
 		for (uint terminal = 0; terminal < asset.terminal_count; terminal++) {
 			MicroGeometryGroup group = ((MicroGeometryGroup*)asset.groups)[((uint*)asset.terminals)[terminal]];
 			if (cluster_id < group.cluster_count) { cluster_id += group.first_cluster; break; }

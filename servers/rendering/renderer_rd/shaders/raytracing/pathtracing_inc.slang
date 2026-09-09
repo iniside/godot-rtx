@@ -84,7 +84,8 @@ float3 pt_previous_position(RTHitPayload hit) {
 	if (motion_index < 0) { return hit.surface.world_position; }
 	GeometryData geometry = geometry_previous_positions(geometries[hit.geometry_index]);
 	uint3 indices;
-	if (!geometry_triangle_indices(geometry, hit.primitive_index, indices)) { return hit.surface.world_position; }
+	uint primitive;
+	if (!geometry_select_triangle(geometry, hit.cluster_id, hit.local_primitive_index, primitive) || !geometry_triangle_indices(geometry, primitive, indices)) { return hit.surface.world_position; }
 	float3 bary = float3(1.0 - hit.barycentrics.x - hit.barycentrics.y, hit.barycentrics);
 	float3 position = geometry_fetch_position(geometry, indices.x) * bary.x + geometry_fetch_position(geometry, indices.y) * bary.y + geometry_fetch_position(geometry, indices.z) * bary.z;
 	InstanceMotionData motion = pt_instance_motion[motion_index];

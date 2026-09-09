@@ -21,11 +21,21 @@ float light_uniform_light_pdf(uint index, uint first, uint count) {
 }
 
 float4x4 light_decode_light_transform(RTLightData light) {
-	return float4x4(
+	float4x4 transform = float4x4(
 			float4(light.transform[0], light.transform[1], light.transform[2], light.transform[3]),
 			float4(light.transform[4], light.transform[5], light.transform[6], light.transform[7]),
 			float4(light.transform[8], light.transform[9], light.transform[10], light.transform[11]),
 			float4(0.0, 0.0, 0.0, 1.0));
+	if (light.type == RT_LIGHT_TYPE_EMISSIVE_TRIANGLE) {
+		GeometryData geometry = geometries[light.geometry_index];
+		if ((geometry.flags & FLAG_CLUSTERED) != 0u) {
+			if (light._pad0.x != 0u) {
+				geometry.multimesh_offset = geometry.micro_multimesh_previous_offset;
+			}
+			transform = mul(transform, geometry_multimesh_transform(geometry, 0u));
+		}
+	}
+	return transform;
 }
 
 float3 light_evaluate_emission_texture(RTLightData light, float2 uv) {
@@ -38,14 +48,21 @@ float3 light_evaluate_emission_texture(RTLightData light, float2 uv) {
 
 GeometryData light_geometry(RTLightData light) {
 	GeometryData geometry = geometries[light.geometry_index];
-	return light._pad0.x != 0u ? geometry_previous_positions(geometry) : geometry;
+	if (light._pad0.x != 0u) {
+		geometry = geometry_previous_positions(geometry);
+		if ((geometry.flags & FLAG_CLUSTERED) != 0u) {
+			geometry.multimesh_offset = geometry.micro_multimesh_previous_offset;
+		}
+	}
+	return geometry;
 }
 
 RTLightProposal light_sample_emissive_triangle(RTLightData light, float3 receiver_position, float2 random) {
 	RTLightProposal proposal = (RTLightProposal)0;
 	GeometryData geometry = light_geometry(light);
 	uint3 indices;
-	if (!geometry_triangle_indices(geometry, light.primitive_index, indices)) {
+	uint primitive;
+	if (!geometry_select_triangle(geometry, -1, light.primitive_index, primitive) || !geometry_triangle_indices(geometry, primitive, indices)) {
 		return proposal;
 	}
 	float4x4 object_to_world = light_decode_light_transform(light);
@@ -256,7 +273,8 @@ float light_evaluate_light_solid_angle_pdf(RTLightData light, float3 receiver_po
 	if (light.type == RT_LIGHT_TYPE_EMISSIVE_TRIANGLE) {
 		GeometryData geometry = light_geometry(light);
 		uint3 indices;
-		if (!geometry_triangle_indices(geometry, light.primitive_index, indices)) {
+		uint primitive;
+		if (!geometry_select_triangle(geometry, -1, light.primitive_index, primitive) || !geometry_triangle_indices(geometry, primitive, indices)) {
 			return 0.0;
 		}
 		float4x4 object_to_world = light_decode_light_transform(light);

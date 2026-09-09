@@ -31,6 +31,7 @@
 #include "micro_geometry_storage.h"
 
 #include "core/object/callable_mp.h"
+#include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
 
 using namespace RendererRD;
 
@@ -55,10 +56,154 @@ RID MicroGeometryStorage::_create_buffer(Asset &r_asset, const void *p_data, uin
 }
 
 void MicroGeometryStorage::_free_asset_buffers(Asset &r_asset) {
+	for (Page &page : r_asset.pages) {
+		for (RID buffer : page.clas_resources) {
+			RD::get_singleton()->free_rid(buffer);
+		}
+	}
+	for (RID buffer : r_asset.rt_resources) {
+		RD::get_singleton()->free_rid(buffer);
+	}
 	for (RID buffer : r_asset.buffers) {
 		RD::get_singleton()->free_rid(buffer);
 	}
 	r_asset.buffers.clear();
+	r_asset.rt_resources.clear();
+}
+
+bool MicroGeometryStorage::_build_page_clas(Asset &r_asset, uint32_t p_page, const Vector<uint8_t> &p_decoded) {
+	RD *rd = RD::get_singleton();
+	ERR_FAIL_COND_V(!rd->clas_is_supported(), false);
+	if (page_pipeline.is_null()) {
+		Vector<String> modes;
+		modes.push_back("");
+		page_shader.initialize(modes);
+		page_shader_version = page_shader.version_create();
+		page_pipeline = rd->compute_pipeline_create(page_shader.version_get_shader(page_shader_version, 0));
+	}
+	ERR_FAIL_COND_V(page_pipeline.is_null(), false);
+	const MicroGeometryData::Build &metadata = r_asset.source->get_metadata();
+	if (r_asset.clas_addresses.is_null()) {
+		uint64_t primitives = 0;
+		for (const MicroGeometryData::Surface &surface : metadata.surfaces) {
+			r_asset.primitive_offsets.push_back(primitives);
+			primitives += surface.source_triangle_count;
+		}
+		ERR_FAIL_COND_V(primitives * 8 > UINT32_MAX, false);
+		auto allocate = [&](uint32_t p_size) {
+			RID buffer = rd->storage_buffer_create(MAX(p_size, 16u), Vector<uint8_t>(), 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT | RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT);
+			if (buffer.is_valid()) {
+				r_asset.rt_resources.push_back(buffer);
+				r_asset.rt_bytes += MAX(p_size, 16u);
+				statistics.acceleration_structure_bytes += MAX(p_size, 16u);
+			}
+			return buffer;
+		};
+		r_asset.clas_addresses = allocate(metadata.clusters.size() * 8);
+		r_asset.primitive_lookup = allocate(primitives * 8);
+		r_asset.primitive_offset_buffer = allocate(r_asset.primitive_offsets.size() * 4);
+		ERR_FAIL_COND_V(r_asset.clas_addresses.is_null() || r_asset.primitive_lookup.is_null() || r_asset.primitive_offset_buffer.is_null(), false);
+		rd->buffer_clear(r_asset.clas_addresses, 0, MAX(metadata.clusters.size() * 8, 16));
+		Vector<uint8_t> empty_lookup;
+		empty_lookup.resize(MAX(uint32_t(primitives * 8), 16u));
+		memset(empty_lookup.ptrw(), 0xff, empty_lookup.size());
+		rd->buffer_update(r_asset.primitive_lookup, 0, empty_lookup.size(), empty_lookup.ptr());
+		rd->buffer_update(r_asset.primitive_offset_buffer, 0, r_asset.primitive_offsets.size() * 4, r_asset.primitive_offsets.ptr());
+	}
+	ERR_FAIL_COND_V(r_asset.clas_addresses.is_null() || r_asset.primitive_lookup.is_null() || r_asset.primitive_offset_buffer.is_null(), false);
+	struct TriangleInfo {
+		uint32_t cluster_id = 0;
+		uint32_t cluster_flags = 0;
+		uint32_t packed_counts = 0;
+		uint32_t geometry_flags = 0;
+		uint16_t index_stride = 0;
+		uint16_t vertex_stride = 0;
+		uint16_t geometry_stride = 0;
+		uint16_t opacity_stride = 0;
+		uint64_t indices = 0;
+		uint64_t vertices = 0;
+		uint64_t geometry = 0;
+		uint64_t opacity = 0;
+		uint64_t opacity_indices = 0;
+	};
+	static_assert(sizeof(TriangleInfo) == 64);
+	const auto &source_page = metadata.pages[p_page];
+	Page &page = r_asset.pages[p_page];
+	const uint64_t page_address = rd->buffer_get_device_address(pool) + uint64_t(page.gpu.slot) * PAGE_SIZE;
+	LocalVector<TriangleInfo> infos;
+	RD::ClusterBuildInput input;
+	input.max_acceleration_structure_count = source_page.cluster_count;
+	input.flags = RD::ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT;
+	const auto limits = rd->clas_get_limits();
+	for (uint32_t cluster_id = source_page.first_cluster; cluster_id < source_page.first_cluster + source_page.cluster_count; cluster_id++) {
+		const auto &cluster = metadata.clusters[cluster_id];
+		const auto &surface = metadata.surfaces[cluster.surface];
+		ERR_FAIL_COND_V(cluster.vertex_count > limits.max_vertices_per_cluster || cluster.triangle_count > limits.max_triangles_per_cluster, false);
+		ERR_FAIL_COND_V(uint64_t(cluster.payload_offset) + uint64_t(cluster.vertex_count) * surface.vertex_stride + uint64_t(cluster.triangle_count) * 7 > uint64_t(p_decoded.size()), false);
+		TriangleInfo info;
+		info.cluster_id = cluster_id;
+		info.packed_counts = cluster.triangle_count | (cluster.vertex_count << 9) | (1u << 24);
+		info.vertex_stride = surface.vertex_stride;
+		info.vertices = page_address + cluster.payload_offset;
+		info.indices = info.vertices + uint64_t(cluster.vertex_count) * surface.vertex_stride;
+		infos.push_back(info);
+		input.max_cluster_triangle_count = MAX(input.max_cluster_triangle_count, cluster.triangle_count);
+		input.max_cluster_vertex_count = MAX(input.max_cluster_vertex_count, cluster.vertex_count);
+		input.max_total_triangle_count += cluster.triangle_count;
+		input.max_total_vertex_count += cluster.vertex_count;
+	}
+	RD::ClusterBuildSizes sizes;
+	rd->clas_get_build_sizes(input, sizes);
+	ERR_FAIL_COND_V(sizes.acceleration_structure_size == 0 || sizes.acceleration_structure_size > UINT32_MAX || sizes.build_scratch_size == 0 || sizes.build_scratch_size > UINT32_MAX, false);
+	auto allocate = [&](uint32_t p_size, BitField<RD::BufferCreationBits> p_flags, const void *p_data = nullptr) {
+		Span<uint8_t> bytes;
+		if (p_data) {
+			bytes = Span<uint8_t>((const uint8_t *)p_data, p_size);
+		}
+		RID buffer = rd->storage_buffer_create(p_size, bytes, 0, p_flags | RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
+		if (buffer.is_valid()) {
+			page.clas_resources.push_back(buffer);
+			page.clas_bytes += p_size;
+			statistics.acceleration_structure_bytes += p_size;
+		}
+		return buffer;
+	};
+	page.clas_storage = allocate(sizes.acceleration_structure_size, RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_STORAGE_BIT);
+	page.clas_storage_bytes = sizes.acceleration_structure_size;
+	RID scratch = allocate(sizes.build_scratch_size, {});
+	RID info_buffer = allocate(infos.size() * sizeof(TriangleInfo), RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT, infos.ptr());
+	RID count_buffer = allocate(4, RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT, &source_page.cluster_count);
+	ERR_FAIL_COND_V(page.clas_storage.is_null() || scratch.is_null() || info_buffer.is_null() || count_buffer.is_null(), false);
+	struct Parameters {
+		uint64_t asset;
+		uint64_t pool;
+		uint64_t lookup;
+		uint64_t offsets;
+		uint32_t first_cluster;
+		uint32_t cluster_count;
+		uint32_t slot;
+		uint32_t pad;
+	} parameters = { rd->buffer_get_device_address(r_asset.descriptor_buffer), rd->buffer_get_device_address(pool), rd->buffer_get_device_address(r_asset.primitive_lookup), rd->buffer_get_device_address(r_asset.primitive_offset_buffer), source_page.first_cluster, source_page.cluster_count, page.gpu.slot, 0 };
+	RD::ComputeListID list = rd->compute_list_begin();
+	rd->compute_list_bind_compute_pipeline(list, page_pipeline);
+	rd->compute_list_bind_uniform_set(list, UniformSetCacheRD::get_singleton()->get_cache(page_shader.version_get_shader(page_shader_version, 0), 0, RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 0, r_asset.primitive_lookup)), 0);
+	rd->compute_list_set_push_constant(list, &parameters, sizeof(parameters));
+	for (RID buffer : r_asset.buffers) {
+		rd->compute_list_add_buffer_dependency(list, buffer);
+	}
+	for (RID buffer : { pool, r_asset.primitive_lookup, r_asset.primitive_offset_buffer }) {
+		rd->compute_list_add_buffer_dependency(list, buffer);
+	}
+	rd->compute_list_dispatch_threads(list, source_page.cluster_count, 1, 1);
+	rd->compute_list_end();
+	RD::ClusterAddressRegion addresses = { r_asset.clas_addresses, uint64_t(source_page.first_cluster) * 8, 8, uint64_t(source_page.cluster_count) * 8 };
+	RD::ClusterAddressRegion source = { info_buffer, 0, sizeof(TriangleInfo), uint64_t(infos.size()) * sizeof(TriangleInfo) };
+	RID geometry_dependency = pool;
+	if (rd->clas_build(input, page.clas_storage, addresses, {}, scratch, source, count_buffer, { &geometry_dependency, 1 }) != OK) {
+		return false;
+	}
+	page.clas_submission = rd->get_pending_submission_serial();
+	return true;
 }
 
 RID MicroGeometryStorage::acquire(const Ref<MicroGeometryData> &p_source) {
@@ -202,6 +347,17 @@ void MicroGeometryStorage::_publish(Asset &r_asset) {
 			page.gpu.ready = 1;
 		}
 		if (page.status == RESIDENT && page.clas_submission != 0 && page.clas_submission <= completed) {
+			if (!(page.gpu.ready & 2)) {
+				for (RID resource : page.clas_resources) {
+					if (resource != page.clas_storage) {
+						RD::get_singleton()->free_rid(resource);
+					}
+				}
+				page.clas_resources.clear();
+				page.clas_resources.push_back(page.clas_storage);
+				statistics.acceleration_structure_bytes -= page.clas_bytes - page.clas_storage_bytes;
+				page.clas_bytes = page.clas_storage_bytes;
+			}
 			page.gpu.ready |= 2;
 		}
 		if (ready != page.gpu.ready) {
@@ -236,6 +392,16 @@ void MicroGeometryStorage::_publish(Asset &r_asset) {
 
 void MicroGeometryStorage::_unpublish_page(Asset &r_asset, uint32_t p_page) {
 	Page &page = r_asset.pages[p_page];
+	if (!page.clas_resources.is_empty()) {
+		RetiredMetadata retired;
+		retired.buffers = page.clas_resources;
+		retired.rt_bytes = page.clas_bytes;
+		retired.submission = RD::get_singleton()->get_pending_submission_serial();
+		retired_metadata.push_back(retired);
+		page.clas_resources.clear();
+		page.clas_storage = RID();
+		page.clas_bytes = 0;
+	}
 	if (page.gpu.slot != INVALID_SLOT) {
 		Slot &slot = slots[page.gpu.slot];
 		slot.asset = RID();
@@ -269,6 +435,16 @@ void MicroGeometryStorage::release(RID p_asset) {
 	}
 	RetiredMetadata retired;
 	retired.buffers = asset->buffers;
+	for (RID buffer : asset->rt_resources) {
+		retired.buffers.push_back(buffer);
+	}
+	retired.rt_bytes = asset->rt_bytes;
+	for (Page &page : asset->pages) {
+		for (RID buffer : page.clas_resources) {
+			retired.buffers.push_back(buffer);
+		}
+		retired.rt_bytes += page.clas_bytes;
+	}
 	retired.bytes = asset->metadata_bytes;
 	retired.submission = RD::get_singleton()->get_pending_submission_serial();
 	retired_metadata.push_back(retired);
@@ -364,6 +540,7 @@ void MicroGeometryStorage::update() {
 			RD::get_singleton()->free_rid(buffer);
 		}
 		statistics.retired_metadata_bytes -= retired.bytes;
+		statistics.acceleration_structure_bytes -= retired.rt_bytes;
 		retired_metadata.remove_at_unordered(i);
 	}
 	for (uint32_t i = 0; i < tasks.size();) {
@@ -389,7 +566,7 @@ void MicroGeometryStorage::update() {
 			page.upload_submission = RD::get_singleton()->get_pending_submission_serial();
 			page.status = UPLOADING;
 			asset->publication_pending = true;
-			if (error != OK) {
+			if (error != OK || !_build_page_clas(*asset, task->page, task->decoded)) {
 				_unpublish_page(*asset, task->page);
 				page.status = FAILED;
 			}
@@ -431,18 +608,6 @@ void MicroGeometryStorage::update() {
 	}
 }
 
-void MicroGeometryStorage::page_clas_submitted(RID p_asset, uint32_t p_page, uint32_t p_generation) {
-	Asset *asset = assets.get_or_null(p_asset);
-	if (!asset || p_page >= asset->pages.size()) {
-		return;
-	}
-	Page &page = asset->pages[p_page];
-	if (page.status == RESIDENT && page.gpu.generation == p_generation) {
-		page.clas_submission = RD::get_singleton()->get_pending_submission_serial();
-		asset->publication_pending = true;
-	}
-}
-
 bool MicroGeometryStorage::is_group_ready(RID p_asset, uint32_t p_group, bool p_require_clas) const {
 	const Asset *asset = assets.get_or_null(p_asset);
 	const uint32_t required = p_require_clas ? 3 : 1;
@@ -465,6 +630,27 @@ RID MicroGeometryStorage::get_asset_buffer(RID p_asset) const {
 	return asset ? asset->descriptor_buffer : RID();
 }
 
+RID MicroGeometryStorage::get_clas_addresses(RID p_asset) const {
+	const Asset *asset = assets.get_or_null(p_asset);
+	return asset ? asset->clas_addresses : RID();
+}
+
+uint64_t MicroGeometryStorage::get_primitive_lookup(RID p_asset, uint32_t p_surface) const {
+	const Asset *asset = assets.get_or_null(p_asset);
+	return asset && asset->primitive_lookup.is_valid() && p_surface < uint32_t(asset->primitive_offsets.size()) ? RD::get_singleton()->buffer_get_device_address(asset->primitive_lookup) + uint64_t(asset->primitive_offsets[p_surface]) * 8 : 0;
+}
+
+void MicroGeometryStorage::get_clas_dependencies(RID p_asset, Vector<RID> &r_dependencies) const {
+	const Asset *asset = assets.get_or_null(p_asset);
+	if (asset) {
+		for (const Page &page : asset->pages) {
+			if (page.clas_storage.is_valid()) {
+				r_dependencies.push_back(page.clas_storage);
+			}
+		}
+	}
+}
+
 MicroGeometryStorage::GPUPage MicroGeometryStorage::get_page(RID p_asset, uint32_t p_page) const {
 	const Asset *asset = assets.get_or_null(p_asset);
 	return asset && p_page < asset->pages.size() ? asset->pages[p_page].gpu : GPUPage();
@@ -482,6 +668,9 @@ void MicroGeometryStorage::get_dependencies(RID p_asset, Vector<RID> &r_dependen
 	}
 	r_dependencies.push_back(pool);
 	for (RID buffer : asset->buffers) {
+		r_dependencies.push_back(buffer);
+	}
+	for (RID buffer : asset->rt_resources) {
 		r_dependencies.push_back(buffer);
 	}
 }
@@ -518,6 +707,9 @@ bool MicroGeometryStorage::set_page_count(uint32_t p_count) {
 }
 
 MicroGeometryStorage::~MicroGeometryStorage() {
+	if (page_shader_version.is_valid()) {
+		page_shader.version_free(page_shader_version);
+	}
 	for (ReadTask *task : tasks) {
 		WorkerThreadPool::get_singleton()->wait_for_task_completion(task->task);
 		memdelete(task);

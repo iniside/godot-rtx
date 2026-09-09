@@ -3097,6 +3097,9 @@ void RenderingServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("environment_set_fog", "env", "enable", "light_color", "light_energy", "sun_scatter", "density", "height", "height_density", "aerial_perspective", "sky_affect", "fog_mode"), &RenderingServer::environment_set_fog, DEFVAL(RSE::ENV_FOG_MODE_EXPONENTIAL));
 	ClassDB::bind_method(D_METHOD("environment_set_fog_depth", "env", "curve", "begin", "end"), &RenderingServer::environment_set_fog_depth);
 	ClassDB::bind_method(D_METHOD("environment_set_raytracing", "env", "mode", "denoiser", "rtxdi_local_light_samples", "rtxdi_resolution"), &RenderingServer::environment_set_raytracing);
+	ClassDB::bind_method(D_METHOD("environment_set_raytracing_geometry", "env", "geometry_error", "offscreen_multiplier"), &RenderingServer::environment_set_raytracing_geometry);
+	ClassDB::bind_method(D_METHOD("environment_get_raytracing_geometry_error", "env"), &RenderingServer::environment_get_raytracing_geometry_error);
+	ClassDB::bind_method(D_METHOD("environment_get_raytracing_geometry_offscreen_multiplier", "env"), &RenderingServer::environment_get_raytracing_geometry_offscreen_multiplier);
 	ClassDB::bind_method(D_METHOD("environment_set_ddgi", "env", "enabled", "cascade_count", "probe_spacing", "rays_per_probe", "updates_per_frame", "resolution"), &RenderingServer::environment_set_ddgi);
 	ClassDB::bind_method(D_METHOD("environment_set_pathtracing", "env", "samples_per_pixel", "max_bounces", "accumulate"), &RenderingServer::environment_set_pathtracing);
 

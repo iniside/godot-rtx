@@ -35,6 +35,7 @@
 #include "core/templates/rid_owner.h"
 #include "servers/rendering/micro_geometry_data.h"
 #include "servers/rendering/rendering_device.h"
+#include "servers/rendering/renderer_rd/shaders/forward_clustered/micro_geometry_page.slang.gen.h"
 
 namespace RendererRD {
 
@@ -128,6 +129,7 @@ public:
 		uint64_t parent_groups = 0;
 	};
 	struct Statistics {
+		uint64_t acceleration_structure_bytes = 0;
 		uint64_t pool_bytes = 0;
 		uint64_t metadata_bytes = 0;
 		uint64_t retired_metadata_bytes = 0;
@@ -144,6 +146,10 @@ public:
 private:
 	enum PageStatus { ABSENT, REQUESTED, READING, UPLOADING, RESIDENT, FAILED };
 	struct Page {
+		LocalVector<RID> clas_resources;
+		RID clas_storage;
+		uint64_t clas_bytes = 0;
+		uint64_t clas_storage_bytes = 0;
 		PageStatus status = ABSENT;
 		GPUPage gpu;
 		uint32_t pins = 0;
@@ -153,6 +159,12 @@ private:
 		uint64_t clas_submission = 0;
 	};
 	struct Asset {
+		LocalVector<RID> rt_resources;
+		uint64_t rt_bytes = 0;
+		RID clas_addresses;
+		RID primitive_lookup;
+		RID primitive_offset_buffer;
+		Vector<uint32_t> primitive_offsets;
 		Ref<MicroGeometryData> source;
 		bool publication_pending = false;
 		bool groups_dirty = false;
@@ -185,6 +197,7 @@ private:
 	struct RetiredMetadata {
 		LocalVector<RID> buffers;
 		uint64_t bytes = 0;
+		uint64_t rt_bytes = 0;
 		uint64_t submission = 0;
 	};
 	struct Feedback {
@@ -208,6 +221,9 @@ private:
 	uint32_t page_count = DEFAULT_PAGE_COUNT;
 	uint64_t clock = 0;
 	Statistics statistics;
+	MicroGeometryPageShaderRD page_shader;
+	RID page_shader_version;
+	RID page_pipeline;
 
 	static void _read_page(void *p_userdata);
 	RID _create_buffer(Asset &r_asset, const void *p_data, uint32_t p_size);
@@ -215,6 +231,7 @@ private:
 	void _unpublish_page(Asset &r_asset, uint32_t p_page);
 	uint32_t _allocate_slot();
 	void _free_asset_buffers(Asset &r_asset);
+	bool _build_page_clas(Asset &r_asset, uint32_t p_page, const Vector<uint8_t> &p_decoded);
 
 public:
 	RID feedback_create(uint32_t p_capacity = 4096);
@@ -227,11 +244,13 @@ public:
 	bool request_group(RID p_asset, uint32_t p_group);
 	bool pin_group(RID p_asset, uint32_t p_group);
 	void unpin_group(RID p_asset, uint32_t p_group);
-	void page_clas_submitted(RID p_asset, uint32_t p_page, uint32_t p_generation);
 	bool is_group_ready(RID p_asset, uint32_t p_group, bool p_require_clas = false) const;
 	bool is_ready(RID p_asset, bool p_require_clas = false) const;
 	GPUAsset get_asset(RID p_asset) const;
 	RID get_asset_buffer(RID p_asset) const;
+	RID get_clas_addresses(RID p_asset) const;
+	uint64_t get_primitive_lookup(RID p_asset, uint32_t p_surface) const;
+	void get_clas_dependencies(RID p_asset, Vector<RID> &r_dependencies) const;
 	GPUPage get_page(RID p_asset, uint32_t p_page) const;
 	Ref<MicroGeometryData> get_source(RID p_asset) const;
 	RID get_pool() const { return pool; }

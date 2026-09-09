@@ -663,6 +663,18 @@ void RendererSceneRender::environment_set_raytracing(RID p_env, RSE::RaytracingR
 	environment_storage.environment_set_raytracing(p_env, p_mode, p_denoiser, p_rtxdi_local_light_samples, p_rtxdi_resolution);
 }
 
+void RendererSceneRender::environment_set_raytracing_geometry(RID p_env, float p_geometry_error, float p_offscreen_multiplier) {
+	environment_storage.environment_set_raytracing_geometry(p_env, p_geometry_error, p_offscreen_multiplier);
+}
+
+float RendererSceneRender::environment_get_raytracing_geometry_error(RID p_env) const {
+	return environment_storage.environment_get_raytracing_geometry_error(p_env);
+}
+
+float RendererSceneRender::environment_get_raytracing_geometry_offscreen_multiplier(RID p_env) const {
+	return environment_storage.environment_get_raytracing_geometry_offscreen_multiplier(p_env);
+}
+
 void RendererSceneRender::environment_set_ddgi(RID p_env, bool p_enabled, int p_cascade_count, float p_probe_spacing, int p_rays_per_probe, int p_updates_per_frame, RSE::DDGIResolution p_resolution) {
 	environment_storage.environment_set_ddgi(p_env, p_enabled, p_cascade_count, p_probe_spacing, p_rays_per_probe, p_updates_per_frame, p_resolution);
 }

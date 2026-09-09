@@ -175,6 +175,8 @@ private:
 
 	RaytracingRenderingMode raytracing_rendering_mode = RAYTRACING_RENDERING_MODE_HYBRID;
 	RaytracingDenoiser raytracing_denoiser = RAYTRACING_DENOISER_NRD;
+	float raytracing_geometry_error = 4.0f;
+	float raytracing_geometry_offscreen_multiplier = 2.0f;
 	int rtxdi_local_light_samples = 8;
 	RTXDIResolution rtxdi_resolution = RTXDI_RESOLUTION_FULL;
 	DDGIResolution ddgi_resolution = DDGI_RESOLUTION_FULL;
@@ -187,6 +189,7 @@ private:
 	int pathtracing_max_bounces = 8;
 	bool pathtracing_accumulate = true;
 	void _update_raytracing();
+	void _update_raytracing_geometry();
 	void _update_ddgi();
 	void _update_pathtracing();
 
@@ -368,6 +371,10 @@ public:
 	RaytracingRenderingMode get_raytracing_rendering_mode() const;
 	void set_raytracing_denoiser(RaytracingDenoiser p_value);
 	RaytracingDenoiser get_raytracing_denoiser() const;
+	void set_raytracing_geometry_error(float p_value);
+	float get_raytracing_geometry_error() const;
+	void set_raytracing_geometry_offscreen_multiplier(float p_value);
+	float get_raytracing_geometry_offscreen_multiplier() const;
 	void set_rtxdi_resolution(RTXDIResolution p_value);
 	RTXDIResolution get_rtxdi_resolution() const;
 	void set_rtxdi_local_light_samples(int p_value);

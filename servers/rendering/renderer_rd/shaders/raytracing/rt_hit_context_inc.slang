@@ -42,6 +42,8 @@ struct RTHitPayload {
 	uint front_face;
 	uint ray_layer_mask;
 	uint ray_flags;
+	int cluster_id;
+	uint local_primitive_index;
 };
 
 [[vk::binding(0, 0)]] ConstantBuffer<SceneDataBlock> scene_data_block;
@@ -329,19 +331,20 @@ float2 rt_texture_lod(TextureCubeArray<float4> texture_value, float4 coordinate,
 }
 
 void rt_initialize_vertex(GeometryHitInput hit, GeometryTriangle triangle, uint index) {
-	VERTEX_INDEX = triangle.indices[index];
-	geometry_fetch_bones(hit.geometry, VERTEX_INDEX, bone_attrib, weight_attrib);
-	vertex = geometry_fetch_position(hit.geometry, VERTEX_INDEX);
-	geometry_fetch_tbn(hit.geometry, VERTEX_INDEX, normal_highp, tangent, binormal);
+	uint local_vertex = triangle.indices[index];
+	VERTEX_INDEX = geometry_source_vertex_index(hit.geometry, local_vertex);
+	geometry_fetch_bones(hit.geometry, local_vertex, bone_attrib, weight_attrib);
+	vertex = geometry_fetch_position(hit.geometry, local_vertex);
+	geometry_fetch_tbn(hit.geometry, local_vertex, normal_highp, tangent, binormal);
 	float3 single_bary = float3(index == 0u ? 1.0 : 0.0, index == 1u ? 1.0 : 0.0, index == 2u ? 1.0 : 0.0);
 	uv_interp = geometry_fetch_uv(hit.geometry, triangle.indices, single_bary);
 	uv2_interp = geometry_fetch_uv2(hit.geometry, triangle.indices, single_bary);
 	color_interp = geometry_fetch_color(hit.geometry, triangle.indices, single_bary);
-	custom0_attrib = geometry_fetch_custom(hit.geometry, VERTEX_INDEX, 0u);
-	custom1_attrib = geometry_fetch_custom(hit.geometry, VERTEX_INDEX, 1u);
-	custom2_attrib = geometry_fetch_custom(hit.geometry, VERTEX_INDEX, 2u);
-	custom3_attrib = geometry_fetch_custom(hit.geometry, VERTEX_INDEX, 3u);
-	if (hit.geometry.multimesh_address != 0) {
+	custom0_attrib = geometry_fetch_custom(hit.geometry, local_vertex, 0u);
+	custom1_attrib = geometry_fetch_custom(hit.geometry, local_vertex, 1u);
+	custom2_attrib = geometry_fetch_custom(hit.geometry, local_vertex, 2u);
+	custom3_attrib = geometry_fetch_custom(hit.geometry, local_vertex, 3u);
+	if (hit.geometry.multimesh_address != 0 && (hit.geometry.flags & FLAG_CLUSTERED) == 0u) {
 		GeometryData source_geometry = hit.geometry;
 		source_geometry.vertex_address = hit.geometry.source_vertex_address;
 		source_geometry.vertex_count = hit.geometry.source_vertex_count;

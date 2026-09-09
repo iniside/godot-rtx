@@ -895,6 +895,9 @@ public:
 	FUNC1(environment_set_volumetric_fog_filter_active, bool)
 
 	FUNC5(environment_set_raytracing, RID, RSE::RaytracingRenderingMode, RSE::RaytracingDenoiser, int, RSE::RTXDIResolution)
+	FUNC3(environment_set_raytracing_geometry, RID, float, float)
+	FUNC1RC(float, environment_get_raytracing_geometry_error, RID)
+	FUNC1RC(float, environment_get_raytracing_geometry_offscreen_multiplier, RID)
 	FUNC7(environment_set_ddgi, RID, bool, int, float, int, int, RSE::DDGIResolution)
 	FUNC4(environment_set_pathtracing, RID, int, int, bool)
 

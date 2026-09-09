@@ -32,6 +32,7 @@
 
 #include "micro_geometry_storage.h"
 
+#include "core/os/mutex.h"
 #include "core/templates/local_vector.h"
 #include "core/templates/rid_owner.h"
 #include "core/templates/self_list.h"
@@ -83,6 +84,12 @@ private:
 		struct Surface {
 			RenderingServerTypes::SurfaceData source_data;
 			bool keep_source_data = false;
+			bool gpu_buffers_discarded = false;
+			bool micro_geometry_mapped = false;
+			bool exact_buffers_pinned = false;
+			bool exact_buffers_tracked = false;
+			uint64_t exact_buffers_last_use_frame = 0;
+			uint64_t exact_buffers_last_use_submission = 0;
 			RSE::PrimitiveType primitive = RSE::PRIMITIVE_POINTS;
 			uint64_t format = 0;
 
@@ -121,16 +128,6 @@ private:
 			uint32_t index_buffer_size = 0;
 			RID index_array;
 			uint32_t index_count = 0;
-
-			RID cluster_buffer;
-			uint32_t cluster_buffer_size = 0;
-			RID cluster_position_buffer;
-			uint32_t cluster_position_buffer_size = 0;
-			uint32_t cluster_count = 0;
-			uint32_t cluster_index_section_offset = 0;
-			// CPU mirror of the blob's record section (cluster_count * 16 bytes). The BLAS
-			// builder needs it per build and buffer_get_data() would stall the whole device.
-			Vector<uint8_t> cluster_records;
 
 			struct LOD {
 				float edge_length = 0.0;
@@ -198,7 +195,15 @@ private:
 	};
 
 	mutable RID_Owner<Mesh, true> mesh_owner;
+	mutable Mutex exact_buffers_mutex;
+	mutable LocalVector<Mesh::Surface *> tracked_exact_buffers;
 	void _invalidate_micro_geometry(Mesh *p_mesh);
+	void _mesh_surface_untrack_exact_buffers(Mesh::Surface *p_surface) const;
+	void _mesh_surface_mark_exact_buffers_used(Mesh::Surface *p_surface) const;
+	void _mesh_surface_pin_exact_buffers(Mesh::Surface *p_surface) const;
+	void _retire_unused_exact_buffers();
+	void _mesh_surface_discard_gpu_buffers(Mesh::Surface *p_surface);
+	void _mesh_surface_ensure_gpu_buffers(Mesh::Surface *p_surface) const;
 
 	/* Mesh Instance API */
 
@@ -509,6 +514,7 @@ public:
 	/// Get the vertex buffer RID for raytracing device address access.
 	_FORCE_INLINE_ RID mesh_surface_get_vertex_buffer(void *p_surface) {
 		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
+		_mesh_surface_ensure_gpu_buffers(s);
 		return s->vertex_buffer;
 	}
 
@@ -556,48 +562,13 @@ public:
 		return mi->surfaces[p_surface_index].last_change;
 	}
 
-	/// Cluster acceleration structure inputs baked at import time (empty for surfaces without clusters).
-	_FORCE_INLINE_ RID mesh_surface_get_cluster_buffer(void *p_surface) {
-		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
-		return s->cluster_buffer;
-	}
-
-	_FORCE_INLINE_ RID mesh_surface_get_cluster_position_buffer(void *p_surface) {
-		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
-		return s->cluster_position_buffer;
-	}
-
-	_FORCE_INLINE_ uint32_t mesh_surface_get_cluster_count(void *p_surface) {
-		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
-		return s->cluster_count;
-	}
-
-	_FORCE_INLINE_ uint32_t mesh_surface_get_cluster_index_section_offset(void *p_surface) {
-		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
-		return s->cluster_index_section_offset;
-	}
-
-	_FORCE_INLINE_ uint32_t mesh_surface_get_cluster_buffer_size(void *p_surface) {
-		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
-		return s->cluster_buffer_size;
-	}
-
-	_FORCE_INLINE_ uint32_t mesh_surface_get_cluster_position_buffer_size(void *p_surface) {
-		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
-		return s->cluster_position_buffer_size;
-	}
-
-	_FORCE_INLINE_ const Vector<uint8_t> &mesh_surface_get_cluster_records(void *p_surface) {
-		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
-		return s->cluster_records;
-	}
-
 	_FORCE_INLINE_ RID mesh_surface_get_skin_buffer(void *p_surface) {
 		return reinterpret_cast<Mesh::Surface *>(p_surface)->skin_buffer;
 	}
 
 	_FORCE_INLINE_ RID mesh_surface_get_attribute_buffer(void *p_surface) {
 		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
+		_mesh_surface_ensure_gpu_buffers(s);
 		return s->attribute_buffer;
 	}
 
@@ -605,6 +576,7 @@ public:
 	/// @param p_lod LOD level (0 = base, 1+ = LOD index + 1)
 	_FORCE_INLINE_ RID mesh_surface_get_index_buffer(void *p_surface, uint32_t p_lod = 0) {
 		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
+		_mesh_surface_ensure_gpu_buffers(s);
 		if (p_lod == 0) {
 			return s->index_buffer;
 		} else {
@@ -647,6 +619,7 @@ public:
 
 	_FORCE_INLINE_ RID mesh_surface_get_index_array(void *p_surface, uint32_t p_lod) const {
 		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
+		_mesh_surface_ensure_gpu_buffers(s);
 
 		if (p_lod == 0) {
 			return s->index_array;
@@ -662,6 +635,7 @@ public:
 
 	_FORCE_INLINE_ void mesh_surface_get_vertex_arrays_and_format(void *p_surface, uint64_t p_input_mask, bool p_input_motion_vectors, bool p_point_size_emulated, RID &r_vertex_array_rd, RD::VertexFormatID &r_vertex_format) {
 		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
+		_mesh_surface_ensure_gpu_buffers(s);
 
 		s->version_lock.lock();
 
@@ -700,6 +674,7 @@ public:
 
 		MeshInstance::Surface *mis = &mi->surfaces[p_surface_index];
 		Mesh::Surface *s = mesh->surfaces[p_surface_index];
+		_mesh_surface_ensure_gpu_buffers(s);
 		uint32_t current_buffer = mis->current_buffer;
 
 		// Using the previous buffer is only allowed if the surface was updated this frame and motion vectors are required.

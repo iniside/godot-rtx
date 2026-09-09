@@ -30,6 +30,7 @@
 
 #include "core/config/project_settings.h"
 #include "core/io/marshalls.h"
+#include "core/object/callable_mp.h"
 #include "core/math/math_funcs.h"
 #include "servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h"
 #include "servers/rendering/renderer_rd/forward_clustered/render_rtxdi.h"
@@ -72,6 +73,17 @@ RenderRaytracing::~RenderRaytracing() {
 		_free_viewport_state_internal(kv.value);
 	}
 	viewport_states.clear();
+	if (!retired_micro_geometry.is_empty()) {
+		RD::get_singleton()->flush_and_stall();
+		for (auto *build : retired_micro_geometry) {
+			_free_micro_geometry(build);
+		}
+		retired_micro_geometry.clear();
+	}
+	if (micro_selection) {
+		memdelete(micro_selection);
+		micro_rt_shader.version_free(micro_rt_version);
+	}
 	if (ddgi_effect) {
 		memdelete(ddgi_effect);
 	}
@@ -80,6 +92,10 @@ RenderRaytracing::~RenderRaytracing() {
 	}
 
 	_free_persistent_buffers();
+	if (geometry_positions_version.is_valid()) {
+		RD::get_singleton()->flush_and_stall();
+		geometry_positions_shader.version_free(geometry_positions_version);
+	}
 	cleanup_caches();
 
 	if (mat_ubo_pool_buffer.is_valid()) {
@@ -278,6 +294,8 @@ void RenderRaytracing::_free_viewport_state_internal(RTViewportState *p_state) {
 	if (!p_state) {
 		return;
 	}
+	_retire_micro_geometry(p_state->micro_geometry);
+	p_state->micro_geometry = nullptr;
 	if (RD::get_singleton()->raytracing_pipeline_is_valid(p_state->material_pipeline)) {
 		RD::get_singleton()->free_rid(p_state->material_sbt);
 		RD::get_singleton()->free_rid(p_state->material_pipeline);
@@ -423,7 +441,7 @@ void RenderRaytracing::cleanup_caches() {
 			for (uint32_t j = 0; j < RT_CACHE_CHUNK_SIZE; j++) {
 				RTCacheEntry *entry = &surface_chunks[i][j];
 				if (entry->ptr) {
-					_release_cluster_blas(entry->ptr, false);
+					_release_surface_blas(entry->ptr, false);
 					memdelete(entry->ptr);
 					entry->ptr = nullptr;
 				}
@@ -433,25 +451,14 @@ void RenderRaytracing::cleanup_caches() {
 	}
 	surface_chunks.clear();
 
-	for (const RTPendingClusterBuild &pending : pending_cluster_builds) {
-		if (pending.src_infos_buffer.is_valid()) {
-			rd->free_rid(pending.src_infos_buffer);
-		}
-	}
-	pending_cluster_builds.clear();
 
-	for (const RTDeferredResourceFree &deferred : cluster_deferred_frees) {
+	for (const RTDeferredResourceFree &deferred : deferred_resource_frees) {
 		if (deferred.resource.is_valid()) {
 			rd->free_rid(deferred.resource);
 		}
 	}
-	cluster_deferred_frees.clear();
+	deferred_resource_frees.clear();
 
-	if (clas_scratch_buffer.is_valid()) {
-		rd->free_rid(clas_scratch_buffer);
-		clas_scratch_buffer = RID();
-	}
-	clas_scratch_capacity = 0;
 
 	// Free all cached deformed surface data.
 	{
@@ -648,30 +655,30 @@ void RenderRaytracing::prepare_frame() {
 	deformed_active_this_frame.clear();
 	merged_mm_active_this_frame.clear();
 
+	for (uint32_t index = 0; index < uint32_t(retired_micro_geometry.size());) {
+		auto *build = retired_micro_geometry[index];
+		if (build->pending_feedback == 0 && build->retirement <= RD::get_singleton()->get_completed_submission_serial()) {
+			_free_micro_geometry(build);
+			retired_micro_geometry.remove_at(index);
+		} else {
+			index++;
+		}
+	}
 	const uint32_t current_frame = RSG::rasterizer->get_frame_number();
 	RD *rd = RD::get_singleton();
 
-	for (const RTPendingClusterBuild &pending : pending_cluster_builds) {
-		if (pending.src_infos_buffer.is_valid()) {
-			cluster_deferred_frees.push_back({ pending.src_infos_buffer, current_frame });
-		}
-	}
-	pending_cluster_builds.clear();
-
-	// Cluster build inputs stay alive until the graph that recorded them has been
-	// submitted; freeing one in its own frame would destroy a tracker it still holds.
-	for (uint32_t i = cluster_deferred_frees.size(); i > 0; i--) {
-		RTDeferredResourceFree &deferred = cluster_deferred_frees[i - 1];
-		if (deferred.frame == current_frame) {
+	for (uint32_t i = deferred_resource_frees.size(); i > 0; i--) {
+		RTDeferredResourceFree &deferred = deferred_resource_frees[i - 1];
+		if (deferred.submission > rd->get_completed_submission_serial()) {
 			continue;
 		}
 		if (deferred.resource.is_valid()) {
 			rd->free_rid(deferred.resource);
 		}
-		cluster_deferred_frees.remove_at_unordered(i - 1);
+		deferred_resource_frees.remove_at_unordered(i - 1);
 	}
 
-	_sweep_dead_cluster_surfaces();
+	_sweep_dead_surfaces();
 
 	// TTL-evict stale deformed-surface entries.
 	{
@@ -782,7 +789,7 @@ RTSurfaceData *RenderRaytracing::process_surface(
 			entry->cached_rid_version != mesh_version ||
 			entry->cached_counter != p_surface_invalidation_counter;
 
-	if (!needs_refresh && entry->ptr->blas.is_valid()) {
+	if (!needs_refresh && RD::get_singleton()->acceleration_structure_is_valid(entry->ptr->blas)) {
 		cache_hits++;
 		entry->last_used_frame = current_frame;
 		return entry->ptr;
@@ -795,7 +802,7 @@ RTSurfaceData *RenderRaytracing::process_surface(
 		entry->ptr = memnew(RTSurfaceData);
 	} else {
 		// Unconditional, including on a version mismatch.
-		_release_cluster_blas(entry->ptr, false);
+		_release_surface_blas(entry->ptr, true);
 	}
 
 	entry->owner_mesh = mesh_storage->owns_mesh(mesh_rid) ? mesh_rid : RID();
@@ -1115,74 +1122,37 @@ static void _fill_surface_geometry_data(
 	}
 }
 
-// Layout must match VkClusterAccelerationStructureBuildTriangleClusterInfoNV
-// (thirdparty/vulkan/include/vulkan/vulkan_core.h:23292).
-struct RTClusterTriangleInfo {
-	uint32_t cluster_id = 0;
-	uint32_t cluster_flags = 0;
-	uint32_t packed_counts = 0;
-	uint32_t base_geometry_index_and_flags = 0;
-	uint16_t index_buffer_stride = 0;
-	uint16_t vertex_buffer_stride = 0;
-	uint16_t geometry_index_and_flags_buffer_stride = 0;
-	uint16_t opacity_micromap_index_buffer_stride = 0;
-	uint64_t index_buffer = 0;
-	uint64_t vertex_buffer = 0;
-	uint64_t geometry_index_and_flags_buffer = 0;
-	uint64_t opacity_micromap_array = 0;
-	uint64_t opacity_micromap_index_buffer = 0;
-};
-static_assert(sizeof(RTClusterTriangleInfo) == 64, "RTClusterTriangleInfo must match the Vulkan cluster triangle info layout");
-
-enum : uint32_t {
-	RT_CLUSTER_RECORD_SIZE = 16,
-	RT_CLUSTER_INDEX_TYPE_8BIT = 1,
-};
-
-void RenderRaytracing::_release_cluster_blas(RTSurfaceData *p_surf_data, bool p_deferred) {
+void RenderRaytracing::_release_surface_blas(RTSurfaceData *p_surf_data, bool p_deferred) {
 	if (!p_surf_data) {
 		return;
 	}
 
 	RD *rd = RD::get_singleton();
-	const uint32_t current_frame = RSG::rasterizer->get_frame_number();
-	RID *owned[] = {
-		&p_surf_data->blas,
-		&p_surf_data->clas_buffer,
-		&p_surf_data->clas_addresses_buffer,
-		&p_surf_data->cluster_remap_buffer,
-		&p_surf_data->clas_count_buffer,
-	};
+	if (p_surf_data->blas.is_valid() && !rd->acceleration_structure_is_valid(p_surf_data->blas)) {
+		p_surf_data->blas = RID();
+	}
+	RID *owned[] = { &p_surf_data->blas, &p_surf_data->position_buffer, &p_surf_data->position_parameters };
 	for (RID *rid : owned) {
 		if (!rid->is_valid()) {
 			continue;
 		}
 		if (p_deferred) {
-			cluster_deferred_frees.push_back({ *rid, current_frame });
+			deferred_resource_frees.push_back({ *rid, rd->get_pending_submission_serial() });
 		} else {
 			rd->free_rid(*rid);
 		}
 		*rid = RID();
 	}
-
-	p_surf_data->cluster_count = 0;
-	p_surf_data->is_clustered = false;
-	p_surf_data->geometry.flags &= ~(uint32_t)RT_GEOM_FLAG_CLUSTERED;
-	p_surf_data->geometry.cluster_count = 0;
-	p_surf_data->geometry.cluster_remap_address_lo = 0;
-	p_surf_data->geometry.cluster_remap_address_hi = 0;
 }
 
-// A cluster BLAS holds no RD dependency on its mesh, so a freed mesh leaves its buffers
-// resident until this walk reaches them; one chunk per call keeps it off the frame budget.
-void RenderRaytracing::_sweep_dead_cluster_surfaces() {
+void RenderRaytracing::_sweep_dead_surfaces() {
 	if (surface_chunks.is_empty()) {
 		return;
 	}
 
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
-	cluster_sweep_chunk = (cluster_sweep_chunk + 1) % surface_chunks.size();
-	RTCacheEntry *chunk = surface_chunks[cluster_sweep_chunk];
+	surface_sweep_chunk = (surface_sweep_chunk + 1) % surface_chunks.size();
+	RTCacheEntry *chunk = surface_chunks[surface_sweep_chunk];
 	if (!chunk) {
 		return;
 	}
@@ -1192,252 +1162,10 @@ void RenderRaytracing::_sweep_dead_cluster_surfaces() {
 		if (!entry->ptr || !entry->owner_mesh.is_valid() || mesh_storage->owns_mesh(entry->owner_mesh)) {
 			continue;
 		}
-		_release_cluster_blas(entry->ptr, true);
+		_release_surface_blas(entry->ptr, true);
 		memdelete(entry->ptr);
 		*entry = RTCacheEntry();
 	}
-}
-
-bool RenderRaytracing::_populate_cluster_blas(void *p_mesh_surface, uint32_t p_cache_key, RTSurfaceData *r_surf_data) {
-	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
-	RD *rd = RD::get_singleton();
-
-	const uint32_t cluster_count = mesh_storage->mesh_surface_get_cluster_count(p_mesh_surface);
-	const RID cluster_buffer = mesh_storage->mesh_surface_get_cluster_buffer(p_mesh_surface);
-	const RID cluster_position_buffer = mesh_storage->mesh_surface_get_cluster_position_buffer(p_mesh_surface);
-	const Vector<uint8_t> &records = mesh_storage->mesh_surface_get_cluster_records(p_mesh_surface);
-
-	if (cluster_count == 0 || !cluster_buffer.is_valid() || !cluster_position_buffer.is_valid() ||
-			(uint64_t)records.size() < (uint64_t)cluster_count * RT_CLUSTER_RECORD_SIZE) {
-		ERR_PRINT_ONCE("Ray tracing: a mesh surface carries no baked cluster data and will not be rendered. Re-import the mesh.");
-		return false;
-	}
-	if (!rd->clas_is_supported()) {
-		ERR_PRINT_ONCE("Ray tracing: the rendering device does not support cluster acceleration structures, so static geometry will not be rendered.");
-		return false;
-	}
-
-	const uint64_t cluster_base_address = rd->buffer_get_device_address(cluster_buffer);
-	const uint64_t position_base_address = rd->buffer_get_device_address(cluster_position_buffer);
-	ERR_FAIL_COND_V_MSG(cluster_base_address == 0 || position_base_address == 0, false, "Ray tracing: cluster buffers have no device address.");
-
-	const RD::ClusterAccelerationStructureLimits limits = rd->clas_get_limits();
-	const uint32_t index_section_offset = mesh_storage->mesh_surface_get_cluster_index_section_offset(p_mesh_surface);
-	const uint64_t cluster_buffer_size = mesh_storage->mesh_surface_get_cluster_buffer_size(p_mesh_surface);
-	const uint64_t position_buffer_size = mesh_storage->mesh_surface_get_cluster_position_buffer_size(p_mesh_surface);
-	const uint8_t *record_ptr = records.ptr();
-
-	LocalVector<RTClusterTriangleInfo> src_infos;
-	src_infos.resize(cluster_count);
-	LocalVector<uint32_t> cluster_remap;
-	cluster_remap.resize(cluster_count);
-
-	uint32_t max_cluster_triangles = 0;
-	uint32_t max_cluster_vertices = 0;
-	uint32_t total_triangles = 0;
-	uint32_t total_vertices = 0;
-
-	for (uint32_t i = 0; i < cluster_count; i++) {
-		const uint8_t *record = record_ptr + (uint64_t)i * RT_CLUSTER_RECORD_SIZE;
-		const uint32_t position_offset = decode_uint32(record + 0);
-		const uint32_t index_offset = decode_uint32(record + 4);
-		const uint32_t vertex_count = record[8];
-		const uint32_t triangle_count = record[9];
-
-		ERR_FAIL_COND_V_MSG(vertex_count == 0 || triangle_count == 0, false, "Ray tracing: a cluster record carries no geometry.");
-		ERR_FAIL_COND_V_MSG(vertex_count > limits.max_vertices_per_cluster || triangle_count > limits.max_triangles_per_cluster, false,
-				"Ray tracing: a cluster exceeds the per-cluster vertex or triangle limit of this device.");
-		ERR_FAIL_COND_V_MSG((uint64_t)position_offset + (uint64_t)vertex_count * 12 > position_buffer_size, false,
-				"Ray tracing: a cluster's position range lies outside the surface's cluster position buffer.");
-		// The local index section lives inside cluster_buffer, behind its header and per-cluster records.
-		ERR_FAIL_COND_V_MSG((uint64_t)index_section_offset + (uint64_t)index_offset + (uint64_t)triangle_count * 3 > cluster_buffer_size, false,
-				"Ray tracing: a cluster's index range lies outside the surface's cluster buffer.");
-
-		RTClusterTriangleInfo &info = src_infos[i];
-		info.cluster_id = i;
-		info.packed_counts = (triangle_count & 0x1FFu) | ((vertex_count & 0x1FFu) << 9) | (RT_CLUSTER_INDEX_TYPE_8BIT << 24);
-		info.vertex_buffer_stride = sizeof(float) * 3;
-		info.index_buffer = cluster_base_address + index_section_offset + index_offset;
-		info.vertex_buffer = position_base_address + position_offset;
-
-		cluster_remap[i] = decode_uint32(record + 12);
-
-		max_cluster_triangles = MAX(max_cluster_triangles, triangle_count);
-		max_cluster_vertices = MAX(max_cluster_vertices, vertex_count);
-		total_triangles += triangle_count;
-		total_vertices += vertex_count;
-	}
-
-	RD::ClusterBuildInput input;
-	input.max_acceleration_structure_count = cluster_count;
-	input.flags = RD::ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT;
-	input.vertex_format = RD::DATA_FORMAT_R32G32B32_SFLOAT;
-	input.max_geometry_index_value = 0;
-	input.max_cluster_unique_geometry_count = 1;
-	input.max_cluster_triangle_count = max_cluster_triangles;
-	input.max_cluster_vertex_count = max_cluster_vertices;
-	input.max_total_triangle_count = total_triangles;
-	input.max_total_vertex_count = total_vertices;
-	input.min_position_truncate_bit_count = 0;
-
-	RD::ClusterBuildSizes sizes;
-	rd->clas_get_build_sizes(input, sizes);
-	ERR_FAIL_COND_V_MSG(sizes.acceleration_structure_size == 0 || sizes.build_scratch_size == 0, false, "Ray tracing: failed to query the cluster build sizes.");
-	ERR_FAIL_COND_V_MSG(sizes.acceleration_structure_size > UINT32_MAX, false, "Ray tracing: the cluster acceleration structure is too large to allocate.");
-
-	const BitField<RD::BufferCreationBits> implicit_flags = RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_STORAGE_BIT | RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT;
-	const BitField<RD::BufferCreationBits> build_input_flags = RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT | RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT;
-
-	RTPendingClusterBuild pending;
-	pending.input = input;
-	pending.cluster_count = cluster_count;
-	pending.scratch_size = sizes.build_scratch_size;
-
-	RID cluster_remap_buffer;
-	auto abort_build = [&]() {
-		RID owned[] = { pending.clas_buffer, pending.clas_addresses_buffer, pending.clas_count_buffer, pending.src_infos_buffer, cluster_remap_buffer };
-		for (const RID &rid : owned) {
-			if (rid.is_valid()) {
-				rd->free_rid(rid);
-			}
-		}
-	};
-
-	pending.clas_buffer = rd->storage_buffer_create((uint32_t)sizes.acceleration_structure_size, Span<uint8_t>(), 0, implicit_flags);
-	if (!pending.clas_buffer.is_valid()) {
-		abort_build();
-		ERR_FAIL_V_MSG(false, "Ray tracing: failed to allocate the cluster acceleration structure buffer.");
-	}
-	rd->set_resource_name(pending.clas_buffer, "RT CLAS [" + itos(p_cache_key) + "]");
-
-	const uint32_t addresses_size = cluster_count * (uint32_t)sizeof(uint64_t);
-	pending.clas_addresses_buffer = rd->storage_buffer_create(addresses_size, Span<uint8_t>(), 0, build_input_flags);
-	if (!pending.clas_addresses_buffer.is_valid()) {
-		abort_build();
-		ERR_FAIL_V_MSG(false, "Ray tracing: failed to allocate the cluster address buffer.");
-	}
-	rd->set_resource_name(pending.clas_addresses_buffer, "RT CLAS addresses [" + itos(p_cache_key) + "]");
-
-	const uint32_t src_infos_count = cluster_count;
-	pending.clas_count_buffer = rd->storage_buffer_create(sizeof(uint32_t), Span<uint8_t>((const uint8_t *)&src_infos_count, sizeof(uint32_t)), 0, build_input_flags);
-	if (!pending.clas_count_buffer.is_valid()) {
-		abort_build();
-		ERR_FAIL_V_MSG(false, "Ray tracing: failed to allocate the cluster count buffer.");
-	}
-	rd->set_resource_name(pending.clas_count_buffer, "RT CLAS count [" + itos(p_cache_key) + "]");
-
-	const uint32_t src_infos_size = cluster_count * (uint32_t)sizeof(RTClusterTriangleInfo);
-	pending.src_infos_buffer = rd->storage_buffer_create(src_infos_size, Span<uint8_t>((const uint8_t *)src_infos.ptr(), src_infos_size), 0, build_input_flags);
-	if (!pending.src_infos_buffer.is_valid()) {
-		abort_build();
-		ERR_FAIL_V_MSG(false, "Ray tracing: failed to allocate the cluster build input buffer.");
-	}
-	rd->set_resource_name(pending.src_infos_buffer, "RT CLAS build inputs [" + itos(p_cache_key) + "]");
-
-	const uint32_t remap_size = cluster_count * (uint32_t)sizeof(uint32_t);
-	cluster_remap_buffer = rd->storage_buffer_create(remap_size, Span<uint8_t>((const uint8_t *)cluster_remap.ptr(), remap_size), 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
-	if (!cluster_remap_buffer.is_valid()) {
-		abort_build();
-		ERR_FAIL_V_MSG(false, "Ray tracing: failed to allocate the cluster remap buffer.");
-	}
-	rd->set_resource_name(cluster_remap_buffer, "RT cluster remap [" + itos(p_cache_key) + "]");
-
-	const uint64_t remap_address = rd->buffer_get_device_address(cluster_remap_buffer);
-	if (remap_address == 0) {
-		abort_build();
-		ERR_FAIL_V_MSG(false, "Ray tracing: the cluster remap buffer has no device address.");
-	}
-
-	pending.blas = rd->blas_create_from_clusters(cluster_count, cluster_count);
-	if (!pending.blas.is_valid()) {
-		abort_build();
-		ERR_FAIL_V_MSG(false, "Ray tracing: failed to create a cluster bottom level acceleration structure.");
-	}
-	rd->set_resource_name(pending.blas, "RT cluster BLAS [" + itos(p_cache_key) + "]");
-
-	r_surf_data->blas = pending.blas;
-	r_surf_data->clas_buffer = pending.clas_buffer;
-	r_surf_data->clas_addresses_buffer = pending.clas_addresses_buffer;
-	r_surf_data->clas_count_buffer = pending.clas_count_buffer;
-	r_surf_data->cluster_remap_buffer = cluster_remap_buffer;
-	r_surf_data->cluster_count = cluster_count;
-	r_surf_data->is_clustered = true;
-
-	RT_GeometryData &geom = r_surf_data->geometry;
-	geom.cluster_remap_address_lo = uint32_t(remap_address & 0xFFFFFFFFULL);
-	geom.cluster_remap_address_hi = uint32_t(remap_address >> 32);
-	geom.cluster_count = cluster_count;
-	geom.flags |= RT_GEOM_FLAG_CLUSTERED;
-
-	pending.surf_data = r_surf_data;
-	pending_cluster_builds.push_back(pending);
-
-	return true;
-}
-
-void RenderRaytracing::_flush_pending_cluster_builds() {
-	if (pending_cluster_builds.is_empty()) {
-		return;
-	}
-
-	RD *rd = RD::get_singleton();
-	const uint32_t current_frame = RSG::rasterizer->get_frame_number();
-
-	uint64_t required_scratch = 0;
-	for (const RTPendingClusterBuild &pending : pending_cluster_builds) {
-		required_scratch = MAX(required_scratch, pending.scratch_size);
-	}
-
-	if (clas_scratch_capacity < required_scratch) {
-		if (clas_scratch_buffer.is_valid()) {
-			cluster_deferred_frees.push_back({ clas_scratch_buffer, current_frame });
-			clas_scratch_buffer = RID();
-			clas_scratch_capacity = 0;
-		}
-		clas_scratch_buffer = rd->storage_buffer_create((uint32_t)required_scratch, Span<uint8_t>(), 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
-		if (clas_scratch_buffer.is_valid()) {
-			clas_scratch_capacity = required_scratch;
-			rd->set_resource_name(clas_scratch_buffer, "RT CLAS scratch");
-		}
-	}
-
-	for (const RTPendingClusterBuild &pending : pending_cluster_builds) {
-		cluster_deferred_frees.push_back({ pending.src_infos_buffer, current_frame });
-
-		RD::ClusterAddressRegion addresses;
-		addresses.buffer = pending.clas_addresses_buffer;
-		addresses.stride = sizeof(uint64_t);
-		addresses.size = (uint64_t)pending.cluster_count * sizeof(uint64_t);
-
-		RD::ClusterAddressRegion src_infos;
-		src_infos.buffer = pending.src_infos_buffer;
-		src_infos.stride = sizeof(RTClusterTriangleInfo);
-		src_infos.size = (uint64_t)pending.cluster_count * sizeof(RTClusterTriangleInfo);
-
-		Error err = clas_scratch_buffer.is_valid() ? OK : ERR_CANT_CREATE;
-		if (err == OK) {
-			err = rd->clas_build(pending.input, pending.clas_buffer, addresses, RD::ClusterAddressRegion(), clas_scratch_buffer, src_infos, pending.clas_count_buffer);
-		}
-		if (err == OK) {
-			err = rd->blas_build_from_clusters(pending.blas, addresses, pending.clas_buffer);
-		}
-		if (err != OK) {
-			_release_cluster_blas(pending.surf_data, true);
-			// tlas_build() rejects the whole instance list over one unbuilt BLAS, while a null one
-			// is written as an inactive instance.
-			for (uint32_t i = 0; i < blass.size(); i++) {
-				if (blass[i] == pending.blas) {
-					blass[i] = RID();
-					if (i < instance_masks.size()) {
-						instance_masks[i] = 0;
-					}
-				}
-			}
-			ERR_PRINT_ONCE("Ray tracing: failed to build a cluster bottom level acceleration structure.");
-		}
-	}
-
-	pending_cluster_builds.clear();
 }
 
 void RenderRaytracing::_populate_surface_blas(
@@ -1468,18 +1196,41 @@ void RenderRaytracing::_populate_surface_blas(
 		geom.index_buffer_address = rd->buffer_get_device_address(index_buffer);
 	}
 
-	if (!p_vertex_buffer_override.is_valid()) {
-		_populate_cluster_blas(p_mesh_surface, p_cache_key, r_surf_data);
-		return;
-	}
-
 	uint32_t index_count = (geom.index_format != RT_INDEX_FORMAT_NONE) ? geom.primitive_count * 3 : 0;
 	bool is_2d = RendererRD::MeshStorage::get_singleton()->mesh_surface_get_format(p_mesh_surface) & RSE::ARRAY_FLAG_USE_2D_VERTICES;
+	uint32_t position_stride = geom.position_stride;
+	if (geom.flags & RT_GEOM_FLAG_COMPRESSED) {
+		ERR_FAIL_COND(uint64_t(geom.vertex_count) * 12 > UINT32_MAX);
+		if (geometry_positions_version.is_null()) {
+			Vector<String> modes;
+			modes.push_back("");
+			geometry_positions_shader.initialize(modes);
+			geometry_positions_version = geometry_positions_shader.version_create();
+			geometry_positions_pipeline = rd->compute_pipeline_create(geometry_positions_shader.version_get_shader(geometry_positions_version, 0));
+		}
+		r_surf_data->position_buffer = rd->storage_buffer_create(uint64_t(geom.vertex_count) * 12, Span<uint8_t>(), 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT | RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT);
+		r_surf_data->position_parameters = rd->storage_buffer_create(sizeof(geom), Span<uint8_t>((const uint8_t *)&geom, sizeof(geom)));
+		ERR_FAIL_COND(r_surf_data->position_buffer.is_null() || r_surf_data->position_parameters.is_null() || geometry_positions_pipeline.is_null());
+		RID uniform = UniformSetCacheRD::get_singleton()->get_cache(geometry_positions_shader.version_get_shader(geometry_positions_version, 0), 0,
+				RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 0, r_surf_data->position_parameters),
+				RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 1, r_surf_data->position_buffer));
+		RD::ComputeListID list = rd->compute_list_begin();
+		rd->compute_list_bind_compute_pipeline(list, geometry_positions_pipeline);
+		rd->compute_list_bind_uniform_set(list, uniform, 0);
+		rd->compute_list_set_push_constant(list, &geom.vertex_count, sizeof(geom.vertex_count));
+		rd->compute_list_add_buffer_dependency(list, vertex_buffer);
+		uint32_t groups = (geom.vertex_count + 63) / 64;
+		rd->compute_list_dispatch(list, MIN(groups, 1024u), (groups + 1023) / 1024, 1);
+		rd->compute_list_end();
+		vertex_buffer = r_surf_data->position_buffer;
+		position_stride = 12;
+		is_2d = false;
+	}
 
 	RD::AccelerationStructureGeometry as_geom;
 	as_geom.type = RD::AccelerationStructureGeometry::TYPE_TRIANGLES;
 	as_geom.geometry.triangles.vertex_buffer = vertex_buffer;
-	as_geom.geometry.triangles.vertex_stride = geom.position_stride;
+	as_geom.geometry.triangles.vertex_stride = position_stride;
 	as_geom.geometry.triangles.vertex_count = geom.vertex_count;
 	as_geom.geometry.triangles.vertex_format = is_2d ? RD::DATA_FORMAT_R32G32_SFLOAT : RD::DATA_FORMAT_R32G32B32_SFLOAT;
 
@@ -1916,10 +1667,381 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 // Acceleration structure building
 // ---------------------------------------------------------------------------
 
-void RenderRaytracing::build_acceleration_structures(RTViewportState *p_state, const LocalVector<RID> &p_dirty_blas_list, const LocalVector<RID> &p_dirty_blas_update_list) {
+void RenderRaytracing::_retire_micro_geometry(RTMicroGeometryBuild *p_build) {
+	if (p_build) {
+		p_build->retirement = RD::get_singleton()->get_pending_submission_serial();
+		retired_micro_geometry.push_back(p_build);
+	}
+}
+
+void RenderRaytracing::_free_micro_geometry(RTMicroGeometryBuild *p_build) {
+	auto *storage = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage();
+	for (const auto &pin : p_build->pins) {
+		storage->unpin_group(pin.asset, pin.group);
+	}
+	for (const auto &pin : p_build->finest_pins) {
+		storage->unpin_group(pin.asset, pin.group);
+	}
+	for (RID blas : p_build->blas) {
+		if (RD::get_singleton()->acceleration_structure_is_valid(blas)) {
+			RD::get_singleton()->free_rid(blas);
+		}
+	}
+	for (RID resource : p_build->resources) {
+		RD::get_singleton()->free_rid(resource);
+	}
+	if (p_build->selection) {
+		memdelete(p_build->selection);
+	}
+	for (RID asset : p_build->assets) {
+		storage->release(asset);
+	}
+	memdelete(p_build);
+}
+
+void RenderRaytracing::_micro_group_feedback(const Vector<uint8_t> &p_bytes, uint64_t p_owner, uint64_t p_feedback) {
+	RTMicroGeometryFeedback *feedback = reinterpret_cast<RTMicroGeometryFeedback *>(p_feedback);
+	RTMicroGeometryBuild *build = feedback->build;
+	auto *storage = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage();
+	if (p_bytes.size() < int64_t(build->selection->data.group_work) * 4) {
+		build->pins.append_array(feedback->pins);
+		build->pending_feedback--;
+		memdelete(feedback);
+		return;
+	}
+	Vector<RTMicroGeometryPin> used;
+	for (const auto &task : build->selection_tasks) {
+		RID asset = RID::from_uint64(task.asset);
+		for (uint32_t group = 0; group < task.group_count; group++) {
+			bool selected = false;
+			for (uint32_t ordinal = 0; ordinal < task.multimesh_count; ordinal++) {
+				uint64_t offset = uint64_t(task.group_offset + ordinal * task.group_count + group) * 4;
+				selected |= offset + 4 <= uint64_t(p_bytes.size()) && decode_uint32(p_bytes.ptr() + offset) != 0;
+			}
+			RTMicroGeometryPin pin = { asset, group };
+			if (selected && !used.has(pin)) {
+				storage->pin_group(asset, group);
+				used.push_back(pin);
+			}
+		}
+	}
+	for (const auto &pin : build->pins) {
+		storage->unpin_group(pin.asset, pin.group);
+	}
+	build->pins = used;
+	for (const auto &pin : feedback->pins) {
+		storage->unpin_group(pin.asset, pin.group);
+	}
+	build->pending_feedback--;
+	memdelete(feedback);
+}
+
+void RenderRaytracing::_micro_history_feedback(const Vector<uint8_t> &p_bytes, uint64_t p_owner, uint64_t p_build) {
+	auto *renderer = reinterpret_cast<RenderRaytracing *>(p_owner);
+	auto *build = reinterpret_cast<RTMicroGeometryBuild *>(p_build);
+	if (p_bytes.size() >= 8 && decode_uint32(p_bytes.ptr() + 4) != 0) {
+		for (auto &entry : renderer->viewport_states) {
+			RTViewportState *state = entry.value;
+			if (state->micro_geometry == build) {
+				state->scene_generation++;
+				state->camera_history_epoch++;
+				state->pathtracing_history_epoch++;
+				state->ddgi_history_epoch++;
+				state->light_history_valid = false;
+			}
+		}
+	}
+	build->pending_feedback--;
+}
+
+bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const RenderDataRD *p_render_data, const Vector<MicroGeometrySelection::Task> &p_tasks, const Vector<RTMicroGeometryTask> &p_rt_tasks, uint32_t p_levels) {
+	RD *rd = RD::get_singleton();
+	auto *storage = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage();
+	if (p_tasks.is_empty()) {
+		_retire_micro_geometry(p_state->micro_geometry);
+		p_state->micro_geometry = nullptr;
+		return true;
+	}
+	uint64_t signature = _rt_scene_hash(p_tasks.ptr(), p_tasks.size() * sizeof(MicroGeometrySelection::Task), blass.size());
+	for (auto task : p_rt_tasks) {
+		task.motion_base = 0;
+		signature = _rt_scene_hash(&task, sizeof(task), signature);
+	}
+	bool valid = p_state->micro_geometry && p_state->micro_geometry->signature == signature;
+	if (valid) {
+		for (RID blas : p_state->micro_geometry->blas) {
+			valid &= rd->acceleration_structure_is_valid(blas);
+		}
+	}
+	RTMicroGeometryBuild *previous = nullptr;
+	if (!valid) {
+		previous = p_state->micro_geometry;
+		p_state->micro_geometry = nullptr;
+		if (!micro_selection) {
+			micro_selection = memnew(MicroGeometrySelection);
+			Vector<String> modes;
+			modes.push_back("");
+			micro_rt_shader.initialize(modes);
+			micro_rt_version = micro_rt_shader.version_create();
+			micro_rt_pipeline = rd->compute_pipeline_create(micro_rt_shader.version_get_shader(micro_rt_version, 0));
+		}
+		RTMicroGeometryBuild *build = memnew(RTMicroGeometryBuild);
+		build->signature = signature;
+		build->selection_tasks = p_tasks;
+		build->task_data = p_rt_tasks;
+		uint64_t cluster_work = 0, group_work = 0, coarse_work = 0;
+		uint32_t offset = 0;
+		Vector<MicroGeometrySelection::Bin> bins;
+		for (const auto &task : p_tasks) {
+			cluster_work += uint64_t(task.cluster_count) * task.multimesh_count;
+			group_work += uint64_t(task.group_count) * task.multimesh_count;
+			coarse_work += uint64_t(task.coarse_count) * task.multimesh_count;
+			uint32_t capacity = uint64_t(task.coarse_count) * task.multimesh_count + MIN(uint64_t(MicroGeometrySelection::EXTRA_SELECTED_CLUSTERS) / p_tasks.size(), uint64_t(task.cluster_count - task.coarse_count) * task.multimesh_count);
+			bins.push_back({ offset, capacity });
+			offset += capacity;
+			build->input.max_acceleration_structure_count += task.multimesh_count;
+			build->input.max_cluster_count_per_acceleration_structure = MAX(build->input.max_cluster_count_per_acceleration_structure, task.cluster_count);
+			RID asset = RID::from_uint64(task.asset);
+			if (!build->assets.has(asset)) {
+				storage->acquire(storage->get_source(asset));
+				build->assets.push_back(asset);
+			}
+			const auto &surface = persistent_surfaces[uint32_t(task.surface) - 1].data;
+			if (surface.force_finest != 0) {
+				const auto &metadata = storage->get_source(asset)->get_metadata();
+				for (const auto &cluster : metadata.clusters) {
+					RTMicroGeometryPin pin = { asset, cluster.group };
+					if (cluster.refined_group == UINT32_MAX && metadata.surfaces[cluster.surface].source_surface == surface.source_surface && !build->finest_pins.has(pin)) {
+						storage->pin_group(pin.asset, pin.group);
+						build->finest_pins.push_back(pin);
+					}
+				}
+			}
+		}
+		build->input.max_total_cluster_count = cluster_work;
+		MicroGeometrySelection::Parameters parameters;
+		parameters.group_work = group_work;
+		parameters.cluster_work = cluster_work;
+		parameters.coarse_work = coarse_work;
+		get_persistent_buffer_dependencies(build->dependencies);
+		for (RID asset : build->assets) {
+			storage->get_dependencies(asset, build->dependencies);
+		}
+		build->selection = micro_selection->create(p_tasks, bins, parameters, p_levels, sizeof(RenderForwardClustered::SceneState::InstanceData), persistent_instance_buffer, persistent_surface_buffer, build->dependencies);
+		auto allocate = [&](uint64_t p_size, const void *p_data = nullptr) {
+			p_size = MAX(p_size, uint64_t(16));
+			if (p_size > UINT32_MAX) {
+				return RID();
+			}
+			Span<uint8_t> bytes;
+			if (p_data) {
+				bytes = { (const uint8_t *)p_data, p_size };
+			}
+			RID buffer = rd->storage_buffer_create(p_size, bytes, 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT | RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT);
+			if (buffer.is_valid()) {
+				build->resources.push_back(buffer);
+				build->memory_bytes += p_size;
+			}
+			return buffer;
+		};
+		build->tasks = allocate(uint64_t(p_rt_tasks.size()) * sizeof(RTMicroGeometryTask), p_rt_tasks.ptr());
+		build->blas_addresses = allocate(uint64_t(blass.size()) * 8);
+		build->membership = allocate(cluster_work * 4);
+		build->cached_membership = allocate(cluster_work * 4);
+		build->references = allocate(cluster_work * 8);
+		build->dirty_infos = allocate(uint64_t(build->input.max_acceleration_structure_count) * sizeof(RD::ClusterBottomLevelBuildInfo));
+		build->dirty_destinations = allocate(uint64_t(build->input.max_acceleration_structure_count) * 8);
+		build->dirty_counts = allocate(16);
+		build->tlas_instances = allocate(uint64_t(blass.size()) * sizeof(RD::AccelerationStructureGPUInstance));
+		build->group_usage = allocate(group_work * 4);
+		RD::ClusterBuildSizes sizes;
+		rd->blas_get_cluster_build_sizes(build->input, sizes);
+		build->scratch = allocate(sizes.build_scratch_size);
+		bool complete = build->selection != nullptr && micro_rt_pipeline.is_valid() && sizes.build_scratch_size != 0;
+		for (RID resource : { build->tasks, build->blas_addresses, build->membership, build->cached_membership, build->references, build->dirty_infos, build->dirty_destinations, build->dirty_counts, build->tlas_instances, build->group_usage, build->scratch }) {
+			complete &= resource.is_valid();
+		}
+		if (complete) {
+			build->memory_bytes += build->selection->memory_bytes;
+			rd->buffer_clear(build->cached_membership, 0, MAX(uint32_t(cluster_work * 4), 16u));
+			if (previous && previous->signature == signature) {
+				rd->buffer_copy(previous->cached_membership, build->cached_membership, 0, 0, cluster_work * 4);
+				for (auto &task : build->task_data) {
+					task.padding[0] = 1;
+				}
+			}
+			for (uint32_t index = 0; index < build->input.max_acceleration_structure_count; index++) {
+				RID blas = rd->blas_create_from_clusters(build->input.max_cluster_count_per_acceleration_structure, build->input.max_cluster_count_per_acceleration_structure);
+				complete &= blas.is_valid();
+				build->blas.push_back(blas);
+				if (blas.is_valid()) {
+					RD::ClusterBottomLevelBuildInput allocation;
+					allocation.max_acceleration_structure_count = 1;
+					allocation.max_total_cluster_count = build->input.max_cluster_count_per_acceleration_structure;
+					allocation.max_cluster_count_per_acceleration_structure = build->input.max_cluster_count_per_acceleration_structure;
+					RD::ClusterBuildSizes allocation_sizes;
+					rd->blas_get_cluster_build_sizes(allocation, allocation_sizes);
+					build->memory_bytes += allocation_sizes.acceleration_structure_size;
+				}
+			}
+		}
+		_retire_micro_geometry(previous);
+		if (!complete) {
+			_retire_micro_geometry(build);
+			ERR_FAIL_V_MSG(false, "Unable to allocate the resident RT microgeometry cut.");
+		}
+		p_state->micro_geometry = build;
+	}
+	RTMicroGeometryBuild *build = p_state->micro_geometry;
+	for (uint32_t index = 0; index < uint32_t(p_rt_tasks.size()); index++) {
+		build->task_data.write[index].motion_base = p_rt_tasks[index].motion_base;
+	}
+	uint32_t blas_index = 0;
+	for (const auto &task : p_rt_tasks) {
+		for (uint32_t ordinal = 0; ordinal < task.instance_count; ordinal++) {
+			blass[task.geometry_base + ordinal] = build->blas[blas_index++];
+		}
+	}
+	auto &parameters = build->selection->data;
+	parameters.flags = 1 | 16 | 32;
+	if (p_render_data->scene_data->view_count == 1) {
+		parameters.flags |= 2;
+	}
+	if (parameters.group_work > MicroGeometrySelection::MAX_WORK_ITEMS || parameters.cluster_work > MicroGeometrySelection::MAX_WORK_ITEMS) {
+		parameters.flags |= 8;
+	}
+	parameters.scenario = persistent_instances[uint32_t(p_tasks[0].instance) - 1].data.scenario;
+	parameters.layer_mask = p_render_data->scene_data->camera_visible_layers;
+	parameters.error = p_state->settings.geometry_error;
+	parameters.offscreen_multiplier = p_state->settings.geometry_offscreen_multiplier;
+	parameters.output_height = p_render_data->render_buffers->get_target_size().y;
+	parameters.near_plane = p_render_data->scene_data->cam_projection.get_z_near();
+	Projection correction;
+	correction.set_depth_correction(p_render_data->scene_data->flip_y);
+	RendererRD::MaterialStorage::store_camera(correction * p_render_data->scene_data->cam_projection, parameters.projection);
+	RendererRD::MaterialStorage::store_transform_transposed_3x4(Transform3D(p_state->camera_transform.basis.inverse(), Vector3()), parameters.view_rotation);
+	for (uint32_t axis = 0; axis < 3; axis++) {
+#ifdef REAL_T_IS_DOUBLE
+		RendererRD::MaterialStorage::split_double(p_state->camera_transform.origin[axis], &parameters.camera[axis], &parameters.camera_low[axis]);
+#else
+		parameters.camera[axis] = p_state->camera_transform.origin[axis];
+#endif
+	}
+	build->selection->persistent_instances = persistent_instance_buffer;
+	build->selection->persistent_surfaces = persistent_surface_buffer;
+	build->dependencies.clear();
+	build->clas_dependencies.clear();
+	get_persistent_buffer_dependencies(build->dependencies);
+	for (RID asset : build->assets) {
+		storage->get_dependencies(asset, build->dependencies);
+		storage->get_clas_dependencies(asset, build->clas_dependencies);
+	}
+	for (RID buffer : geometry_buffer_dependencies) {
+		build->dependencies.push_back(buffer);
+	}
+	for (RID buffer : build->dependencies) {
+		geometry_buffer_dependencies.insert(buffer);
+	}
+	build->selection->dependencies = build->dependencies;
+	return true;
+}
+
+bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
+	RTMicroGeometryBuild *build = p_state->micro_geometry;
+	RD *rd = RD::get_singleton();
+	auto *storage = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage();
+	RTMicroGeometryFeedback *feedback = memnew(RTMicroGeometryFeedback);
+	feedback->build = build;
+	for (RID asset : build->assets) {
+		const auto &metadata = storage->get_source(asset)->get_metadata();
+		for (uint32_t group = 0; group < uint32_t(metadata.groups.size()); group++) {
+			if (storage->is_group_ready(asset, group, true)) {
+				storage->pin_group(asset, group);
+				feedback->pins.push_back({ asset, group });
+			}
+		}
+	}
+	micro_selection->select(build->selection, RID());
+	micro_selection->submit_feedback(build->selection);
+	LocalVector<RD::AccelerationStructureGPUInstance> instances;
+	LocalVector<uint64_t> addresses;
+	instances.resize(blass.size());
+	addresses.resize(blass.size());
+	Vector<RID> dependencies;
+	for (uint32_t index = 0; index < blass.size(); index++) {
+		Transform3D transform = blas_transforms[index];
+		transform.origin -= p_state->rt_origin;
+		RendererRD::MaterialStorage::store_transform_transposed_3x4(transform, instances[index].transform);
+		instances[index].custom_index_and_mask = index | (uint32_t(instance_masks[index]) << 24);
+		instances[index].sbt_offset_and_flags = index | (instance_flags[index] << 24);
+		addresses[index] = rd->acceleration_structure_get_device_address(blass[index]);
+		instances[index].acceleration_structure_reference = addresses[index];
+		if (blass[index].is_valid() && !dependencies.has(blass[index])) {
+			dependencies.push_back(blass[index]);
+		}
+	}
+	rd->buffer_update(build->blas_addresses, 0, addresses.size() * 8, addresses.ptr());
+	rd->buffer_update(build->tlas_instances, 0, instances.size() * sizeof(RD::AccelerationStructureGPUInstance), instances.ptr());
+	rd->buffer_update(build->tasks, 0, build->task_data.size() * sizeof(RTMicroGeometryTask), build->task_data.ptr());
+	for (auto &task : build->task_data) {
+		task.padding[0] = 0;
+	}
+	rd->buffer_clear(build->dirty_counts, 0, 16);
+	rd->buffer_clear(build->group_usage, 0, MAX(build->selection->data.group_work * 4, 16u));
+	LocalVector<RD::Uniform> uniforms;
+	uint32_t binding = 0;
+	for (RID buffer : { build->tasks, build->selection->selected, build->selection->bins, build->selection->counts, persistent_instance_buffer, build->blas_addresses, build->membership, build->cached_membership, build->references, build->dirty_infos, build->dirty_destinations, build->dirty_counts, build->tlas_instances, p_state->motion_transform_buffer, build->group_usage }) {
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, binding++, buffer));
+	}
+	RID uniform = UniformSetCacheRD::get_singleton()->get_cache_vec(micro_rt_shader.version_get_shader(micro_rt_version, 0), 0, uniforms);
+	struct Parameters {
+		float origin[4] = {};
+		float origin_low[4] = {};
+		uint32_t task_count = 0;
+		uint32_t geometry_count = 0;
+		uint64_t references = 0;
+	} parameters;
+	static_assert(sizeof(Parameters) == 48);
+	for (uint32_t axis = 0; axis < 3; axis++) {
+#ifdef REAL_T_IS_DOUBLE
+		RendererRD::MaterialStorage::split_double(p_state->rt_origin[axis], &parameters.origin[axis], &parameters.origin_low[axis]);
+#else
+		parameters.origin[axis] = p_state->rt_origin[axis];
+#endif
+	}
+	parameters.task_count = build->task_data.size();
+	parameters.geometry_count = blass.size();
+	parameters.references = rd->buffer_get_device_address(build->references);
+	RD::ComputeListID list = rd->compute_list_begin();
+	rd->compute_list_bind_compute_pipeline(list, micro_rt_pipeline);
+	rd->compute_list_bind_uniform_set(list, uniform, 0);
+	rd->compute_list_set_push_constant(list, &parameters, sizeof(parameters));
+	for (RID buffer : build->dependencies) {
+		rd->compute_list_add_buffer_dependency(list, buffer);
+	}
+	uint32_t groups = (blass.size() + 63) / 64;
+	rd->compute_list_dispatch(list, MIN(groups, 1024u), (groups + 1023) / 1024, 1);
+	rd->compute_list_end();
+	Vector<RID> address_dependencies = build->dependencies;
+	address_dependencies.push_back(build->references);
+	RD::ClusterAddressRegion destinations = { build->dirty_destinations, 0, 8, uint64_t(build->input.max_acceleration_structure_count) * 8 };
+	RD::ClusterAddressRegion infos = { build->dirty_infos, 0, sizeof(RD::ClusterBottomLevelBuildInfo), uint64_t(build->input.max_acceleration_structure_count) * sizeof(RD::ClusterBottomLevelBuildInfo) };
+	RD::ClusterAddressRegion count = { build->dirty_counts, 0, 4, 4 };
+	const Error error = rd->blas_build_from_clusters(build->input, build->blas, destinations, infos, count, build->scratch, address_dependencies, build->clas_dependencies);
+	build->pending_feedback += 2;
+	if (rd->buffer_get_data_async(build->group_usage, callable_mp_static(&RenderRaytracing::_micro_group_feedback).bind(uint64_t(this), uint64_t(feedback))) != OK) {
+		_micro_group_feedback(Vector<uint8_t>(), uint64_t(this), uint64_t(feedback));
+	}
+	if (rd->buffer_get_data_async(build->dirty_counts, callable_mp_static(&RenderRaytracing::_micro_history_feedback).bind(uint64_t(this), uint64_t(build))) != OK) {
+		_micro_history_feedback(Vector<uint8_t>(), uint64_t(this), uint64_t(build));
+	}
+	ERR_FAIL_COND_V(error != OK, false);
+	return rd->tlas_build_from_buffer(p_state->tlas, build->tlas_instances, 0, blass.size(), dependencies) == OK;
+}
+
+bool RenderRaytracing::build_acceleration_structures(RTViewportState *p_state, const LocalVector<RID> &p_dirty_blas_list, const LocalVector<RID> &p_dirty_blas_update_list) {
 	RENDER_TIMESTAMP("BLAS Build");
 
-	_flush_pending_cluster_builds();
 
 	for (const RID &blas_rid : p_dirty_blas_list) {
 		if (blas_rid.is_valid()) {
@@ -1945,6 +2067,10 @@ void RenderRaytracing::build_acceleration_structures(RTViewportState *p_state, c
 		RD::get_singleton()->set_resource_name(p_state->tlas, "RT TLAS");
 	}
 
+	if (p_state->micro_geometry) {
+		return _build_micro_geometry(p_state);
+	}
+
 	LocalVector<RD::AccelerationStructureInstance> instances;
 	instances.resize(blass.size());
 	for (uint32_t i = 0; i < blass.size(); i++) {
@@ -1958,7 +2084,7 @@ void RenderRaytracing::build_acceleration_structures(RTViewportState *p_state, c
 		inst.hit_sbt_range = RD::HitShaderBindingTableRange((1ULL << 32) | i);
 	}
 
-	RD::get_singleton()->tlas_build(p_state->tlas, instances);
+	return RD::get_singleton()->tlas_build(p_state->tlas, instances) == OK;
 }
 
 void RenderRaytracing::finalize_buffers(RTViewportState *p_state) {
@@ -2449,6 +2575,10 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
 	LocalVector<RID> dirty_blas_list;
 	LocalVector<RID> dirty_blas_update_list;
+	Vector<MicroGeometrySelection::Task> micro_tasks;
+	Vector<RTMicroGeometryTask> micro_rt_tasks;
+	uint32_t micro_levels = 0;
+	uint64_t micro_group_work = 0, micro_cluster_work = 0, micro_coarse_work = 0;
 	uint64_t scene_signature = 0x9e3779b97f4a7c15ULL;
 	auto hash_scene = [&](const auto &p_value) {
 		scene_signature = _rt_scene_hash(&p_value, sizeof(p_value), scene_signature);
@@ -2525,6 +2655,132 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			geometry.flags |= RT_GEOM_FLAG_SHADOW_CULL_ENABLED;
 		}
 		return geometry;
+	};
+
+	auto append_micro_surface = [&](const RenderForwardClustered::GeometryInstanceSurfaceDataCache *p_surface) {
+		const auto *instance = p_surface->owner;
+		const auto *shader = p_surface->shader;
+		if (!shader || !instance->persistent_instance || !p_surface->persistent_surface || instance->mesh_instance.is_valid() || instance->rt_procedural || instance->instance_count == 0 || p_surface->primitive != RSE::PRIMITIVE_TRIANGLES || shader->uses_alpha_pass() || shader->uses_vertex || shader->uses_position || shader->uses_vertex_time || shader->writes_modelview_or_projection || shader->uses_particle_trails || shader->uses_point_size || shader->uses_z_clip_scale) {
+			return false;
+		}
+		const auto &record = persistent_instances[uint32_t(instance->persistent_instance) - 1].data;
+		RID asset = RID::from_uint64(record.asset);
+		auto *storage = mesh_storage->get_micro_geometry_storage();
+		Ref<MicroGeometryData> source = storage->get_source(asset);
+		if (source.is_null()) {
+			return false;
+		}
+		if (!storage->is_ready(asset, true)) {
+			return true;
+		}
+		const auto &metadata = source->get_metadata();
+		uint32_t surface_index = UINT32_MAX;
+		for (uint32_t index = 0; index < uint32_t(metadata.surfaces.size()); index++) {
+			if (metadata.surfaces[index].source_surface == p_surface->surface_index) {
+				surface_index = index;
+				break;
+			}
+		}
+		if (surface_index == UINT32_MAX) {
+			return false;
+		}
+		const uint32_t count = record.multimesh_address != 0 ? record.multimesh_count : 1;
+		if (!count) {
+			return true;
+		}
+		RID material = p_surface->material_rid.is_valid() ? p_surface->material_rid : owner->scene_shader.default_material;
+		RTMaterialData *native_material = process_material(material, material_storage->material_get_rt_invalidation_counter(material));
+		hash_scene(material.get_id());
+		hash_scene(material_storage->material_get_rt_content_generation(material, instance->shader_uniforms_offset));
+		hash_scene(asset.get_id());
+		const auto &surface_record = persistent_surfaces[uint32_t(p_surface->persistent_surface) - 1].data;
+		const bool finest = surface_record.force_finest != 0;
+		uint32_t flags = 0;
+		if (shader->cull_mode == RSE::CULL_MODE_DISABLED) {
+			flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT;
+		}
+		if (shader->cull_mode != RSE::CULL_MODE_FRONT) {
+			flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FLIP_FACING_BIT;
+		}
+		if (!shader->uses_alpha_clip && !shader->uses_alpha && !shader->uses_blend_alpha) {
+			flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_FORCE_OPAQUE_BIT;
+		}
+		MicroGeometrySelection::Task task;
+		task.instance = record.handle;
+		task.surface = p_surface->persistent_surface;
+		task.asset = record.asset;
+		task.group_offset = micro_group_work;
+		task.cluster_offset = micro_cluster_work;
+		task.coarse_offset = micro_coarse_work;
+		task.group_count = metadata.groups.size();
+		task.cluster_count = metadata.clusters.size();
+		task.coarse_count = finest ? task.cluster_count : metadata.coarse_cluster_count;
+		task.multimesh_count = count;
+		task.bin = micro_tasks.size();
+		task.flags = instance->store_transform_cache ? 0 : 1;
+		if (p_render_data->scene_data->view_count != 1) {
+			task.flags |= 2;
+		}
+		if (instance->base_flags & RenderForwardClustered::INSTANCE_DATA_FLAG_MULTIMESH_INDIRECT) {
+			RID commands = mesh_storage->_multimesh_get_command_buffer_rd_rid(instance->data->base);
+			task.indirect_command = RD::get_singleton()->buffer_get_device_address(commands) + uint64_t(p_surface->surface_index) * sizeof(uint32_t) * RendererRD::MeshStorage::INDIRECT_MULTIMESH_COMMAND_STRIDE;
+			geometry_buffer_dependencies.insert(commands);
+		}
+		RTMicroGeometryTask rt_task;
+		rt_task.clas_addresses = RD::get_singleton()->buffer_get_device_address(storage->get_clas_addresses(asset));
+		rt_task.instance = task.instance;
+		rt_task.surface = task.surface;
+		rt_task.selection_bin = task.bin;
+		rt_task.geometry_base = geometry_data.size();
+		rt_task.motion_base = motion_transforms.size();
+		rt_task.instance_count = count;
+		rt_task.cluster_count = task.cluster_count;
+		rt_task.bitmap_offset = task.cluster_offset;
+		rt_task.group_offset = task.group_offset;
+		rt_task.group_count = task.group_count;
+		rt_task.instance_flags = flags;
+		micro_group_work += uint64_t(task.group_count) * count;
+		micro_cluster_work += uint64_t(task.cluster_count) * count;
+		micro_coarse_work += uint64_t(task.coarse_count) * count;
+		ERR_FAIL_COND_V_MSG(MAX(micro_group_work, micro_cluster_work) > UINT32_MAX / 8, true, "RT microgeometry selection exceeds the device buffer range.");
+		for (const auto &group : metadata.groups) {
+			micro_levels = MAX(micro_levels, group.depth + 1);
+		}
+		micro_tasks.push_back(task);
+		micro_rt_tasks.push_back(rt_task);
+		for (uint32_t ordinal = 0; ordinal < count; ordinal++) {
+			RT_GeometryData geometry = {};
+			geometry.flags = RT_GEOM_FLAG_CLUSTERED;
+			geometry.micro_asset_address = record.asset_address;
+			geometry.micro_page_pool = RD::get_singleton()->buffer_get_device_address(storage->get_pool());
+			geometry.micro_primitive_lookup = storage->get_primitive_lookup(asset, surface_index);
+			geometry.micro_surface = surface_index;
+			geometry.primitive_count = metadata.surfaces[surface_index].source_triangle_count;
+			geometry.source_vertex_count = metadata.surfaces[surface_index].source_vertex_count;
+			geometry.instance_index = ordinal;
+			for (uint32_t channel = 0; channel < 4; channel++) {
+				geometry.instance_color[channel] = 1;
+			}
+			geometry.multimesh_address = record.multimesh_address;
+			geometry.multimesh_stride = record.multimesh_stride;
+			geometry.multimesh_offset = record.multimesh_current_offset;
+			geometry.micro_multimesh_previous_offset = record.multimesh_previous_offset;
+			if (record.multimesh_address != 0) {
+				geometry.multimesh_flags = (mesh_storage->multimesh_uses_colors(instance->data->base) ? 1u : 0u) | (mesh_storage->multimesh_uses_custom_data(instance->data->base) ? 2u : 0u) | ((record.flags & (1u << 13)) ? 4u : 0u);
+			}
+			geometry = instance_geometry(instance, geometry, p_surface);
+			register_emissive_source(instance, instance->data->base, p_surface->surface_index, mesh_storage->mesh_surface_get_rt_invalidation_counter(p_surface->surface), geometry_data.size(), ordinal * geometry.primitive_count, geometry.primitive_count, instance->transform, native_material);
+			geometry_data.push_back(geometry);
+			material_data.push_back(native_material->data);
+			geometry_material_programs.push_back(native_material->hit_shader);
+			blass.push_back(RID());
+			blas_transforms.push_back(instance->transform);
+			instance_flags.push_back(flags);
+			instance_masks.push_back(255);
+			motion_indices.push_back(motion_transforms.size());
+			motion_transforms.push_back(RT_InstanceMotionData());
+		}
+		return true;
 	};
 
 	const PagedArray<RenderGeometryInstance *> &rt_instances = *p_render_data->rt_instances;
@@ -2646,6 +2902,11 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 					continue;
 				}
 
+				if (append_micro_surface(mm_surf)) {
+					mm_surf = mm_surf->next;
+					continue;
+				}
+
 				void *mesh_surface = mm_surf->surface;
 				uint32_t surface_counter = mesh_storage->mesh_surface_get_rt_invalidation_counter(mesh_surface);
 				hash_scene(mm_surf->surface_index);
@@ -2730,6 +2991,11 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 				continue;
 			}
 
+			if (append_micro_surface(surf)) {
+				surf = surf->next;
+				continue;
+			}
+
 			void *mesh_surface = surf->surface;
 			uint32_t surface_counter = mesh_storage->mesh_surface_get_rt_invalidation_counter(mesh_surface);
 			hash_scene(surf->surface_index);
@@ -2799,7 +3065,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			blass.push_back(surf_data->blas);
 			const uint32_t geometry_index = geometry_data.size();
 			geometry_data.push_back(instance_geometry(inst, surf_data->geometry, surf));
-			for (RID buffer : { mesh_storage->mesh_surface_get_vertex_buffer(mesh_surface), mesh_storage->mesh_surface_get_attribute_buffer(mesh_surface), mesh_storage->mesh_surface_get_skin_buffer(mesh_surface), mesh_storage->mesh_surface_get_index_buffer(mesh_surface, 0), surf_data->cluster_remap_buffer }) {
+			for (RID buffer : { mesh_storage->mesh_surface_get_vertex_buffer(mesh_surface), mesh_storage->mesh_surface_get_attribute_buffer(mesh_surface), mesh_storage->mesh_surface_get_skin_buffer(mesh_surface), mesh_storage->mesh_surface_get_index_buffer(mesh_surface, 0) }) {
 				if (buffer.is_valid()) {
 					geometry_buffer_dependencies.insert(buffer);
 				}
@@ -2935,8 +3201,10 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			const uint32_t mm_cur_offset = mesh_storage->multimesh_get_current_instance_offset(pending.mm_rid);
 			const uint32_t mm_prev_offset = mesh_storage->multimesh_get_previous_instance_offset(pending.mm_rid);
 
+			RD::get_singleton()->compute_list_end();
 			RTSurfaceData *surf_data = process_surface(pending.mm_surf, pending.mesh_surface,
 					pending.surface_counter, pending.instance_transform, dirty_blas_list);
+			compute_list = RD::get_singleton()->compute_list_begin();
 			if (!surf_data || !surf_data->blas.is_valid()) {
 				continue;
 			}
@@ -2972,7 +3240,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 					memcpy(instance_data.instance_custom, d + 12 + (has_color ? 4 : 0), sizeof(instance_data.instance_custom));
 				}
 				geometry_data.push_back(instance_data);
-				for (RID buffer : { mesh_storage->mesh_surface_get_vertex_buffer(pending.mesh_surface), mesh_storage->mesh_surface_get_attribute_buffer(pending.mesh_surface), mesh_storage->mesh_surface_get_skin_buffer(pending.mesh_surface), mesh_storage->mesh_surface_get_index_buffer(pending.mesh_surface, 0), surf_data->cluster_remap_buffer }) {
+				for (RID buffer : { mesh_storage->mesh_surface_get_vertex_buffer(pending.mesh_surface), mesh_storage->mesh_surface_get_attribute_buffer(pending.mesh_surface), mesh_storage->mesh_surface_get_skin_buffer(pending.mesh_surface), mesh_storage->mesh_surface_get_index_buffer(pending.mesh_surface, 0) }) {
 					if (buffer.is_valid()) {
 						geometry_buffer_dependencies.insert(buffer);
 					}
@@ -3041,9 +3309,10 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 
 	RD::get_singleton()->compute_list_end();
 
+	ERR_FAIL_COND_V(!_prepare_micro_geometry(state, p_render_data, micro_tasks, micro_rt_tasks, micro_levels), nullptr);
 	ERR_FAIL_COND_V(!update_material_pipeline(state), nullptr);
-	build_acceleration_structures(state, dirty_blas_list, dirty_blas_update_list);
 	finalize_buffers(state);
+	ERR_FAIL_COND_V(!build_acceleration_structures(state, dirty_blas_list, dirty_blas_update_list), nullptr);
 	state->decal_count = 0;
 	state->decal_generation = 0;
 	if (p_render_data->rt_decals && p_render_data->decals) {
@@ -3066,8 +3335,10 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 	}
 	build_light_registry(state, p_render_data, scene_signature);
 	hash_scene(blass.size());
-	for (RID blas : blass) {
-		hash_scene(blas.get_id());
+	for (uint32_t index = 0; index < blass.size(); index++) {
+		if (!(geometry_data[index].flags & RT_GEOM_FLAG_CLUSTERED)) {
+			hash_scene(blass[index].get_id());
+		}
 	}
 	hash_scene(RendererEnvironmentStorage::get_singleton()->environment_get_rt_generation(p_render_data->environment));
 	if (p_render_data->environment.is_valid()) {
@@ -3888,6 +4159,19 @@ void RenderRaytracing::release_persistent_instance(uint64_t p_handle, const Vect
 
 uint64_t RenderRaytracing::get_persistent_memory_bytes() const {
 	return uint64_t(persistent_instance_capacity) * sizeof(RTPersistentInstanceData) + uint64_t(persistent_surface_capacity) * sizeof(RTPersistentSurfaceData) + uint64_t(persistent_material_capacity) * sizeof(RTPersistentMaterialData);
+}
+
+uint64_t RenderRaytracing::get_micro_geometry_memory_bytes() const {
+	uint64_t bytes = 0;
+	for (const auto &entry : viewport_states) {
+		if (entry.value->micro_geometry) {
+			bytes += entry.value->micro_geometry->memory_bytes;
+		}
+	}
+	for (const auto *build : retired_micro_geometry) {
+		bytes += build->memory_bytes;
+	}
+	return bytes;
 }
 
 void RenderRaytracing::_free_persistent_buffers() {

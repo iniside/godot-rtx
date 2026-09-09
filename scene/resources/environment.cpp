@@ -497,6 +497,32 @@ Environment::RaytracingDenoiser Environment::get_raytracing_denoiser() const {
 	return raytracing_denoiser;
 }
 
+void Environment::set_raytracing_geometry_error(float p_value) {
+	ERR_FAIL_COND(!Math::is_finite(p_value) || p_value < 0.1f || p_value > 64.0f);
+	if (raytracing_geometry_error == p_value) {
+		return;
+	}
+	raytracing_geometry_error = p_value;
+	_update_raytracing_geometry();
+}
+
+float Environment::get_raytracing_geometry_error() const {
+	return raytracing_geometry_error;
+}
+
+void Environment::set_raytracing_geometry_offscreen_multiplier(float p_value) {
+	ERR_FAIL_COND(!Math::is_finite(p_value) || p_value < 1.0f || p_value > 16.0f);
+	if (raytracing_geometry_offscreen_multiplier == p_value) {
+		return;
+	}
+	raytracing_geometry_offscreen_multiplier = p_value;
+	_update_raytracing_geometry();
+}
+
+float Environment::get_raytracing_geometry_offscreen_multiplier() const {
+	return raytracing_geometry_offscreen_multiplier;
+}
+
 void Environment::set_rtxdi_resolution(RTXDIResolution p_value) {
 	ERR_FAIL_COND(p_value < RTXDI_RESOLUTION_FULL || p_value > RTXDI_RESOLUTION_QUARTER_PIXELS);
 	if (rtxdi_resolution == p_value) {
@@ -643,6 +669,10 @@ bool Environment::is_pathtracing_accumulate() const {
 
 void Environment::_update_raytracing() {
 	RS::get_singleton()->environment_set_raytracing(environment, RSE::RaytracingRenderingMode(raytracing_rendering_mode), RSE::RaytracingDenoiser(raytracing_denoiser), rtxdi_local_light_samples, RSE::RTXDIResolution(rtxdi_resolution));
+}
+
+void Environment::_update_raytracing_geometry() {
+	RS::get_singleton()->environment_set_raytracing_geometry(environment, raytracing_geometry_error, raytracing_geometry_offscreen_multiplier);
 }
 
 void Environment::_update_ddgi() {
@@ -1449,6 +1479,10 @@ void Environment::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_raytracing_rendering_mode"), &Environment::get_raytracing_rendering_mode);
 	ClassDB::bind_method(D_METHOD("set_raytracing_denoiser", "value"), &Environment::set_raytracing_denoiser);
 	ClassDB::bind_method(D_METHOD("get_raytracing_denoiser"), &Environment::get_raytracing_denoiser);
+	ClassDB::bind_method(D_METHOD("set_raytracing_geometry_error", "value"), &Environment::set_raytracing_geometry_error);
+	ClassDB::bind_method(D_METHOD("get_raytracing_geometry_error"), &Environment::get_raytracing_geometry_error);
+	ClassDB::bind_method(D_METHOD("set_raytracing_geometry_offscreen_multiplier", "value"), &Environment::set_raytracing_geometry_offscreen_multiplier);
+	ClassDB::bind_method(D_METHOD("get_raytracing_geometry_offscreen_multiplier"), &Environment::get_raytracing_geometry_offscreen_multiplier);
 	ClassDB::bind_method(D_METHOD("set_rtxdi_resolution", "value"), &Environment::set_rtxdi_resolution);
 	ClassDB::bind_method(D_METHOD("get_rtxdi_resolution"), &Environment::get_rtxdi_resolution);
 	ClassDB::bind_method(D_METHOD("set_rtxdi_local_light_samples", "value"), &Environment::set_rtxdi_local_light_samples);
@@ -1475,6 +1509,9 @@ void Environment::_bind_methods() {
 	ADD_GROUP("Ray Tracing", "");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "raytracing_rendering_mode", PROPERTY_HINT_ENUM, "Hybrid,Path Traced"), "set_raytracing_rendering_mode", "get_raytracing_rendering_mode");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "raytracing_denoiser", PROPERTY_HINT_ENUM, "NRD,DLSS Ray Reconstruction,None"), "set_raytracing_denoiser", "get_raytracing_denoiser");
+	ADD_SUBGROUP("Geometry", "raytracing_geometry_");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "raytracing_geometry_error", PROPERTY_HINT_RANGE, "0.1,64,0.1,suffix:px"), "set_raytracing_geometry_error", "get_raytracing_geometry_error");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "raytracing_geometry_offscreen_multiplier", PROPERTY_HINT_RANGE, "1,16,0.1"), "set_raytracing_geometry_offscreen_multiplier", "get_raytracing_geometry_offscreen_multiplier");
 	ADD_SUBGROUP("RTXDI", "rtxdi_");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "rtxdi_resolution", PROPERTY_HINT_ENUM, "Full,Half Pixels,Quarter Pixels"), "set_rtxdi_resolution", "get_rtxdi_resolution");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "rtxdi_local_light_samples", PROPERTY_HINT_RANGE, "1,32,1"), "set_rtxdi_local_light_samples", "get_rtxdi_local_light_samples");
@@ -1911,6 +1948,7 @@ Environment::Environment() {
 	glow_levels.write[6] = 0.0;
 
 	_update_raytracing();
+	_update_raytracing_geometry();
 	_update_ddgi();
 	_update_pathtracing();
 	_update_ambient_light();

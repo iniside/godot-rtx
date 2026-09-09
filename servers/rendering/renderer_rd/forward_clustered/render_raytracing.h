@@ -31,6 +31,9 @@
 #pragma once
 
 #include "servers/rendering/renderer_rd/storage_rd/micro_geometry_storage.h"
+#include "micro_geometry_selection.h"
+#include "servers/rendering/renderer_rd/shaders/forward_clustered/micro_geometry_rt.slang.gen.h"
+#include "servers/rendering/renderer_rd/shaders/raytracing/geometry_positions.slang.gen.h"
 
 #include "core/math/projection.h"
 #include "core/math/transform_3d.h"
@@ -75,10 +78,7 @@ struct alignas(16) RT_GeometryData {
 	// For deformed geometry: previous-frame position buffer used for motion vectors.
 	uint32_t prev_vertex_buffer_address_lo;
 	uint32_t prev_vertex_buffer_address_hi;
-	// For clustered geometry: uint32 per cluster, mapping cluster index to its first global triangle.
-	uint32_t cluster_remap_address_lo;
-	uint32_t cluster_remap_address_hi;
-	uint32_t cluster_count;
+	uint32_t padding[3];
 	float position_offset[3];
 	uint32_t instance_layer_mask;
 	float position_scale[3];
@@ -99,8 +99,13 @@ struct alignas(16) RT_GeometryData {
 	uint64_t skin_address;
 	uint32_t skin_stride;
 	uint32_t skin_weight_offset;
+	uint64_t micro_asset_address;
+	uint64_t micro_page_pool;
+	uint64_t micro_primitive_lookup;
+	uint32_t micro_surface;
+	uint32_t micro_multimesh_previous_offset;
 };
-static_assert(sizeof(RT_GeometryData) == 240, "RT_GeometryData must be 240 bytes for std430");
+static_assert(sizeof(RT_GeometryData) == 272, "RT_GeometryData must be 272 bytes for std430");
 
 /// Per-instance motion data for velocity computation (matches GLSL InstanceMotionData, 48 bytes).
 struct RT_InstanceMotionData {
@@ -272,37 +277,16 @@ struct RTProceduralState {
 
 struct RTSurfaceData {
 	RID blas;
+	RID position_buffer;
+	RID position_parameters;
 	RT_GeometryData geometry = {};
 	uint64_t blas_size = 0;
 
-	// Cluster BLAS resources. blas_create_from_clusters() registers no dependency on
-	// the mesh buffers, so nothing cascade-frees these; every one is freed explicitly.
-	RID clas_buffer;
-	RID clas_addresses_buffer;
-	RID cluster_remap_buffer;
-	RID clas_count_buffer;
-	uint32_t cluster_count = 0;
-	bool is_clustered = false;
 };
 
-/// A cluster BLAS build queued during surface processing and issued once the frame's
-/// compute list is closed; RenderingDevice forbids cluster builds inside a list.
-struct RTPendingClusterBuild {
-	RD::ClusterBuildInput input;
-	RTSurfaceData *surf_data = nullptr;
-	RID blas;
-	RID clas_buffer;
-	RID clas_addresses_buffer;
-	RID clas_count_buffer;
-	RID src_infos_buffer;
-	uint32_t cluster_count = 0;
-	uint64_t scratch_size = 0;
-};
-
-/// A resource the render graph still references this frame; freed on a later frame.
 struct RTDeferredResourceFree {
 	RID resource;
-	uint32_t frame = 0;
+	uint64_t submission = 0;
 };
 
 /// Inputs for a surface backed by a per-frame-deformed vertex buffer.
@@ -487,6 +471,64 @@ struct RTPersistentMaterialData {
 	RT_MaterialData data = {};
 };
 
+struct RTMicroGeometryTask {
+	uint64_t clas_addresses = 0;
+	uint64_t instance = 0;
+	uint64_t surface = 0;
+	uint32_t selection_bin = 0;
+	uint32_t geometry_base = 0;
+	uint32_t motion_base = 0;
+	uint32_t instance_count = 0;
+	uint32_t cluster_count = 0;
+	uint32_t bitmap_offset = 0;
+	uint32_t group_offset = 0;
+	uint32_t group_count = 0;
+	uint32_t instance_flags = 0;
+	uint32_t instance_mask = 255;
+	uint32_t padding[2] = {};
+};
+static_assert(sizeof(RTMicroGeometryTask) == 72);
+
+struct RTMicroGeometryPin {
+	RID asset;
+	uint32_t group = 0;
+	bool operator==(const RTMicroGeometryPin &p_other) const { return asset == p_other.asset && group == p_other.group; }
+};
+
+struct RTMicroGeometryBuild {
+	uint64_t signature = 0;
+	uint64_t memory_bytes = 0;
+	uint64_t retirement = 0;
+	uint32_t pending_feedback = 0;
+	MicroGeometrySelection::Pass *selection = nullptr;
+	Vector<MicroGeometrySelection::Task> selection_tasks;
+	Vector<RTMicroGeometryTask> task_data;
+	Vector<RID> assets;
+	Vector<RTMicroGeometryPin> pins;
+	Vector<RTMicroGeometryPin> finest_pins;
+	Vector<RID> blas;
+	Vector<RID> resources;
+	Vector<RID> dependencies;
+	Vector<RID> clas_dependencies;
+	RD::ClusterBottomLevelBuildInput input;
+	RID tasks;
+	RID blas_addresses;
+	RID membership;
+	RID cached_membership;
+	RID references;
+	RID dirty_infos;
+	RID dirty_destinations;
+	RID dirty_counts;
+	RID tlas_instances;
+	RID group_usage;
+	RID scratch;
+};
+
+struct RTMicroGeometryFeedback {
+	RTMicroGeometryBuild *build = nullptr;
+	Vector<RTMicroGeometryPin> pins;
+};
+
 static_assert(sizeof(RTPersistentInstanceData) == 472);
 static_assert(sizeof(RTPersistentSurfaceData) == 72);
 static_assert(sizeof(RTPersistentMaterialData) == sizeof(RT_MaterialData) + 16);
@@ -503,6 +545,7 @@ static_assert(sizeof(RTPersistentMaterialData) == sizeof(RT_MaterialData) + 16);
 /// `build_tlas` for that viewport, freed via `RenderRaytracing::free_viewport_state`
 /// from `RenderBufferDataForwardClustered::free_data()`.
 struct RTViewportState {
+	RTMicroGeometryBuild *micro_geometry = nullptr;
 	RendererEnvironmentStorage::RaytracingSettings settings;
 	RID settings_environment;
 	RID settings_camera;
@@ -557,6 +600,20 @@ class RenderRaytracing {
 	friend class RenderForwardClustered;
 
 	RenderForwardClustered *owner = nullptr;
+	MicroGeometrySelection *micro_selection = nullptr;
+	MicroGeometryRtShaderRD micro_rt_shader;
+	RID micro_rt_version;
+	RID micro_rt_pipeline;
+	GeometryPositionsShaderRD geometry_positions_shader;
+	RID geometry_positions_version;
+	RID geometry_positions_pipeline;
+	Vector<RTMicroGeometryBuild *> retired_micro_geometry;
+	void _retire_micro_geometry(RTMicroGeometryBuild *p_build);
+	void _free_micro_geometry(RTMicroGeometryBuild *p_build);
+	static void _micro_group_feedback(const Vector<uint8_t> &p_bytes, uint64_t p_owner, uint64_t p_feedback);
+	static void _micro_history_feedback(const Vector<uint8_t> &p_bytes, uint64_t p_owner, uint64_t p_build);
+	bool _prepare_micro_geometry(RTViewportState *p_state, const RenderDataRD *p_render_data, const Vector<MicroGeometrySelection::Task> &p_tasks, const Vector<RTMicroGeometryTask> &p_rt_tasks, uint32_t p_levels);
+	bool _build_micro_geometry(RTViewportState *p_state);
 	RendererRD::DDGIEffect *ddgi_effect = nullptr;
 	RenderPathtracing *pathtracing = nullptr;
 	bool _prepare_ddgi(RTViewportState *p_state, bool p_freeze_anchor);
@@ -603,12 +660,8 @@ class RenderRaytracing {
 	RTDeformedCacheEntry *_access_deformed_slot(RID &r_handle);
 	RTMergedMMEntry *_access_merged_mm_slot(RID &r_handle);
 
-	// Cluster BLAS build state, all owned by this class.
-	LocalVector<RTPendingClusterBuild> pending_cluster_builds;
-	LocalVector<RTDeferredResourceFree> cluster_deferred_frees;
-	RID clas_scratch_buffer;
-	uint64_t clas_scratch_capacity = 0;
-	uint32_t cluster_sweep_chunk = 0;
+	LocalVector<RTDeferredResourceFree> deferred_resource_frees;
+	uint32_t surface_sweep_chunk = 0;
 
 	LocalVector<uint32_t> material_free_slots;
 	uint32_t next_material_slot = 0;
@@ -704,10 +757,8 @@ class RenderRaytracing {
 			uint32_t p_cache_key,
 			RTSurfaceData *r_surf_data,
 			LocalVector<RID> &r_dirty_blas_list);
-	bool _populate_cluster_blas(void *p_mesh_surface, uint32_t p_cache_key, RTSurfaceData *r_surf_data);
-	void _release_cluster_blas(RTSurfaceData *p_surf_data, bool p_deferred);
-	void _sweep_dead_cluster_surfaces();
-	void _flush_pending_cluster_builds();
+	void _release_surface_blas(RTSurfaceData *p_surf_data, bool p_deferred);
+	void _sweep_dead_surfaces();
 	RTMaterialData *process_material(RID p_material_rid, uint16_t p_material_invalidation_counter);
 	bool _build_merged_mm_blas(
 			RID p_mm_rid,
@@ -721,7 +772,7 @@ class RenderRaytracing {
 			LocalVector<RID> &r_dirty_blas_update_list,
 			RTSurfaceData *r_surf_data);
 	void update_procedural_blas(RTProceduralState *p_state, LocalVector<RID> &r_dirty_blas_list);
-	void build_acceleration_structures(RTViewportState *p_state, const LocalVector<RID> &p_dirty_blas_list, const LocalVector<RID> &p_dirty_blas_update_list);
+	bool build_acceleration_structures(RTViewportState *p_state, const LocalVector<RID> &p_dirty_blas_list, const LocalVector<RID> &p_dirty_blas_update_list);
 	void finalize_buffers(RTViewportState *p_state);
 	bool update_material_pipeline(RTViewportState *p_state);
 	void build_light_registry(RTViewportState *p_state, const RenderDataRD *p_render_data, uint64_t &r_scene_signature);
@@ -738,6 +789,7 @@ public:
 	uint32_t get_persistent_surface_count() const { return persistent_surfaces.size(); }
 	uint64_t get_persistent_scene_generation() const { return persistent_scene_generation; }
 	uint64_t get_persistent_memory_bytes() const;
+	uint64_t get_micro_geometry_memory_bytes() const;
 	void get_persistent_buffer_dependencies(Vector<RID> &r_buffers) const;
 
 

@@ -885,6 +885,32 @@ void RendererEnvironmentStorage::environment_set_raytracing(RID p_env, RSE::Rayt
 	}
 }
 
+void RendererEnvironmentStorage::environment_set_raytracing_geometry(RID p_env, float p_geometry_error, float p_offscreen_multiplier) {
+	Environment *env = environment_owner.get_or_null(p_env);
+	ERR_FAIL_NULL(env);
+	ERR_FAIL_COND(!Math::is_finite(p_geometry_error) || p_geometry_error < 0.1f || p_geometry_error > 64.0f);
+	ERR_FAIL_COND(!Math::is_finite(p_offscreen_multiplier) || p_offscreen_multiplier < 1.0f || p_offscreen_multiplier > 16.0f);
+	RaytracingSettings &settings = env->raytracing;
+	if (settings.geometry_error == p_geometry_error && settings.geometry_offscreen_multiplier == p_offscreen_multiplier) {
+		return;
+	}
+	settings.geometry_error = p_geometry_error;
+	settings.geometry_offscreen_multiplier = p_offscreen_multiplier;
+	settings.mode_generation++;
+}
+
+float RendererEnvironmentStorage::environment_get_raytracing_geometry_error(RID p_env) const {
+	const Environment *env = environment_owner.get_or_null(p_env);
+	ERR_FAIL_NULL_V(env, 4.0f);
+	return env->raytracing.geometry_error;
+}
+
+float RendererEnvironmentStorage::environment_get_raytracing_geometry_offscreen_multiplier(RID p_env) const {
+	const Environment *env = environment_owner.get_or_null(p_env);
+	ERR_FAIL_NULL_V(env, 2.0f);
+	return env->raytracing.geometry_offscreen_multiplier;
+}
+
 void RendererEnvironmentStorage::environment_set_ddgi(RID p_env, bool p_enabled, int p_cascade_count, float p_probe_spacing, int p_rays_per_probe, int p_updates_per_frame, RSE::DDGIResolution p_resolution) {
 	Environment *env = environment_owner.get_or_null(p_env);
 	ERR_FAIL_NULL(env);

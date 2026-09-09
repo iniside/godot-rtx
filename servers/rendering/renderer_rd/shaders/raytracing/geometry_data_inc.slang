@@ -32,9 +32,7 @@ struct GeometryData {
 	uint color_byte_offset;
 	uint prev_vertex_address_lo;
 	uint prev_vertex_address_hi;
-	uint cluster_remap_address_lo;
-	uint cluster_remap_address_hi;
-	uint cluster_count;
+	uint padding[3];
 
 	float3 position_offset;
 	uint instance_layer_mask;
@@ -56,6 +54,11 @@ struct GeometryData {
 	uint64_t skin_address;
 	uint skin_stride;
 	uint skin_weight_offset;
+	uint64_t micro_asset_address;
+	uint64_t micro_page_pool;
+	uint64_t micro_primitive_lookup;
+	uint micro_surface;
+	uint micro_multimesh_previous_offset;
 };
 
 struct InstanceMotionData {

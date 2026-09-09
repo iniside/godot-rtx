@@ -534,7 +534,9 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 }
 
 void MeshStorage::_mesh_surface_clear(Mesh *p_mesh, int p_surface) {
+	MutexLock lock(exact_buffers_mutex);
 	Mesh::Surface &s = *p_mesh->surfaces[p_surface];
+	_mesh_surface_untrack_exact_buffers(&s);
 
 	if (s.vertex_buffer.is_valid()) {
 		RD::get_singleton()->free_rid(s.vertex_buffer); // Clears arrays as dependency automatically, including all versions.
@@ -555,20 +557,15 @@ void MeshStorage::_mesh_surface_clear(Mesh *p_mesh, int p_surface) {
 
 	if (s.lod_count) {
 		for (uint32_t j = 0; j < s.lod_count; j++) {
-			RD::get_singleton()->free_rid(s.lods[j].index_buffer);
+			if (s.lods[j].index_buffer.is_valid()) {
+				RD::get_singleton()->free_rid(s.lods[j].index_buffer);
+			}
 		}
 		memdelete_arr(s.lods);
 	}
 
 	if (s.blend_shape_buffer.is_valid()) {
 		RD::get_singleton()->free_rid(s.blend_shape_buffer);
-	}
-
-	if (s.cluster_buffer.is_valid()) {
-		RD::get_singleton()->free_rid(s.cluster_buffer);
-	}
-	if (s.cluster_position_buffer.is_valid()) {
-		RD::get_singleton()->free_rid(s.cluster_position_buffer);
 	}
 
 	memdelete(p_mesh->surfaces[p_surface]);
@@ -599,10 +596,11 @@ void MeshStorage::mesh_surface_update_vertex_region(RID p_mesh, int p_surface, i
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
 	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_surface, mesh->surface_count);
-	ERR_FAIL_COND(mesh->surfaces[p_surface]->vertex_buffer.is_null());
 
 	Vector<uint8_t> &source = mesh->surfaces[p_surface]->source_data.vertex_data;
 	ERR_FAIL_COND(p_offset < 0 || uint64_t(p_offset) + uint64_t(p_data.size()) > uint64_t(source.size()));
+	_mesh_surface_ensure_gpu_buffers(mesh->surfaces[p_surface]);
+	ERR_FAIL_COND(mesh->surfaces[p_surface]->vertex_buffer.is_null());
 	_invalidate_micro_geometry(mesh);
 	memcpy(source.ptrw() + p_offset, p_data.ptr(), p_data.size());
 
@@ -620,10 +618,11 @@ void MeshStorage::mesh_surface_update_attribute_region(RID p_mesh, int p_surface
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
 	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_surface, mesh->surface_count);
-	ERR_FAIL_COND(mesh->surfaces[p_surface]->attribute_buffer.is_null());
 
 	Vector<uint8_t> &source = mesh->surfaces[p_surface]->source_data.attribute_data;
 	ERR_FAIL_COND(p_offset < 0 || uint64_t(p_offset) + uint64_t(p_data.size()) > uint64_t(source.size()));
+	_mesh_surface_ensure_gpu_buffers(mesh->surfaces[p_surface]);
+	ERR_FAIL_COND(mesh->surfaces[p_surface]->attribute_buffer.is_null());
 	_invalidate_micro_geometry(mesh);
 	memcpy(source.ptrw() + p_offset, p_data.ptr(), p_data.size());
 
@@ -662,10 +661,11 @@ void RendererRD::MeshStorage::mesh_surface_update_index_region(RID p_mesh, int p
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
 	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_surface, mesh->surface_count);
-	ERR_FAIL_COND(mesh->surfaces[p_surface]->index_buffer.is_null());
 
 	Vector<uint8_t> &source = mesh->surfaces[p_surface]->source_data.index_data;
 	ERR_FAIL_COND(p_offset < 0 || uint64_t(p_offset) + uint64_t(p_data.size()) > uint64_t(source.size()));
+	_mesh_surface_ensure_gpu_buffers(mesh->surfaces[p_surface]);
+	ERR_FAIL_COND(mesh->surfaces[p_surface]->index_buffer.is_null());
 	_invalidate_micro_geometry(mesh);
 	memcpy(source.ptrw() + p_offset, p_data.ptr(), p_data.size());
 
@@ -682,6 +682,7 @@ RID MeshStorage::mesh_surface_get_vertex_buffer_rd_rid(RID p_mesh, int p_surface
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL_V(mesh, RID());
 	ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_surface, mesh->surface_count, RID());
+	_mesh_surface_pin_exact_buffers(mesh->surfaces[p_surface]);
 	return mesh->surfaces[p_surface]->vertex_buffer;
 }
 
@@ -689,6 +690,7 @@ RID MeshStorage::mesh_surface_get_attribute_buffer_rd_rid(RID p_mesh, int p_surf
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL_V(mesh, RID());
 	ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_surface, mesh->surface_count, RID());
+	_mesh_surface_pin_exact_buffers(mesh->surfaces[p_surface]);
 	return mesh->surfaces[p_surface]->attribute_buffer;
 }
 
@@ -703,6 +705,7 @@ RID MeshStorage::mesh_surface_get_index_buffer_rd_rid(RID p_mesh, int p_surface)
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL_V(mesh, RID());
 	ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_surface, mesh->surface_count, RID());
+	_mesh_surface_pin_exact_buffers(mesh->surfaces[p_surface]);
 	return mesh->surfaces[p_surface]->index_buffer;
 }
 
@@ -932,6 +935,144 @@ String MeshStorage::mesh_get_path(RID p_mesh) const {
 	return mesh->path;
 }
 
+void MeshStorage::_mesh_surface_untrack_exact_buffers(Mesh::Surface *p_surface) const {
+	MutexLock lock(exact_buffers_mutex);
+	if (!p_surface->exact_buffers_tracked) {
+		return;
+	}
+	for (uint32_t i = 0; i < tracked_exact_buffers.size(); i++) {
+		if (tracked_exact_buffers[i] == p_surface) {
+			tracked_exact_buffers.remove_at_unordered(i);
+			break;
+		}
+	}
+	p_surface->exact_buffers_tracked = false;
+}
+
+void MeshStorage::_mesh_surface_mark_exact_buffers_used(Mesh::Surface *p_surface) const {
+	MutexLock lock(exact_buffers_mutex);
+	if (!p_surface->micro_geometry_mapped || p_surface->exact_buffers_pinned) {
+		return;
+	}
+	p_surface->exact_buffers_last_use_frame = RSG::rasterizer->get_frame_number();
+	p_surface->exact_buffers_last_use_submission = RD::get_singleton()->get_pending_submission_serial();
+	if (!p_surface->exact_buffers_tracked) {
+		tracked_exact_buffers.push_back(p_surface);
+		p_surface->exact_buffers_tracked = true;
+	}
+}
+
+void MeshStorage::_mesh_surface_pin_exact_buffers(Mesh::Surface *p_surface) const {
+	MutexLock lock(exact_buffers_mutex);
+	p_surface->exact_buffers_pinned = true;
+	_mesh_surface_untrack_exact_buffers(p_surface);
+	_mesh_surface_ensure_gpu_buffers(p_surface);
+}
+
+void MeshStorage::_retire_unused_exact_buffers() {
+	MutexLock lock(exact_buffers_mutex);
+	const uint64_t current_frame = RSG::rasterizer->get_frame_number();
+	const uint64_t completed_submission = RD::get_singleton()->get_completed_submission_serial();
+	uint32_t i = 0;
+	while (i < tracked_exact_buffers.size()) {
+		Mesh::Surface *surface = tracked_exact_buffers[i];
+		if (!surface->micro_geometry_mapped || surface->exact_buffers_pinned || surface->gpu_buffers_discarded) {
+			surface->exact_buffers_tracked = false;
+			tracked_exact_buffers.remove_at_unordered(i);
+			continue;
+		}
+		if (current_frame - surface->exact_buffers_last_use_frame > 1 && surface->exact_buffers_last_use_submission <= completed_submission) {
+			surface->exact_buffers_tracked = false;
+			tracked_exact_buffers.remove_at_unordered(i);
+			_mesh_surface_discard_gpu_buffers(surface);
+			continue;
+		}
+		i++;
+	}
+}
+
+void MeshStorage::_mesh_surface_discard_gpu_buffers(Mesh::Surface *p_surface) {
+	MutexLock lock(exact_buffers_mutex);
+	_mesh_surface_untrack_exact_buffers(p_surface);
+	if (p_surface->gpu_buffers_discarded || p_surface->exact_buffers_pinned) {
+		return;
+	}
+	if (p_surface->vertex_buffer.is_valid()) {
+		RD::get_singleton()->free_rid(p_surface->vertex_buffer);
+		p_surface->vertex_buffer = RID();
+		p_surface->vertex_buffer_size = 0;
+	}
+	if (p_surface->attribute_buffer.is_valid()) {
+		RD::get_singleton()->free_rid(p_surface->attribute_buffer);
+		p_surface->attribute_buffer = RID();
+		p_surface->attribute_buffer_size = 0;
+	}
+	if (p_surface->versions) {
+		memfree(p_surface->versions);
+		p_surface->versions = nullptr;
+		p_surface->version_count = 0;
+	}
+	if (p_surface->index_buffer.is_valid()) {
+		RD::get_singleton()->free_rid(p_surface->index_buffer);
+		p_surface->index_buffer = RID();
+		p_surface->index_array = RID();
+		p_surface->index_buffer_size = 0;
+	}
+	for (uint32_t i = 0; i < p_surface->lod_count; i++) {
+		if (p_surface->lods[i].index_buffer.is_valid()) {
+			RD::get_singleton()->free_rid(p_surface->lods[i].index_buffer);
+			p_surface->lods[i].index_buffer = RID();
+			p_surface->lods[i].index_array = RID();
+			p_surface->lods[i].index_buffer_size = 0;
+		}
+	}
+	p_surface->gpu_buffers_discarded = true;
+}
+
+void MeshStorage::_mesh_surface_ensure_gpu_buffers(Mesh::Surface *p_surface) const {
+	MutexLock lock(exact_buffers_mutex);
+	if (p_surface->gpu_buffers_discarded) {
+		const RenderingServerTypes::SurfaceData &source = p_surface->source_data;
+		const bool requested_storage_buffer = source.format & RSE::ARRAY_FLAG_USE_STORAGE_BUFFER;
+		BitField<RD::BufferCreationBits> buffer_flags = requested_storage_buffer ? RD::BUFFER_CREATION_AS_STORAGE_BIT : 0;
+		if (RD::get_singleton()->has_feature(RD::SUPPORTS_RAYTRACING_PIPELINE) || RD::get_singleton()->has_feature(RD::SUPPORTS_RAY_QUERY)) {
+			buffer_flags.set_flag(RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
+			buffer_flags.set_flag(RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT);
+			buffer_flags.set_flag(RD::BUFFER_CREATION_AS_STORAGE_BIT);
+		}
+		if (!source.vertex_data.is_empty()) {
+			if (!(source.format & RSE::ARRAY_FLAG_COMPRESS_ATTRIBUTES) && (source.format & RSE::ARRAY_FORMAT_NORMAL) && !(source.format & RSE::ARRAY_FORMAT_TANGENT)) {
+				Vector<uint8_t> vertex_data;
+				vertex_data.resize_initialized(source.vertex_data.size() + sizeof(uint16_t) * 2);
+				memcpy(vertex_data.ptrw(), source.vertex_data.ptr(), source.vertex_data.size());
+				p_surface->vertex_buffer = RD::get_singleton()->vertex_buffer_create(vertex_data.size(), vertex_data, buffer_flags);
+				p_surface->vertex_buffer_size = vertex_data.size();
+			} else {
+				p_surface->vertex_buffer = RD::get_singleton()->vertex_buffer_create(source.vertex_data.size(), source.vertex_data, buffer_flags);
+				p_surface->vertex_buffer_size = source.vertex_data.size();
+			}
+		}
+		if (!source.attribute_data.is_empty()) {
+			p_surface->attribute_buffer = RD::get_singleton()->vertex_buffer_create(source.attribute_data.size(), source.attribute_data, buffer_flags);
+			p_surface->attribute_buffer_size = source.attribute_data.size();
+		}
+		if (source.index_count) {
+			const bool is_index_16 = source.vertex_count <= 65536 && source.vertex_count > 0;
+			p_surface->index_buffer = RD::get_singleton()->index_buffer_create(source.index_count, is_index_16 ? RD::INDEX_BUFFER_FORMAT_UINT16 : RD::INDEX_BUFFER_FORMAT_UINT32, source.index_data, false, buffer_flags);
+			p_surface->index_buffer_size = source.index_data.size();
+			p_surface->index_array = RD::get_singleton()->index_array_create(p_surface->index_buffer, 0, source.index_count);
+			for (uint32_t i = 0; i < p_surface->lod_count; i++) {
+				const uint32_t index_count = source.lods[i].index_data.size() / (is_index_16 ? 2 : 4);
+				p_surface->lods[i].index_buffer = RD::get_singleton()->index_buffer_create(index_count, is_index_16 ? RD::INDEX_BUFFER_FORMAT_UINT16 : RD::INDEX_BUFFER_FORMAT_UINT32, source.lods[i].index_data, false, buffer_flags);
+				p_surface->lods[i].index_buffer_size = source.lods[i].index_data.size();
+				p_surface->lods[i].index_array = RD::get_singleton()->index_array_create(p_surface->lods[i].index_buffer, 0, index_count);
+			}
+		}
+		p_surface->gpu_buffers_discarded = false;
+	}
+	_mesh_surface_mark_exact_buffers_used(p_surface);
+}
+
 void MeshStorage::mesh_set_micro_geometry(RID p_mesh, const Ref<MicroGeometryData> &p_data) {
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
@@ -952,15 +1093,41 @@ void MeshStorage::mesh_set_micro_geometry(RID p_mesh, const Ref<MicroGeometryDat
 	_invalidate_micro_geometry(mesh);
 	mesh->micro_geometry = p_data;
 	mesh->micro_geometry_asset = asset;
+	MutexLock lock(exact_buffers_mutex);
 	if (asset.is_valid()) {
 		for (uint32_t i = 0; i < mesh->surface_count; i++) {
-			mesh->surfaces[i]->keep_source_data = true;
+			Mesh::Surface *mesh_surface = mesh->surfaces[i];
+			mesh_surface->keep_source_data = true;
+			bool mapped = false;
+			for (const MicroGeometryData::Surface &surface : p_data->get_metadata().surfaces) {
+				if (surface.source_surface == i) {
+					mapped = true;
+					break;
+				}
+			}
+			mesh_surface->micro_geometry_mapped = mapped;
+			if (mapped) {
+				_mesh_surface_discard_gpu_buffers(mesh_surface);
+			} else {
+				_mesh_surface_ensure_gpu_buffers(mesh_surface);
+			}
+		}
+	} else {
+		for (uint32_t i = 0; i < mesh->surface_count; i++) {
+			_mesh_surface_ensure_gpu_buffers(mesh->surfaces[i]);
 		}
 	}
 	mesh->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MESH);
 }
 
 void MeshStorage::_invalidate_micro_geometry(Mesh *p_mesh) {
+	{
+		MutexLock lock(exact_buffers_mutex);
+		for (uint32_t i = 0; i < p_mesh->surface_count; i++) {
+			p_mesh->surfaces[i]->micro_geometry_mapped = false;
+			_mesh_surface_untrack_exact_buffers(p_mesh->surfaces[i]);
+		}
+	}
 	if (p_mesh->micro_geometry_asset.is_valid()) {
 		micro_geometry_storage.release(p_mesh->micro_geometry_asset);
 		p_mesh->micro_geometry_asset = RID();
@@ -2462,6 +2629,7 @@ MeshStorage::MultiMeshInterpolator *MeshStorage::_multimesh_get_interpolator(RID
 
 void MeshStorage::_update_dirty_multimeshes() {
 	micro_geometry_storage.update();
+	_retire_unused_exact_buffers();
 	while (multimesh_dirty_list) {
 		MultiMesh *multimesh = multimesh_dirty_list;
 

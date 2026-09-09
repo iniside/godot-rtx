@@ -48,7 +48,7 @@ bool geometry_material_covered(GeometryHitInput hit, MaterialData material, floa
 		float3 bary = float3(1.0 - hit.barycentrics.x - hit.barycentrics.y, hit.barycentrics);
 		uint primitive;
 		uint3 indices;
-		if (!geometry_resolve_primitive(hit.geometry, hit.cluster_id, hit.primitive_id, primitive) || !geometry_triangle_indices(hit.geometry, primitive, indices)) {
+		if (!geometry_select_triangle(hit.geometry, hit.cluster_id, hit.primitive_id, primitive) || !geometry_triangle_indices(hit.geometry, primitive, indices)) {
 			return false;
 		}
 		alpha *= geometry_fetch_color(hit.geometry, indices, bary).a;
