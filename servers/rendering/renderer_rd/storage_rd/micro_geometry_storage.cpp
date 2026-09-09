@@ -579,6 +579,11 @@ uint32_t MicroGeometryStorage::_allocate_slot() {
 }
 
 void MicroGeometryStorage::update() {
+	const uint64_t submission = RD::get_singleton()->get_pending_submission_serial();
+	if (last_update_submission == submission) {
+		return;
+	}
+	last_update_submission = submission;
 	RENDER_TIMESTAMP("Microgeometry Streaming Retire");
 	clock++;
 	const uint64_t completed = RD::get_singleton()->get_completed_submission_serial();

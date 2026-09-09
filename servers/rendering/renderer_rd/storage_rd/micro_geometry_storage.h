@@ -235,6 +235,7 @@ private:
 	RID pool;
 	uint32_t page_count = DEFAULT_PAGE_COUNT;
 	uint64_t clock = 0;
+	uint64_t last_update_submission = 0;
 	uint64_t admission_generation = 1;
 	Statistics statistics;
 	MicroGeometryPageShaderRD page_shader;
