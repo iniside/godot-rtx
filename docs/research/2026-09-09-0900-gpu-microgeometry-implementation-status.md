@@ -143,16 +143,26 @@ Final source review returned REJECT with two concrete remaining issues:
    the old cut's inactive TLAS address. This is reachable while emissive finest
    leaves stream after terminal CLAS readiness. Use the allocated
    `blas_addresses[geometry]` for build destinations independently of TLAS
-   activation; no source correction has been made after this final review.
+   activation; the subsequently authorized repair is recorded below.
 2. `micro_geometry_select.slang:317`: projected reverse-Z nearest depth starts
    at zero, masking wholly negative depths beyond the camera far plane. Such
    RT instances incorrectly skip the offscreen multiplier. Preserve signed
    far-plane classification while retaining their RT coverage.
 
-Repository policy `.agents/shared/planning-dispatch.md`, Hostile Diff Review,
-limits a task to two review rounds and requires stopping/reporting remaining
-issues after round 2. Implementation is stopped at this gate; no third review
-or post-gate source fix was attempted.
+The prior task stopped at the repository two-round review limit. The owner then
+explicitly authorized the two remaining corrections. Repair commit
+`bf2818e0efc96519d3e7fb595d87151ecfde5dfb`, baseline
+`d3f3fbe9b92ca8867651424e867d9226a3f1c013`, changes three lines in the two shaders:
+build destinations use the allocated BLAS address; projected bounds retain signed
+reverse-Z depth; HZB comparison retains its earlier zero clamp. Fresh exact and
+cumulative source review returned PASS. Ordinary editor/console build 08 passed
+in 34.38 seconds with unchanged source hashes; four changed single/double shader
+variants passed compilation and SPIR-V validation, and the 56-identity closure
+was refreshed. Independent proof audit returned PASS for these compile/source
+claims. New receipts are `build-08-{source,result}.json`
+in the host evidence directory and `remaining-fixes-current-source-closure.json`
+in the shader evidence directory. These are compile/source results, not real GPU
+proof of the two transitions.
 
 ## Actual dragon import
 
@@ -186,11 +196,15 @@ and cumulative history. No automated test suite was authored or run.
 
 Step 6 remains pending: selected raster/RT cluster debug views and frozen
 selection, counters, real Vulkan rendering, export/PCK, native save/load and OBJ,
-and required double/template build coverage. A separate Step 6 context performed
-read-only navigation only and stopped at the failed prerequisite gate; no code,
-fixture or build changes. Existing raster cluster-color hook and RT primary-hit
+and required double/template build coverage. A separate Step 6 context first performed
+read-only navigation at the failed prerequisite gate, then resumed implementation
+after the renewed repair passed source and proof review. No Step 6 result is
+yet claimed. Existing raster cluster-color hook and RT primary-hit
 payload can serve debug views; frozen selection must retain the actual selected
 list/cut with live transforms and invalidate on topology/material/reload changes.
+Owner scene-location instruction: build the visual dragon/raster/RT scene in
+`demos/rtxdi_manual`, preserving its existing dirty owner changes. The current
+`rawcontent` project remains an import inspector, not the visual validation scene.
 The overall owner-authorized implementation is incomplete.
 
 Existing unrelated dirty scenes/documents and the source dragon are preserved.

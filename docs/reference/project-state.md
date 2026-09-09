@@ -1,16 +1,18 @@
 # Project State
 
-GPU-driven microgeometry implementation (2026-09-09, `ec9a584644`):
+GPU-driven microgeometry implementation (2026-09-09, `bf2818e0ef`):
 [authorized plan](../plans/2026-09-09-0900-gpu-microgeometry-plan.md) and
 [execution evidence](../research/2026-09-09-0900-gpu-microgeometry-implementation-status.md).
 Importer, paged storage, RD/GPU AS APIs and GPU selection/native raster passed
 final source reviews; raster pinned compiler proof passed at `ec399801bf`.
 Selected RT integration and simple error/offscreen controls are committed;
 ordinary editor/console build and final compiler proof pass at `40650bd3bc`.
-Final source review rejects an empty-to-nonempty cut's null BLAS build destination
-and missed offscreen classification beyond the camera far plane. Work is stopped
-at the repository's two-round review limit; recommended fixes are recorded in
-the execution evidence.
+The owner renewed the two remaining corrections after the review-limit stop;
+`bf2818e0ef` repairs the empty-to-nonempty BLAS build destination and signed
+far-plane classification. Fresh source and bounded compiler-proof reviews pass;
+ordinary editor/console build 08 and four refreshed shader variants pass.
+Step 6 debug views and real GPU validation are now in progress. The visual scene
+belongs in `demos/rtxdi_manual`, preserving its existing owner changes.
 Actual dragon import/reimport passed in 82.66/67.04 seconds, yielding 17 DAG
 levels and 9737 pages with byte-identical reused `.mgdata`; the diagnostic
 reimport command had shutdown warnings. Import evidence uses an immutable
