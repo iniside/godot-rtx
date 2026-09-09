@@ -69,14 +69,46 @@ transitions did not dirty persistent deformation eligibility. Fix commit
 at material ingestion and dirties both procedural setters. The ForwardClustered
 object compiled; RT retains only the two deferred old-call errors. Fresh final
 round 2 returned PASS at `f97a605510271cb1f7cc0d0a3033837e49074732`, including the
-original step and cumulative diff. Step 4 implementation has started from that
-baseline, including native shader variants, GPU selection and all static native
-pass consumers. Step 5's read-only consumer map is complete; it awaits stable
-selected-cut contracts. Step 6 is pending. No implementation or validation
-success is claimed for Steps 4–6.
+original step and cumulative diff.
 
-Continue Step 4 and its fresh review; Step 5 needs stable shared storage and
-selected-cut shader contracts. All prior owner
+Step 4 committed `1cba9a48c3f615ef15128fccdd9c132e61a7ba0b`, task baseline
+`f97a605510271cb1f7cc0d0a3033837e49074732`. It adds GPU DAG selection, native
+vertex pulling, compatible-bin indirect commands, single-view temporal HZB and
+current-depth recovery, and explicit scenario context. Surface, shadow/DP,
+collider, material, UV2 and SDF consumers are wired. Multiview conservatively
+retains geometry without frustum/HZB rejection. Imported format/build 2 adds
+parent adjacency, coarse count and original vertex IDs; importer versions are 3.
+Twelve scoped C++ objects and 164 native plus four compute shader compilation/
+SPIR-V validation invocations passed, according to retained receipts in
+`C:/Users/lukas/AppData/Local/Temp/godot-micro-native-step4-20260909/`.
+Round 1 source review rejected geometric HZB occlusion for fragment DEPTH writers
+and coarse streaming fallback during one-shot UV2 baking. Proof audit rejected
+the pinned-compiler claim (receipts used SDK CLI, not the exact pinned DLL) and
+the compiler driver returning success despite failed/missing jobs. Existing
+per-case successful SDK compilation and ABI observations remain bounded evidence;
+the object build was eight compiled plus four up-to-date targets. Fix commit
+`ec399801bfb9bfeab4bd7e1867ebbc13a06b36d1` disables geometric HZB rejection for
+DEPTH-writing materials and uses an exact temporary native mesh for one-shot
+UV2 baking, independent of page residency. General microgeometry UV2 remains
+wired; the one-shot bake is an explicit native exception. The corrected compiler
+driver reports 164 raster and four compute successes with strict cardinality and
+the verified pinned compiler. Final source and proof reviews both returned PASS
+at `ec399801bfb9bfeab4bd7e1867ebbc13a06b36d1`, including original and cumulative
+history. Fresh pinned disassembly and exact incremental object-build receipts
+are retained.
+Actual
+import/rendering is not validated. Frozen ABI: GPUAsset 120, GPUGroup 48,
+SelectedCluster 64, Task 72,
+Parameters 432, native InstanceData 192/224 bytes. Existing full static buffers
+remain for unmigrated RT consumers. Cuts are transient; frozen inspection needs
+group pins before retaining them across storage updates.
+
+Step 5 implementation is active from `ec399801bfb9bfeab4bd7e1867ebbc13a06b36d1`:
+selected RT geometry/AS, shared hit decoding and emitter identities, simple
+Environment controls, and final static GPU allocation migration.
+Step 6 is pending. No implementation or validation success is claimed for them.
+
+Continue Step 5, its fresh review and final Step 6 validation. All prior owner
 authorization remains in effect. The final linked editor, dragon import/reimport,
 export/PCK, double/template and real GPU checks remain outstanding.
 
