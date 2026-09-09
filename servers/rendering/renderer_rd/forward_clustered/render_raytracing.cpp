@@ -33,6 +33,7 @@
 #include "core/math/math_funcs.h"
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
+#include "core/profiling/profiling.h"
 #include "servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h"
 #include "servers/rendering/renderer_rd/forward_clustered/render_rtxdi.h"
 #include "servers/rendering/renderer_rd/storage_rd/light_storage.h"
@@ -820,7 +821,6 @@ RTSurfaceData *RenderRaytracing::process_surface(
 
 	_populate_surface_blas(p_mesh_surface, RID(), false, cache_key, surf_data, r_dirty_blas_list);
 
-	surf->cached_final_transform_valid = false;
 
 	if (!surf_data->blas.is_valid()) {
 		return surf_data;
@@ -963,7 +963,6 @@ RTSurfaceData *RenderRaytracing::process_deformed_surface(
 		entry.ptr->geometry.prev_vertex_buffer_address_hi = static_cast<uint32_t>(prev_addr >> 32);
 	}
 
-	surf->cached_final_transform_valid = false;
 
 	entry.cached_change_stamp = p_source.change_stamp;
 	entry.cached_key_version = p_source.cache_version;
@@ -1523,20 +1522,29 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 		if (uniform_total_size > 0) {
 			memset(ubo_data.ptrw(), 0, uniform_total_size);
 		}
-		for (const KeyValue<StringName, ShaderLanguage::ShaderNode::Uniform> &uniform : shader_data->hit_uniforms) {
-			const ShaderLanguage::ShaderNode::Uniform &u = uniform.value;
-			if (u.is_texture() || u.scope == ShaderLanguage::ShaderNode::Uniform::SCOPE_INSTANCE) {
-				continue;
+		auto pack = [&](uint32_t) {
+			for (const KeyValue<StringName, ShaderLanguage::ShaderNode::Uniform> &uniform : shader_data->hit_uniforms) {
+				const ShaderLanguage::ShaderNode::Uniform &u = uniform.value;
+				if (u.is_texture() || u.scope == ShaderLanguage::ShaderNode::Uniform::SCOPE_INSTANCE) {
+					continue;
+				}
+				ERR_CONTINUE(u.order < 0 || u.order >= generated.uniform_offsets.size());
+				uint8_t *destination = ubo_data.ptrw() + generated.uniform_offsets[u.order];
+				if (u.scope == ShaderLanguage::ShaderNode::Uniform::SCOPE_GLOBAL) {
+					uint32_t index = MAX(material_storage->global_shader_uniform_get_buffer_index(uniform.key), 0);
+					memcpy(destination, &index, sizeof(index));
+				} else {
+					RendererRD::MaterialStorage::pack_uniform(u, material_storage->material_get_param(p_material_rid, uniform.key), destination);
+				}
 			}
-			ERR_CONTINUE(u.order < 0 || u.order >= generated.uniform_offsets.size());
-			uint8_t *destination = ubo_data.ptrw() + generated.uniform_offsets[u.order];
-			if (u.scope == ShaderLanguage::ShaderNode::Uniform::SCOPE_GLOBAL) {
-				uint32_t index = MAX(material_storage->global_shader_uniform_get_buffer_index(uniform.key), 0);
-				memcpy(destination, &index, sizeof(index));
-			} else {
-				RendererRD::MaterialStorage::pack_uniform(u, material_storage->material_get_param(p_material_rid, uniform.key), destination);
-			}
-		}
+		};
+		WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+		WorkerThreadPool::GroupID payload_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+			GodotProfileZone("RTMaterialPayload");
+			(*static_cast<decltype(pack) *>(p_data))(p_index);
+		},
+				&pack, 1, 1, true, SNAME("RTMaterialPayload"));
+		pool->wait_for_group_task_completion(payload_job);
 		for (const ShaderCompiler::GeneratedCode::Texture &texture : generated.texture_uniforms) {
 			Variant value = texture.global ? Variant(material_storage->global_shader_uniform_get_texture(texture.name)) : material_storage->material_get_param(p_material_rid, texture.name);
 			Array array;
@@ -1848,26 +1856,36 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 		p_state->micro_geometry = nullptr;
 		return true;
 	}
-	uint64_t signature = _rt_scene_hash(p_tasks.ptr(), p_tasks.size() * sizeof(MicroGeometrySelection::Task), blass.size());
-	signature = _rt_scene_hash(&p_state->settings.mode_generation, sizeof(p_state->settings.mode_generation), signature);
-	const uint64_t environment = p_state->settings_environment.get_id();
-	signature = _rt_scene_hash(&environment, sizeof(environment), signature);
-	signature = _rt_scene_hash(&p_state->settings.geometry_error, sizeof(p_state->settings.geometry_error), signature);
-	signature = _rt_scene_hash(&p_state->settings.geometry_offscreen_multiplier, sizeof(p_state->settings.geometry_offscreen_multiplier), signature);
-	signature = _rt_scene_hash(&p_state->settings_visible_layers, sizeof(p_state->settings_visible_layers), signature);
-	for (const auto &task : p_tasks) {
-		const auto &instance = persistent_instances[uint32_t(task.instance) - 1].data;
-		const auto &surface = persistent_surfaces[uint32_t(task.surface) - 1].data;
-		for (uint64_t value : { instance.asset, instance.asset_address, instance.scenario, uint64_t(instance.visible), uint64_t(instance.layer_mask), uint64_t(instance.shadows), uint64_t(instance.deformed) }) {
-			signature = _rt_scene_hash(&value, sizeof(value), signature);
+	uint64_t signature = blass.size();
+	auto prepare_signature = [&](uint32_t) {
+		signature = _rt_scene_hash(p_tasks.ptr(), p_tasks.size() * sizeof(MicroGeometrySelection::Task), signature);
+		signature = _rt_scene_hash(&p_state->settings.mode_generation, sizeof(p_state->settings.mode_generation), signature);
+		const uint64_t environment = p_state->settings_environment.get_id();
+		signature = _rt_scene_hash(&environment, sizeof(environment), signature);
+		signature = _rt_scene_hash(&p_state->settings.geometry_error, sizeof(p_state->settings.geometry_error), signature);
+		signature = _rt_scene_hash(&p_state->settings.geometry_offscreen_multiplier, sizeof(p_state->settings.geometry_offscreen_multiplier), signature);
+		signature = _rt_scene_hash(&p_state->settings_visible_layers, sizeof(p_state->settings_visible_layers), signature);
+		for (const auto &task : p_tasks) {
+			const auto &instance = persistent_instances[uint32_t(task.instance) - 1].data;
+			const auto &surface = persistent_surfaces[uint32_t(task.surface) - 1].data;
+			for (uint64_t value : { instance.asset, instance.asset_address, instance.scenario, uint64_t(instance.visible), uint64_t(instance.layer_mask), uint64_t(instance.shadows), uint64_t(instance.deformed) }) {
+				signature = _rt_scene_hash(&value, sizeof(value), signature);
+			}
+			signature = _rt_scene_hash(&surface.material, sizeof(surface.material), signature);
+			signature = _rt_scene_hash(&surface.material_generation, sizeof(surface.material_generation), signature);
 		}
-		signature = _rt_scene_hash(&surface.material, sizeof(surface.material), signature);
-		signature = _rt_scene_hash(&surface.material_generation, sizeof(surface.material_generation), signature);
-	}
-	for (auto task : p_rt_tasks) {
-		task.motion_base = 0;
-		signature = _rt_scene_hash(&task, sizeof(task), signature);
-	}
+		for (auto task : p_rt_tasks) {
+			task.motion_base = 0;
+			signature = _rt_scene_hash(&task, sizeof(task), signature);
+		}
+	};
+	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+	WorkerThreadPool::GroupID signature_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("MicrogeometryInputSignature");
+		(*static_cast<decltype(prepare_signature) *>(p_data))(p_index);
+	},
+			&prepare_signature, 1, 1, true, SNAME("MicrogeometryInputSignature"));
+	pool->wait_for_group_task_completion(signature_job);
 	bool valid = p_state->micro_geometry && p_state->micro_geometry->signature == signature;
 	if (!valid) {
 		_retire_micro_geometry(p_state->micro_geometry);
@@ -1885,26 +1903,38 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 		build->selection_tasks = p_tasks;
 		build->task_data = p_rt_tasks;
 		build->cuts.resize(1);
-		HashMap<RID, HashSet<uint32_t>> finest_surfaces;
-		for (const auto &task : p_tasks) {
-			RID asset = RID::from_uint64(task.asset);
-			if (!build->assets.has(asset)) {
-				storage->acquire(storage->get_source(asset));
-				build->assets.push_back(asset);
-			}
-			const auto &surface = persistent_surfaces[uint32_t(task.surface) - 1].data;
-			if (surface.force_finest != 0 && !finest_surfaces[asset].has(surface.source_surface)) {
-				finest_surfaces[asset].insert(surface.source_surface);
-				const auto &metadata = storage->get_source(asset)->get_metadata();
-				HashSet<uint32_t> groups;
-				for (const auto &cluster : metadata.clusters) {
-					if (cluster.refined_group == UINT32_MAX && metadata.surfaces[cluster.surface].source_surface == surface.source_surface && !groups.has(cluster.group)) {
-						groups.insert(cluster.group);
-						storage->pin_group(asset, cluster.group);
-						build->finest_pins.push_back({ asset, cluster.group });
+		auto prepare_resources = [&](uint32_t) {
+			HashMap<RID, HashSet<uint32_t>> finest_surfaces;
+			for (const auto &task : p_tasks) {
+				RID asset = RID::from_uint64(task.asset);
+				if (!build->assets.has(asset)) {
+					build->assets.push_back(asset);
+				}
+				const auto &surface = persistent_surfaces[uint32_t(task.surface) - 1].data;
+				if (surface.force_finest != 0 && !finest_surfaces[asset].has(surface.source_surface)) {
+					finest_surfaces[asset].insert(surface.source_surface);
+					const auto &metadata = storage->get_source(asset)->get_metadata();
+					HashSet<uint32_t> groups;
+					for (const auto &cluster : metadata.clusters) {
+						if (cluster.refined_group == UINT32_MAX && metadata.surfaces[cluster.surface].source_surface == surface.source_surface && !groups.has(cluster.group)) {
+							groups.insert(cluster.group);
+							build->finest_pins.push_back({ asset, cluster.group });
+						}
 					}
 				}
 			}
+		};
+		auto resource_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+			GodotProfileZone("MicrogeometryResourceInputs");
+			(*static_cast<decltype(prepare_resources) *>(p_data))(p_index);
+		},
+				&prepare_resources, 1, 1, true, SNAME("MicrogeometryResourceInputs"));
+		pool->wait_for_group_task_completion(resource_job);
+		for (RID asset : build->assets) {
+			storage->acquire(storage->get_source(asset));
+		}
+		for (const auto &pin : build->finest_pins) {
+			storage->pin_group(pin.asset, pin.group);
 		}
 		get_persistent_buffer_dependencies(build->dependencies);
 		for (RID asset : build->assets) {
@@ -1942,77 +1972,84 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 	}
 	RTMicroGeometryBuild *build = p_state->micro_geometry;
 	build->frozen = p_render_data->render_buffers->is_micro_geometry_debug_freeze();
-	for (uint32_t index = 0; index < uint32_t(p_rt_tasks.size()); index++) {
-		build->task_data.write[index].motion_base = p_rt_tasks[index].motion_base;
-	}
-	auto &parameters = build->selection->data;
-	parameters.flags = 1 | 16 | 32;
-	if (p_render_data->scene_data->view_count == 1) {
-		parameters.flags |= 2;
-	}
-	parameters.scenario = persistent_instances[uint32_t(p_tasks[0].instance) - 1].data.scenario;
-	parameters.layer_mask = p_render_data->scene_data->camera_visible_layers;
-	parameters.error = p_state->settings.geometry_error;
-	parameters.offscreen_multiplier = p_state->settings.geometry_offscreen_multiplier;
-	parameters.output_height = p_render_data->render_buffers->get_target_size().y;
-	parameters.near_plane = p_render_data->scene_data->cam_projection.get_z_near();
-	Projection correction;
-	correction.set_depth_correction(p_render_data->scene_data->flip_y);
-	RendererRD::MaterialStorage::store_camera(correction * p_render_data->scene_data->cam_projection, parameters.projection);
-	RendererRD::MaterialStorage::store_transform_transposed_3x4(Transform3D(p_state->camera_transform.basis.inverse(), Vector3()), parameters.view_rotation);
-	for (uint32_t axis = 0; axis < 3; axis++) {
+	auto prepare_dependencies = [&](uint32_t) {
+		for (uint32_t index = 0; index < uint32_t(p_rt_tasks.size()); index++) {
+			build->task_data.write[index].motion_base = p_rt_tasks[index].motion_base;
+		}
+		auto &parameters = build->selection->data;
+		parameters.flags = 1 | 16 | 32;
+		if (p_render_data->scene_data->view_count == 1) {
+			parameters.flags |= 2;
+		}
+		parameters.scenario = persistent_instances[uint32_t(p_tasks[0].instance) - 1].data.scenario;
+		parameters.layer_mask = p_render_data->scene_data->camera_visible_layers;
+		parameters.error = p_state->settings.geometry_error;
+		parameters.offscreen_multiplier = p_state->settings.geometry_offscreen_multiplier;
+		parameters.output_height = p_render_data->render_buffers->get_target_size().y;
+		parameters.near_plane = p_render_data->scene_data->cam_projection.get_z_near();
+		Projection correction;
+		correction.set_depth_correction(p_render_data->scene_data->flip_y);
+		RendererRD::MaterialStorage::store_camera(correction * p_render_data->scene_data->cam_projection, parameters.projection);
+		RendererRD::MaterialStorage::store_transform_transposed_3x4(Transform3D(p_state->camera_transform.basis.inverse(), Vector3()), parameters.view_rotation);
+		for (uint32_t axis = 0; axis < 3; axis++) {
 #ifdef REAL_T_IS_DOUBLE
-		RendererRD::MaterialStorage::split_double(p_state->camera_transform.origin[axis], &parameters.camera[axis], &parameters.camera_low[axis]);
+			RendererRD::MaterialStorage::split_double(p_state->camera_transform.origin[axis], &parameters.camera[axis], &parameters.camera_low[axis]);
 #else
-		parameters.camera[axis] = p_state->camera_transform.origin[axis];
+			parameters.camera[axis] = p_state->camera_transform.origin[axis];
 #endif
-	}
-	build->selection->persistent_instances = persistent_instance_buffer;
-	build->selection->persistent_surfaces = persistent_surface_buffer;
-	MicroGeometrySelection::Parameters selection_parameters = parameters;
-	uint64_t input_signature = _rt_scene_hash(&selection_parameters, sizeof(selection_parameters), signature);
-	input_signature = _rt_scene_hash(&p_state->rt_origin, sizeof(p_state->rt_origin), input_signature);
-	input_signature = _rt_scene_hash(&build->frozen, sizeof(build->frozen), input_signature);
-	uint64_t dependency_signature = 0x9e3779b97f4a7c15ULL;
-	build->conservative_updates = false;
-	for (const auto &task : p_tasks) {
-		const auto &instance = persistent_instances[uint32_t(task.instance) - 1].data;
-		const auto &surface = persistent_surfaces[uint32_t(task.surface) - 1].data;
-		input_signature = _rt_scene_hash(&instance, sizeof(instance), input_signature);
-		input_signature = _rt_scene_hash(&surface, sizeof(surface), input_signature);
-		if (task.indirect_command != 0 || instance.deformed != 0) {
-			build->conservative_updates = true;
 		}
-	}
-	for (RID asset : build->assets) {
-		const auto descriptor = storage->get_asset(asset);
-		input_signature = _rt_scene_hash(&descriptor.residency_generation, sizeof(descriptor.residency_generation), input_signature);
-		dependency_signature = _rt_scene_hash(&descriptor, sizeof(descriptor), dependency_signature);
-	}
-	build->input_signature = input_signature;
-	RENDER_TIMESTAMP("Microgeometry RT Dependencies");
-	Vector<RID> dependencies;
-	get_persistent_buffer_dependencies(dependencies);
-	for (RID buffer : dependencies) {
-		const uint64_t id = buffer.get_id();
-		dependency_signature = _rt_scene_hash(&id, sizeof(id), dependency_signature);
-	}
-	for (RID buffer : geometry_buffer_dependencies) {
-		const uint64_t id = buffer.get_id();
-		dependency_signature = _rt_scene_hash(&id, sizeof(id), dependency_signature);
-		dependencies.push_back(buffer);
-	}
-	if (build->dependency_signature != dependency_signature) {
-		build->dependencies = dependencies;
+		build->selection->persistent_instances = persistent_instance_buffer;
+		build->selection->persistent_surfaces = persistent_surface_buffer;
+		MicroGeometrySelection::Parameters selection_parameters = parameters;
+		uint64_t input_signature = _rt_scene_hash(&selection_parameters, sizeof(selection_parameters), signature);
+		input_signature = _rt_scene_hash(&p_state->rt_origin, sizeof(p_state->rt_origin), input_signature);
+		input_signature = _rt_scene_hash(&build->frozen, sizeof(build->frozen), input_signature);
+		uint64_t dependency_signature = 0x9e3779b97f4a7c15ULL;
+		build->conservative_updates = false;
+		for (const auto &task : p_tasks) {
+			const auto &instance = persistent_instances[uint32_t(task.instance) - 1].data;
+			const auto &surface = persistent_surfaces[uint32_t(task.surface) - 1].data;
+			input_signature = _rt_scene_hash(&instance, sizeof(instance), input_signature);
+			input_signature = _rt_scene_hash(&surface, sizeof(surface), input_signature);
+			if (task.indirect_command != 0 || instance.deformed != 0) {
+				build->conservative_updates = true;
+			}
+		}
 		for (RID asset : build->assets) {
-			storage->get_dependencies(asset, build->dependencies);
+			const auto descriptor = storage->get_asset(asset);
+			input_signature = _rt_scene_hash(&descriptor.residency_generation, sizeof(descriptor.residency_generation), input_signature);
+			dependency_signature = _rt_scene_hash(&descriptor, sizeof(descriptor), dependency_signature);
 		}
-		build->selection->dependencies = build->dependencies;
-		build->dependency_signature = dependency_signature;
-	}
-	for (RID buffer : build->dependencies) {
-		geometry_buffer_dependencies.insert(buffer);
-	}
+		build->input_signature = input_signature;
+		Vector<RID> dependencies;
+		get_persistent_buffer_dependencies(dependencies);
+		for (RID buffer : dependencies) {
+			const uint64_t id = buffer.get_id();
+			dependency_signature = _rt_scene_hash(&id, sizeof(id), dependency_signature);
+		}
+		for (RID buffer : geometry_buffer_dependencies) {
+			const uint64_t id = buffer.get_id();
+			dependency_signature = _rt_scene_hash(&id, sizeof(id), dependency_signature);
+			dependencies.push_back(buffer);
+		}
+		if (build->dependency_signature != dependency_signature) {
+			build->dependencies = dependencies;
+			for (RID asset : build->assets) {
+				storage->get_dependencies(asset, build->dependencies);
+			}
+			build->selection->dependencies = build->dependencies;
+			build->dependency_signature = dependency_signature;
+		}
+		for (RID buffer : build->dependencies) {
+			geometry_buffer_dependencies.insert(buffer);
+		}
+	};
+	WorkerThreadPool::GroupID dependency_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("MicrogeometryInputDependencies");
+		(*static_cast<decltype(prepare_dependencies) *>(p_data))(p_index);
+	},
+			&prepare_dependencies, 1, 1, true, SNAME("MicrogeometryInputDependencies"));
+	pool->wait_for_group_task_completion(dependency_job);
 	return true;
 }
 
@@ -2436,45 +2473,89 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 		}
 	}
 	uint64_t transform_signature = _rt_scene_hash(&p_state->rt_origin, sizeof(p_state->rt_origin), blass.size());
-	for (uint32_t index = 0; index < blass.size(); index++) {
-		transform_signature = _rt_scene_hash(&blas_transforms[index], sizeof(Transform3D), transform_signature);
-		const uint64_t id = blass[index].get_id();
-		transform_signature = _rt_scene_hash(&id, sizeof(id), transform_signature);
-		transform_signature = _rt_scene_hash(&instance_flags[index], sizeof(instance_flags[index]), transform_signature);
-		transform_signature = _rt_scene_hash(&instance_masks[index], sizeof(instance_masks[index]), transform_signature);
-	}
-	for (const auto &task : build->task_data) {
-		const auto &instance = persistent_instances[uint32_t(task.instance) - 1].data;
-		transform_signature = _rt_scene_hash(&instance, sizeof(instance), transform_signature);
-		transform_signature = _rt_scene_hash(&task.motion_base, sizeof(task.motion_base), transform_signature);
-	}
+	auto prepare_signature = [&](uint32_t) {
+		for (uint32_t index = 0; index < blass.size(); index++) {
+			transform_signature = _rt_scene_hash(&blas_transforms[index], sizeof(Transform3D), transform_signature);
+			const uint64_t id = blass[index].get_id();
+			transform_signature = _rt_scene_hash(&id, sizeof(id), transform_signature);
+			transform_signature = _rt_scene_hash(&instance_flags[index], sizeof(instance_flags[index]), transform_signature);
+			transform_signature = _rt_scene_hash(&instance_masks[index], sizeof(instance_masks[index]), transform_signature);
+		}
+		for (const auto &task : build->task_data) {
+			const auto &instance = persistent_instances[uint32_t(task.instance) - 1].data;
+			transform_signature = _rt_scene_hash(&instance, sizeof(instance), transform_signature);
+			transform_signature = _rt_scene_hash(&task.motion_base, sizeof(task.motion_base), transform_signature);
+		}
+	};
+	WorkerThreadPool::GroupID transform_job = WorkerThreadPool::get_singleton()->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("MicrogeometryTransformSignature");
+		(*static_cast<decltype(prepare_signature) *>(p_data))(p_index);
+	},
+			&prepare_signature, 1, 1, true, SNAME("MicrogeometryTransformSignature"));
+	WorkerThreadPool::get_singleton()->wait_for_group_task_completion(transform_job);
 	const bool transforms_changed = transform_signature != build->transform_signature || p_state->micro_geometry_transforms_dirty || build->conservative_updates;
 	if (!published && !transforms_changed && !rd->acceleration_structure_needs_rebuild(p_state->tlas)) {
 		RENDER_TIMESTAMP("Microgeometry RT Unchanged");
 		return true;
 	}
 	RENDER_TIMESTAMP("Microgeometry RT Update Shared Transforms");
+	HashMap<RID, uint64_t> addresses;
+	auto discover = [&](uint32_t) {
+		for (RID blas : blass) {
+			if (blas.is_valid()) {
+				addresses.insert(blas, 0);
+			}
+		}
+	};
+	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+	WorkerThreadPool::GroupID discovery_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("RTBLASDependencies");
+		(*static_cast<decltype(discover) *>(p_data))(p_index);
+	},
+			&discover, 1, 1, true, SNAME("RTBLASDependencies"));
+	pool->wait_for_group_task_completion(discovery_job);
+	for (auto &entry : addresses) {
+		entry.value = RD::get_singleton()->acceleration_structure_get_device_address(entry.key);
+	}
 	LocalVector<RD::AccelerationStructureGPUInstance> instances;
 	instances.resize(blass.size());
-	HashSet<RID> seen;
-	build->blas_dependencies.clear();
-	for (uint32_t index = 0; index < blass.size(); index++) {
-		Transform3D transform = blas_transforms[index];
-		transform.origin -= p_state->rt_origin;
-		RendererRD::MaterialStorage::store_transform_transposed_3x4(transform, instances[index].transform);
-		instances[index].custom_index_and_mask = index | (uint32_t(instance_masks[index]) << 24);
-		instances[index].sbt_offset_and_flags = index | (instance_flags[index] << 24);
-		instances[index].acceleration_structure_reference = blass[index].is_valid() ? rd->acceleration_structure_get_device_address(blass[index]) : 0;
-		if (blass[index].is_valid() && !seen.has(blass[index])) {
-			seen.insert(blass[index]);
-			build->blas_dependencies.push_back(blass[index]);
+
+	auto prepare = [&](uint32_t p_batch) {
+		const uint32_t from = p_batch * 256;
+		const uint32_t to = MIN(from + 256, blass.size());
+		for (uint32_t index = from; index < to; index++) {
+			Transform3D transform = blas_transforms[index];
+			transform.origin -= p_state->rt_origin;
+			RendererRD::MaterialStorage::store_transform_transposed_3x4(transform, instances[index].transform);
+			instances[index].custom_index_and_mask = index | (uint32_t(instance_masks[index]) << 24);
+			instances[index].sbt_offset_and_flags = index | (instance_flags[index] << 24);
+			instances[index].acceleration_structure_reference = blass[index].is_valid() ? addresses.get(blass[index]) : 0;
 		}
-	}
-	for (const auto &cut : build->cuts) {
-		if (cut.users != 0 && cut.blas.is_valid()) {
-			build->blas_dependencies.push_back(cut.blas);
+	};
+	WorkerThreadPool::GroupID descriptor_job = pool->add_native_group_task([](void *p_data, uint32_t p_batch) {
+		GodotProfileZone("MicrogeometryTLASDescriptors");
+		(*static_cast<decltype(prepare) *>(p_data))(p_batch);
+	},
+			&prepare, (blass.size() + 255) / 256, -1, true, SNAME("MicrogeometryTLASDescriptors"));
+	pool->wait_for_group_task_completion(descriptor_job);
+	auto dependencies = [&](uint32_t) {
+		build->blas_dependencies.clear();
+		for (const auto &entry : addresses) {
+			build->blas_dependencies.push_back(entry.key);
 		}
-	}
+
+		for (const auto &cut : build->cuts) {
+			if (cut.users != 0 && cut.blas.is_valid()) {
+				build->blas_dependencies.push_back(cut.blas);
+			}
+		}
+	};
+	WorkerThreadPool::GroupID dependency_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("MicrogeometryBLASDependencies");
+		(*static_cast<decltype(dependencies) *>(p_data))(p_index);
+	},
+			&dependencies, 1, 1, true, SNAME("MicrogeometryBLASDependencies"));
+	pool->wait_for_group_task_completion(dependency_job);
 	rd->buffer_update(build->tlas_instances, 0, instances.size() * sizeof(RD::AccelerationStructureGPUInstance), instances.ptr());
 	rd->buffer_update(build->tasks, 0, build->task_data.size() * sizeof(RTMicroGeometryTask), build->task_data.ptr());
 	if (build->segments.is_valid()) {
@@ -2523,26 +2604,64 @@ bool RenderRaytracing::build_acceleration_structures(RTViewportState *p_state, c
 		return _build_micro_geometry(p_state);
 	}
 
+	HashMap<RID, uint64_t> addresses;
+	auto discover = [&](uint32_t) {
+		for (RID blas : blass) {
+			if (blas.is_valid()) {
+				addresses.insert(blas, 0);
+			}
+		}
+	};
+	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+	WorkerThreadPool::GroupID discovery_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("RTBLASDependencies");
+		(*static_cast<decltype(discover) *>(p_data))(p_index);
+	},
+			&discover, 1, 1, true, SNAME("RTBLASDependencies"));
+	pool->wait_for_group_task_completion(discovery_job);
+	for (auto &entry : addresses) {
+		entry.value = RD::get_singleton()->acceleration_structure_get_device_address(entry.key);
+	}
 	LocalVector<RD::AccelerationStructureInstance> instances;
 	instances.resize(blass.size());
 	uint64_t signature = _rt_scene_hash(&p_state->rt_origin, sizeof(p_state->rt_origin), blass.size());
-	for (uint32_t i = 0; i < blass.size(); i++) {
-		RD::AccelerationStructureInstance &inst = instances[i];
-		inst.id = i;
-		inst.transform = blas_transforms[i];
-		inst.transform.origin -= p_state->rt_origin;
-		inst.blas = blass[i];
-		inst.flags = BitField<RD::AccelerationStructureInstanceFlagBits>(instance_flags[i]);
-		inst.mask = (i < instance_masks.size()) ? instance_masks[i] : 0xFF;
-		inst.hit_sbt_range = RD::HitShaderBindingTableRange((1ULL << 32) | i);
-		const uint64_t address = RD::get_singleton()->acceleration_structure_get_device_address(inst.blas);
-		const uint64_t id = inst.blas.get_id();
-		signature = _rt_scene_hash(&id, sizeof(id), signature);
-		signature = _rt_scene_hash(&inst.transform, sizeof(inst.transform), signature);
-		signature = _rt_scene_hash(&address, sizeof(address), signature);
-		signature = _rt_scene_hash(&inst.flags, sizeof(inst.flags), signature);
-		signature = _rt_scene_hash(&inst.mask, sizeof(inst.mask), signature);
-	}
+	auto prepare = [&](uint32_t p_batch) {
+		const uint32_t from = p_batch * 256;
+		const uint32_t to = MIN(from + 256, blass.size());
+		for (uint32_t i = from; i < to; i++) {
+			RD::AccelerationStructureInstance &inst = instances[i];
+			inst.id = i;
+			inst.transform = blas_transforms[i];
+			inst.transform.origin -= p_state->rt_origin;
+			inst.blas = blass[i];
+			inst.flags = BitField<RD::AccelerationStructureInstanceFlagBits>(instance_flags[i]);
+			inst.mask = (i < instance_masks.size()) ? instance_masks[i] : 0xFF;
+			inst.hit_sbt_range = RD::HitShaderBindingTableRange((1ULL << 32) | i);
+		}
+	};
+	WorkerThreadPool::GroupID descriptor_job = pool->add_native_group_task([](void *p_data, uint32_t p_batch) {
+		GodotProfileZone("RTTLASDescriptors");
+		(*static_cast<decltype(prepare) *>(p_data))(p_batch);
+	},
+			&prepare, (blass.size() + 255) / 256, -1, true, SNAME("RTTLASDescriptors"));
+	pool->wait_for_group_task_completion(descriptor_job);
+	auto hash = [&](uint32_t) {
+		for (const RD::AccelerationStructureInstance &inst : instances) {
+			const uint64_t address = addresses.get(inst.blas);
+			const uint64_t id = inst.blas.get_id();
+			signature = _rt_scene_hash(&id, sizeof(id), signature);
+			signature = _rt_scene_hash(&inst.transform, sizeof(inst.transform), signature);
+			signature = _rt_scene_hash(&address, sizeof(address), signature);
+			signature = _rt_scene_hash(&inst.flags, sizeof(inst.flags), signature);
+			signature = _rt_scene_hash(&inst.mask, sizeof(inst.mask), signature);
+		}
+	};
+	WorkerThreadPool::GroupID signature_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("RTTLASSignature");
+		(*static_cast<decltype(hash) *>(p_data))(p_index);
+	},
+			&hash, 1, 1, true, SNAME("RTTLASSignature"));
+	pool->wait_for_group_task_completion(signature_job);
 	if (p_state->tlas_inputs_valid && signature == p_state->tlas_signature && !RD::get_singleton()->acceleration_structure_needs_rebuild(p_state->tlas)) {
 		return true;
 	}
@@ -2555,50 +2674,65 @@ bool RenderRaytracing::build_acceleration_structures(RTViewportState *p_state, c
 }
 
 void RenderRaytracing::finalize_buffers(RTViewportState *p_state) {
-	auto update_or_grow = [](RID &p_buffer, uint32_t &p_capacity, Vector<uint8_t> &r_uploaded, const void *p_data, uint32_t p_size) {
-		if (p_buffer.is_valid() && r_uploaded.size() == int64_t(p_size) && memcmp(r_uploaded.ptr(), p_data, p_size) == 0) {
-			return false;
-		}
-		if (!p_buffer.is_valid() || p_size > p_capacity) {
-			if (p_buffer.is_valid()) {
-				RD::get_singleton()->free_rid(p_buffer);
-			}
-			p_capacity = p_size;
-			Vector<uint8_t> init;
-			init.resize(p_size);
-			memcpy(init.ptrw(), p_data, p_size);
-			p_buffer = RD::get_singleton()->storage_buffer_create(p_size, init);
-		} else {
-			uint32_t first = 0;
-			uint32_t end = p_size;
-			const uint8_t *bytes = static_cast<const uint8_t *>(p_data);
-			if (r_uploaded.size() == int64_t(p_size)) {
-				while (first < end && memcmp(r_uploaded.ptr() + first, bytes + first, 4) == 0) {
-					first += 4;
-				}
-				while (end > first && memcmp(r_uploaded.ptr() + end - 4, bytes + end - 4, 4) == 0) {
-					end -= 4;
-				}
-			}
-			RD::get_singleton()->buffer_update(p_buffer, first, end - first, bytes + first);
-		}
-		r_uploaded.resize(p_size);
-		memcpy(r_uploaded.ptrw(), p_data, p_size);
-		return true;
-	};
-
 	RT_GeometryData empty_geometry = {};
 	RT_MaterialData empty_material = {};
 	const int32_t empty_motion_index = -1;
 	const RT_InstanceMotionData empty_motion_transform = {};
-	update_or_grow(p_state->geometry_buffer, p_state->geometry_buffer_capacity, p_state->geometry_upload,
-			geometry_data.is_empty() ? &empty_geometry : geometry_data.ptr(), MAX(geometry_data.size(), 1u) * sizeof(RT_GeometryData));
-	update_or_grow(p_state->material_buffer, p_state->material_buffer_capacity, p_state->material_upload,
-			material_data.is_empty() ? &empty_material : material_data.ptr(), MAX(material_data.size(), 1u) * sizeof(RT_MaterialData));
-	update_or_grow(p_state->motion_index_buffer, p_state->motion_index_buffer_capacity, p_state->motion_index_upload,
-			motion_indices.is_empty() ? &empty_motion_index : motion_indices.ptr(), MAX(motion_indices.size(), 1u) * sizeof(int32_t));
-	p_state->micro_geometry_transforms_dirty |= update_or_grow(p_state->motion_transform_buffer, p_state->motion_transform_buffer_capacity, p_state->motion_transform_upload,
-			motion_transforms.is_empty() ? &empty_motion_transform : motion_transforms.ptr(), MAX(motion_transforms.size(), 1u) * sizeof(RT_InstanceMotionData));
+	struct Upload {
+		RID *buffer;
+		uint32_t *capacity;
+		Vector<uint8_t> *uploaded;
+		const void *data;
+		uint32_t size;
+		uint32_t first = 0;
+		uint32_t end = 0;
+		bool changed = false;
+		Vector<uint8_t> payload;
+	};
+	Upload uploads[] = {
+		{ &p_state->geometry_buffer, &p_state->geometry_buffer_capacity, &p_state->geometry_upload, geometry_data.is_empty() ? &empty_geometry : geometry_data.ptr(), MAX(geometry_data.size(), 1u) * sizeof(RT_GeometryData) },
+		{ &p_state->material_buffer, &p_state->material_buffer_capacity, &p_state->material_upload, material_data.is_empty() ? &empty_material : material_data.ptr(), MAX(material_data.size(), 1u) * sizeof(RT_MaterialData) },
+		{ &p_state->motion_index_buffer, &p_state->motion_index_buffer_capacity, &p_state->motion_index_upload, motion_indices.is_empty() ? &empty_motion_index : motion_indices.ptr(), MAX(motion_indices.size(), 1u) * sizeof(int32_t) },
+		{ &p_state->motion_transform_buffer, &p_state->motion_transform_buffer_capacity, &p_state->motion_transform_upload, motion_transforms.is_empty() ? &empty_motion_transform : motion_transforms.ptr(), MAX(motion_transforms.size(), 1u) * sizeof(RT_InstanceMotionData) },
+	};
+	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+	WorkerThreadPool::GroupID job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		Upload &upload = static_cast<Upload *>(p_data)[p_index];
+		const Vector<uint8_t> &previous = *upload.uploaded;
+		const uint8_t *bytes = static_cast<const uint8_t *>(upload.data);
+		upload.end = upload.size;
+		if (upload.buffer->is_valid() && previous.size() == int64_t(upload.size)) {
+			while (upload.first < upload.end && memcmp(previous.ptr() + upload.first, bytes + upload.first, 4) == 0) {
+				upload.first += 4;
+			}
+			while (upload.end > upload.first && memcmp(previous.ptr() + upload.end - 4, bytes + upload.end - 4, 4) == 0) {
+				upload.end -= 4;
+			}
+		}
+		upload.changed = upload.first != upload.end;
+		if (upload.changed) {
+			upload.payload.resize(upload.size);
+			memcpy(upload.payload.ptrw(), bytes, upload.size);
+		}
+	},
+			uploads, 4, -1, true, SNAME("RTChangedUploadRanges"));
+	pool->wait_for_group_task_completion(job);
+	for (Upload &upload : uploads) {
+		if (!upload.changed) {
+			continue;
+		}
+		if (upload.buffer->is_null() || upload.size > *upload.capacity) {
+			if (upload.buffer->is_valid()) {
+				RD::get_singleton()->free_rid(*upload.buffer);
+			}
+			*upload.capacity = upload.size;
+			*upload.buffer = RD::get_singleton()->storage_buffer_create(upload.size, upload.payload);
+		} else {
+			RD::get_singleton()->buffer_update(*upload.buffer, upload.first, upload.end - upload.first, upload.payload.ptr() + upload.first);
+		}
+		*upload.uploaded = upload.payload;
+	}
+	p_state->micro_geometry_transforms_dirty |= uploads[3].changed;
 }
 
 // ---------------------------------------------------------------------------
@@ -3119,308 +3253,709 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 	};
 	LocalVector<PendingMMSurface> pending_mm_surfaces;
 
-	auto register_emissive_source = [&](const RenderForwardClustered::GeometryInstanceForwardClustered *p_instance,
-											RID p_resource, uint32_t p_surface_index, uint32_t p_surface_counter, uint32_t p_geometry_index,
-											uint32_t p_key_primitive_offset, uint32_t p_primitive_count, const Transform3D &p_transform, RTMaterialData *p_material) {
-		if (!p_instance || !p_instance->rt_visible_receiver || !p_material || p_material->is_custom_shader || p_primitive_count == 0) {
-			return;
-		}
-		const RT_MaterialData &material = p_material->data;
-		const bool textured = (material.flags & RT_MAT_FLAG_HAS_EMISSION_TEX) != 0;
-		const bool colored = material.emission_color[0] != 0.0f || material.emission_color[1] != 0.0f || material.emission_color[2] != 0.0f;
-		if (material.emission_strength == 0.0f || (!textured && !colored)) {
-			return;
-		}
-
-		RTEmissiveSource source;
-		source.instance_id = p_instance->get_instance_rid().get_id();
-		source.resource_id = p_resource.get_id();
-		source.surface_generation = (uint64_t(p_surface_counter) << 32) | uint64_t(p_surface_index);
-		source.geometry_index = p_geometry_index;
-		source.key_primitive_offset = p_key_primitive_offset;
-		source.primitive_count = p_primitive_count;
-		source.topology_generation = hash_murmur3_one_64(source.resource_id, hash_murmur3_one_64(source.surface_generation));
-		source.transform = p_transform;
-		source.material = p_material;
-		emissive_sources.push_back(source);
+	using Surface = RenderForwardClustered::GeometryInstanceSurfaceDataCache;
+	using Instance = RenderForwardClustered::GeometryInstanceForwardClustered;
+	struct SurfaceRequest {
+		bool required = false;
+		const Surface *surface = nullptr;
+		RTDeformedGeometrySource deformation;
 	};
-	auto instance_geometry = [](const RenderForwardClustered::GeometryInstanceForwardClustered *p_instance, const RT_GeometryData &p_geometry, const RenderForwardClustered::GeometryInstanceSurfaceDataCache *p_surface) {
-		RT_GeometryData geometry = p_geometry;
-		geometry.instance_layer_mask = p_instance->layer_mask;
-		geometry.instance_uniforms_offset = p_instance->shader_uniforms_offset;
-		if (p_instance->rt_casts_shadows) {
-			geometry.flags |= RT_GEOM_FLAG_CASTS_SHADOWS;
-		}
-		if (p_instance->rt_shadows_only) {
-			geometry.flags |= RT_GEOM_FLAG_SHADOWS_ONLY;
-		}
-		if (p_surface && (!p_surface->shader || p_surface->shader->cull_mode != RSE::CULL_MODE_DISABLED) &&
-				!(p_surface->flags & RenderForwardClustered::GeometryInstanceSurfaceDataCache::FLAG_USES_DOUBLE_SIDED_SHADOWS)) {
-			geometry.flags |= RT_GEOM_FLAG_SHADOW_CULL_ENABLED;
-		}
-		return geometry;
+	struct DiscoveryBatch {
+		uint64_t worker = 0;
+		uint64_t begin_usec = 0;
+		uint64_t end_usec = 0;
+		HashMap<const void *, SurfaceRequest> surfaces;
+		HashMap<RID, HashSet<int32_t>> materials;
+		HashSet<RID> assets;
+		HashSet<RID> multimeshes;
+		HashSet<RTProceduralState *> procedural;
 	};
-
-	auto append_micro_surface = [&](const RenderForwardClustered::GeometryInstanceSurfaceDataCache *p_surface) {
-		const auto *instance = p_surface->owner;
-		const auto *shader = p_surface->shader;
-		if (!shader || !instance->persistent_instance || !p_surface->persistent_surface || instance->mesh_instance.is_valid() || instance->rt_procedural || instance->instance_count == 0 || p_surface->primitive != RSE::PRIMITIVE_TRIANGLES || shader->uses_alpha_pass() || shader->uses_vertex || shader->uses_position || shader->uses_vertex_time || shader->writes_modelview_or_projection || shader->uses_particle_trails || shader->uses_point_size || shader->uses_z_clip_scale) {
-			return false;
-		}
-		const auto &record = persistent_instances[uint32_t(instance->persistent_instance) - 1].data;
-		RID asset = RID::from_uint64(record.asset);
-		auto *storage = mesh_storage->get_micro_geometry_storage();
-		Ref<MicroGeometryData> source = storage->get_source(asset);
-		if (source.is_null()) {
-			return false;
-		}
-		uses_time |= shader->rt_uses_time();
-		uses_previous_time |= shader->rt_uses_previous_time();
-		uses_gpu_instances |= instance->data->base_type == RSE::INSTANCE_MULTIMESH && mesh_storage->multimesh_has_gpu_updates(instance->data->base);
-		if (!storage->is_ready(asset, true)) {
-			return true;
-		}
-		const auto &metadata = source->get_metadata();
-		uint32_t surface_index = UINT32_MAX;
-		for (uint32_t index = 0; index < uint32_t(metadata.surfaces.size()); index++) {
-			if (metadata.surfaces[index].source_surface == p_surface->surface_index) {
-				surface_index = index;
-				break;
-			}
-		}
-		if (surface_index == UINT32_MAX) {
-			return false;
-		}
-		const uint32_t count = record.multimesh_address != 0 ? record.multimesh_count : 1;
-		if (!count) {
-			return true;
-		}
-		RID material = p_surface->material_rid.is_valid() ? p_surface->material_rid : owner->scene_shader.default_material;
-		RTMaterialData *native_material = resolve_material(material);
-		hash_scene(material.get_id());
-		hash_scene(get_material_content_generation(material, instance->shader_uniforms_offset));
-		hash_scene(asset.get_id());
-		uint32_t flags = 0;
-		if (shader->cull_mode == RSE::CULL_MODE_DISABLED) {
-			flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT;
-		}
-		if (shader->cull_mode != RSE::CULL_MODE_FRONT) {
-			flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FLIP_FACING_BIT;
-		}
-		if (!shader->uses_alpha_clip && !shader->uses_alpha && !shader->uses_blend_alpha) {
-			flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_FORCE_OPAQUE_BIT;
-		}
-		MicroGeometrySelection::Task task;
-		task.instance = record.handle;
-		task.surface = p_surface->persistent_surface;
-		task.asset = record.asset;
-		task.group_count = metadata.groups.size();
-		task.cluster_count = metadata.clusters.size();
-		task.coarse_count = metadata.coarse_cluster_count;
-		task.multimesh_count = count;
-		task.bin = micro_tasks.size();
-		task.flags = instance->store_transform_cache ? 0 : 1;
-		if (p_render_data->scene_data->view_count != 1) {
-			task.flags |= 2;
-		}
-		if (instance->base_flags & RenderForwardClustered::INSTANCE_DATA_FLAG_MULTIMESH_INDIRECT) {
-			RID commands = mesh_storage->_multimesh_get_command_buffer_rd_rid(instance->data->base);
-			task.indirect_command = RD::get_singleton()->buffer_get_device_address(commands) + uint64_t(p_surface->surface_index) * sizeof(uint32_t) * RendererRD::MeshStorage::INDIRECT_MULTIMESH_COMMAND_STRIDE;
-			geometry_buffer_dependencies.insert(commands);
-		}
-		const auto &surface_record = persistent_surfaces[uint32_t(task.surface) - 1].data;
-		RTMicroGeometryTask rt_task;
-		rt_task.clas_addresses = RD::get_singleton()->buffer_get_device_address(storage->get_clas_addresses(asset));
-		rt_task.instance = task.instance;
-		rt_task.surface = task.surface;
-		rt_task.selection_bin = task.bin;
-		rt_task.geometry_base = geometry_data.size();
-		rt_task.motion_base = motion_transforms.size();
-		rt_task.instance_count = count;
-		rt_task.cluster_count = task.cluster_count;
-		rt_task.source_surface = surface_record.source_surface;
-		rt_task.force_finest = surface_record.force_finest;
-		rt_task.group_count = task.group_count;
-		rt_task.instance_flags = flags;
-		rt_task.indirect_command = task.indirect_command;
-		micro_levels = MAX(micro_levels, uint32_t(metadata.roots.size()));
-		micro_tasks.push_back(task);
-		micro_rt_tasks.push_back(rt_task);
-		for (uint32_t ordinal = 0; ordinal < count; ordinal++) {
-			RT_GeometryData geometry = {};
-			geometry.flags = RT_GEOM_FLAG_CLUSTERED;
-			geometry.micro_asset_address = record.asset_address;
-			geometry.micro_page_pool = RD::get_singleton()->buffer_get_device_address(storage->get_pool());
-			geometry.micro_primitive_lookup = storage->get_primitive_lookup(asset, surface_index);
-			geometry.micro_surface = surface_index;
-			geometry.primitive_count = metadata.surfaces[surface_index].source_triangle_count;
-			geometry.source_vertex_count = metadata.surfaces[surface_index].source_vertex_count;
-			geometry.instance_index = ordinal;
-			for (uint32_t channel = 0; channel < 4; channel++) {
-				geometry.instance_color[channel] = 1;
-			}
-			geometry.multimesh_address = record.multimesh_address;
-			geometry.multimesh_stride = record.multimesh_stride;
-			geometry.multimesh_offset = record.multimesh_current_offset;
-			geometry.micro_multimesh_previous_offset = record.multimesh_previous_offset;
-			if (record.multimesh_address != 0) {
-				geometry.multimesh_flags = (mesh_storage->multimesh_uses_colors(instance->data->base) ? 1u : 0u) | (mesh_storage->multimesh_uses_custom_data(instance->data->base) ? 2u : 0u) | ((record.flags & (1u << 13)) ? 4u : 0u);
-			}
-			geometry = instance_geometry(instance, geometry, p_surface);
-			register_emissive_source(instance, instance->data->base, p_surface->surface_index, mesh_storage->mesh_surface_get_rt_invalidation_counter(p_surface->surface), geometry_data.size(), ordinal * geometry.primitive_count, geometry.primitive_count, instance->transform, native_material);
-			geometry_data.push_back(geometry);
-			material_data.push_back(native_material->data);
-			geometry_material_programs.push_back(native_material->hit_shader);
-			blass.push_back(RID());
-			blas_transforms.push_back(instance->transform);
-			instance_flags.push_back(flags);
-			instance_masks.push_back(255);
-			motion_indices.push_back(motion_transforms.size());
-			motion_transforms.push_back(RT_InstanceMotionData());
-		}
-		return true;
+	struct MicroResource {
+		Ref<MicroGeometryData> source;
+		uint64_t clas_address = 0;
+		Vector<uint64_t> primitive_lookups;
 	};
-
-	const PagedArray<RenderGeometryInstance *> &rt_instances = *p_render_data->rt_instances;
-	for (uint32_t i = 0; i < (uint32_t)rt_instances.size(); i++) {
-		const RenderForwardClustered::GeometryInstanceForwardClustered *inst =
-				static_cast<const RenderForwardClustered::GeometryInstanceForwardClustered *>(rt_instances[i]);
-		if (!inst || !inst->data) {
-			continue;
+	struct MMResource {
+		RID buffer;
+		RID commands;
+		uint64_t command_address = 0;
+	};
+	const auto &rt_instances = *p_render_data->rt_instances;
+	const uint64_t profile_frame = RSG::rasterizer->get_frame_number();
+	const bool profile_preparation = RSG::utilities->capturing_timestamps && profile_frame % 120 == 0;
+	const uint64_t coordinator = profile_preparation ? Thread::get_caller_id() : 0;
+	LocalVector<DiscoveryBatch> discovery;
+	discovery.resize((rt_instances.size() + 255) / 256);
+	auto discover = [&](uint32_t p_batch) {
+		DiscoveryBatch &batch = discovery[p_batch];
+		if (profile_preparation) {
+			batch.worker = Thread::get_caller_id();
+			batch.begin_usec = OS::get_singleton()->get_ticks_usec();
 		}
-		const Transform3D &instance_transform = inst->transform;
-		hash_scene(inst->get_instance_rid().get_id());
-		hash_scene(inst->data->base.get_id());
-		hash_scene(inst->mesh_instance.get_id());
-		hash_scene(instance_transform);
-		hash_scene(inst->layer_mask);
-		hash_scene(inst->rt_visible_receiver);
-		hash_scene(inst->rt_casts_shadows);
-		hash_scene(inst->rt_shadows_only);
-
-		// Determine previous-frame transform for motion vectors.
-		const Transform3D &prev_instance_transform =
-				(inst->transform_status == RenderForwardClustered::GeometryInstanceForwardClustered::TransformStatus::TELEPORTED)
-				? inst->transform
-				: inst->prev_transform;
-
-		if (inst->rt_procedural) {
-			RTProceduralState *ps = inst->rt_procedural;
-
-			if (!inst->data || !inst->data->material_override.is_valid()) {
+		const uint32_t from = p_batch * 256;
+		const uint32_t to = MIN(from + 256, rt_instances.size());
+		for (uint32_t i = from; i < to; i++) {
+			const Instance *instance = static_cast<const Instance *>(rt_instances[i]);
+			if (!instance || !instance->data) {
 				continue;
 			}
-			RID proc_material_rid = inst->data->material_override;
-			const SceneShaderForwardClustered::MaterialData *proc_material = static_cast<SceneShaderForwardClustered::MaterialData *>(material_storage->material_get_data(proc_material_rid, RendererRD::MaterialStorage::SHADER_TYPE_3D));
-			if (!proc_material || !proc_material->shader_data || proc_material->shader_data->version.is_null() || proc_material->shader_data->code.is_empty()) {
-				continue;
-			}
-
-			if (ps->dirty) {
-				ps->content_generation++;
-#ifdef TOOLS_ENABLED
-				uint32_t pre_proc_build_size = dirty_blas_list.size();
-#endif
-				update_procedural_blas(ps, dirty_blas_list);
-				ps->dirty = false;
-#ifdef TOOLS_ENABLED
-				if (collect_render_info) {
-					rt_blas_builds += dirty_blas_list.size() - pre_proc_build_size;
+			if (instance->rt_procedural) {
+				const auto *material = static_cast<const SceneShaderForwardClustered::MaterialData *>(material_storage->material_get_data(instance->data->material_override, RendererRD::MaterialStorage::SHADER_TYPE_3D));
+				if (!material || !material->shader_data || material->shader_data->version.is_null() || material->shader_data->code.is_empty()) {
+					continue;
 				}
-#endif
+				batch.procedural.insert(instance->rt_procedural);
+				batch.materials[instance->data->material_override].insert(instance->shader_uniforms_offset);
+				continue;
 			}
-
-			if (ps->blas.is_valid()) {
-				hash_scene(ps->content_generation);
-				blass.push_back(ps->blas);
-				blas_transforms.push_back(instance_transform);
-
-				RT_GeometryData geom = {};
-				geom.flags = RT_GEOM_FLAG_PROCEDURAL;
-				geom.vertex_buffer_address = ps->gpu_buffer_address;
-				geometry_data.push_back(instance_geometry(inst, geom, nullptr));
-
-				if (inst->transform_status == RenderForwardClustered::GeometryInstanceForwardClustered::TransformStatus::MOVED) {
-					motion_indices.push_back((int32_t)motion_transforms.size());
-					RT_InstanceMotionData motion = {};
-					Transform3D previous_to_rt = prev_instance_transform;
-					previous_to_rt.origin -= state->rt_origin;
-					RendererRD::MaterialStorage::store_transform_transposed_3x4(previous_to_rt, motion.prev_object_to_rt);
-					motion_transforms.push_back(motion);
+			RID mesh = instance->data->base;
+			if (instance->data->base_type == RSE::INSTANCE_MULTIMESH) {
+				if (mesh_storage->multimesh_get_transform_format(mesh) != RSE::MULTIMESH_TRANSFORM_3D || mesh_storage->multimesh_get_instances_to_draw(mesh) == 0) {
+					continue;
+				}
+				batch.multimeshes.insert(mesh);
+				mesh = mesh_storage->multimesh_get_mesh(mesh);
+			}
+			for (const Surface *surface = instance->surface_caches; surface; surface = surface->next) {
+				if (surface->rt_pass_flags & Surface::FLAG_PASS_ALPHA) {
+					continue;
+				}
+				RID material;
+				if (instance->data->material_override.is_valid()) {
+					material = instance->data->material_override;
+				} else if (surface->surface_index < instance->data->surface_materials.size() && instance->data->surface_materials[surface->surface_index].is_valid()) {
+					material = instance->data->surface_materials[surface->surface_index];
+				} else if (mesh.is_valid() && mesh_storage->owns_mesh(mesh)) {
+					material = mesh_storage->mesh_surface_get_material(mesh, surface->surface_index);
+				}
+				batch.materials[material].insert(instance->shader_uniforms_offset);
+				const auto *shader = surface->shader;
+				if (shader && instance->persistent_instance && surface->persistent_surface && instance->mesh_instance.is_null() && instance->instance_count && surface->primitive == RSE::PRIMITIVE_TRIANGLES && !shader->uses_alpha_pass() && !shader->uses_vertex && !shader->uses_position && !shader->uses_vertex_time && !shader->writes_modelview_or_projection && !shader->uses_particle_trails && !shader->uses_point_size && !shader->uses_z_clip_scale) {
+					RID asset = RID::from_uint64(persistent_instances[uint32_t(instance->persistent_instance) - 1].data.asset);
+					Ref<MicroGeometryData> source = mesh_storage->get_micro_geometry_storage()->get_source(asset);
+					if (source.is_valid()) {
+						batch.assets.insert(asset);
+						batch.materials[surface->material_rid.is_valid() ? surface->material_rid : owner->scene_shader.default_material].insert(instance->shader_uniforms_offset);
+						bool found = !mesh_storage->get_micro_geometry_storage()->is_ready(asset, true);
+						for (const auto &entry : source->get_metadata().surfaces) {
+							found |= entry.source_surface == surface->surface_index;
+						}
+						if (found) {
+							continue;
+						}
+					}
+				}
+				SurfaceRequest request;
+				request.surface = surface;
+				request.required = instance->data->base_type != RSE::INSTANCE_MULTIMESH;
+				const void *key = surface->surface;
+				if (instance->mesh_instance.is_valid()) {
+					key = surface;
+					auto &deformation = request.deformation;
+					deformation.current_vb = mesh_storage->mesh_instance_get_vertex_buffer(instance->mesh_instance, surface->surface_index);
+					deformation.prev_vb = mesh_storage->mesh_instance_get_prev_vertex_buffer(instance->mesh_instance, surface->surface_index);
+					deformation.change_stamp = mesh_storage->mesh_instance_get_last_change(instance->mesh_instance, surface->surface_index);
+					deformation.cache_version = uint32_t(instance->mesh_instance.get_id() >> 32);
+					deformation.cache_key = (uint64_t(uint32_t(instance->mesh_instance.get_id())) << 16) | (surface->surface_index & 0xFFFFu);
+					deformation.surface_counter = mesh_storage->mesh_surface_get_rt_invalidation_counter(surface->surface);
+				}
+				if (const SurfaceRequest *previous = batch.surfaces.getptr(key)) {
+					request.required |= previous->required;
+				}
+				batch.surfaces.insert(key, request);
+			}
+		}
+		if (profile_preparation) {
+			batch.end_usec = OS::get_singleton()->get_ticks_usec();
+		}
+	};
+	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+	const uint64_t discover_queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+	WorkerThreadPool::GroupID discovery_job = pool->add_native_group_task([](void *p_data, uint32_t p_batch) {
+		GodotProfileZone("RTResourceDiscovery");
+		(*static_cast<decltype(discover) *>(p_data))(p_batch);
+	},
+			&discover, discovery.size(), -1, true, SNAME("RTResourceDiscovery"));
+	pool->wait_for_group_task_completion(discovery_job);
+	if (profile_preparation) {
+		const uint64_t joined = OS::get_singleton()->get_ticks_usec();
+		String rows;
+		for (uint32_t index = 0; index < discovery.size(); index++) {
+			const auto &batch = discovery[index];
+			rows += vformat("RenderPrep stage=RTResourceDiscovery frame=%d chunk=%d coordinator=%d queued_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d work=%d", profile_frame, index, coordinator, discover_queued, joined, batch.worker, batch.begin_usec, batch.end_usec, MIN(256u, rt_instances.size() - index * 256)) + "\n";
+		}
+		print_line(rows);
+	}
+	DiscoveryBatch requests;
+	auto merge_requests = [&](uint32_t) {
+		for (const DiscoveryBatch &batch : discovery) {
+			for (const auto &entry : batch.surfaces) {
+				if (!requests.surfaces.has(entry.key)) {
+					requests.surfaces.insert(entry.key, entry.value);
 				} else {
-					motion_indices.push_back(-1);
+					requests.surfaces[entry.key].required |= entry.value.required;
 				}
-
-				// Material for procedural geometry (already validated above).
-				hash_scene(proc_material_rid.get_id());
-				uses_time |= proc_material->shader_data->rt_uses_time();
-				uses_previous_time |= proc_material->shader_data->rt_uses_previous_time();
-				hash_scene(get_material_content_generation(proc_material_rid, inst->shader_uniforms_offset));
-				RTMaterialData *proc_mat_data = resolve_material(proc_material_rid);
-				material_data.push_back(proc_mat_data->data);
-				geometry_material_programs.push_back(proc_mat_data->hit_shader);
-
-				// Procedural instances disable triangle culling and are opaque.
-				uint32_t inst_flags = RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT |
-						RD::ACCELERATION_STRUCTURE_INSTANCE_FORCE_OPAQUE_BIT;
-				instance_flags.push_back(inst_flags);
-				instance_masks.push_back(0xFF);
 			}
-			continue;
+			for (const auto &entry : batch.materials) {
+				for (int32_t offset : entry.value) {
+					requests.materials[entry.key].insert(offset);
+				}
+			}
+			for (RID asset : batch.assets) {
+				requests.assets.insert(asset);
+			}
+			for (RID mm : batch.multimeshes) {
+				requests.multimeshes.insert(mm);
+			}
+			for (auto *procedural : batch.procedural) {
+				requests.procedural.insert(procedural);
+			}
 		}
-
-		// MultiMesh: resolve materials and warm data cache now.
-		// Compute dispatches and TLAS assembly are deferred to Phase 2.
-		if (inst->data->base_type == RSE::INSTANCE_MULTIMESH) {
-			RID mm_rid = inst->data->base;
-
-			if (mesh_storage->multimesh_get_transform_format(mm_rid) != RSE::MULTIMESH_TRANSFORM_3D) {
-				continue;
+	};
+	WorkerThreadPool::GroupID requests_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("RTResourceMerge");
+		(*static_cast<decltype(merge_requests) *>(p_data))(p_index);
+	},
+			&merge_requests, 1, 1, true, SNAME("RTResourceMerge"));
+	pool->wait_for_group_task_completion(requests_job);
+	HashMap<const void *, RTSurfaceData> resolved_surfaces;
+	HashMap<void *, Vector<RID>> resolved_dependencies;
+	HashMap<RID, MicroResource> micro_resources;
+	HashMap<RID, MMResource> mm_resources;
+	for (const auto &entry : requests.materials) {
+		resolve_material(entry.key);
+		for (int32_t offset : entry.value) {
+			get_material_content_generation(entry.key, offset);
+		}
+	}
+	for (RID mm : requests.multimeshes) {
+		MMResource resource;
+		resource.buffer = mesh_storage->multimesh_get_gpu_buffer(mm);
+		mesh_storage->multimesh_get_local_data_ptr(mm);
+		resource.commands = mesh_storage->_multimesh_get_command_buffer_rd_rid(mm);
+		if (resource.commands.is_valid()) {
+			resource.command_address = RD::get_singleton()->buffer_get_device_address(resource.commands);
+		}
+		mm_resources.insert(mm, resource);
+	}
+	const RID micro_pool = mesh_storage->get_micro_geometry_storage()->get_pool();
+	const uint64_t micro_pool_address = requests.assets.is_empty() || micro_pool.is_null() ? 0 : RD::get_singleton()->buffer_get_device_address(micro_pool);
+	for (RID asset : requests.assets) {
+		auto *storage = mesh_storage->get_micro_geometry_storage();
+		MicroResource resource;
+		resource.source = storage->get_source(asset);
+		if (storage->is_ready(asset, true)) {
+			resource.clas_address = RD::get_singleton()->buffer_get_device_address(storage->get_clas_addresses(asset));
+		}
+		resource.primitive_lookups.resize(resource.source->get_metadata().surfaces.size());
+		for (uint32_t index = 0; index < uint32_t(resource.primitive_lookups.size()); index++) {
+			resource.primitive_lookups.write[index] = storage->is_ready(asset, true) ? storage->get_primitive_lookup(asset, index) : 0;
+		}
+		micro_resources.insert(asset, resource);
+	}
+	for (RTProceduralState *procedural : requests.procedural) {
+		if (procedural->dirty) {
+			procedural->content_generation++;
+			update_procedural_blas(procedural, dirty_blas_list);
+			procedural->dirty = false;
+		}
+	}
+	for (const auto &entry : requests.surfaces) {
+		const SurfaceRequest &request = entry.value;
+		const Surface *surface = request.surface;
+#ifdef TOOLS_ENABLED
+		const uint32_t builds_before = dirty_blas_list.size();
+		const uint32_t refits_before = dirty_blas_update_list.size();
+#endif
+		RTSurfaceData *resolved = nullptr;
+		if (request.required && request.deformation.current_vb.is_valid()) {
+			resolved = process_deformed_surface(surface, surface->surface, request.deformation, dirty_blas_list, dirty_blas_update_list);
+		}
+		if (request.required && !resolved) {
+			resolved = process_surface(surface, surface->surface, mesh_storage->mesh_surface_get_rt_invalidation_counter(surface->surface), surface->owner->transform, dirty_blas_list);
+		}
+#ifdef TOOLS_ENABLED
+		if (collect_render_info && resolved) {
+			rt_triangles_built += resolved->geometry.primitive_count * (dirty_blas_list.size() - builds_before);
+			rt_triangles_refit += resolved->geometry.primitive_count * (dirty_blas_update_list.size() - refits_before);
+		}
+#endif
+		if (request.required) {
+			resolved_surfaces.insert(entry.key, resolved ? *resolved : RTSurfaceData());
+		}
+		if (!resolved_dependencies.has(surface->surface)) {
+			Vector<RID> dependencies;
+			for (RID buffer : { mesh_storage->mesh_surface_get_vertex_buffer(surface->surface), mesh_storage->mesh_surface_get_attribute_buffer(surface->surface), mesh_storage->mesh_surface_get_skin_buffer(surface->surface), mesh_storage->mesh_surface_get_index_buffer(surface->surface, 0) }) {
+				if (buffer.is_valid()) {
+					dependencies.push_back(buffer);
+				}
+			}
+			resolved_dependencies.insert(surface->surface, dependencies);
+		}
+	}
+#ifdef TOOLS_ENABLED
+	rt_blas_builds = dirty_blas_list.size();
+	rt_blas_refits = dirty_blas_update_list.size();
+#endif
+	struct GatherBatch {
+		uint64_t worker = 0;
+		uint64_t begin_usec = 0;
+		uint64_t end_usec = 0;
+		HashSet<RID> geometry_buffer_dependencies;
+		LocalVector<RT_GeometryData> geometry_data;
+		LocalVector<RT_MaterialData> material_data;
+		LocalVector<RID> geometry_material_programs;
+		LocalVector<int32_t> motion_indices;
+		LocalVector<RT_InstanceMotionData> motion_transforms;
+		LocalVector<RID> blass;
+		LocalVector<Transform3D> blas_transforms;
+		LocalVector<uint32_t> instance_flags;
+		LocalVector<uint8_t> instance_masks;
+		LocalVector<RTEmissiveSource> emissive_sources;
+		Vector<MicroGeometrySelection::Task> micro_tasks;
+		Vector<RTMicroGeometryTask> micro_rt_tasks;
+		LocalVector<PendingMMSurface> pending_mm_surfaces;
+		LocalVector<uint8_t> hash_bytes;
+		LocalVector<Pair<uint32_t, uint32_t>> hash_ranges;
+		uint32_t micro_levels = 0;
+		bool uses_time = false;
+		bool uses_previous_time = false;
+		bool uses_gpu_instances = false;
+#ifdef TOOLS_ENABLED
+		uint32_t tlas_instance_count = 0;
+		uint32_t tlas_primitive_count = 0;
+#endif
+	};
+	LocalVector<GatherBatch> batches;
+	batches.resize(discovery.size());
+	auto assemble = [&](uint32_t p_batch) {
+		GatherBatch &batch = batches[p_batch];
+		if (profile_preparation) {
+			batch.worker = Thread::get_caller_id();
+			batch.begin_usec = OS::get_singleton()->get_ticks_usec();
+		}
+		auto &geometry_buffer_dependencies = batch.geometry_buffer_dependencies;
+		auto &geometry_data = batch.geometry_data;
+		auto &material_data = batch.material_data;
+		auto &geometry_material_programs = batch.geometry_material_programs;
+		auto &motion_indices = batch.motion_indices;
+		auto &motion_transforms = batch.motion_transforms;
+		auto &blass = batch.blass;
+		auto &blas_transforms = batch.blas_transforms;
+		auto &instance_flags = batch.instance_flags;
+		auto &instance_masks = batch.instance_masks;
+		auto &emissive_sources = batch.emissive_sources;
+		auto &micro_tasks = batch.micro_tasks;
+		auto &micro_rt_tasks = batch.micro_rt_tasks;
+		auto &pending_mm_surfaces = batch.pending_mm_surfaces;
+		auto &micro_levels = batch.micro_levels;
+		auto &uses_time = batch.uses_time;
+		auto &uses_previous_time = batch.uses_previous_time;
+		auto &uses_gpu_instances = batch.uses_gpu_instances;
+#ifdef TOOLS_ENABLED
+		auto &tlas_instance_count = batch.tlas_instance_count;
+		auto &tlas_primitive_count = batch.tlas_primitive_count;
+#endif
+		auto hash_scene = [&](const auto &p_value) {
+			const uint32_t offset = batch.hash_bytes.size();
+			batch.hash_bytes.resize(offset + sizeof(p_value));
+			memcpy(batch.hash_bytes.ptr() + offset, &p_value, sizeof(p_value));
+			batch.hash_ranges.push_back({ offset, sizeof(p_value) });
+		};
+		auto resolve_material = [&](RID p_material) -> RTMaterialData * {
+			return resolved_materials.get(p_material);
+		};
+		auto get_material_content_generation = [&](RID p_material, int32_t p_offset) -> uint64_t {
+			return material_content_generations.get(p_material).get(p_offset);
+		};
+		auto register_emissive_source = [&](const RenderForwardClustered::GeometryInstanceForwardClustered *p_instance,
+												RID p_resource, uint32_t p_surface_index, uint32_t p_surface_counter, uint32_t p_geometry_index,
+												uint32_t p_key_primitive_offset, uint32_t p_primitive_count, const Transform3D &p_transform, RTMaterialData *p_material) {
+			if (!p_instance || !p_instance->rt_visible_receiver || !p_material || p_material->is_custom_shader || p_primitive_count == 0) {
+				return;
+			}
+			const RT_MaterialData &material = p_material->data;
+			const bool textured = (material.flags & RT_MAT_FLAG_HAS_EMISSION_TEX) != 0;
+			const bool colored = material.emission_color[0] != 0.0f || material.emission_color[1] != 0.0f || material.emission_color[2] != 0.0f;
+			if (material.emission_strength == 0.0f || (!textured && !colored)) {
+				return;
 			}
 
-			uint32_t mm_count = mesh_storage->multimesh_get_instances_to_draw(mm_rid);
-			hash_scene(mm_count);
-			hash_scene(mesh_storage->multimesh_get_rt_generation(mm_rid));
-			if (mm_count == 0) {
+			RTEmissiveSource source;
+			source.instance_id = p_instance->get_instance_rid().get_id();
+			source.resource_id = p_resource.get_id();
+			source.surface_generation = (uint64_t(p_surface_counter) << 32) | uint64_t(p_surface_index);
+			source.geometry_index = p_geometry_index;
+			source.key_primitive_offset = p_key_primitive_offset;
+			source.primitive_count = p_primitive_count;
+			source.topology_generation = hash_murmur3_one_64(source.resource_id, hash_murmur3_one_64(source.surface_generation));
+			source.transform = p_transform;
+			source.material = p_material;
+			emissive_sources.push_back(source);
+		};
+		auto instance_geometry = [](const RenderForwardClustered::GeometryInstanceForwardClustered *p_instance, const RT_GeometryData &p_geometry, const RenderForwardClustered::GeometryInstanceSurfaceDataCache *p_surface) {
+			RT_GeometryData geometry = p_geometry;
+			geometry.instance_layer_mask = p_instance->layer_mask;
+			geometry.instance_uniforms_offset = p_instance->shader_uniforms_offset;
+			if (p_instance->rt_casts_shadows) {
+				geometry.flags |= RT_GEOM_FLAG_CASTS_SHADOWS;
+			}
+			if (p_instance->rt_shadows_only) {
+				geometry.flags |= RT_GEOM_FLAG_SHADOWS_ONLY;
+			}
+			if (p_surface && (!p_surface->shader || p_surface->shader->cull_mode != RSE::CULL_MODE_DISABLED) &&
+					!(p_surface->flags & RenderForwardClustered::GeometryInstanceSurfaceDataCache::FLAG_USES_DOUBLE_SIDED_SHADOWS)) {
+				geometry.flags |= RT_GEOM_FLAG_SHADOW_CULL_ENABLED;
+			}
+			return geometry;
+		};
+
+		auto append_micro_surface = [&](const RenderForwardClustered::GeometryInstanceSurfaceDataCache *p_surface) {
+			const auto *instance = p_surface->owner;
+			const auto *shader = p_surface->shader;
+			if (!shader || !instance->persistent_instance || !p_surface->persistent_surface || instance->mesh_instance.is_valid() || instance->rt_procedural || instance->instance_count == 0 || p_surface->primitive != RSE::PRIMITIVE_TRIANGLES || shader->uses_alpha_pass() || shader->uses_vertex || shader->uses_position || shader->uses_vertex_time || shader->writes_modelview_or_projection || shader->uses_particle_trails || shader->uses_point_size || shader->uses_z_clip_scale) {
+				return false;
+			}
+			const auto &record = persistent_instances[uint32_t(instance->persistent_instance) - 1].data;
+			RID asset = RID::from_uint64(record.asset);
+			auto *storage = mesh_storage->get_micro_geometry_storage();
+			const MicroResource *resource = micro_resources.getptr(asset);
+			Ref<MicroGeometryData> source = resource ? resource->source : Ref<MicroGeometryData>();
+			if (source.is_null()) {
+				return false;
+			}
+			uses_time |= shader->rt_uses_time();
+			uses_previous_time |= shader->rt_uses_previous_time();
+			uses_gpu_instances |= instance->data->base_type == RSE::INSTANCE_MULTIMESH && mesh_storage->multimesh_has_gpu_updates(instance->data->base);
+			if (!storage->is_ready(asset, true)) {
+				return true;
+			}
+			const auto &metadata = source->get_metadata();
+			uint32_t surface_index = UINT32_MAX;
+			for (uint32_t index = 0; index < uint32_t(metadata.surfaces.size()); index++) {
+				if (metadata.surfaces[index].source_surface == p_surface->surface_index) {
+					surface_index = index;
+					break;
+				}
+			}
+			if (surface_index == UINT32_MAX) {
+				return false;
+			}
+			const uint32_t count = record.multimesh_address != 0 ? record.multimesh_count : 1;
+			if (!count) {
+				return true;
+			}
+			RID material = p_surface->material_rid.is_valid() ? p_surface->material_rid : owner->scene_shader.default_material;
+			RTMaterialData *native_material = resolve_material(material);
+			hash_scene(material.get_id());
+			hash_scene(get_material_content_generation(material, instance->shader_uniforms_offset));
+			hash_scene(asset.get_id());
+			uint32_t flags = 0;
+			if (shader->cull_mode == RSE::CULL_MODE_DISABLED) {
+				flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT;
+			}
+			if (shader->cull_mode != RSE::CULL_MODE_FRONT) {
+				flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FLIP_FACING_BIT;
+			}
+			if (!shader->uses_alpha_clip && !shader->uses_alpha && !shader->uses_blend_alpha) {
+				flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_FORCE_OPAQUE_BIT;
+			}
+			MicroGeometrySelection::Task task;
+			task.instance = record.handle;
+			task.surface = p_surface->persistent_surface;
+			task.asset = record.asset;
+			task.group_count = metadata.groups.size();
+			task.cluster_count = metadata.clusters.size();
+			task.coarse_count = metadata.coarse_cluster_count;
+			task.multimesh_count = count;
+			task.bin = micro_tasks.size();
+			task.flags = instance->store_transform_cache ? 0 : 1;
+			if (p_render_data->scene_data->view_count != 1) {
+				task.flags |= 2;
+			}
+			if (instance->base_flags & RenderForwardClustered::INSTANCE_DATA_FLAG_MULTIMESH_INDIRECT) {
+				RID commands = mm_resources.get(instance->data->base).commands;
+				task.indirect_command = mm_resources.get(instance->data->base).command_address + uint64_t(p_surface->surface_index) * sizeof(uint32_t) * RendererRD::MeshStorage::INDIRECT_MULTIMESH_COMMAND_STRIDE;
+				geometry_buffer_dependencies.insert(commands);
+			}
+			const auto &surface_record = persistent_surfaces[uint32_t(task.surface) - 1].data;
+			RTMicroGeometryTask rt_task;
+			rt_task.clas_addresses = resource->clas_address;
+			rt_task.instance = task.instance;
+			rt_task.surface = task.surface;
+			rt_task.selection_bin = task.bin;
+			rt_task.geometry_base = geometry_data.size();
+			rt_task.motion_base = motion_transforms.size();
+			rt_task.instance_count = count;
+			rt_task.cluster_count = task.cluster_count;
+			rt_task.source_surface = surface_record.source_surface;
+			rt_task.force_finest = surface_record.force_finest;
+			rt_task.group_count = task.group_count;
+			rt_task.instance_flags = flags;
+			rt_task.indirect_command = task.indirect_command;
+			micro_levels = MAX(micro_levels, uint32_t(metadata.roots.size()));
+			micro_tasks.push_back(task);
+			micro_rt_tasks.push_back(rt_task);
+			for (uint32_t ordinal = 0; ordinal < count; ordinal++) {
+				RT_GeometryData geometry = {};
+				geometry.flags = RT_GEOM_FLAG_CLUSTERED;
+				geometry.micro_asset_address = record.asset_address;
+				geometry.micro_page_pool = micro_pool_address;
+				geometry.micro_primitive_lookup = resource->primitive_lookups[surface_index];
+				geometry.micro_surface = surface_index;
+				geometry.primitive_count = metadata.surfaces[surface_index].source_triangle_count;
+				geometry.source_vertex_count = metadata.surfaces[surface_index].source_vertex_count;
+				geometry.instance_index = ordinal;
+				for (uint32_t channel = 0; channel < 4; channel++) {
+					geometry.instance_color[channel] = 1;
+				}
+				geometry.multimesh_address = record.multimesh_address;
+				geometry.multimesh_stride = record.multimesh_stride;
+				geometry.multimesh_offset = record.multimesh_current_offset;
+				geometry.micro_multimesh_previous_offset = record.multimesh_previous_offset;
+				if (record.multimesh_address != 0) {
+					geometry.multimesh_flags = (mesh_storage->multimesh_uses_colors(instance->data->base) ? 1u : 0u) | (mesh_storage->multimesh_uses_custom_data(instance->data->base) ? 2u : 0u) | ((record.flags & (1u << 13)) ? 4u : 0u);
+				}
+				geometry = instance_geometry(instance, geometry, p_surface);
+				register_emissive_source(instance, instance->data->base, p_surface->surface_index, mesh_storage->mesh_surface_get_rt_invalidation_counter(p_surface->surface), geometry_data.size(), ordinal * geometry.primitive_count, geometry.primitive_count, instance->transform, native_material);
+				geometry_data.push_back(geometry);
+				material_data.push_back(native_material->data);
+				geometry_material_programs.push_back(native_material->hit_shader);
+				blass.push_back(RID());
+				blas_transforms.push_back(instance->transform);
+				instance_flags.push_back(flags);
+				instance_masks.push_back(255);
+				motion_indices.push_back(motion_transforms.size());
+				motion_transforms.push_back(RT_InstanceMotionData());
+			}
+			return true;
+		};
+
+		const uint32_t from = p_batch * 256;
+		const uint32_t to = MIN(from + 256, rt_instances.size());
+		for (uint32_t i = from; i < to; i++) {
+			const RenderForwardClustered::GeometryInstanceForwardClustered *inst =
+					static_cast<const RenderForwardClustered::GeometryInstanceForwardClustered *>(rt_instances[i]);
+			if (!inst || !inst->data) {
 				continue;
 			}
+			const Transform3D &instance_transform = inst->transform;
+			hash_scene(inst->get_instance_rid().get_id());
+			hash_scene(inst->data->base.get_id());
+			hash_scene(inst->mesh_instance.get_id());
+			hash_scene(instance_transform);
+			hash_scene(inst->layer_mask);
+			hash_scene(inst->rt_visible_receiver);
+			hash_scene(inst->rt_casts_shadows);
+			hash_scene(inst->rt_shadows_only);
 
-			RID mm_gpu_buffer = mesh_storage->multimesh_get_gpu_buffer(mm_rid);
-			// Populate data cache now — first access triggers GPU readback, safe here.
-			mesh_storage->multimesh_get_local_data_ptr(mm_rid);
+			// Determine previous-frame transform for motion vectors.
+			const Transform3D &prev_instance_transform =
+					(inst->transform_status == RenderForwardClustered::GeometryInstanceForwardClustered::TransformStatus::TELEPORTED)
+					? inst->transform
+					: inst->prev_transform;
 
-			bool transform_moved = (inst->transform_status ==
-					RenderForwardClustered::GeometryInstanceForwardClustered::TransformStatus::MOVED);
+			if (inst->rt_procedural) {
+				RTProceduralState *ps = inst->rt_procedural;
 
-			const RenderForwardClustered::GeometryInstanceSurfaceDataCache *mm_surf = inst->surface_caches;
-			while (mm_surf) {
-				if (mm_surf->rt_pass_flags & RenderForwardClustered::GeometryInstanceSurfaceDataCache::FLAG_PASS_ALPHA) {
-					mm_surf = mm_surf->next;
+				if (!inst->data || !inst->data->material_override.is_valid()) {
+					continue;
+				}
+				RID proc_material_rid = inst->data->material_override;
+				const SceneShaderForwardClustered::MaterialData *proc_material = static_cast<SceneShaderForwardClustered::MaterialData *>(material_storage->material_get_data(proc_material_rid, RendererRD::MaterialStorage::SHADER_TYPE_3D));
+				if (!proc_material || !proc_material->shader_data || proc_material->shader_data->version.is_null() || proc_material->shader_data->code.is_empty()) {
 					continue;
 				}
 
-				if (append_micro_surface(mm_surf)) {
-					mm_surf = mm_surf->next;
+				if (ps->blas.is_valid()) {
+					hash_scene(ps->content_generation);
+					blass.push_back(ps->blas);
+					blas_transforms.push_back(instance_transform);
+
+					RT_GeometryData geom = {};
+					geom.flags = RT_GEOM_FLAG_PROCEDURAL;
+					geom.vertex_buffer_address = ps->gpu_buffer_address;
+					geometry_data.push_back(instance_geometry(inst, geom, nullptr));
+
+					if (inst->transform_status == RenderForwardClustered::GeometryInstanceForwardClustered::TransformStatus::MOVED) {
+						motion_indices.push_back((int32_t)motion_transforms.size());
+						RT_InstanceMotionData motion = {};
+						Transform3D previous_to_rt = prev_instance_transform;
+						previous_to_rt.origin -= state->rt_origin;
+						RendererRD::MaterialStorage::store_transform_transposed_3x4(previous_to_rt, motion.prev_object_to_rt);
+						motion_transforms.push_back(motion);
+					} else {
+						motion_indices.push_back(-1);
+					}
+
+					// Material for procedural geometry (already validated above).
+					hash_scene(proc_material_rid.get_id());
+					uses_time |= proc_material->shader_data->rt_uses_time();
+					uses_previous_time |= proc_material->shader_data->rt_uses_previous_time();
+					hash_scene(get_material_content_generation(proc_material_rid, inst->shader_uniforms_offset));
+					RTMaterialData *proc_mat_data = resolve_material(proc_material_rid);
+					material_data.push_back(proc_mat_data->data);
+					geometry_material_programs.push_back(proc_mat_data->hit_shader);
+
+					// Procedural instances disable triangle culling and are opaque.
+					uint32_t inst_flags = RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT |
+							RD::ACCELERATION_STRUCTURE_INSTANCE_FORCE_OPAQUE_BIT;
+					instance_flags.push_back(inst_flags);
+					instance_masks.push_back(0xFF);
+				}
+				continue;
+			}
+
+			// MultiMesh: resolve materials and warm data cache now.
+			// Compute dispatches and TLAS assembly are deferred to Phase 2.
+			if (inst->data->base_type == RSE::INSTANCE_MULTIMESH) {
+				RID mm_rid = inst->data->base;
+
+				if (mesh_storage->multimesh_get_transform_format(mm_rid) != RSE::MULTIMESH_TRANSFORM_3D) {
 					continue;
 				}
 
-				void *mesh_surface = mm_surf->surface;
+				uint32_t mm_count = mesh_storage->multimesh_get_instances_to_draw(mm_rid);
+				hash_scene(mm_count);
+				hash_scene(mesh_storage->multimesh_get_rt_generation(mm_rid));
+				if (mm_count == 0) {
+					continue;
+				}
+
+				RID mm_gpu_buffer = mesh_storage->multimesh_get_gpu_buffer(mm_rid);
+				// Populate data cache now — first access triggers GPU readback, safe here.
+				mesh_storage->multimesh_get_local_data_ptr(mm_rid);
+
+				bool transform_moved = (inst->transform_status ==
+						RenderForwardClustered::GeometryInstanceForwardClustered::TransformStatus::MOVED);
+
+				const RenderForwardClustered::GeometryInstanceSurfaceDataCache *mm_surf = inst->surface_caches;
+				while (mm_surf) {
+					if (mm_surf->rt_pass_flags & RenderForwardClustered::GeometryInstanceSurfaceDataCache::FLAG_PASS_ALPHA) {
+						mm_surf = mm_surf->next;
+						continue;
+					}
+
+					if (append_micro_surface(mm_surf)) {
+						mm_surf = mm_surf->next;
+						continue;
+					}
+
+					void *mesh_surface = mm_surf->surface;
+					uint32_t surface_counter = mesh_storage->mesh_surface_get_rt_invalidation_counter(mesh_surface);
+					hash_scene(mm_surf->surface_index);
+					hash_scene(surface_counter);
+					uses_time |= mm_surf->shader && mm_surf->shader->rt_uses_time();
+					uses_previous_time |= mm_surf->shader && mm_surf->shader->rt_uses_previous_time();
+
+					RID material_rid;
+					if (mm_surf->owner->data->material_override.is_valid()) {
+						material_rid = mm_surf->owner->data->material_override;
+					} else if (mm_surf->surface_index < mm_surf->owner->data->surface_materials.size() &&
+							mm_surf->owner->data->surface_materials[mm_surf->surface_index].is_valid()) {
+						material_rid = mm_surf->owner->data->surface_materials[mm_surf->surface_index];
+					} else {
+						RID mesh_rid = mesh_storage->multimesh_get_mesh(mm_rid);
+						if (mesh_rid.is_valid() && mesh_storage->owns_mesh(mesh_rid)) {
+							material_rid = mesh_storage->mesh_surface_get_material(mesh_rid, mm_surf->surface_index);
+						}
+					}
+
+					hash_scene(material_rid.get_id());
+					hash_scene(get_material_content_generation(material_rid, inst->shader_uniforms_offset));
+					RTMaterialData *mat_data = resolve_material(material_rid);
+
+					uint32_t inst_flags = 0;
+					if (mm_surf->shader) {
+						switch (mm_surf->shader->cull_mode) {
+							case RSE::CULL_MODE_DISABLED:
+								inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT;
+								inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FLIP_FACING_BIT;
+								break;
+							case RSE::CULL_MODE_FRONT:
+								break;
+							case RSE::CULL_MODE_BACK:
+							default:
+								inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FLIP_FACING_BIT;
+								break;
+						}
+					} else {
+						inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FLIP_FACING_BIT;
+					}
+					if (mat_data->is_custom_shader) {
+						if (!mat_data->uses_alpha_clip && !mat_data->has_alpha_texture) {
+							inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_FORCE_OPAQUE_BIT;
+						}
+					} else {
+						bool is_alpha = mm_surf->shader &&
+								(mm_surf->shader->uses_alpha_clip || mm_surf->shader->uses_blend_alpha || mm_surf->shader->uses_alpha);
+						if (!is_alpha) {
+							inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_FORCE_OPAQUE_BIT;
+						}
+					}
+
+					PendingMMSurface pending;
+					pending.mm_rid = mm_rid;
+					pending.mm_gpu_buffer = mm_gpu_buffer;
+					pending.mm_surf = mm_surf;
+					pending.mesh_surface = mesh_surface;
+					pending.mm_count = mm_count;
+					pending.surface_index = mm_surf->surface_index;
+					pending.surface_counter = surface_counter;
+					pending.instance_transform = instance_transform;
+					pending.prev_instance_transform = prev_instance_transform;
+					pending.transform_moved = transform_moved;
+					pending.mat_data = mat_data;
+					pending.inst_flags = inst_flags;
+					pending_mm_surfaces.push_back(pending);
+
+					mm_surf = mm_surf->next;
+				}
+				continue;
+			}
+
+			// Walk the surface cache linked list.
+			const RenderForwardClustered::GeometryInstanceSurfaceDataCache *surf = inst->surface_caches;
+			while (surf) {
+				// Skip surfaces routed to the raster alpha overlay
+				if (surf->rt_pass_flags & RenderForwardClustered::GeometryInstanceSurfaceDataCache::FLAG_PASS_ALPHA) {
+					surf = surf->next;
+					continue;
+				}
+
+				if (append_micro_surface(surf)) {
+					surf = surf->next;
+					continue;
+				}
+
+				void *mesh_surface = surf->surface;
 				uint32_t surface_counter = mesh_storage->mesh_surface_get_rt_invalidation_counter(mesh_surface);
-				hash_scene(mm_surf->surface_index);
+				hash_scene(surf->surface_index);
 				hash_scene(surface_counter);
-				uses_time |= mm_surf->shader && mm_surf->shader->rt_uses_time();
-				uses_previous_time |= mm_surf->shader && mm_surf->shader->rt_uses_previous_time();
+				uses_time |= surf->shader && surf->shader->rt_uses_time();
+				uses_previous_time |= surf->shader && surf->shader->rt_uses_previous_time();
+
+				const void *resource_key = inst->mesh_instance.is_valid() ? static_cast<const void *>(surf) : surf->surface;
+				const RTSurfaceData *surf_data = resolved_surfaces.getptr(resource_key);
+				if (inst->mesh_instance.is_valid() && mesh_storage->mesh_instance_get_vertex_buffer(inst->mesh_instance, surf->surface_index).is_valid()) {
+					hash_scene(mesh_storage->mesh_instance_get_last_change(inst->mesh_instance, surf->surface_index));
+				}
+
+				if (!surf_data || !surf_data->blas.is_valid()) {
+					surf = surf->next;
+					continue;
+				}
 
 				RID material_rid;
-				if (mm_surf->owner->data->material_override.is_valid()) {
-					material_rid = mm_surf->owner->data->material_override;
-				} else if (mm_surf->surface_index < mm_surf->owner->data->surface_materials.size() &&
-						mm_surf->owner->data->surface_materials[mm_surf->surface_index].is_valid()) {
-					material_rid = mm_surf->owner->data->surface_materials[mm_surf->surface_index];
+				if (surf->owner->data->material_override.is_valid()) {
+					material_rid = surf->owner->data->material_override;
+				} else if (surf->surface_index < surf->owner->data->surface_materials.size() &&
+						surf->owner->data->surface_materials[surf->surface_index].is_valid()) {
+					material_rid = surf->owner->data->surface_materials[surf->surface_index];
 				} else {
-					RID mesh_rid = mesh_storage->multimesh_get_mesh(mm_rid);
+					RID mesh_rid = surf->owner->data->base;
 					if (mesh_rid.is_valid() && mesh_storage->owns_mesh(mesh_rid)) {
-						material_rid = mesh_storage->mesh_surface_get_material(mesh_rid, mm_surf->surface_index);
+						material_rid = mesh_storage->mesh_surface_get_material(mesh_rid, surf->surface_index);
 					}
 				}
 
@@ -3428,9 +3963,48 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 				hash_scene(get_material_content_generation(material_rid, inst->shader_uniforms_offset));
 				RTMaterialData *mat_data = resolve_material(material_rid);
 
+				const Transform3D final_transform = instance_transform;
+				blas_transforms.push_back(final_transform);
+
+				blass.push_back(surf_data->blas);
+				const uint32_t geometry_index = geometry_data.size();
+				geometry_data.push_back(instance_geometry(inst, surf_data->geometry, surf));
+				for (RID buffer : resolved_dependencies.get(mesh_surface)) {
+					if (buffer.is_valid()) {
+						geometry_buffer_dependencies.insert(buffer);
+					}
+				}
+				register_emissive_source(inst, inst->data->base, surf->surface_index, surface_counter, geometry_index, 0,
+						surf_data->geometry.primitive_count, final_transform, mat_data);
+
+				if (inst->transform_status == RenderForwardClustered::GeometryInstanceForwardClustered::TransformStatus::MOVED ||
+						(geometry_data[geometry_index].prev_vertex_buffer_address_lo | geometry_data[geometry_index].prev_vertex_buffer_address_hi) != 0) {
+					motion_indices.push_back((int32_t)motion_transforms.size());
+					RT_InstanceMotionData motion = {};
+					Transform3D prev_final = prev_instance_transform;
+					prev_final.origin -= state->rt_origin;
+					RendererRD::MaterialStorage::store_transform_transposed_3x4(prev_final, motion.prev_object_to_rt);
+					motion_transforms.push_back(motion);
+				} else {
+					motion_indices.push_back(-1);
+				}
+
+#ifdef TOOLS_ENABLED
+				if (collect_render_info) {
+					tlas_instance_count++;
+					uint32_t vertices = mesh_storage->mesh_surface_get_vertices_drawn_count(mesh_surface);
+					uint32_t prim_count = _rt_indices_to_primitives(surf->primitive, vertices);
+					tlas_primitive_count += prim_count;
+				}
+#endif
+
+				material_data.push_back(mat_data->data);
+				geometry_material_programs.push_back(mat_data->hit_shader);
+
+				// Determine per-instance TLAS flags from material properties.
 				uint32_t inst_flags = 0;
-				if (mm_surf->shader) {
-					switch (mm_surf->shader->cull_mode) {
+				if (surf->shader) {
+					switch (surf->shader->cull_mode) {
 						case RSE::CULL_MODE_DISABLED:
 							inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT;
 							inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FLIP_FACING_BIT;
@@ -3445,214 +4019,271 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 				} else {
 					inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FLIP_FACING_BIT;
 				}
+
 				if (mat_data->is_custom_shader) {
 					if (!mat_data->uses_alpha_clip && !mat_data->has_alpha_texture) {
 						inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_FORCE_OPAQUE_BIT;
 					}
 				} else {
-					bool is_alpha = mm_surf->shader &&
-							(mm_surf->shader->uses_alpha_clip || mm_surf->shader->uses_blend_alpha || mm_surf->shader->uses_alpha);
+					// Standard material: FORCE_OPAQUE if no alpha usage.
+					bool is_alpha = surf->shader && (surf->shader->uses_alpha_clip || surf->shader->uses_blend_alpha || surf->shader->uses_alpha);
 					if (!is_alpha) {
 						inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_FORCE_OPAQUE_BIT;
 					}
 				}
+				instance_flags.push_back(inst_flags);
+				instance_masks.push_back(0xFF);
 
-				PendingMMSurface pending;
-				pending.mm_rid = mm_rid;
-				pending.mm_gpu_buffer = mm_gpu_buffer;
-				pending.mm_surf = mm_surf;
-				pending.mesh_surface = mesh_surface;
-				pending.mm_count = mm_count;
-				pending.surface_index = mm_surf->surface_index;
-				pending.surface_counter = surface_counter;
-				pending.instance_transform = instance_transform;
-				pending.prev_instance_transform = prev_instance_transform;
-				pending.transform_moved = transform_moved;
-				pending.mat_data = mat_data;
-				pending.inst_flags = inst_flags;
-				pending_mm_surfaces.push_back(pending);
-
-				mm_surf = mm_surf->next;
+				surf = surf->next;
 			}
-			continue;
 		}
 
-		// Walk the surface cache linked list.
-		const RenderForwardClustered::GeometryInstanceSurfaceDataCache *surf = inst->surface_caches;
-		bool instance_static = inst->transform_status == RenderForwardClustered::GeometryInstanceForwardClustered::TransformStatus::NONE;
-		while (surf) {
-			// Skip surfaces routed to the raster alpha overlay
-			if (surf->rt_pass_flags & RenderForwardClustered::GeometryInstanceSurfaceDataCache::FLAG_PASS_ALPHA) {
-				surf = surf->next;
-				continue;
-			}
-
-			if (append_micro_surface(surf)) {
-				surf = surf->next;
-				continue;
-			}
-
-			void *mesh_surface = surf->surface;
-			uint32_t surface_counter = mesh_storage->mesh_surface_get_rt_invalidation_counter(mesh_surface);
-			hash_scene(surf->surface_index);
-			hash_scene(surface_counter);
-			uses_time |= surf->shader && surf->shader->rt_uses_time();
-			uses_previous_time |= surf->shader && surf->shader->rt_uses_previous_time();
-
-#ifdef TOOLS_ENABLED
-			uint32_t pre_build_size = dirty_blas_list.size();
-			uint32_t pre_refit_size = dirty_blas_update_list.size();
-#endif
-
-			// MeshInstance skinning/blend shapes provide a deformed vertex buffer.
-			RTSurfaceData *surf_data = nullptr;
-			if (inst->mesh_instance.is_valid()) {
-				RID curr_vb = mesh_storage->mesh_instance_get_vertex_buffer(inst->mesh_instance, surf->surface_index);
-				if (curr_vb.is_valid()) {
-					RTDeformedGeometrySource src;
-					src.current_vb = curr_vb;
-					src.prev_vb = mesh_storage->mesh_instance_get_prev_vertex_buffer(inst->mesh_instance, surf->surface_index);
-					src.change_stamp = mesh_storage->mesh_instance_get_last_change(inst->mesh_instance, surf->surface_index);
-					hash_scene(src.change_stamp);
-					uint64_t mi_id = inst->mesh_instance.get_id();
-					uint32_t mi_index = static_cast<uint32_t>(mi_id & 0xFFFFFFFFULL);
-					src.cache_version = static_cast<uint32_t>(mi_id >> 32);
-					src.cache_key = (static_cast<uint64_t>(mi_index) << 16) | (surf->surface_index & 0xFFFFu);
-					src.surface_counter = surface_counter;
-					surf_data = process_deformed_surface(surf, mesh_surface, src, dirty_blas_list, dirty_blas_update_list);
-				}
-			}
-			if (!surf_data) {
-				surf_data = process_surface(surf, mesh_surface, surface_counter, instance_transform, dirty_blas_list);
-			}
-			if (!surf_data || !surf_data->blas.is_valid()) {
-				surf = surf->next;
-				continue;
-			}
-
-			RID material_rid;
-			if (surf->owner->data->material_override.is_valid()) {
-				material_rid = surf->owner->data->material_override;
-			} else if (surf->surface_index < surf->owner->data->surface_materials.size() &&
-					surf->owner->data->surface_materials[surf->surface_index].is_valid()) {
-				material_rid = surf->owner->data->surface_materials[surf->surface_index];
-			} else {
-				RID mesh_rid = surf->owner->data->base;
-				if (mesh_rid.is_valid() && mesh_storage->owns_mesh(mesh_rid)) {
-					material_rid = mesh_storage->mesh_surface_get_material(mesh_rid, surf->surface_index);
-				}
-			}
-
-			hash_scene(material_rid.get_id());
-			hash_scene(get_material_content_generation(material_rid, inst->shader_uniforms_offset));
-			RTMaterialData *mat_data = resolve_material(material_rid);
-
-			Transform3D final_transform;
-			if (instance_static && surf->cached_final_transform_valid) {
-				final_transform = surf->cached_final_transform;
-			} else {
-				final_transform = instance_transform;
-				surf->cached_final_transform = final_transform;
-				surf->cached_final_transform_valid = true;
-			}
-			blas_transforms.push_back(final_transform);
-
-			blass.push_back(surf_data->blas);
-			const uint32_t geometry_index = geometry_data.size();
-			geometry_data.push_back(instance_geometry(inst, surf_data->geometry, surf));
-			for (RID buffer : { mesh_storage->mesh_surface_get_vertex_buffer(mesh_surface), mesh_storage->mesh_surface_get_attribute_buffer(mesh_surface), mesh_storage->mesh_surface_get_skin_buffer(mesh_surface), mesh_storage->mesh_surface_get_index_buffer(mesh_surface, 0) }) {
-				if (buffer.is_valid()) {
-					geometry_buffer_dependencies.insert(buffer);
-				}
-			}
-			register_emissive_source(inst, inst->data->base, surf->surface_index, surface_counter, geometry_index, 0,
-					surf_data->geometry.primitive_count, final_transform, mat_data);
-
-			if (inst->transform_status == RenderForwardClustered::GeometryInstanceForwardClustered::TransformStatus::MOVED ||
-					(geometry_data[geometry_index].prev_vertex_buffer_address_lo | geometry_data[geometry_index].prev_vertex_buffer_address_hi) != 0) {
-				motion_indices.push_back((int32_t)motion_transforms.size());
-				RT_InstanceMotionData motion = {};
-				Transform3D prev_final = prev_instance_transform;
-				prev_final.origin -= state->rt_origin;
-				RendererRD::MaterialStorage::store_transform_transposed_3x4(prev_final, motion.prev_object_to_rt);
-				motion_transforms.push_back(motion);
-			} else {
-				motion_indices.push_back(-1);
-			}
-
-#ifdef TOOLS_ENABLED
-			if (collect_render_info) {
-				tlas_instance_count++;
-				uint32_t vertices = mesh_storage->mesh_surface_get_vertices_drawn_count(mesh_surface);
-				uint32_t prim_count = _rt_indices_to_primitives(surf->primitive, vertices);
-				tlas_primitive_count += prim_count;
-				uint32_t build_delta = dirty_blas_list.size() - pre_build_size;
-				uint32_t refit_delta = dirty_blas_update_list.size() - pre_refit_size;
-				rt_blas_builds += build_delta;
-				rt_blas_refits += refit_delta;
-				rt_triangles_built += prim_count * build_delta;
-				rt_triangles_refit += prim_count * refit_delta;
-			}
-#endif
-
-			material_data.push_back(mat_data->data);
-			geometry_material_programs.push_back(mat_data->hit_shader);
-
-			// Determine per-instance TLAS flags from material properties.
-			uint32_t inst_flags = 0;
-			if (surf->shader) {
-				switch (surf->shader->cull_mode) {
-					case RSE::CULL_MODE_DISABLED:
-						inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT;
-						inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FLIP_FACING_BIT;
-						break;
-					case RSE::CULL_MODE_FRONT:
-						break;
-					case RSE::CULL_MODE_BACK:
-					default:
-						inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FLIP_FACING_BIT;
-						break;
-				}
-			} else {
-				inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FLIP_FACING_BIT;
-			}
-
-			if (mat_data->is_custom_shader) {
-				if (!mat_data->uses_alpha_clip && !mat_data->has_alpha_texture) {
-					inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_FORCE_OPAQUE_BIT;
-				}
-			} else {
-				// Standard material: FORCE_OPAQUE if no alpha usage.
-				bool is_alpha = surf->shader && (surf->shader->uses_alpha_clip || surf->shader->uses_blend_alpha || surf->shader->uses_alpha);
-				if (!is_alpha) {
-					inst_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_FORCE_OPAQUE_BIT;
-				}
-			}
-			instance_flags.push_back(inst_flags);
-			instance_masks.push_back(0xFF);
-
-			surf = surf->next;
+		if (profile_preparation) {
+			batch.end_usec = OS::get_singleton()->get_ticks_usec();
 		}
+	};
+	const uint64_t assemble_queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+	WorkerThreadPool::GroupID assembly_job = pool->add_native_group_task([](void *p_data, uint32_t p_batch) {
+		GodotProfileZone("RTInstanceAssembly");
+		(*static_cast<decltype(assemble) *>(p_data))(p_batch);
+	},
+			&assemble, batches.size(), -1, true, SNAME("RTInstanceAssembly"));
+	pool->wait_for_group_task_completion(assembly_job);
+	if (profile_preparation) {
+		const uint64_t joined = OS::get_singleton()->get_ticks_usec();
+		String rows;
+		for (uint32_t index = 0; index < batches.size(); index++) {
+			const auto &batch = batches[index];
+			rows += vformat("RenderPrep stage=RTSceneAssembly frame=%d chunk=%d coordinator=%d queued_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d work=%d", profile_frame, index, coordinator, assemble_queued, joined, batch.worker, batch.begin_usec, batch.end_usec, MIN(256u, rt_instances.size() - index * 256)) + "\n";
+		}
+		print_line(rows);
 	}
-
-	// -----------------------------------------------------------------------
-	// Phase 2: GPU compute — merged MultiMesh BLAS dispatches.
-	// -----------------------------------------------------------------------
+	auto merge_batches = [&](uint32_t) {
+		for (GatherBatch &batch : batches) {
+			const uint32_t geometry_offset = geometry_data.size();
+			const uint32_t motion_offset = motion_transforms.size();
+			const uint32_t task_offset = micro_tasks.size();
+			for (const auto &range : batch.hash_ranges) {
+				scene_signature = _rt_scene_hash(batch.hash_bytes.ptr() + range.first, range.second, scene_signature);
+			}
+			for (auto &task : batch.micro_tasks) {
+				task.bin += task_offset;
+				micro_tasks.push_back(task);
+			}
+			for (auto &task : batch.micro_rt_tasks) {
+				task.selection_bin += task_offset;
+				task.geometry_base += geometry_offset;
+				task.motion_base += motion_offset;
+				micro_rt_tasks.push_back(task);
+			}
+			for (int32_t index : batch.motion_indices) {
+				motion_indices.push_back(index < 0 ? index : index + motion_offset);
+			}
+			for (auto &source : batch.emissive_sources) {
+				source.geometry_index += geometry_offset;
+				emissive_sources.push_back(source);
+			}
+			for (RID dependency : batch.geometry_buffer_dependencies) {
+				geometry_buffer_dependencies.insert(dependency);
+			}
+			for (const auto &value : batch.geometry_data) {
+				geometry_data.push_back(value);
+			}
+			for (const auto &value : batch.material_data) {
+				material_data.push_back(value);
+			}
+			for (const auto &value : batch.geometry_material_programs) {
+				geometry_material_programs.push_back(value);
+			}
+			for (const auto &value : batch.motion_transforms) {
+				motion_transforms.push_back(value);
+			}
+			for (const auto &value : batch.blass) {
+				blass.push_back(value);
+			}
+			for (const auto &value : batch.blas_transforms) {
+				blas_transforms.push_back(value);
+			}
+			for (const auto &value : batch.instance_flags) {
+				instance_flags.push_back(value);
+			}
+			for (const auto &value : batch.instance_masks) {
+				instance_masks.push_back(value);
+			}
+			for (const auto &pending : batch.pending_mm_surfaces) {
+				pending_mm_surfaces.push_back(pending);
+			}
+			micro_levels = MAX(micro_levels, batch.micro_levels);
+			uses_time |= batch.uses_time;
+			uses_previous_time |= batch.uses_previous_time;
+			uses_gpu_instances |= batch.uses_gpu_instances;
+#ifdef TOOLS_ENABLED
+			tlas_instance_count += batch.tlas_instance_count;
+			tlas_primitive_count += batch.tlas_primitive_count;
+#endif
+		}
+	};
+	WorkerThreadPool::GroupID merge_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("RTInstanceMerge");
+		(*static_cast<decltype(merge_batches) *>(p_data))(p_index);
+	},
+			&merge_batches, 1, 1, true, SNAME("RTInstanceMerge"));
+	pool->wait_for_group_task_completion(merge_job);
+	struct MMPrepared {
+		const PendingMMSurface *pending = nullptr;
+		RTSurfaceData surface;
+		const float *data = nullptr;
+		uint32_t stride = 0;
+		uint32_t current_offset = 0;
+		uint32_t previous_offset = 0;
+		bool merged = false;
+		bool colors = false;
+		bool custom = false;
+	};
+	HashMap<RID, HashMap<const void *, MMPrepared>> mm_prepared;
+	auto discover_mm = [&](uint32_t) {
+		for (const auto &pending : pending_mm_surfaces) {
+			if (!mm_prepared[pending.mm_rid].has(pending.mesh_surface)) {
+				MMPrepared resource;
+				resource.pending = &pending;
+				mm_prepared[pending.mm_rid].insert(pending.mesh_surface, resource);
+			}
+		}
+	};
+	auto mm_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("RTMultiMeshResources");
+		(*static_cast<decltype(discover_mm) *>(p_data))(p_index);
+	},
+			&discover_mm, 1, 1, true, SNAME("RTMultiMeshResources"));
+	pool->wait_for_group_task_completion(mm_job);
 	RENDER_TIMESTAMP("RT Merged Geometry Compute");
 	RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();
-
-	for (const PendingMMSurface &pending : pending_mm_surfaces) {
+	for (auto &multimesh : mm_prepared) {
+		for (auto &surface : multimesh.value) {
+			MMPrepared &resource = surface.value;
+			const PendingMMSurface &pending = *resource.pending;
 #ifdef TOOLS_ENABLED
-		uint32_t mm_pre_build_size = dirty_blas_list.size();
-		uint32_t mm_pre_refit_size = dirty_blas_update_list.size();
+			const uint32_t builds_before = dirty_blas_list.size();
+			const uint32_t refits_before = dirty_blas_update_list.size();
 #endif
-		RTSurfaceData merged_sd;
-		bool use_merged = pending.mm_gpu_buffer.is_valid() &&
-				_build_merged_mm_blas(pending.mm_rid, pending.mm_gpu_buffer, pending.mesh_surface,
-						pending.mm_count, pending.surface_index, pending.surface_counter,
-						compute_list, dirty_blas_list, dirty_blas_update_list, &merged_sd);
+			resource.merged = pending.mm_gpu_buffer.is_valid() && _build_merged_mm_blas(pending.mm_rid, pending.mm_gpu_buffer, pending.mesh_surface, pending.mm_count, pending.surface_index, pending.surface_counter, compute_list, dirty_blas_list, dirty_blas_update_list, &resource.surface);
+			if (!resource.merged) {
+				if (!resolved_surfaces.has(pending.mesh_surface)) {
+					RD::get_singleton()->compute_list_end();
+					const Surface *surface = requests.surfaces[pending.mesh_surface].surface;
+					RTSurfaceData *resolved = process_surface(surface, pending.mesh_surface, pending.surface_counter, pending.instance_transform, dirty_blas_list);
+					resolved_surfaces.insert(pending.mesh_surface, resolved ? *resolved : RTSurfaceData());
+					compute_list = RD::get_singleton()->compute_list_begin();
+				}
+				resource.surface = resolved_surfaces[pending.mesh_surface];
+				resource.data = mesh_storage->multimesh_get_local_data_ptr(pending.mm_rid);
+				resource.stride = mesh_storage->multimesh_get_stride(pending.mm_rid);
+				resource.current_offset = mesh_storage->multimesh_get_current_instance_offset(pending.mm_rid);
+				resource.previous_offset = mesh_storage->multimesh_get_previous_instance_offset(pending.mm_rid);
+				resource.colors = mesh_storage->multimesh_uses_colors(pending.mm_rid);
+				resource.custom = mesh_storage->multimesh_uses_custom_data(pending.mm_rid);
+			}
+#ifdef TOOLS_ENABLED
+			if (collect_render_info) {
+				const uint32_t builds = dirty_blas_list.size() - builds_before;
+				const uint32_t refits = dirty_blas_update_list.size() - refits_before;
+				rt_blas_builds += builds;
+				rt_blas_refits += refits;
+				rt_triangles_built += resource.surface.geometry.primitive_count * builds;
+				rt_triangles_refit += resource.surface.geometry.primitive_count * refits;
+			}
+#endif
+		}
+	}
+	RD::get_singleton()->compute_list_end();
+	struct MMAssembly {
+		const PendingMMSurface *pending = nullptr;
+		const MMPrepared *resource = nullptr;
+		uint32_t first = 0;
+		uint32_t end = 0;
+	};
+	LocalVector<MMAssembly> mm_work;
+	auto partition_mm = [&](uint32_t) {
+		for (const auto &pending : pending_mm_surfaces) {
+			const MMPrepared &resource = mm_prepared[pending.mm_rid][pending.mesh_surface];
+			if (!resource.surface.blas.is_valid() || (!resource.merged && !resource.data)) {
+				continue;
+			}
+			const uint32_t count = resource.merged ? 1 : pending.mm_count;
+			for (uint32_t first = 0; first < count; first += 256) {
+				mm_work.push_back({ &pending, &resource, first, MIN(first + 256, count) });
+			}
+		}
+	};
+	mm_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("RTMultiMeshPartition");
+		(*static_cast<decltype(partition_mm) *>(p_data))(p_index);
+	},
+			&partition_mm, 1, 1, true, SNAME("RTMultiMeshPartition"));
+	pool->wait_for_group_task_completion(mm_job);
+	LocalVector<GatherBatch> mm_batches;
+	mm_batches.resize(mm_work.size());
+	auto assemble_mm = [&](uint32_t p_index) {
+		const MMAssembly &work = mm_work[p_index];
+		const PendingMMSurface &pending = *work.pending;
+		const MMPrepared &resource = *work.resource;
+		GatherBatch &batch = mm_batches[p_index];
+		auto &geometry_buffer_dependencies = batch.geometry_buffer_dependencies;
+		auto &geometry_data = batch.geometry_data;
+		auto &material_data = batch.material_data;
+		auto &geometry_material_programs = batch.geometry_material_programs;
+		auto &motion_indices = batch.motion_indices;
+		auto &motion_transforms = batch.motion_transforms;
+		auto &blass = batch.blass;
+		auto &blas_transforms = batch.blas_transforms;
+		auto &instance_flags = batch.instance_flags;
+		auto &instance_masks = batch.instance_masks;
+		auto &emissive_sources = batch.emissive_sources;
+		auto register_emissive_source = [&](const RenderForwardClustered::GeometryInstanceForwardClustered *p_instance,
+												RID p_resource, uint32_t p_surface_index, uint32_t p_surface_counter, uint32_t p_geometry_index,
+												uint32_t p_key_primitive_offset, uint32_t p_primitive_count, const Transform3D &p_transform, RTMaterialData *p_material) {
+			if (!p_instance || !p_instance->rt_visible_receiver || !p_material || p_material->is_custom_shader || p_primitive_count == 0) {
+				return;
+			}
+			const RT_MaterialData &material = p_material->data;
+			const bool textured = (material.flags & RT_MAT_FLAG_HAS_EMISSION_TEX) != 0;
+			const bool colored = material.emission_color[0] != 0.0f || material.emission_color[1] != 0.0f || material.emission_color[2] != 0.0f;
+			if (material.emission_strength == 0.0f || (!textured && !colored)) {
+				return;
+			}
 
-		if (use_merged) {
+			RTEmissiveSource source;
+			source.instance_id = p_instance->get_instance_rid().get_id();
+			source.resource_id = p_resource.get_id();
+			source.surface_generation = (uint64_t(p_surface_counter) << 32) | uint64_t(p_surface_index);
+			source.geometry_index = p_geometry_index;
+			source.key_primitive_offset = p_key_primitive_offset;
+			source.primitive_count = p_primitive_count;
+			source.topology_generation = hash_murmur3_one_64(source.resource_id, hash_murmur3_one_64(source.surface_generation));
+			source.transform = p_transform;
+			source.material = p_material;
+			emissive_sources.push_back(source);
+		};
+		auto instance_geometry = [](const RenderForwardClustered::GeometryInstanceForwardClustered *p_instance, const RT_GeometryData &p_geometry, const RenderForwardClustered::GeometryInstanceSurfaceDataCache *p_surface) {
+			RT_GeometryData geometry = p_geometry;
+			geometry.instance_layer_mask = p_instance->layer_mask;
+			geometry.instance_uniforms_offset = p_instance->shader_uniforms_offset;
+			if (p_instance->rt_casts_shadows) {
+				geometry.flags |= RT_GEOM_FLAG_CASTS_SHADOWS;
+			}
+			if (p_instance->rt_shadows_only) {
+				geometry.flags |= RT_GEOM_FLAG_SHADOWS_ONLY;
+			}
+			if (p_surface && (!p_surface->shader || p_surface->shader->cull_mode != RSE::CULL_MODE_DISABLED) &&
+					!(p_surface->flags & RenderForwardClustered::GeometryInstanceSurfaceDataCache::FLAG_USES_DOUBLE_SIDED_SHADOWS)) {
+				geometry.flags |= RT_GEOM_FLAG_SHADOW_CULL_ENABLED;
+			}
+			return geometry;
+		};
+
+		if (resource.merged) {
+			const RTSurfaceData &merged_sd = resource.surface;
+
 			blass.push_back(merged_sd.blas);
 			blas_transforms.push_back(pending.instance_transform);
 			const uint32_t geometry_index = geometry_data.size();
@@ -3673,39 +4304,13 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			}
 			instance_flags.push_back(pending.inst_flags);
 			instance_masks.push_back(0xFF);
-#ifdef TOOLS_ENABLED
-			if (collect_render_info) {
-				tlas_instance_count++;
-				uint32_t prim_count = merged_sd.geometry.primitive_count;
-				tlas_primitive_count += prim_count;
-				uint32_t build_delta = dirty_blas_list.size() - mm_pre_build_size;
-				uint32_t refit_delta = dirty_blas_update_list.size() - mm_pre_refit_size;
-				rt_blas_builds += build_delta;
-				rt_blas_refits += refit_delta;
-				rt_triangles_built += prim_count * build_delta;
-				rt_triangles_refit += prim_count * refit_delta;
-			}
-#endif
 		} else {
-			// Fallback: expanded TLAS — one entry per instance, shared BLAS.
-			const float *mm_data = mesh_storage->multimesh_get_local_data_ptr(pending.mm_rid);
-			if (!mm_data) {
-				continue;
-			}
-
-			const uint32_t mm_stride = mesh_storage->multimesh_get_stride(pending.mm_rid);
-			const uint32_t mm_cur_offset = mesh_storage->multimesh_get_current_instance_offset(pending.mm_rid);
-			const uint32_t mm_prev_offset = mesh_storage->multimesh_get_previous_instance_offset(pending.mm_rid);
-
-			RD::get_singleton()->compute_list_end();
-			RTSurfaceData *surf_data = process_surface(pending.mm_surf, pending.mesh_surface,
-					pending.surface_counter, pending.instance_transform, dirty_blas_list);
-			compute_list = RD::get_singleton()->compute_list_begin();
-			if (!surf_data || !surf_data->blas.is_valid()) {
-				continue;
-			}
-
-			for (uint32_t mi = 0; mi < pending.mm_count; mi++) {
+			const RTSurfaceData *surf_data = &resource.surface;
+			const float *mm_data = resource.data;
+			const uint32_t mm_stride = resource.stride;
+			const uint32_t mm_cur_offset = resource.current_offset;
+			const uint32_t mm_prev_offset = resource.previous_offset;
+			for (uint32_t mi = work.first; mi < work.end; mi++) {
 				const float *d = mm_data + (mm_cur_offset + mi) * mm_stride;
 				Transform3D mm_xform;
 				mm_xform.basis.rows[0][0] = d[0];
@@ -3728,15 +4333,15 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 				const uint32_t geometry_index = geometry_data.size();
 				RT_GeometryData instance_data = instance_geometry(pending.mm_surf->owner, surf_data->geometry, pending.mm_surf);
 				instance_data.instance_index = mi;
-				const bool has_color = mesh_storage->multimesh_uses_colors(pending.mm_rid);
+				const bool has_color = resource.colors;
 				if (has_color) {
 					memcpy(instance_data.instance_color, d + 12, sizeof(instance_data.instance_color));
 				}
-				if (mesh_storage->multimesh_uses_custom_data(pending.mm_rid)) {
+				if (resource.custom) {
 					memcpy(instance_data.instance_custom, d + 12 + (has_color ? 4 : 0), sizeof(instance_data.instance_custom));
 				}
 				geometry_data.push_back(instance_data);
-				for (RID buffer : { mesh_storage->mesh_surface_get_vertex_buffer(pending.mesh_surface), mesh_storage->mesh_surface_get_attribute_buffer(pending.mesh_surface), mesh_storage->mesh_surface_get_skin_buffer(pending.mesh_surface), mesh_storage->mesh_surface_get_index_buffer(pending.mesh_surface, 0) }) {
+				for (RID buffer : resolved_dependencies[pending.mesh_surface]) {
 					if (buffer.is_valid()) {
 						geometry_buffer_dependencies.insert(buffer);
 					}
@@ -3772,23 +4377,71 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 				instance_flags.push_back(inst_flags);
 				instance_masks.push_back(0xFF);
 			}
-
+		}
 #ifdef TOOLS_ENABLED
-			if (collect_render_info) {
-				tlas_instance_count += pending.mm_count;
-				uint32_t vertices = mesh_storage->mesh_surface_get_vertices_drawn_count(pending.mesh_surface);
-				uint32_t prim_count = _rt_indices_to_primitives(pending.mm_surf->primitive, vertices);
-				tlas_primitive_count += prim_count * pending.mm_count;
-				uint32_t build_delta = dirty_blas_list.size() - mm_pre_build_size;
-				uint32_t refit_delta = dirty_blas_update_list.size() - mm_pre_refit_size;
-				rt_blas_builds += build_delta;
-				rt_blas_refits += refit_delta;
-				rt_triangles_built += prim_count * build_delta;
-				rt_triangles_refit += prim_count * refit_delta;
+		if (collect_render_info) {
+			batch.tlas_instance_count = work.end - work.first;
+			const uint32_t primitive_count = resource.merged ? resource.surface.geometry.primitive_count : _rt_indices_to_primitives(pending.mm_surf->primitive, mesh_storage->mesh_surface_get_vertices_drawn_count(pending.mesh_surface));
+			batch.tlas_primitive_count = primitive_count * batch.tlas_instance_count;
+		}
+#endif
+	};
+	mm_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("RTMultiMeshAssembly");
+		(*static_cast<decltype(assemble_mm) *>(p_data))(p_index);
+	},
+			&assemble_mm, mm_work.size(), -1, true, SNAME("RTMultiMeshAssembly"));
+	pool->wait_for_group_task_completion(mm_job);
+	auto merge_mm = [&](uint32_t) {
+		for (GatherBatch &batch : mm_batches) {
+			const uint32_t geometry_base = geometry_data.size();
+			const uint32_t motion_base = motion_transforms.size();
+			for (RID dependency : batch.geometry_buffer_dependencies) {
+				geometry_buffer_dependencies.insert(dependency);
 			}
+			for (int32_t index : batch.motion_indices) {
+				motion_indices.push_back(index >= 0 ? index + motion_base : -1);
+			}
+			for (auto source : batch.emissive_sources) {
+				source.geometry_index += geometry_base;
+				emissive_sources.push_back(source);
+			}
+			for (const auto &value : batch.geometry_data) {
+				geometry_data.push_back(value);
+			}
+			for (const auto &value : batch.material_data) {
+				material_data.push_back(value);
+			}
+			for (const auto &value : batch.geometry_material_programs) {
+				geometry_material_programs.push_back(value);
+			}
+			for (const auto &value : batch.motion_transforms) {
+				motion_transforms.push_back(value);
+			}
+			for (const auto &value : batch.blass) {
+				blass.push_back(value);
+			}
+			for (const auto &value : batch.blas_transforms) {
+				blas_transforms.push_back(value);
+			}
+			for (const auto &value : batch.instance_flags) {
+				instance_flags.push_back(value);
+			}
+			for (const auto &value : batch.instance_masks) {
+				instance_masks.push_back(value);
+			}
+#ifdef TOOLS_ENABLED
+			tlas_instance_count += batch.tlas_instance_count;
+			tlas_primitive_count += batch.tlas_primitive_count;
 #endif
 		}
-	}
+	};
+	mm_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("RTMultiMeshMerge");
+		(*static_cast<decltype(merge_mm) *>(p_data))(p_index);
+	},
+			&merge_mm, 1, 1, true, SNAME("RTMultiMeshMerge"));
+	pool->wait_for_group_task_completion(mm_job);
 
 	// Phase 3: BLAS / TLAS build.
 #ifdef TOOLS_ENABLED
@@ -3803,7 +4456,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 	}
 #endif
 
-	RD::get_singleton()->compute_list_end();
 
 	RENDER_TIMESTAMP("Microgeometry RT Prepare");
 	ERR_FAIL_COND_V(!_prepare_micro_geometry(state, p_render_data, micro_tasks, micro_rt_tasks, micro_levels), nullptr);
@@ -3873,6 +4525,8 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 
 	LocalVector<RTLightKey> local_keys;
 	LocalVector<RT_LightData> local_lights;
+	LocalVector<RTLightKey> emissive_keys;
+	LocalVector<RT_LightData> emissive_lights;
 	LocalVector<RTLightKey> infinite_keys;
 	LocalVector<RT_LightData> infinite_lights;
 	LocalVector<RTLightKey> environment_keys;
@@ -3881,10 +4535,45 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 	RendererRD::LightStorage *ls = RendererRD::LightStorage::get_singleton();
 	RendererRD::TextureStorage *ts = RendererRD::TextureStorage::get_singleton();
 
+	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+	const bool physical_light_units = owner->is_using_physical_light_units();
+	const RID area_atlas = ts->area_light_atlas_get_texture();
+	const RID projector_atlas = ts->decal_atlas_get_texture_srgb();
+	HashMap<RID, uint32_t> atlas_indices;
+	auto discover_atlases = [&](uint32_t) {
+		if (!p_render_data->rt_lights) {
+			return;
+		}
+		for (uint32_t index = 0; index < p_render_data->rt_lights->size(); index++) {
+			RID instance = (*p_render_data->rt_lights)[index];
+			if (!ls->owns_light_instance(instance)) {
+				continue;
+			}
+			RID base = ls->light_instance_get_base_light(instance);
+			if (base.is_null()) {
+				continue;
+			}
+			const bool area = ls->light_get_type(base) == RSE::LIGHT_AREA;
+			RID texture = area ? ls->light_area_get_texture(base) : ls->light_get_projector(base);
+			RID atlas = area ? area_atlas : projector_atlas;
+			if (texture.is_valid() && atlas.is_valid()) {
+				atlas_indices[atlas] = 0;
+			}
+		}
+	};
+	auto job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("RTLightResourceDiscovery");
+		(*static_cast<decltype(discover_atlases) *>(p_data))(p_index);
+	},
+			&discover_atlases, 1, 1, true, SNAME("RTLightResourceDiscovery"));
+	pool->wait_for_group_task_completion(job);
+	for (auto &entry : atlas_indices) {
+		entry.value = bindless_block->add_texture(entry.key);
+	}
 	auto compute_light_energy = [&](RID p_base, RSE::LightType p_type) {
 		float sign = ls->light_is_negative(p_base) ? -1.0f : 1.0f;
 		float e = sign * ls->light_get_param(p_base, RSE::LIGHT_PARAM_ENERGY);
-		if (owner->is_using_physical_light_units()) {
+		if (physical_light_units) {
 			e *= ls->light_get_param(p_base, RSE::LIGHT_PARAM_INTENSITY);
 			if (p_type == RSE::LIGHT_OMNI) {
 				e *= 1.0f / (Math::PI * 4.0f);
@@ -3899,171 +4588,185 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 		return e;
 	};
 
-	if (p_render_data->rt_lights) {
-		const PagedArray<RID> &lights = *p_render_data->rt_lights;
-		for (uint32_t li = 0; li < uint32_t(lights.size()); li++) {
-			RID light_instance = lights[li];
-			if (!ls->owns_light_instance(light_instance)) {
-				continue;
-			}
-			RID base = ls->light_instance_get_base_light(light_instance);
-			if (!base.is_valid()) {
-				continue;
-			}
-			RSE::LightType type = ls->light_get_type(base);
-			if (type == RSE::LIGHT_DIRECTIONAL && ls->light_directional_get_sky_mode(base) == RSE::LIGHT_DIRECTIONAL_SKY_MODE_SKY_ONLY) {
-				continue;
-			}
-			RT_LightData ld = {};
-			Transform3D xform = ls->light_instance_get_base_transform(light_instance);
-			const uint64_t light_generation = ls->light_get_rt_generation(base);
-			const uint64_t light_id = light_instance.get_id();
-			r_scene_signature = _rt_scene_hash(&light_id, sizeof(light_id), r_scene_signature);
-			r_scene_signature = _rt_scene_hash(&light_generation, sizeof(light_generation), r_scene_signature);
-			r_scene_signature = _rt_scene_hash(&xform, sizeof(xform), r_scene_signature);
-			xform.origin -= p_state->rt_origin;
-			Vector3 direction = -xform.basis.get_column(2).normalized();
-			ld.position[0] = xform.origin.x;
-			ld.position[1] = xform.origin.y;
-			ld.position[2] = xform.origin.z;
-			ld.direction[0] = direction.x;
-			ld.direction[1] = direction.y;
-			ld.direction[2] = direction.z;
-			switch (type) {
-				case RSE::LIGHT_DIRECTIONAL:
-					ld.type = RT_LIGHT_TYPE_DIRECTIONAL;
-					break;
-				case RSE::LIGHT_OMNI:
-					ld.type = RT_LIGHT_TYPE_OMNI;
-					break;
-				case RSE::LIGHT_SPOT:
-					ld.type = RT_LIGHT_TYPE_SPOT;
-					break;
-				case RSE::LIGHT_AREA:
-					ld.type = RT_LIGHT_TYPE_AREA;
-					break;
-			}
-
-			Color linear_col = ls->light_get_color(base).srgb_to_linear();
-			float energy = compute_light_energy(base, type);
-			ld.emission[0] = linear_col.r * energy;
-			ld.emission[1] = linear_col.g * energy;
-			ld.emission[2] = linear_col.b * energy;
-			ld.radius = type == RSE::LIGHT_DIRECTIONAL ? Math::deg_to_rad(ls->light_get_param(base, RSE::LIGHT_PARAM_SIZE) * 0.5f) : ls->light_get_param(base, RSE::LIGHT_PARAM_SIZE);
-			ld.attenuation = ls->light_get_param(base, RSE::LIGHT_PARAM_ATTENUATION);
-			ld.range = type == RSE::LIGHT_DIRECTIONAL ? 0.0f : ls->light_get_param(base, RSE::LIGHT_PARAM_RANGE);
-			ld.specular_amount = ls->light_get_param(base, RSE::LIGHT_PARAM_SPECULAR) * 2.0f;
-			ld.receiver_mask = ls->light_get_cull_mask(base);
-			ld.caster_mask = ls->light_get_shadow_caster_mask(base);
-			if (ls->light_has_shadow(base)) {
-				ld.flags |= RT_LIGHT_FLAG_CASTS_SHADOW;
-			}
-
-			if (type == RSE::LIGHT_SPOT) {
-				ld.inv_spot_attenuation = 1.0f / MAX(0.001f, ls->light_get_param(base, RSE::LIGHT_PARAM_SPOT_ATTENUATION));
-				ld.cos_spot_angle = Math::cos(Math::deg_to_rad(ls->light_get_param(base, RSE::LIGHT_PARAM_SPOT_ANGLE)));
-			}
-
-			if (type == RSE::LIGHT_AREA) {
-				Vector2 area_size = ls->light_area_get_size(base);
-				Vector3 axis_u = xform.basis.xform(Vector3(1.0f, 0.0f, 0.0f)).normalized() * area_size.x;
-				Vector3 axis_v = xform.basis.xform(Vector3(0.0f, 1.0f, 0.0f)).normalized() * area_size.y;
-				ld.axis_u[0] = axis_u.x;
-				ld.axis_u[1] = axis_u.y;
-				ld.axis_u[2] = axis_u.z;
-				ld.axis_v[0] = axis_v.x;
-				ld.axis_v[1] = axis_v.y;
-				ld.axis_v[2] = axis_v.z;
-				float area = axis_u.cross(axis_v).length();
-				ld.inv_area = area > 0.0f ? 1.0f / area : 0.0f;
-				if (ls->light_area_get_normalize_energy(base) && area > 0.0f) {
-					ld.emission[0] /= area;
-					ld.emission[1] /= area;
-					ld.emission[2] /= area;
+	auto prepare_analytic = [&]() {
+		if (p_render_data->rt_lights) {
+			const PagedArray<RID> &lights = *p_render_data->rt_lights;
+			for (uint32_t li = 0; li < uint32_t(lights.size()); li++) {
+				RID light_instance = lights[li];
+				if (!ls->owns_light_instance(light_instance)) {
+					continue;
 				}
-			}
+				RID base = ls->light_instance_get_base_light(light_instance);
+				if (!base.is_valid()) {
+					continue;
+				}
+				RSE::LightType type = ls->light_get_type(base);
+				if (type == RSE::LIGHT_DIRECTIONAL && ls->light_directional_get_sky_mode(base) == RSE::LIGHT_DIRECTIONAL_SKY_MODE_SKY_ONLY) {
+					continue;
+				}
+				RT_LightData ld = {};
+				Transform3D xform = ls->light_instance_get_base_transform(light_instance);
+				const uint64_t light_generation = ls->light_get_rt_generation(base);
+				const uint64_t light_id = light_instance.get_id();
+				r_scene_signature = _rt_scene_hash(&light_id, sizeof(light_id), r_scene_signature);
+				r_scene_signature = _rt_scene_hash(&light_generation, sizeof(light_generation), r_scene_signature);
+				r_scene_signature = _rt_scene_hash(&xform, sizeof(xform), r_scene_signature);
+				xform.origin -= p_state->rt_origin;
+				Vector3 direction = -xform.basis.get_column(2).normalized();
+				ld.position[0] = xform.origin.x;
+				ld.position[1] = xform.origin.y;
+				ld.position[2] = xform.origin.z;
+				ld.direction[0] = direction.x;
+				ld.direction[1] = direction.y;
+				ld.direction[2] = direction.z;
+				switch (type) {
+					case RSE::LIGHT_DIRECTIONAL:
+						ld.type = RT_LIGHT_TYPE_DIRECTIONAL;
+						break;
+					case RSE::LIGHT_OMNI:
+						ld.type = RT_LIGHT_TYPE_OMNI;
+						break;
+					case RSE::LIGHT_SPOT:
+						ld.type = RT_LIGHT_TYPE_SPOT;
+						break;
+					case RSE::LIGHT_AREA:
+						ld.type = RT_LIGHT_TYPE_AREA;
+						break;
+				}
 
-			RID projected_texture = type == RSE::LIGHT_AREA ? ls->light_area_get_texture(base) : ls->light_get_projector(base);
-			const uint64_t texture_generation = ts->texture_get_content_generation(projected_texture);
-			r_scene_signature = _rt_scene_hash(&texture_generation, sizeof(texture_generation), r_scene_signature);
-			if (projected_texture.is_valid()) {
-				Rect2 rect;
-				RID atlas_texture;
+				Color linear_col = ls->light_get_color(base).srgb_to_linear();
+				float energy = compute_light_energy(base, type);
+				ld.emission[0] = linear_col.r * energy;
+				ld.emission[1] = linear_col.g * energy;
+				ld.emission[2] = linear_col.b * energy;
+				ld.radius = type == RSE::LIGHT_DIRECTIONAL ? Math::deg_to_rad(ls->light_get_param(base, RSE::LIGHT_PARAM_SIZE) * 0.5f) : ls->light_get_param(base, RSE::LIGHT_PARAM_SIZE);
+				ld.attenuation = ls->light_get_param(base, RSE::LIGHT_PARAM_ATTENUATION);
+				ld.range = type == RSE::LIGHT_DIRECTIONAL ? 0.0f : ls->light_get_param(base, RSE::LIGHT_PARAM_RANGE);
+				ld.specular_amount = ls->light_get_param(base, RSE::LIGHT_PARAM_SPECULAR) * 2.0f;
+				ld.receiver_mask = ls->light_get_cull_mask(base);
+				ld.caster_mask = ls->light_get_shadow_caster_mask(base);
+				if (ls->light_has_shadow(base)) {
+					ld.flags |= RT_LIGHT_FLAG_CASTS_SHADOW;
+				}
+
+				if (type == RSE::LIGHT_SPOT) {
+					ld.inv_spot_attenuation = 1.0f / MAX(0.001f, ls->light_get_param(base, RSE::LIGHT_PARAM_SPOT_ATTENUATION));
+					ld.cos_spot_angle = Math::cos(Math::deg_to_rad(ls->light_get_param(base, RSE::LIGHT_PARAM_SPOT_ANGLE)));
+				}
+
 				if (type == RSE::LIGHT_AREA) {
-					rect = ts->area_light_atlas_get_texture_rect(projected_texture);
-					atlas_texture = ts->area_light_atlas_get_texture();
-				} else {
-					rect = ts->decal_atlas_get_texture_rect(projected_texture);
-					atlas_texture = ts->decal_atlas_get_texture_srgb();
-					if (type == RSE::LIGHT_SPOT) {
-						rect.position.y += rect.size.y;
-						rect.size.y = -rect.size.y;
-					} else if (type == RSE::LIGHT_OMNI) {
-						rect.size.y *= 0.5f;
+					Vector2 area_size = ls->light_area_get_size(base);
+					Vector3 axis_u = xform.basis.xform(Vector3(1.0f, 0.0f, 0.0f)).normalized() * area_size.x;
+					Vector3 axis_v = xform.basis.xform(Vector3(0.0f, 1.0f, 0.0f)).normalized() * area_size.y;
+					ld.axis_u[0] = axis_u.x;
+					ld.axis_u[1] = axis_u.y;
+					ld.axis_u[2] = axis_u.z;
+					ld.axis_v[0] = axis_v.x;
+					ld.axis_v[1] = axis_v.y;
+					ld.axis_v[2] = axis_v.z;
+					float area = axis_u.cross(axis_v).length();
+					ld.inv_area = area > 0.0f ? 1.0f / area : 0.0f;
+					if (ls->light_area_get_normalize_energy(base) && area > 0.0f) {
+						ld.emission[0] /= area;
+						ld.emission[1] /= area;
+						ld.emission[2] /= area;
 					}
 				}
-				if (atlas_texture.is_valid()) {
-					ld.texture_index = bindless_block->add_texture(atlas_texture);
-					ld.flags |= RT_LIGHT_FLAG_TEXTURED;
-					ld.uv_rect[0] = rect.position.x;
-					ld.uv_rect[1] = rect.position.y;
-					ld.uv_rect[2] = rect.size.x;
-					ld.uv_rect[3] = rect.size.y;
+
+				RID projected_texture = type == RSE::LIGHT_AREA ? ls->light_area_get_texture(base) : ls->light_get_projector(base);
+				const uint64_t texture_generation = ts->texture_get_content_generation(projected_texture);
+				r_scene_signature = _rt_scene_hash(&texture_generation, sizeof(texture_generation), r_scene_signature);
+				if (projected_texture.is_valid()) {
+					Rect2 rect;
+					RID atlas_texture;
+					if (type == RSE::LIGHT_AREA) {
+						rect = ts->area_light_atlas_get_texture_rect(projected_texture);
+						atlas_texture = area_atlas;
+					} else {
+						rect = ts->decal_atlas_get_texture_rect(projected_texture);
+						atlas_texture = projector_atlas;
+						if (type == RSE::LIGHT_SPOT) {
+							rect.position.y += rect.size.y;
+							rect.size.y = -rect.size.y;
+						} else if (type == RSE::LIGHT_OMNI) {
+							rect.size.y *= 0.5f;
+						}
+					}
+					if (atlas_texture.is_valid()) {
+						ld.texture_index = atlas_indices[atlas_texture];
+						ld.flags |= RT_LIGHT_FLAG_TEXTURED;
+						ld.uv_rect[0] = rect.position.x;
+						ld.uv_rect[1] = rect.position.y;
+						ld.uv_rect[2] = rect.size.x;
+						ld.uv_rect[3] = rect.size.y;
+					}
+				}
+				RendererRD::MaterialStorage::store_transform_transposed_3x4(xform.affine_inverse(), ld.transform);
+
+				RTLightKey key;
+				key.instance_id = light_instance.get_id();
+				key.resource_id = base.get_id();
+				key.type = ld.type;
+				if (type == RSE::LIGHT_DIRECTIONAL) {
+					infinite_keys.push_back(key);
+					infinite_lights.push_back(ld);
+				} else {
+					local_keys.push_back(key);
+					local_lights.push_back(ld);
 				}
 			}
-			RendererRD::MaterialStorage::store_transform_transposed_3x4(xform.affine_inverse(), ld.transform);
+		}
+	};
+	auto prepare_emissive = [&]() {
+		for (const RTEmissiveSource &source : emissive_sources) {
+			for (uint32_t primitive = 0; primitive < source.primitive_count; primitive++) {
+				RTLightKey key;
+				key.instance_id = source.instance_id;
+				key.resource_id = source.resource_id;
+				key.surface_generation = source.surface_generation;
+				key.primitive_index = source.key_primitive_offset + primitive;
+				key.type = RT_LIGHT_TYPE_EMISSIVE_TRIANGLE;
 
-			RTLightKey key;
-			key.instance_id = light_instance.get_id();
-			key.resource_id = base.get_id();
-			key.type = ld.type;
-			if (type == RSE::LIGHT_DIRECTIONAL) {
-				infinite_keys.push_back(key);
-				infinite_lights.push_back(ld);
-			} else {
-				local_keys.push_back(key);
-				local_lights.push_back(ld);
+				RT_LightData light = {};
+				light.type = RT_LIGHT_TYPE_EMISSIVE_TRIANGLE;
+				light.flags = RT_LIGHT_FLAG_CASTS_SHADOW;
+				light.specular_amount = 1.0f;
+				light.geometry_index = source.geometry_index;
+				light.primitive_index = primitive;
+				light.receiver_mask = UINT32_MAX;
+				light.caster_mask = UINT32_MAX;
+				light.topology_generation = source.topology_generation;
+				light.texture_index = source.material->data.emission_texture_idx;
+				light.emission[0] = source.material->data.emission_color[0] * source.material->data.emission_strength;
+				light.emission[1] = source.material->data.emission_color[1] * source.material->data.emission_strength;
+				light.emission[2] = source.material->data.emission_color[2] * source.material->data.emission_strength;
+				if ((source.material->data.flags & RT_MAT_FLAG_HAS_EMISSION_TEX) != 0) {
+					light.flags |= RT_LIGHT_FLAG_TEXTURED;
+				}
+				light.uv_rect[0] = source.material->data.uv1_scale[0];
+				light.uv_rect[1] = source.material->data.uv1_scale[1];
+				light.uv_rect[2] = source.material->data.uv1_offset[0];
+				light.uv_rect[3] = source.material->data.uv1_offset[1];
+				Transform3D emitter_to_rt = source.transform;
+				emitter_to_rt.origin -= p_state->rt_origin;
+				RendererRD::MaterialStorage::store_transform_transposed_3x4(emitter_to_rt, light.transform);
+				emissive_keys.push_back(key);
+				emissive_lights.push_back(light);
 			}
 		}
-	}
-
-	for (const RTEmissiveSource &source : emissive_sources) {
-		for (uint32_t primitive = 0; primitive < source.primitive_count; primitive++) {
-			RTLightKey key;
-			key.instance_id = source.instance_id;
-			key.resource_id = source.resource_id;
-			key.surface_generation = source.surface_generation;
-			key.primitive_index = source.key_primitive_offset + primitive;
-			key.type = RT_LIGHT_TYPE_EMISSIVE_TRIANGLE;
-
-			RT_LightData light = {};
-			light.type = RT_LIGHT_TYPE_EMISSIVE_TRIANGLE;
-			light.flags = RT_LIGHT_FLAG_CASTS_SHADOW;
-			light.specular_amount = 1.0f;
-			light.geometry_index = source.geometry_index;
-			light.primitive_index = primitive;
-			light.receiver_mask = UINT32_MAX;
-			light.caster_mask = UINT32_MAX;
-			light.topology_generation = source.topology_generation;
-			light.texture_index = source.material->data.emission_texture_idx;
-			light.emission[0] = source.material->data.emission_color[0] * source.material->data.emission_strength;
-			light.emission[1] = source.material->data.emission_color[1] * source.material->data.emission_strength;
-			light.emission[2] = source.material->data.emission_color[2] * source.material->data.emission_strength;
-			if ((source.material->data.flags & RT_MAT_FLAG_HAS_EMISSION_TEX) != 0) {
-				light.flags |= RT_LIGHT_FLAG_TEXTURED;
-			}
-			light.uv_rect[0] = source.material->data.uv1_scale[0];
-			light.uv_rect[1] = source.material->data.uv1_scale[1];
-			light.uv_rect[2] = source.material->data.uv1_offset[0];
-			light.uv_rect[3] = source.material->data.uv1_offset[1];
-			Transform3D emitter_to_rt = source.transform;
-			emitter_to_rt.origin -= p_state->rt_origin;
-			RendererRD::MaterialStorage::store_transform_transposed_3x4(emitter_to_rt, light.transform);
-			local_keys.push_back(key);
-			local_lights.push_back(light);
+	};
+	auto prepare = [&](uint32_t p_index) {
+		if (p_index == 0) {
+			prepare_analytic();
+		} else {
+			prepare_emissive();
 		}
-	}
-
+	};
+	job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("RTLightPayload");
+		(*static_cast<decltype(prepare) *>(p_data))(p_index);
+	},
+			&prepare, 2, -1, true, SNAME("RTLightPayload"));
 	p_state->environment_texture = RID();
 	if (p_render_data->environment.is_valid()) {
 		RID sky_rid = owner->environment_get_sky(p_render_data->environment);
@@ -4091,21 +4794,33 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 		}
 	}
 
+	pool->wait_for_group_task_completion(job);
 	LocalVector<RTLightKey> current_keys;
 	LocalVector<RT_LightData> current_lights;
-	for (uint32_t i = 0; i < local_keys.size(); i++) {
-		current_keys.push_back(local_keys[i]);
-		current_lights.push_back(local_lights[i]);
-	}
-	for (uint32_t i = 0; i < infinite_keys.size(); i++) {
-		current_keys.push_back(infinite_keys[i]);
-		current_lights.push_back(infinite_lights[i]);
-	}
-	for (uint32_t i = 0; i < environment_keys.size(); i++) {
-		current_keys.push_back(environment_keys[i]);
-		current_lights.push_back(environment_lights[i]);
-	}
-
+	auto merge = [&](uint32_t) {
+		for (uint32_t index = 0; index < emissive_keys.size(); index++) {
+			local_keys.push_back(emissive_keys[index]);
+			local_lights.push_back(emissive_lights[index]);
+		}
+		for (uint32_t i = 0; i < local_keys.size(); i++) {
+			current_keys.push_back(local_keys[i]);
+			current_lights.push_back(local_lights[i]);
+		}
+		for (uint32_t i = 0; i < infinite_keys.size(); i++) {
+			current_keys.push_back(infinite_keys[i]);
+			current_lights.push_back(infinite_lights[i]);
+		}
+		for (uint32_t i = 0; i < environment_keys.size(); i++) {
+			current_keys.push_back(environment_keys[i]);
+			current_lights.push_back(environment_lights[i]);
+		}
+	};
+	job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("RTLightMerge");
+		(*static_cast<decltype(merge) *>(p_data))(p_index);
+	},
+			&merge, 1, 1, true, SNAME("RTLightMerge"));
+	pool->wait_for_group_task_completion(job);
 	ERR_FAIL_COND_MSG(current_lights.size() > 0x7FFFFFFFu, "The RTXDI light registry exceeds the reservoir light-index range.");
 	ERR_FAIL_COND_MSG(uint64_t(current_lights.size()) * sizeof(RT_LightData) > UINT32_MAX, "The RTXDI light registry exceeds RenderingDevice buffer limits.");
 
@@ -4116,53 +4831,55 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 
 	LocalVector<uint32_t> current_to_previous;
 	LocalVector<uint32_t> previous_to_current;
-	current_to_previous.resize(current_keys.size());
-	previous_to_current.resize(p_state->light_history_valid ? previous.keys.size() : 0);
-	for (uint32_t i = 0; i < current_to_previous.size(); i++) {
-		current_to_previous[i] = UINT32_MAX;
-	}
-	for (uint32_t i = 0; i < previous_to_current.size(); i++) {
-		previous_to_current[i] = UINT32_MAX;
-	}
-
-	if (p_state->light_history_valid) {
-		HashMap<RTLightKey, uint32_t> previous_indices;
-		for (uint32_t i = 0; i < previous.keys.size(); i++) {
-			previous_indices.insert(previous.keys[i], i);
+	auto prepare_history = [&](uint32_t) {
+		current_to_previous.resize(current_keys.size());
+		previous_to_current.resize(p_state->light_history_valid ? previous.keys.size() : 0);
+		for (uint32_t i = 0; i < current_to_previous.size(); i++) {
+			current_to_previous[i] = UINT32_MAX;
 		}
-		for (uint32_t i = 0; i < current_keys.size(); i++) {
-			const uint32_t *previous_light = previous_indices.getptr(current_keys[i]);
-			if (previous_light) {
-				current_to_previous[i] = *previous_light;
-				previous_to_current[*previous_light] = i;
+		for (uint32_t i = 0; i < previous_to_current.size(); i++) {
+			previous_to_current[i] = UINT32_MAX;
+		}
+
+		if (p_state->light_history_valid) {
+			HashMap<RTLightKey, uint32_t> previous_indices;
+			for (uint32_t i = 0; i < previous.keys.size(); i++) {
+				previous_indices.insert(previous.keys[i], i);
+			}
+			for (uint32_t i = 0; i < current_keys.size(); i++) {
+				const uint32_t *previous_light = previous_indices.getptr(current_keys[i]);
+				if (previous_light) {
+					current_to_previous[i] = *previous_light;
+					previous_to_current[*previous_light] = i;
+				}
 			}
 		}
-	}
 
-	current.keys = current_keys;
-	current.lights = current_lights;
-	current.parameters.local_first = 0;
-	current.parameters.local_count = local_lights.size();
-	current.parameters.infinite_first = local_lights.size();
-	current.parameters.infinite_count = infinite_lights.size();
-	current.parameters.environment_index = local_lights.size() + infinite_lights.size();
-	current.parameters.environment_present = environment_lights.is_empty() ? 0 : 1;
-	current.parameters.total_count = current_lights.size();
-	current.parameters.previous_count = p_state->light_history_valid ? previous.keys.size() : 0;
-
+		current.keys = current_keys;
+		current.lights = current_lights;
+		current.parameters.local_first = 0;
+		current.parameters.local_count = local_lights.size();
+		current.parameters.infinite_first = local_lights.size();
+		current.parameters.infinite_count = infinite_lights.size();
+		current.parameters.environment_index = local_lights.size() + infinite_lights.size();
+		current.parameters.environment_present = environment_lights.is_empty() ? 0 : 1;
+		current.parameters.total_count = current_lights.size();
+		current.parameters.previous_count = p_state->light_history_valid ? previous.keys.size() : 0;
+	};
+	job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("RTLightHistoryPayload");
+		(*static_cast<decltype(prepare_history) *>(p_data))(p_index);
+	},
+			&prepare_history, 1, 1, true, SNAME("RTLightHistoryPayload"));
+	pool->wait_for_group_task_completion(job);
 	auto update_or_grow = [](RID &p_buffer, uint32_t &p_capacity, const void *p_data, uint32_t p_size, const String &p_name) {
 		uint32_t required_size = MAX(p_size, 4u);
 		if (required_size > p_capacity) {
 			if (p_buffer.is_valid()) {
 				RD::get_singleton()->free_rid(p_buffer);
 			}
-			Vector<uint8_t> initial_data;
-			initial_data.resize(required_size);
-			memset(initial_data.ptrw(), 0xFF, required_size);
-			if (p_size > 0) {
-				memcpy(initial_data.ptrw(), p_data, p_size);
-			}
-			p_buffer = RD::get_singleton()->storage_buffer_create(required_size, initial_data);
+			const uint32_t empty = UINT32_MAX;
+			p_buffer = RD::get_singleton()->storage_buffer_create(required_size, Span<uint8_t>(p_size ? static_cast<const uint8_t *>(p_data) : reinterpret_cast<const uint8_t *>(&empty), required_size));
 			p_capacity = required_size;
 			RD::get_singleton()->set_resource_name(p_buffer, p_name);
 		} else if (p_size > 0) {
@@ -4269,15 +4986,29 @@ bool RenderRaytracing::create_material_pipeline(const RTViewportState *p_state, 
 bool RenderRaytracing::update_material_pipeline(RTViewportState *p_state) {
 	Vector<RID> programs;
 	Vector<uint32_t> indices;
-	HashMap<RID, uint32_t> program_indices;
-	for (RID shader : geometry_material_programs) {
-		ERR_FAIL_COND_V_MSG(shader.is_null(), false, "The RT scene has no valid native material hit program.");
-		if (!program_indices.has(shader)) {
-			program_indices[shader] = programs.size();
-			programs.push_back(shader);
+	bool valid = true;
+	auto prepare = [&](uint32_t) {
+		HashMap<RID, uint32_t> program_indices;
+		for (RID shader : geometry_material_programs) {
+			if (shader.is_null()) {
+				valid = false;
+				return;
+			}
+			if (!program_indices.has(shader)) {
+				program_indices[shader] = programs.size();
+				programs.push_back(shader);
+			}
+			indices.push_back(program_indices[shader]);
 		}
-		indices.push_back(program_indices[shader]);
-	}
+	};
+	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+	WorkerThreadPool::GroupID job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("RTHitProgramIndices");
+		(*static_cast<decltype(prepare) *>(p_data))(p_index);
+	},
+			&prepare, 1, 1, true, SNAME("RTHitProgramIndices"));
+	pool->wait_for_group_task_completion(job);
+	ERR_FAIL_COND_V_MSG(!valid, false, "The RT scene has no valid native material hit program.");
 	RID default_program = owner->scene_shader.default_material_shader_ptr->get_hit_shader();
 	ERR_FAIL_COND_V(default_program.is_null(), false);
 	if (programs.is_empty()) {
@@ -4466,177 +5197,280 @@ void RenderRaytracing::_update_persistent_material(RID p_material, RTMaterialDat
 	persistent_scene_generation++;
 }
 
-void RenderRaytracing::update_persistent_instance(RenderGeometryInstance *p_instance) {
-	RenderForwardClustered::GeometryInstanceForwardClustered *instance = static_cast<RenderForwardClustered::GeometryInstanceForwardClustered *>(p_instance);
-	if (!instance->data) {
+void RenderRaytracing::update_persistent_instances(const LocalVector<RenderGeometryInstance *> &p_instances) {
+	if (p_instances.is_empty()) {
 		return;
 	}
+	using Instance = RenderForwardClustered::GeometryInstanceForwardClustered;
+	struct Resource {
+		RSE::InstanceType type = RSE::INSTANCE_NONE;
+		RTPersistentInstanceData data;
+		Vector<RID> dependencies;
+	};
+	struct Material {
+		uint64_t generation = 0;
+		uint32_t slot = 0;
+		bool custom = false;
+	};
+	struct Input {
+		Instance *instance = nullptr;
+		LocalVector<uint32_t> pass_indices;
+	};
+	struct Changed {
+		LocalVector<uint32_t> instances;
+		LocalVector<uint32_t> surfaces;
+	};
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
 	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
+	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
 	const uint64_t completed = RD::get_singleton()->get_completed_submission_serial();
-	auto allocate = [&](auto &r_slots, LocalVector<uint32_t> &r_free_slots) -> uint64_t {
-		uint32_t index = r_slots.size();
-		for (uint32_t i = 0; i < r_free_slots.size(); i++) {
-			if (r_slots[r_free_slots[i]].retirement <= completed) {
-				index = r_free_slots[i];
-				r_free_slots.remove_at_unordered(i);
-				break;
+	const uint64_t pending = RD::get_singleton()->get_pending_submission_serial();
+	HashMap<RID, Resource> resources;
+	HashMap<RID, Material> materials;
+	LocalVector<Input> inputs;
+	auto discover = [&](uint32_t) {
+		for (auto *geometry : p_instances) {
+			auto *instance = static_cast<Instance *>(geometry);
+			if (!instance->data) {
+				continue;
+			}
+			Input input;
+			input.instance = instance;
+			inputs.push_back(std::move(input));
+			resources[instance->data->base].type = instance->data->base_type;
+			if (instance->persistent_surfaces_dirty) {
+				for (auto *surface = instance->surface_caches; surface; surface = surface->next) {
+					materials[surface->material_rid.is_valid() ? surface->material_rid : owner->scene_shader.default_material];
+				}
 			}
 		}
-		if (index == r_slots.size()) {
-			r_slots.resize(index + 1);
-		}
-		r_slots[index].generation++;
-		r_slots[index].retirement = 0;
-		return (uint64_t(r_slots[index].generation) << 32) | uint64_t(index + 1);
 	};
-	if (instance->persistent_instance == 0) {
-		instance->persistent_instance = allocate(persistent_instances, persistent_instance_free_slots);
-	}
-	const uint32_t instance_index = uint32_t(instance->persistent_instance) - 1;
-	RTPersistentInstanceData data;
-	data.handle = instance->persistent_instance;
-	data.identity = instance->instance_rid.get_id();
-	data.scenario = instance->scenario_rid.get_id();
-	RID mesh;
-	if (instance->data->base_type == RSE::INSTANCE_MESH) {
-		mesh = instance->data->base;
-	} else if (instance->data->base_type == RSE::INSTANCE_MULTIMESH) {
-		mesh = mesh_storage->multimesh_get_mesh(instance->data->base);
-		RID buffer = mesh_storage->multimesh_get_gpu_buffer(instance->data->base);
-		if (buffer.is_valid()) {
-			data.multimesh_address = RD::get_singleton()->buffer_get_device_address(buffer);
+	auto job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("PersistentResourceDiscovery");
+		(*static_cast<decltype(discover) *>(p_data))(p_index);
+	},
+			&discover, 1, 1, true, SNAME("PersistentResourceDiscovery"));
+	pool->wait_for_group_task_completion(job);
+	for (auto &entry : resources) {
+		Resource &resource = entry.value;
+		auto &data = resource.data;
+		RID mesh;
+		if (resource.type == RSE::INSTANCE_MESH) {
+			mesh = entry.key;
+		} else if (resource.type == RSE::INSTANCE_MULTIMESH) {
+			mesh = mesh_storage->multimesh_get_mesh(entry.key);
+			RID buffer = mesh_storage->multimesh_get_gpu_buffer(entry.key);
+			if (buffer.is_valid()) {
+				data.multimesh_address = RD::get_singleton()->buffer_get_device_address(buffer);
+				resource.dependencies.push_back(buffer);
+			}
+			data.multimesh_generation = mesh_storage->multimesh_get_rt_generation(entry.key);
+			data.multimesh_stride = mesh_storage->multimesh_get_stride(entry.key);
+			data.multimesh_current_offset = mesh_storage->multimesh_get_current_instance_offset(entry.key);
+			data.multimesh_previous_offset = mesh_storage->multimesh_get_previous_instance_offset(entry.key);
+			data.multimesh_count = mesh_storage->multimesh_get_instances_to_draw(entry.key);
 		}
-		data.multimesh_generation = mesh_storage->multimesh_get_rt_generation(instance->data->base);
-		data.multimesh_stride = mesh_storage->multimesh_get_stride(instance->data->base);
-		data.multimesh_current_offset = mesh_storage->multimesh_get_current_instance_offset(instance->data->base);
-		data.multimesh_previous_offset = mesh_storage->multimesh_get_previous_instance_offset(instance->data->base);
-		data.multimesh_count = mesh_storage->multimesh_get_instances_to_draw(instance->data->base);
-	}
-	PersistentInstanceSlot &instance_slot = persistent_instances[instance_index];
-	Vector<RID> dependencies;
-	if (instance->data->base_type == RSE::INSTANCE_MULTIMESH) {
-		RID buffer = mesh_storage->multimesh_get_gpu_buffer(instance->data->base);
-		if (buffer.is_valid()) {
-			dependencies.push_back(buffer);
-		}
-	}
-	RID asset = mesh_storage->mesh_get_micro_geometry_asset(mesh);
-	data.asset = asset.get_id();
-	if (asset.is_valid()) {
-		RID descriptor = mesh_storage->get_micro_geometry_storage()->get_asset_buffer(asset);
-		data.asset_address = RD::get_singleton()->buffer_get_device_address(descriptor);
-		mesh_storage->get_micro_geometry_storage()->get_dependencies(asset, dependencies);
-	}
-	if (instance_slot.dependencies != dependencies) {
-		for (RID buffer : instance_slot.dependencies) {
-			_reference_persistent_buffer(buffer, false);
-		}
-		instance_slot.dependencies = dependencies;
-		for (RID buffer : instance_slot.dependencies) {
-			_reference_persistent_buffer(buffer, true);
+		RID asset = mesh_storage->mesh_get_micro_geometry_asset(mesh);
+		data.asset = asset.get_id();
+		if (asset.is_valid()) {
+			RID descriptor = mesh_storage->get_micro_geometry_storage()->get_asset_buffer(asset);
+			data.asset_address = RD::get_singleton()->buffer_get_device_address(descriptor);
+			mesh_storage->get_micro_geometry_storage()->get_dependencies(asset, resource.dependencies);
 		}
 	}
-	const Transform3D &previous = instance->transform_status == RenderForwardClustered::GeometryInstanceForwardClustered::TELEPORTED ? instance->transform : instance->prev_transform;
-	RendererRD::MaterialStorage::store_transform_transposed_3x4(instance->transform, data.transform);
-	RendererRD::MaterialStorage::store_transform_transposed_3x4(previous, data.previous_transform);
-#ifdef REAL_T_IS_DOUBLE
-	for (int axis = 0; axis < 3; axis++) {
-		RendererRD::MaterialStorage::split_double(instance->transform.origin[axis], &data.transform[axis * 4 + 3], &data.origin_low[axis]);
-		RendererRD::MaterialStorage::split_double(previous.origin[axis], &data.previous_transform[axis * 4 + 3], &data.previous_origin_low[axis]);
+	for (auto &entry : materials) {
+		RTMaterialData *material = process_material(entry.key, material_storage->material_get_rt_invalidation_counter(entry.key));
+		entry.value.generation = material_storage->material_get_rt_content_generation(entry.key);
+		entry.value.slot = material->global_buffer_index;
+		entry.value.custom = material->is_custom_shader;
 	}
-#endif
-	for (int axis = 0; axis < 3; axis++) {
-		data.aabb_position[axis] = instance->data->aabb.position[axis];
-		data.aabb_size[axis] = instance->data->aabb.size[axis];
-	}
-	data.flags = instance->base_flags;
-	data.layer_mask = instance->layer_mask;
-	data.instance_uniforms_offset = uint32_t(instance->shader_uniforms_offset);
-	data.visible = instance->scene_visible && instance->scenario_rid.is_valid();
-	data.shadows = instance->scene_shadows;
-	data.deformed = instance->mesh_instance.is_valid() || instance->rt_procedural != nullptr;
-	data.fade_near_begin = instance->fade_near ? instance->fade_near_begin : 0;
-	data.fade_near_end = instance->fade_near ? instance->fade_near_end : 0;
-	data.fade_far_begin = instance->fade_far ? instance->fade_far_begin : 0;
-	data.fade_far_end = instance->fade_far ? instance->fade_far_end : 0;
-	data.force_alpha = instance->force_alpha;
-	data.parent_fade_alpha = instance->parent_fade_alpha;
-	data.lod_bias = instance->lod_bias;
-	data.model_scale = instance->lod_model_scale;
-	data.lightmap = instance->lightmap_instance.get_id();
-	data.lightmap_slice = instance->lightmap_slice_index;
-	data.lightmap_uv_scale[0] = instance->lightmap_uv_scale.position.x;
-	data.lightmap_uv_scale[1] = instance->lightmap_uv_scale.position.y;
-	data.lightmap_uv_scale[2] = instance->lightmap_uv_scale.size.x;
-	data.lightmap_uv_scale[3] = instance->lightmap_uv_scale.size.y;
-	if (instance->lightmap_sh) {
-		memcpy(data.lightmap_sh, instance->lightmap_sh->sh, sizeof(data.lightmap_sh));
-	}
-	if (instance->persistent_surfaces_dirty) {
-		Vector<uint64_t> previous_handles = instance->persistent_surfaces;
-		LocalVector<bool> used;
-		used.resize_initialized(previous_handles.size());
-		Vector<uint64_t> handles;
-		LocalVector<uint32_t> pass_indices;
-		HashMap<uint32_t, uint32_t> passes;
-		for (auto *surface = instance->surface_caches; surface; surface = surface->next) {
-			const uint32_t pass = passes[surface->surface_index]++;
-			uint64_t handle = 0;
-			for (uint32_t i = 0; i < previous_handles.size(); i++) {
-				const RTPersistentSurfaceData &record = persistent_surfaces[uint32_t(previous_handles[i]) - 1].data;
-				if (!used[i] && record.source_surface == surface->surface_index && record.pass_index == pass) {
-					handle = previous_handles[i];
-					used[i] = true;
+	LocalVector<uint32_t> retired_surfaces;
+	auto layout = [&](uint32_t) {
+		auto allocate = [&](auto &r_slots, LocalVector<uint32_t> &r_free_slots) -> uint64_t {
+			uint32_t index = r_slots.size();
+			for (uint32_t i = 0; i < r_free_slots.size(); i++) {
+				if (r_slots[r_free_slots[i]].retirement <= completed) {
+					index = r_free_slots[i];
+					r_free_slots.remove_at_unordered(i);
 					break;
 				}
 			}
-			if (handle == 0) {
-				handle = allocate(persistent_surfaces, persistent_surface_free_slots);
+			if (index == r_slots.size()) {
+				r_slots.resize(index + 1);
 			}
-			handles.push_back(handle);
-			pass_indices.push_back(pass);
-		}
-		for (uint32_t i = 0; i < previous_handles.size(); i++) {
-			if (!used[i]) {
-				release_persistent_instance(0, Vector<uint64_t>({ previous_handles[i] }));
+			r_slots[index].generation++;
+			r_slots[index].retirement = 0;
+			return (uint64_t(r_slots[index].generation) << 32) | uint64_t(index + 1);
+		};
+
+		for (Input &entry : inputs) {
+			Instance *instance = entry.instance;
+			if (instance->persistent_instance == 0) {
+				instance->persistent_instance = allocate(persistent_instances, persistent_instance_free_slots);
+			}
+			PersistentInstanceSlot &slot = persistent_instances[uint32_t(instance->persistent_instance) - 1];
+			const Vector<RID> &dependencies = resources[instance->data->base].dependencies;
+			if (slot.dependencies != dependencies) {
+				for (RID buffer : slot.dependencies) {
+					_reference_persistent_buffer(buffer, false);
+				}
+				slot.dependencies = dependencies;
+				for (RID buffer : slot.dependencies) {
+					_reference_persistent_buffer(buffer, true);
+				}
+			}
+			if (instance->persistent_surfaces_dirty) {
+				Vector<uint64_t> previous_handles = instance->persistent_surfaces;
+				LocalVector<bool> used;
+				used.resize_initialized(previous_handles.size());
+				Vector<uint64_t> handles;
+				LocalVector<uint32_t> &pass_indices = entry.pass_indices;
+				HashMap<uint32_t, uint32_t> passes;
+				for (auto *surface = instance->surface_caches; surface; surface = surface->next) {
+					const uint32_t pass = passes[surface->surface_index]++;
+					uint64_t handle = 0;
+					for (uint32_t i = 0; i < previous_handles.size(); i++) {
+						const RTPersistentSurfaceData &record = persistent_surfaces[uint32_t(previous_handles[i]) - 1].data;
+						if (!used[i] && record.source_surface == surface->surface_index && record.pass_index == pass) {
+							handle = previous_handles[i];
+							used[i] = true;
+							break;
+						}
+					}
+					if (handle == 0) {
+						handle = allocate(persistent_surfaces, persistent_surface_free_slots);
+					}
+					handles.push_back(handle);
+					pass_indices.push_back(pass);
+				}
+				for (uint32_t i = 0; i < previous_handles.size(); i++) {
+					if (!used[i]) {
+						const uint32_t index = uint32_t(previous_handles[i]) - 1;
+						auto &slot = persistent_surfaces[index];
+						slot.data = RTPersistentSurfaceData();
+						slot.retirement = pending;
+						persistent_surface_free_slots.push_back(index);
+						retired_surfaces.push_back(index);
+					}
+				}
+				instance->persistent_surfaces = handles;
 			}
 		}
-		instance->persistent_surfaces = handles;
-		const uint32_t surface_count = handles.size();
-		uint32_t ordinal = 0;
-		for (auto *surface = instance->surface_caches; surface; surface = surface->next, ordinal++) {
-			RTPersistentSurfaceData record;
-			record.handle = instance->persistent_surfaces[ordinal];
-			record.instance = data.handle;
-			record.next_surface = ordinal + 1 < surface_count ? instance->persistent_surfaces[ordinal + 1] : 0;
-			RID material = surface->material_rid.is_valid() ? surface->material_rid : owner->scene_shader.default_material;
-			RTMaterialData *native_material = process_material(material, material_storage->material_get_rt_invalidation_counter(material));
-			record.material = material.get_id();
-			record.material_generation = material_storage->material_get_rt_content_generation(material);
-			record.material_slot = native_material->global_buffer_index;
-			record.source_surface = surface->surface_index;
-			record.pass_index = pass_indices[ordinal];
-			record.flags = surface->flags;
-			record.rt_pass_flags = surface->rt_pass_flags;
-			record.material_flags = surface->rtxdi_material_flags;
-			record.force_finest = native_material->is_custom_shader || (surface->shader && surface->shader->uses_emission);
-			surface->persistent_surface = record.handle;
-			const uint32_t index = uint32_t(record.handle) - 1;
-			if (memcmp(&persistent_surfaces[index].data, &record, sizeof(record)) != 0) {
-				persistent_surfaces[index].data = record;
-				_upload_persistent_record(persistent_surface_buffer, persistent_surface_capacity, sizeof(record), index, &record);
-				persistent_scene_generation++;
+	};
+	job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("PersistentRecordLayout");
+		(*static_cast<decltype(layout) *>(p_data))(p_index);
+	},
+			&layout, 1, 1, true, SNAME("PersistentRecordLayout"));
+	pool->wait_for_group_task_completion(job);
+	LocalVector<Changed> changes;
+	changes.resize((inputs.size() + 255) / 256);
+	const auto &resolved_resources = resources;
+	const auto &resolved_materials = materials;
+	auto prepare = [&](uint32_t p_chunk) {
+		Changed &changed = changes[p_chunk];
+		const auto &materials = resolved_materials;
+		for (uint32_t i = p_chunk * 256; i < MIN((p_chunk + 1) * 256, inputs.size()); i++) {
+			const Input &entry = inputs[i];
+			Instance *instance = entry.instance;
+			const uint32_t instance_index = uint32_t(instance->persistent_instance) - 1;
+			RTPersistentInstanceData data = resolved_resources[instance->data->base].data;
+			data.handle = instance->persistent_instance;
+			data.identity = instance->instance_rid.get_id();
+			data.scenario = instance->scenario_rid.get_id();
+			const Transform3D &previous = instance->transform_status == RenderForwardClustered::GeometryInstanceForwardClustered::TELEPORTED ? instance->transform : instance->prev_transform;
+			RendererRD::MaterialStorage::store_transform_transposed_3x4(instance->transform, data.transform);
+			RendererRD::MaterialStorage::store_transform_transposed_3x4(previous, data.previous_transform);
+#ifdef REAL_T_IS_DOUBLE
+			for (int axis = 0; axis < 3; axis++) {
+				RendererRD::MaterialStorage::split_double(instance->transform.origin[axis], &data.transform[axis * 4 + 3], &data.origin_low[axis]);
+				RendererRD::MaterialStorage::split_double(previous.origin[axis], &data.previous_transform[axis * 4 + 3], &data.previous_origin_low[axis]);
+			}
+#endif
+			for (int axis = 0; axis < 3; axis++) {
+				data.aabb_position[axis] = instance->data->aabb.position[axis];
+				data.aabb_size[axis] = instance->data->aabb.size[axis];
+			}
+			data.flags = instance->base_flags;
+			data.layer_mask = instance->layer_mask;
+			data.instance_uniforms_offset = uint32_t(instance->shader_uniforms_offset);
+			data.visible = instance->scene_visible && instance->scenario_rid.is_valid();
+			data.shadows = instance->scene_shadows;
+			data.deformed = instance->mesh_instance.is_valid() || instance->rt_procedural != nullptr;
+			data.fade_near_begin = instance->fade_near ? instance->fade_near_begin : 0;
+			data.fade_near_end = instance->fade_near ? instance->fade_near_end : 0;
+			data.fade_far_begin = instance->fade_far ? instance->fade_far_begin : 0;
+			data.fade_far_end = instance->fade_far ? instance->fade_far_end : 0;
+			data.force_alpha = instance->force_alpha;
+			data.parent_fade_alpha = instance->parent_fade_alpha;
+			data.lod_bias = instance->lod_bias;
+			data.model_scale = instance->lod_model_scale;
+			data.lightmap = instance->lightmap_instance.get_id();
+			data.lightmap_slice = instance->lightmap_slice_index;
+			data.lightmap_uv_scale[0] = instance->lightmap_uv_scale.position.x;
+			data.lightmap_uv_scale[1] = instance->lightmap_uv_scale.position.y;
+			data.lightmap_uv_scale[2] = instance->lightmap_uv_scale.size.x;
+			data.lightmap_uv_scale[3] = instance->lightmap_uv_scale.size.y;
+			if (instance->lightmap_sh) {
+				memcpy(data.lightmap_sh, instance->lightmap_sh->sh, sizeof(data.lightmap_sh));
+			}
+
+			if (instance->persistent_surfaces_dirty) {
+				const uint32_t surface_count = instance->persistent_surfaces.size();
+				uint32_t ordinal = 0;
+				for (auto *surface = instance->surface_caches; surface; surface = surface->next, ordinal++) {
+					RTPersistentSurfaceData record;
+					record.handle = instance->persistent_surfaces[ordinal];
+					record.instance = data.handle;
+					record.next_surface = ordinal + 1 < surface_count ? instance->persistent_surfaces[ordinal + 1] : 0;
+					RID material = surface->material_rid.is_valid() ? surface->material_rid : owner->scene_shader.default_material;
+					const Material &native_material = materials[material];
+					record.material = material.get_id();
+					record.material_generation = native_material.generation;
+					record.material_slot = native_material.slot;
+					record.source_surface = surface->surface_index;
+					record.pass_index = entry.pass_indices[ordinal];
+					record.flags = surface->flags;
+					record.rt_pass_flags = surface->rt_pass_flags;
+					record.material_flags = surface->rtxdi_material_flags;
+					record.force_finest = native_material.custom || (surface->shader && surface->shader->uses_emission);
+					surface->persistent_surface = record.handle;
+					const uint32_t index = uint32_t(record.handle) - 1;
+					if (memcmp(&persistent_surfaces[index].data, &record, sizeof(record)) != 0) {
+						persistent_surfaces[index].data = record;
+						changed.surfaces.push_back(index);
+					}
+				}
+				instance->persistent_surfaces_dirty = false;
+			}
+
+			data.first_surface = instance->persistent_surfaces.is_empty() ? 0 : instance->persistent_surfaces[0];
+			data.surface_count = instance->persistent_surfaces.size();
+			if (memcmp(&persistent_instances[instance_index].data, &data, sizeof(data)) != 0) {
+				persistent_instances[instance_index].data = data;
+				changed.instances.push_back(instance_index);
 			}
 		}
-		instance->persistent_surfaces_dirty = false;
-	}
-	data.first_surface = instance->persistent_surfaces.is_empty() ? 0 : instance->persistent_surfaces[0];
-	data.surface_count = instance->persistent_surfaces.size();
-	if (memcmp(&persistent_instances[instance_index].data, &data, sizeof(data)) != 0) {
-		persistent_instances[instance_index].data = data;
-		_upload_persistent_record(persistent_instance_buffer, persistent_instance_capacity, sizeof(data), instance_index, &data);
+	};
+	job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("PersistentRecordPayload");
+		(*static_cast<decltype(prepare) *>(p_data))(p_index);
+	},
+			&prepare, changes.size(), -1, true, SNAME("PersistentRecordPayload"));
+	pool->wait_for_group_task_completion(job);
+	for (uint32_t index : retired_surfaces) {
+		_upload_persistent_record(persistent_surface_buffer, persistent_surface_capacity, sizeof(RTPersistentSurfaceData), index, &persistent_surfaces[index].data);
 		persistent_scene_generation++;
+	}
+	for (const Changed &changed : changes) {
+		for (uint32_t index : changed.surfaces) {
+			_upload_persistent_record(persistent_surface_buffer, persistent_surface_capacity, sizeof(RTPersistentSurfaceData), index, &persistent_surfaces[index].data);
+			persistent_scene_generation++;
+		}
+		for (uint32_t index : changed.instances) {
+			_upload_persistent_record(persistent_instance_buffer, persistent_instance_capacity, sizeof(RTPersistentInstanceData), index, &persistent_instances[index].data);
+			persistent_scene_generation++;
+		}
 	}
 }
 

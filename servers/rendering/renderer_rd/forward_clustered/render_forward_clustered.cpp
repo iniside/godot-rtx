@@ -35,6 +35,9 @@
 #include "core/config/project_settings.h"
 #include "core/io/marshalls.h"
 #include "core/object/callable_mp.h"
+#include "core/object/worker_thread_pool.h"
+#include "core/os/os.h"
+#include "core/profiling/profiling.h"
 #include "servers/rendering/renderer_rd/environment/fog.h"
 #include "servers/rendering/renderer_rd/framebuffer_cache_rd.h"
 #include "servers/rendering/renderer_rd/storage_rd/light_storage.h"
@@ -454,119 +457,216 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 	MicroGeometrySelection::Parameters parameters;
 	uint32_t levels = 0;
 	auto *storage = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage();
-	auto append_surface = [&](GeometryInstanceSurfaceDataCache *surface) {
-		if (!_micro_geometry_eligible(surface, p_pass) || pass->surfaces.has(surface->persistent_surface)) {
-			return;
-		}
-		GeometryInstanceForwardClustered *instance = surface->owner;
-		const RTPersistentInstanceData &record = raytracing->persistent_instances[uint32_t(instance->persistent_instance) - 1].data;
-		RID asset = RID::from_uint64(record.asset);
-		Ref<MicroGeometryData> source = storage->get_source(asset);
-		if (source.is_null()) {
-			return;
-		}
-		const MicroGeometryData::Build &metadata = source->get_metadata();
-		const bool shadow = p_pass == PASS_MODE_SHADOW || p_pass == PASS_MODE_SHADOW_DP || p_pass == PASS_MODE_DEPTH;
-		MicroGeometryRasterPass::Bin bin;
-		bin.shader = shadow ? surface->shader_shadow : surface->shader;
-		bin.material = shadow ? surface->material_uniform_set_shadow : surface->material_uniform_set;
-#ifdef DEBUG_ENABLED
-		if (!shadow) {
-			if (get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_LIGHTING) {
-				bin.shader = scene_shader.default_material_shader_ptr;
-				bin.material = scene_shader.default_material_uniform_set;
-			} else if (get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_OVERDRAW) {
-				bin.shader = scene_shader.overdraw_material_shader_ptr;
-				bin.material = scene_shader.overdraw_material_uniform_set;
-			} else if (get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_PSSM_SPLITS) {
-				bin.shader = scene_shader.debug_shadow_splits_material_shader_ptr;
-				bin.material = scene_shader.debug_shadow_splits_material_uniform_set;
+	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+	LocalVector<GeometryInstanceSurfaceDataCache *> surfaces;
+	HashMap<RID, Ref<MicroGeometryData>> sources;
+	struct CommandResource {
+		RID buffer;
+		uint64_t address = 0;
+	};
+	HashMap<RID, CommandResource> commands;
+	HashSet<decltype(GeometryInstanceSurfaceDataCache::material)> material_usage;
+	auto discover = [&](uint32_t) {
+		auto append = [&](GeometryInstanceSurfaceDataCache *p_surface) {
+			if (!_micro_geometry_eligible(p_surface, p_pass) || pass->surfaces.has(p_surface->persistent_surface)) {
+				return;
 			}
-		}
-#endif
-		bin.flags = instance->base_flags;
-		bin.mirror = instance->mirror;
-		bin.double_sided = (surface->flags & GeometryInstanceSurfaceDataCache::FLAG_USES_DOUBLE_SIDED_SHADOWS) != 0;
-		uint32_t bin_index = pass->bins.size();
-		for (uint32_t index = 0; index < pass->bins.size(); index++) {
-			const auto &existing = pass->bins[index];
-			if (existing.shader == bin.shader && existing.material == bin.material && existing.flags == bin.flags && existing.mirror == bin.mirror && existing.double_sided == bin.double_sided) {
-				bin_index = index;
-				break;
+			auto *instance = p_surface->owner;
+			const auto &record = raytracing->persistent_instances[uint32_t(instance->persistent_instance) - 1].data;
+			if (record.multimesh_address && !record.multimesh_count) {
+				return;
 			}
-		}
-		if (bin_index == pass->bins.size()) {
-			pass->bins.push_back(bin);
-		}
-		const uint64_t coarse = metadata.coarse_cluster_count;
-		uint32_t instances = record.multimesh_address != 0 ? record.multimesh_count : 1;
-		if (instances == 0) {
-			return;
-		}
-		MicroGeometrySelection::Task task;
-		task.instance = instance->persistent_instance;
-		task.surface = surface->persistent_surface;
-		task.asset = record.asset;
-		if (instance->base_flags & INSTANCE_DATA_FLAG_MULTIMESH_INDIRECT) {
-			RID commands = RendererRD::MeshStorage::get_singleton()->_multimesh_get_command_buffer_rd_rid(instance->data->base);
-			task.indirect_command = RD::get_singleton()->buffer_get_device_address(commands) + uint64_t(surface->surface_index) * sizeof(uint32_t) * RendererRD::MeshStorage::INDIRECT_MULTIMESH_COMMAND_STRIDE;
-			pass->task_dependencies.push_back(commands);
-		}
-		task.group_count = metadata.groups.size();
-		task.cluster_count = metadata.clusters.size();
-		task.coarse_count = coarse;
-		task.multimesh_count = instances;
-		task.bin = bin_index;
-		task.flags = instance->store_transform_cache ? 0 : 1;
-		if (bin.shader->writes_depth) {
-			task.flags |= 16;
-		}
-		if (p_pass == PASS_MODE_SDF || p_pass == PASS_MODE_SHADOW_DP || p_render_data->scene_data->material_uv2_mode) {
-			task.flags |= 2;
-		}
-		task.gi_offset = UINT32_MAX;
-		if (instance->voxel_gi_instances[0].is_valid()) {
-			uint32_t probes[2] = { 0xffff, 0xffff };
-			for (uint32_t probe = 0; probe < scene_state.voxelgis_used; probe++) {
-				for (uint32_t slot = 0; slot < 2; slot++) {
-					if (scene_state.voxelgi_ids[probe] == instance->voxel_gi_instances[slot]) {
-						probes[slot] = probe;
-					}
+			RID asset = RID::from_uint64(record.asset);
+			if (!sources.has(asset)) {
+				sources.insert(asset, storage->get_source(asset));
+			}
+			if (sources[asset].is_null()) {
+				return;
+			}
+			if (instance->base_flags & INSTANCE_DATA_FLAG_MULTIMESH_INDIRECT) {
+				commands.insert(instance->data->base, CommandResource());
+			}
+			pass->surfaces.insert(p_surface->persistent_surface);
+			surfaces.push_back(p_surface);
+		};
+		if (camera_pass) {
+			for (auto *entry = geometry_surface_compilation_all_list.first(); entry; entry = entry->next()) {
+				append(entry->self());
+			}
+		} else {
+			for (uint32_t index = 0; index < p_render_data->instances->size(); index++) {
+				auto *instance = static_cast<GeometryInstanceForwardClustered *>((*p_render_data->instances)[index]);
+				for (auto *surface = instance->surface_caches; surface; surface = surface->next) {
+					append(surface);
 				}
 			}
-			if (probes[0] == 0xffff) {
-				SWAP(probes[0], probes[1]);
-			}
-			task.gi_offset = probes[0] | (probes[1] << 16);
-			task.flags |= INSTANCE_DATA_FLAG_USE_VOXEL_GI;
-		}
-		levels = MAX(levels, uint32_t(metadata.roots.size()));
-		tasks.push_back(task);
-		const auto &surface_record = raytracing->persistent_surfaces[uint32_t(task.surface) - 1].data;
-		for (uint64_t value : { task.instance, task.surface, task.asset, uint64_t(task.multimesh_count), uint64_t(task.flags), uint64_t(task.bin), uint64_t(task.gi_offset), task.indirect_command, uint64_t(record.visible), uint64_t(record.layer_mask), uint64_t(record.shadows), record.scenario, surface_record.material_generation, uint64_t(surface_record.material_slot), uint64_t(reinterpret_cast<uintptr_t>(bin.shader)), bin.material.get_id(), uint64_t(bin.flags), uint64_t(bin.mirror), uint64_t(bin.double_sided) }) {
-			snapshot_key.push_back(value);
-		}
-		pass->surfaces.insert(surface->persistent_surface);
-		if (surface->material) {
-			surface->material->set_as_used();
 		}
 	};
+	auto job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("MicrogeometryRasterDiscovery");
+		(*static_cast<decltype(discover) *>(p_data))(p_index);
+	},
+			&discover, 1, 1, true, SNAME("MicrogeometryRasterDiscovery"));
+	pool->wait_for_group_task_completion(job);
+	for (auto &command : commands) {
+		command.value.buffer = RendererRD::MeshStorage::get_singleton()->_multimesh_get_command_buffer_rd_rid(command.key);
+		command.value.address = RD::get_singleton()->buffer_get_device_address(command.value.buffer);
+		pass->task_dependencies.push_back(command.value.buffer);
+	}
+	struct Batch {
+		LocalVector<MicroGeometryRasterPass::Bin> bins;
+		Vector<MicroGeometrySelection::Task> tasks;
+		Vector<uint64_t> snapshot_key;
+		uint32_t levels = 0;
+	};
+	LocalVector<Batch> batches;
+	batches.resize((surfaces.size() + 255) / 256);
+	auto prepare = [&](uint32_t p_chunk) {
+		Batch &batch = batches[p_chunk];
+		for (uint32_t index = p_chunk * 256; index < MIN((p_chunk + 1) * 256, surfaces.size()); index++) {
+			GeometryInstanceSurfaceDataCache *surface = surfaces[index];
+			GeometryInstanceForwardClustered *instance = surface->owner;
+			const RTPersistentInstanceData &record = raytracing->persistent_instances[uint32_t(instance->persistent_instance) - 1].data;
+			RID asset = RID::from_uint64(record.asset);
+			Ref<MicroGeometryData> source = sources[asset];
+			if (source.is_null()) {
+				continue;
+			}
+			const MicroGeometryData::Build &metadata = source->get_metadata();
+			const bool shadow = p_pass == PASS_MODE_SHADOW || p_pass == PASS_MODE_SHADOW_DP || p_pass == PASS_MODE_DEPTH;
+			MicroGeometryRasterPass::Bin bin;
+			bin.shader = shadow ? surface->shader_shadow : surface->shader;
+			bin.material = shadow ? surface->material_uniform_set_shadow : surface->material_uniform_set;
+#ifdef DEBUG_ENABLED
+			if (!shadow) {
+				if (get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_LIGHTING) {
+					bin.shader = scene_shader.default_material_shader_ptr;
+					bin.material = scene_shader.default_material_uniform_set;
+				} else if (get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_OVERDRAW) {
+					bin.shader = scene_shader.overdraw_material_shader_ptr;
+					bin.material = scene_shader.overdraw_material_uniform_set;
+				} else if (get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_PSSM_SPLITS) {
+					bin.shader = scene_shader.debug_shadow_splits_material_shader_ptr;
+					bin.material = scene_shader.debug_shadow_splits_material_uniform_set;
+				}
+			}
+#endif
+			bin.flags = instance->base_flags;
+			bin.mirror = instance->mirror;
+			bin.double_sided = (surface->flags & GeometryInstanceSurfaceDataCache::FLAG_USES_DOUBLE_SIDED_SHADOWS) != 0;
+			uint32_t bin_index = batch.bins.size();
+			for (uint32_t index = 0; index < batch.bins.size(); index++) {
+				const auto &existing = batch.bins[index];
+				if (existing.shader == bin.shader && existing.material == bin.material && existing.flags == bin.flags && existing.mirror == bin.mirror && existing.double_sided == bin.double_sided) {
+					bin_index = index;
+					break;
+				}
+			}
+			if (bin_index == batch.bins.size()) {
+				batch.bins.push_back(bin);
+			}
+			const uint64_t coarse = metadata.coarse_cluster_count;
+			uint32_t instances = record.multimesh_address != 0 ? record.multimesh_count : 1;
+			if (instances == 0) {
+				continue;
+			}
+			MicroGeometrySelection::Task task;
+			task.instance = instance->persistent_instance;
+			task.surface = surface->persistent_surface;
+			task.asset = record.asset;
+			if (instance->base_flags & INSTANCE_DATA_FLAG_MULTIMESH_INDIRECT) {
+				task.indirect_command = commands[instance->data->base].address + uint64_t(surface->surface_index) * sizeof(uint32_t) * RendererRD::MeshStorage::INDIRECT_MULTIMESH_COMMAND_STRIDE;
+			}
+			task.group_count = metadata.groups.size();
+			task.cluster_count = metadata.clusters.size();
+			task.coarse_count = coarse;
+			task.multimesh_count = instances;
+			task.bin = bin_index;
+			task.flags = instance->store_transform_cache ? 0 : 1;
+			if (bin.shader->writes_depth) {
+				task.flags |= 16;
+			}
+			if (p_pass == PASS_MODE_SDF || p_pass == PASS_MODE_SHADOW_DP || p_render_data->scene_data->material_uv2_mode) {
+				task.flags |= 2;
+			}
+			task.gi_offset = UINT32_MAX;
+			if (instance->voxel_gi_instances[0].is_valid()) {
+				uint32_t probes[2] = { 0xffff, 0xffff };
+				for (uint32_t probe = 0; probe < scene_state.voxelgis_used; probe++) {
+					for (uint32_t slot = 0; slot < 2; slot++) {
+						if (scene_state.voxelgi_ids[probe] == instance->voxel_gi_instances[slot]) {
+							probes[slot] = probe;
+						}
+					}
+				}
+				if (probes[0] == 0xffff) {
+					SWAP(probes[0], probes[1]);
+				}
+				task.gi_offset = probes[0] | (probes[1] << 16);
+				task.flags |= INSTANCE_DATA_FLAG_USE_VOXEL_GI;
+			}
+			batch.levels = MAX(batch.levels, uint32_t(metadata.roots.size()));
+			batch.tasks.push_back(task);
+			const auto &surface_record = raytracing->persistent_surfaces[uint32_t(task.surface) - 1].data;
+			for (uint64_t value : { task.instance, task.surface, task.asset, uint64_t(task.multimesh_count), uint64_t(task.flags), uint64_t(task.bin), uint64_t(task.gi_offset), task.indirect_command, uint64_t(record.visible), uint64_t(record.layer_mask), uint64_t(record.shadows), record.scenario, surface_record.material_generation, uint64_t(surface_record.material_slot), uint64_t(reinterpret_cast<uintptr_t>(bin.shader)), bin.material.get_id(), uint64_t(bin.flags), uint64_t(bin.mirror), uint64_t(bin.double_sided) }) {
+				batch.snapshot_key.push_back(value);
+			}
+		}
+	};
+	job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("MicrogeometryRasterTasks");
+		(*static_cast<decltype(prepare) *>(p_data))(p_index);
+	},
+			&prepare, batches.size(), -1, true, SNAME("MicrogeometryRasterTasks"));
+	pool->wait_for_group_task_completion(job);
+	auto merge = [&](uint32_t) {
+		for (Batch &batch : batches) {
+			LocalVector<uint32_t> bins;
+			for (const auto &bin : batch.bins) {
+				uint32_t bin_index = pass->bins.size();
+				for (uint32_t index = 0; index < pass->bins.size(); index++) {
+					const auto &existing = pass->bins[index];
+					if (existing.shader == bin.shader && existing.material == bin.material && existing.flags == bin.flags && existing.mirror == bin.mirror && existing.double_sided == bin.double_sided) {
+						bin_index = index;
+						break;
+					}
+				}
+				if (bin_index == pass->bins.size()) {
+					pass->bins.push_back(bin);
+				}
+				bins.push_back(bin_index);
+			}
+			for (uint32_t index = 0; index < uint32_t(batch.tasks.size()); index++) {
+				auto task = batch.tasks[index];
+				task.bin = bins[task.bin];
+				batch.snapshot_key.write[index * 19 + 5] = task.bin;
+				tasks.push_back(task);
+			}
+			snapshot_key.append_array(batch.snapshot_key);
+			levels = MAX(levels, batch.levels);
+		}
+		for (auto *surface : surfaces) {
+			if (surface->material) {
+				material_usage.insert(surface->material);
+			}
+		}
+	};
+	job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("MicrogeometryRasterMerge");
+		(*static_cast<decltype(merge) *>(p_data))(p_index);
+	},
+			&merge, 1, 1, true, SNAME("MicrogeometryRasterMerge"));
+	pool->wait_for_group_task_completion(job);
+	for (auto *material : material_usage) {
+		material->set_as_used();
+	}
 	if (camera_pass) {
 		parameters.flags |= 1;
 		parameters.scenario = p_render_data->scenario.get_id();
-		for (auto *entry = geometry_surface_compilation_all_list.first(); entry; entry = entry->next()) {
-			append_surface(entry->self());
-		}
 		Ref<RenderBufferDataForwardClustered> data = p_render_data->render_buffers->get_custom_data(RB_SCOPE_FORWARD_CLUSTERED);
 		pass->render_buffers = data.ptr();
-	} else {
-		for (uint32_t index = 0; index < p_render_data->instances->size(); index++) {
-			auto *instance = static_cast<GeometryInstanceForwardClustered *>((*p_render_data->instances)[index]);
-			for (auto *surface = instance->surface_caches; surface; surface = surface->next) {
-				append_surface(surface);
-			}
-		}
 	}
+
 	if (pass->render_buffers && pass->render_buffers->camera_micro_geometry && (pass->render_buffers->camera_micro_geometry->freeze_requested != p_render_data->render_buffers->is_micro_geometry_debug_freeze() || tasks.is_empty())) {
 		memdelete(pass->render_buffers->camera_micro_geometry);
 		pass->render_buffers->camera_micro_geometry = nullptr;
@@ -581,37 +681,54 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 		memdelete(pass);
 		return nullptr;
 	}
-	if (p_render_data->scene_data->view_count == 1) {
-		parameters.flags |= 2;
-	}
-	parameters.layer_mask = p_render_data->scene_data->camera_visible_layers;
-	parameters.near_plane = p_render_data->scene_data->cam_projection.get_z_near();
-	parameters.output_height = camera_pass ? p_render_data->render_buffers->get_target_size().y : MAX(1, micro_geometry_pass_size.y);
-	parameters.hzb_width = camera_pass ? p_render_data->render_buffers->get_internal_size().x : MAX(1, micro_geometry_pass_size.x);
-	parameters.hzb_height = camera_pass ? p_render_data->render_buffers->get_internal_size().y : MAX(1, micro_geometry_pass_size.y);
-	const RenderSceneDataRD *scene = p_render_data->scene_data;
-	Projection correction;
-	correction.set_depth_correction(scene->flip_y);
-	correction.add_jitter_offset(scene->taa_jitter);
-	RendererRD::MaterialStorage::store_camera(correction * scene->cam_projection, parameters.projection);
-	correction.set_depth_correction(scene->flip_y);
-	correction.add_jitter_offset(scene->prev_taa_jitter);
-	RendererRD::MaterialStorage::store_camera(correction * scene->prev_cam_projection, parameters.previous_projection);
-	RendererRD::MaterialStorage::store_transform_transposed_3x4(Transform3D(scene->cam_transform.basis.inverse(), Vector3()), parameters.view_rotation);
-	RendererRD::MaterialStorage::store_transform_transposed_3x4(Transform3D(scene->prev_cam_transform.basis.inverse(), Vector3()), parameters.previous_view_rotation);
-	for (int axis = 0; axis < 3; axis++) {
+	Vector<RID> dependencies;
+	bool same_snapshot = false;
+	const uint32_t output_height = camera_pass ? p_render_data->render_buffers->get_target_size().y : MAX(1, micro_geometry_pass_size.y);
+	const Size2i hzb_size = camera_pass ? p_render_data->render_buffers->get_internal_size() : micro_geometry_pass_size.max(Size2i(1, 1));
+	auto prepare_parameters = [&](uint32_t) {
+		if (p_render_data->scene_data->view_count == 1) {
+			parameters.flags |= 2;
+		}
+		parameters.layer_mask = p_render_data->scene_data->camera_visible_layers;
+		parameters.near_plane = p_render_data->scene_data->cam_projection.get_z_near();
+		parameters.output_height = output_height;
+		parameters.hzb_width = hzb_size.x;
+		parameters.hzb_height = hzb_size.y;
+		const RenderSceneDataRD *scene = p_render_data->scene_data;
+		Projection correction;
+		correction.set_depth_correction(scene->flip_y);
+		correction.add_jitter_offset(scene->taa_jitter);
+		RendererRD::MaterialStorage::store_camera(correction * scene->cam_projection, parameters.projection);
+		correction.set_depth_correction(scene->flip_y);
+		correction.add_jitter_offset(scene->prev_taa_jitter);
+		RendererRD::MaterialStorage::store_camera(correction * scene->prev_cam_projection, parameters.previous_projection);
+		RendererRD::MaterialStorage::store_transform_transposed_3x4(Transform3D(scene->cam_transform.basis.inverse(), Vector3()), parameters.view_rotation);
+		RendererRD::MaterialStorage::store_transform_transposed_3x4(Transform3D(scene->prev_cam_transform.basis.inverse(), Vector3()), parameters.previous_view_rotation);
+		for (int axis = 0; axis < 3; axis++) {
 #ifdef REAL_T_IS_DOUBLE
-		RendererRD::MaterialStorage::split_double(scene->cam_transform.origin[axis], &parameters.camera[axis], &parameters.camera_low[axis]);
-		RendererRD::MaterialStorage::split_double(scene->prev_cam_transform.origin[axis], &parameters.previous_camera[axis], &parameters.previous_camera_low[axis]);
+			RendererRD::MaterialStorage::split_double(scene->cam_transform.origin[axis], &parameters.camera[axis], &parameters.camera_low[axis]);
+			RendererRD::MaterialStorage::split_double(scene->prev_cam_transform.origin[axis], &parameters.previous_camera[axis], &parameters.previous_camera_low[axis]);
 #else
-		parameters.camera[axis] = scene->cam_transform.origin[axis];
-		parameters.previous_camera[axis] = scene->prev_cam_transform.origin[axis];
+			parameters.camera[axis] = scene->cam_transform.origin[axis];
+			parameters.previous_camera[axis] = scene->prev_cam_transform.origin[axis];
 #endif
-	}
-	for (uint32_t index = 0; index < scene_state.lightmaps_used; index++) {
-		parameters.lightmaps[index] = scene_state.lightmap_ids[index].get_id();
-		parameters.lightmap_sh |= uint32_t(scene_state.lightmap_has_sh[index]) << index;
-	}
+		}
+		for (uint32_t index = 0; index < scene_state.lightmaps_used; index++) {
+			parameters.lightmaps[index] = scene_state.lightmap_ids[index].get_id();
+			parameters.lightmap_sh |= uint32_t(scene_state.lightmap_has_sh[index]) << index;
+		}
+		raytracing->get_persistent_buffer_dependencies(dependencies);
+		snapshot_key.push_back(parameters.scenario);
+		snapshot_key.push_back(parameters.layer_mask);
+		same_snapshot = pass->render_buffers && pass->render_buffers->camera_micro_geometry && pass->render_buffers->camera_micro_geometry->snapshot_key == snapshot_key;
+	};
+	job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("MicrogeometryRasterParameters");
+		(*static_cast<decltype(prepare_parameters) *>(p_data))(p_index);
+	},
+			&prepare_parameters, 1, 1, true, SNAME("MicrogeometryRasterParameters"));
+	pool->wait_for_group_task_completion(job);
+
 	if (!micro_geometry) {
 		micro_geometry = memnew(MicroGeometrySelection);
 		Vector<uint8_t> indices;
@@ -623,14 +740,10 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 		micro_geometry_index_buffer = RD::get_singleton()->index_buffer_create(384, RD::INDEX_BUFFER_FORMAT_UINT32, indices);
 		micro_geometry_index_array = RD::get_singleton()->index_array_create(micro_geometry_index_buffer, 0, 384);
 	}
-	Vector<RID> dependencies;
 	RENDER_TIMESTAMP("Microgeometry Raster Dependencies");
-	raytracing->get_persistent_buffer_dependencies(dependencies);
-	snapshot_key.push_back(parameters.scenario);
-	snapshot_key.push_back(parameters.layer_mask);
 	if (pass->render_buffers && pass->render_buffers->camera_micro_geometry) {
 		auto *retained = pass->render_buffers->camera_micro_geometry;
-		if (retained->snapshot_key == snapshot_key) {
+		if (same_snapshot) {
 			pass->gpu = retained;
 			pass->owns_gpu = false;
 			parameters.task_count = retained->data.task_count;
@@ -649,14 +762,14 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 	if (pass->gpu && camera_pass) {
 		pass->gpu->freeze_requested = p_render_data->render_buffers->is_micro_geometry_debug_freeze();
 		pass->gpu->snapshot_key = snapshot_key;
-		for (const auto &task : tasks) {
-			RID asset = RID::from_uint64(task.asset);
+		for (const auto &source : sources) {
+			RID asset = source.key;
 			if (pass->gpu->assets.has(asset)) {
 				continue;
 			}
-			storage->acquire(storage->get_source(asset));
+			storage->acquire(source.value);
 			pass->gpu->assets.push_back(asset);
-			for (uint32_t group = 0; pass->gpu->freeze_requested && group < task.group_count; group++) {
+			for (uint32_t group = 0; pass->gpu->freeze_requested && group < uint32_t(source.value->get_metadata().groups.size()); group++) {
 				if (storage->is_group_ready(asset, group)) {
 					storage->pin_group(asset, group);
 					pass->gpu->pins.push_back({ asset, group });
@@ -824,7 +937,7 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 	bool should_request_redraw = false;
 
 	for (uint32_t i = p_from_element; i < p_to_element; i++) {
-		const GeometryInstanceSurfaceDataCache *surf = p_params->elements[i];
+		const GeometryInstanceSurfaceDataCache *surf = p_params->elements[i].surface;
 		const RenderElementInfo &element_info = p_params->element_info[i];
 
 		if (surf->owner->instance_count == 0) {
@@ -1266,43 +1379,44 @@ void RenderForwardClustered::SceneState::grow_instance_buffer(RenderListType p_r
 			instance_buffer[p_render_list].uninit();
 			uint32_t new_size = Math::nearest_power_of_2_templated(MAX(uint64_t(INSTANCE_DATA_BUFFER_MIN_SIZE), p_req_element_count));
 			instance_buffer[p_render_list].set_storage_size(0u, new_size * sizeof(SceneState::InstanceData));
-			curr_gpu_ptr[p_render_list] = nullptr;
 		}
 
-		const bool must_remap = instance_buffer[p_render_list].prepare_for_map(p_append);
-		if (must_remap) {
-			curr_gpu_ptr[p_render_list] = nullptr;
-		}
+		instance_buffer[p_render_list].prepare_for_map(p_append);
 	}
 }
 
-void RenderForwardClustered::_fill_instance_data(RenderListType p_render_list, int *p_render_info, uint32_t p_offset, int32_t p_max_elements, bool p_update_buffer) {
-	RenderList *rl = &render_list[p_render_list];
-	uint32_t element_total = p_max_elements >= 0 ? uint32_t(p_max_elements) : rl->elements.size();
-
-	rl->element_info.resize(p_offset + element_total);
-
-	// If p_offset == 0, grow_instance_buffer resets and increment the buffer.
-	// If this behavior ever changes, _render_shadow_begin may need to change.
-	scene_state.grow_instance_buffer(p_render_list, p_offset + element_total, p_offset != 0u);
-	if (!scene_state.curr_gpu_ptr[p_render_list] && element_total > 0u) {
-		// The old buffer was replaced for another larger one. We must start copying from scratch.
-		element_total += p_offset;
-		p_offset = 0u;
-		scene_state.curr_gpu_ptr[p_render_list] = reinterpret_cast<SceneState::InstanceData *>(scene_state.instance_buffer[p_render_list].map_raw_for_upload(0u));
+void RenderForwardClustered::RenderList::_sort_elements(uint32_t p_from, uint32_t p_count, uint32_t p_mode) {
+	if (p_count < 2) {
+		return;
 	}
+	auto prepare = [&](uint32_t) {
+		if (p_mode == 0) {
+			SortArray<RenderElement, SortByKey> sorter;
+			sorter.sort(elements.ptr() + p_from, p_count);
+		} else if (p_mode == 1) {
+			SortArray<RenderElement, SortByDepth> sorter;
+			sorter.sort(elements.ptr() + p_from, p_count);
+		} else {
+			SortArray<RenderElement, SortByReverseDepthAndPriority> sorter;
+			sorter.sort(elements.ptr() + p_from, p_count);
+		}
+	};
+	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+	WorkerThreadPool::GroupID job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("RasterPassSort");
+		(*static_cast<decltype(prepare) *>(p_data))(p_index);
+	},
+			&prepare, 1, 1, true, SNAME("RasterPassSort"));
+	pool->wait_for_group_task_completion(job);
+}
 
-	if (p_render_info) {
-		p_render_info[RSE::VIEWPORT_RENDER_INFO_OBJECTS_IN_FRAME] += element_total;
-	}
-
-	uint32_t repeats = 0;
-	GeometryInstanceSurfaceDataCache *prev_surface = nullptr;
-	for (uint32_t i = 0; i < element_total; i++) {
-		GeometryInstanceSurfaceDataCache *surface = rl->elements[i + p_offset];
+void RenderForwardClustered::_fill_instance_payload(RenderList *rl, uint32_t p_from, uint32_t p_count) {
+	for (uint32_t i = p_from; i < p_from + p_count; i++) {
+		const RenderElement &element = rl->elements[i];
+		GeometryInstanceSurfaceDataCache *surface = element.surface;
 		GeometryInstanceForwardClustered *inst = surface->owner;
 
-		SceneState::InstanceData instance_data;
+		SceneState::InstanceData instance_data = {};
 
 		if (likely(inst->store_transform_cache)) {
 			RendererRD::MaterialStorage::store_transform_transposed_3x4(inst->transform, instance_data.transform);
@@ -1327,8 +1441,8 @@ void RenderForwardClustered::_fill_instance_data(RenderListType p_render_list, i
 #endif
 		}
 
-		instance_data.flags = inst->flags_cache;
-		instance_data.gi_offset = inst->gi_offset_cache;
+		instance_data.flags = element.flags;
+		instance_data.gi_offset = element.gi_offset;
 		instance_data.layer_mask = inst->layer_mask;
 		instance_data.rtxdi_material_flags = surface->rtxdi_material_flags;
 		if (inst->rt_procedural != nullptr) {
@@ -1353,17 +1467,30 @@ void RenderForwardClustered::_fill_instance_data(RenderListType p_render_list, i
 		instance_data.set_compressed_aabb(surface_aabb);
 		instance_data.set_uv_scale(uv_scale);
 
-		scene_state.curr_gpu_ptr[p_render_list][i + p_offset] = instance_data;
+		rl->instance_data[i] = instance_data;
+	}
+}
+
+void RenderForwardClustered::_fill_instance_runs(RenderList *rl, uint32_t p_from, uint32_t p_count, int *p_render_info) {
+	if (p_render_info) {
+		p_render_info[RSE::VIEWPORT_RENDER_INFO_OBJECTS_IN_FRAME] += p_count;
+	}
+	uint32_t repeats = 0;
+	const RenderElement *prev_element = nullptr;
+	for (uint32_t i = 0; i < p_count; i++) {
+		const RenderElement &element = rl->elements[i + p_from];
+		const auto *inst = element.surface->owner;
+		const SceneState::InstanceData &instance_data = rl->instance_data[i + p_from];
 
 		const bool cant_repeat = instance_data.flags & INSTANCE_DATA_FLAG_MULTIMESH || inst->mesh_instance.is_valid();
 
-		if (prev_surface != nullptr && !cant_repeat && prev_surface->sort.sort_key1 == surface->sort.sort_key1 && prev_surface->sort.sort_key2 == surface->sort.sort_key2 && inst->mirror == prev_surface->owner->mirror && repeats < RenderElementInfo::MAX_REPEATS) {
+		if (prev_element != nullptr && !cant_repeat && prev_element->sort.sort_key1 == element.sort.sort_key1 && prev_element->sort.sort_key2 == element.sort.sort_key2 && inst->mirror == prev_element->surface->owner->mirror && repeats < RenderElementInfo::MAX_REPEATS) {
 			//this element is the same as the previous one, count repeats to draw it using instancing
 			repeats++;
 		} else {
 			if (repeats > 0) {
 				for (uint32_t j = 1; j <= repeats; j++) {
-					rl->element_info[p_offset + i - j].repeat = j;
+					rl->element_info[p_from + i - j].repeat = j;
 				}
 			}
 			repeats = 1;
@@ -1372,24 +1499,55 @@ void RenderForwardClustered::_fill_instance_data(RenderListType p_render_list, i
 			}
 		}
 
-		RenderElementInfo &element_info = rl->element_info[p_offset + i];
+		RenderElementInfo &element_info = rl->element_info[p_from + i];
 
-		element_info.value = uint32_t(surface->sort.sort_key1 & 0xFFF);
+		element_info.value = uint32_t(element.sort.sort_key1 & 0xFFF);
 
 		if (cant_repeat) {
-			prev_surface = nullptr;
+			prev_element = nullptr;
 		} else {
-			prev_surface = surface;
+			prev_element = &element;
 		}
 	}
 
 	if (repeats > 0) {
 		for (uint32_t j = 1; j <= repeats; j++) {
-			rl->element_info[p_offset + element_total - j].repeat = j;
+			rl->element_info[p_from + p_count - j].repeat = j;
 		}
 	}
+}
 
-	if (p_update_buffer && element_total > 0u) {
+void RenderForwardClustered::_fill_instance_data(RenderListType p_render_list, int *p_render_info, uint32_t p_offset, int32_t p_max_elements, bool p_update_buffer) {
+	RenderList *rl = &render_list[p_render_list];
+	uint32_t element_total = p_max_elements >= 0 ? uint32_t(p_max_elements) : rl->elements.size();
+
+	rl->element_info.resize(p_offset + element_total);
+
+	rl->instance_data.resize(p_offset + element_total);
+	auto prepare = [&](uint32_t p_batch) {
+		const uint32_t from = p_batch * 256;
+		_fill_instance_payload(rl, p_offset + from, MIN(256u, element_total - from));
+	};
+	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+	WorkerThreadPool::GroupID payload_job = pool->add_native_group_task([](void *p_data, uint32_t p_batch) {
+		GodotProfileZone("RasterInstancePayload");
+		(*static_cast<decltype(prepare) *>(p_data))(p_batch);
+	},
+			&prepare, (element_total + 255) / 256, -1, true, SNAME("RasterInstancePayload"));
+	pool->wait_for_group_task_completion(payload_job);
+	auto finalize = [&](uint32_t) {
+		_fill_instance_runs(rl, p_offset, element_total, p_render_info);
+	};
+	WorkerThreadPool::GroupID finalize_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("RasterInstanceRuns");
+		(*static_cast<decltype(finalize) *>(p_data))(p_index);
+	},
+			&finalize, 1, 1, true, SNAME("RasterInstanceRuns"));
+	pool->wait_for_group_task_completion(finalize_job);
+	if (p_update_buffer && !rl->instance_data.is_empty()) {
+		scene_state.grow_instance_buffer(p_render_list, rl->instance_data.size(), false);
+		void *destination = scene_state.instance_buffer[p_render_list].map_raw_for_upload(0u);
+		memcpy(destination, rl->instance_data.ptr(), rl->instance_data.size() * sizeof(SceneState::InstanceData));
 		RenderingDevice::get_singleton()->buffer_flush(scene_state.instance_buffer[p_render_list]._get(0u));
 	}
 }
@@ -1399,45 +1557,26 @@ _FORCE_INLINE_ static uint32_t _indices_to_primitives(RSE::PrimitiveType p_primi
 	static const uint32_t subtractor[RSE::PRIMITIVE_MAX] = { 0, 0, 1, 0, 2 };
 	return (p_indices - subtractor[p_primitive]) / divisor[p_primitive];
 }
-void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, const RenderDataRD *p_render_data, PassMode p_pass_mode, bool p_using_sdfgi, bool p_using_opaque_gi, bool p_append, bool p_alpha_only) {
-	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
+void RenderForwardClustered::_prepare_render_list_chunk(uint32_t p_batch, RenderListPreparation *p_preparation) {
+	GodotProfileZone("RasterPassLists");
+	RenderList *rl = p_preparation->list;
+	auto *mesh_storage = RendererRD::MeshStorage::get_singleton();
+	Plane near_plane(-p_preparation->camera_transform.basis.get_column(Vector3::AXIS_Z), p_preparation->camera_transform.origin);
+	near_plane.d += p_preparation->projection.get_z_near();
+	float z_max = p_preparation->projection.get_z_far() - p_preparation->projection.get_z_near();
 
-	if (p_render_list == RENDER_LIST_OPAQUE) {
-		scene_state.used_sss = false;
-		scene_state.used_screen_texture = false;
-		scene_state.used_normal_texture = false;
-		scene_state.used_depth_texture = false;
-		scene_state.used_lightmap = false;
-		scene_state.used_opaque_stencil = false;
+	auto &batch = p_preparation->batches[p_batch];
+	if (p_preparation->profile) {
+		batch.worker = Thread::get_caller_id();
+		batch.begin_usec = OS::get_singleton()->get_ticks_usec();
 	}
 	uint32_t lightmap_captures_used = 0;
-
-	Plane near_plane = Plane(-p_render_data->scene_data->cam_transform.basis.get_column(Vector3::AXIS_Z), p_render_data->scene_data->cam_transform.origin);
-	near_plane.d += p_render_data->scene_data->cam_projection.get_z_near();
-	float z_max = p_render_data->scene_data->cam_projection.get_z_far() - p_render_data->scene_data->cam_projection.get_z_near();
-
-	RenderList *rl = &render_list[p_render_list];
-	_update_dirty_geometry_instances();
-
-	if (!p_append) {
-		rl->clear();
-		if (p_render_list == RENDER_LIST_OPAQUE) {
-			// Opaque fills motion and alpha lists.
-			render_list[RENDER_LIST_MOTION].clear();
-			render_list[RENDER_LIST_ALPHA].clear();
-		}
-	}
-
-	//fill list
-	RENDER_TIMESTAMP("Microgeometry Raster Prepare");
-	rl->last_micro_pass = _prepare_micro_geometry(p_render_data, p_pass_mode);
-	RENDER_TIMESTAMP("Raster Render List Fill");
-	if (rl->last_micro_pass) {
-		rl->micro_passes.push_back(rl->last_micro_pass);
-	}
-
-	for (int i = 0; i < (int)p_render_data->instances->size(); i++) {
-		GeometryInstanceForwardClustered *inst = static_cast<GeometryInstanceForwardClustered *>((*p_render_data->instances)[i]);
+	const uint32_t from = p_batch * 256;
+	const uint32_t to = MIN(from + 256, p_preparation->instances->size());
+	for (uint32_t i = from; i < to; i++) {
+		float depth = 0.0f;
+		uint32_t gi_offset = UINT32_MAX;
+		GeometryInstanceForwardClustered *inst = static_cast<GeometryInstanceForwardClustered *>((*p_preparation->instances)[i]);
 		if (rl->last_micro_pass) {
 			bool legacy_surface = false;
 			for (auto *surface = inst->surface_caches; surface; surface = surface->next) {
@@ -1449,18 +1588,18 @@ void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, con
 		}
 
 		Vector3 center = inst->transform.origin;
-		if (p_render_data->scene_data->cam_orthogonal) {
+		if (p_preparation->orthogonal) {
 			if (inst->use_aabb_center) {
 				center = inst->transformed_aabb.get_support(-near_plane.normal);
 			}
-			inst->depth = near_plane.distance_to(center) - inst->sorting_offset;
+			depth = near_plane.distance_to(center) - inst->sorting_offset;
 		} else {
 			if (inst->use_aabb_center) {
 				center = inst->transformed_aabb.position + (inst->transformed_aabb.size * 0.5);
 			}
-			inst->depth = p_render_data->scene_data->cam_transform.origin.distance_to(center) - inst->sorting_offset;
+			depth = p_preparation->camera_transform.origin.distance_to(center) - inst->sorting_offset;
 		}
-		uint32_t depth_layer = CLAMP(int(inst->depth * 16 / z_max), 0, 15);
+		uint32_t depth_layer = CLAMP(int(depth * 16 / z_max), 0, 15);
 
 		uint32_t flags = inst->base_flags; //fill flags if appropriate
 
@@ -1470,7 +1609,7 @@ void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, con
 		float fade_alpha = 1.0;
 
 		if (inst->fade_near || inst->fade_far) {
-			float fade_dist = inst->transformed_aabb.get_center().distance_to(p_render_data->scene_data->cam_transform.origin);
+			float fade_dist = inst->transformed_aabb.get_center().distance_to(p_preparation->camera_transform.origin);
 			// Use `smoothstep()` to make opacity changes more gradual and less noticeable to the player.
 			if (inst->fade_far && fade_dist > inst->fade_far_begin) {
 				fade_alpha = Math::smoothstep(0.0f, 1.0f, 1.0f - (fade_dist - inst->fade_far_begin) / (inst->fade_far_end - inst->fade_far_begin));
@@ -1483,9 +1622,9 @@ void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, con
 
 		flags = (flags & ~INSTANCE_DATA_FLAGS_FADE_MASK) | (uint32_t(fade_alpha * 255.0) << INSTANCE_DATA_FLAGS_FADE_SHIFT);
 
-		if (p_render_list == RENDER_LIST_OPAQUE) {
+		if (p_preparation->list_type == RENDER_LIST_OPAQUE) {
 			// Detect if object moved since last frame.
-			if (p_pass_mode == PASS_MODE_DEPTH_NORMAL_ROUGHNESS || p_pass_mode == PASS_MODE_DEPTH_NORMAL_ROUGHNESS_VOXEL_GI || p_pass_mode == PASS_MODE_RTXDI_SURFACE) {
+			if (p_preparation->pass_mode == PASS_MODE_DEPTH_NORMAL_ROUGHNESS || p_preparation->pass_mode == PASS_MODE_DEPTH_NORMAL_ROUGHNESS_VOXEL_GI || p_preparation->pass_mode == PASS_MODE_RTXDI_SURFACE) {
 				bool transform_changed = inst->transform_status == GeometryInstanceForwardClustered::TransformStatus::MOVED;
 				bool has_mesh_instance = inst->mesh_instance.is_valid();
 				bool uses_particles = inst->base_flags & INSTANCE_DATA_FLAG_PARTICLES;
@@ -1499,7 +1638,7 @@ void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, con
 			// Alpha-only (RT path): skip instances with no transparent/fading
 			// surfaces; opaque geometry is in the TLAS. Uses rt_pass_flags so
 			// `#if defined(RT)` overrides are honored.
-			if (p_alpha_only && fade_alpha >= FADE_ALPHA_PASS_THRESHOLD) {
+			if (p_preparation->alpha_only && fade_alpha >= FADE_ALPHA_PASS_THRESHOLD) {
 				bool has_alpha_surface = false;
 				const GeometryInstanceSurfaceDataCache *s = inst->surface_caches;
 				while (s) {
@@ -1518,40 +1657,41 @@ void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, con
 			if (inst->lightmap_instance.is_valid()) {
 				// find index of the lightmap_instance of the instance being rendered
 				int32_t lightmap_cull_index = -1;
-				for (uint32_t j = 0; j < scene_state.lightmaps_used; j++) {
-					if (scene_state.lightmap_ids[j] == inst->lightmap_instance) {
+				for (uint32_t j = 0; j < p_preparation->lightmaps_used; j++) {
+					if (p_preparation->lightmap_ids[j] == inst->lightmap_instance) {
 						lightmap_cull_index = j;
 						break;
 					}
 				}
 				if (lightmap_cull_index >= 0) {
-					inst->gi_offset_cache = inst->lightmap_slice_index << 16;
-					inst->gi_offset_cache |= lightmap_cull_index;
+					gi_offset = inst->lightmap_slice_index << 16;
+					gi_offset |= lightmap_cull_index;
 					flags |= INSTANCE_DATA_FLAG_USE_LIGHTMAP;
-					if (scene_state.lightmap_has_sh[lightmap_cull_index]) {
+					if (p_preparation->lightmap_has_sh[lightmap_cull_index]) {
 						flags |= INSTANCE_DATA_FLAG_USE_SH_LIGHTMAP;
 					}
 				} else {
-					inst->gi_offset_cache = 0xFFFFFFFF;
+					gi_offset = 0xFFFFFFFF;
 				}
 
 			} else if (inst->lightmap_sh) {
-				if (lightmap_captures_used < scene_state.max_lightmap_captures) {
+				if (lightmap_captures_used < p_preparation->max_lightmap_captures) {
 					const Color *src_capture = inst->lightmap_sh->sh;
-					LightmapCaptureData &lcd = scene_state.lightmap_captures[lightmap_captures_used];
+					LightmapCaptureData lcd;
 					for (int j = 0; j < 9; j++) {
 						lcd.sh[j * 4 + 0] = src_capture[j].r;
 						lcd.sh[j * 4 + 1] = src_capture[j].g;
 						lcd.sh[j * 4 + 2] = src_capture[j].b;
 						lcd.sh[j * 4 + 3] = src_capture[j].a;
 					}
+					batch.captures.push_back(lcd);
 					flags |= INSTANCE_DATA_FLAG_USE_LIGHTMAP_CAPTURE;
-					inst->gi_offset_cache = lightmap_captures_used;
+					gi_offset = lightmap_captures_used;
 					lightmap_captures_used++;
 				}
 
 			} else {
-				if (p_using_opaque_gi) {
+				if (p_preparation->using_opaque_gi) {
 					flags |= INSTANCE_DATA_FLAG_USE_GI_BUFFERS;
 				}
 
@@ -1559,10 +1699,10 @@ void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, con
 					uint32_t probe0_index = 0xFFFF;
 					uint32_t probe1_index = 0xFFFF;
 
-					for (uint32_t j = 0; j < scene_state.voxelgis_used; j++) {
-						if (scene_state.voxelgi_ids[j] == inst->voxel_gi_instances[0]) {
+					for (uint32_t j = 0; j < p_preparation->voxelgis_used; j++) {
+						if (p_preparation->voxelgi_ids[j] == inst->voxel_gi_instances[0]) {
 							probe0_index = j;
-						} else if (scene_state.voxelgi_ids[j] == inst->voxel_gi_instances[1]) {
+						} else if (p_preparation->voxelgi_ids[j] == inst->voxel_gi_instances[1]) {
 							probe1_index = j;
 						}
 					}
@@ -1572,94 +1712,226 @@ void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, con
 						SWAP(probe0_index, probe1_index);
 					}
 
-					inst->gi_offset_cache = probe0_index | (probe1_index << 16);
+					gi_offset = probe0_index | (probe1_index << 16);
 					flags |= INSTANCE_DATA_FLAG_USE_VOXEL_GI;
 				} else {
-					if (p_using_sdfgi && inst->can_sdfgi) {
+					if (p_preparation->using_sdfgi && inst->can_sdfgi) {
 						flags |= INSTANCE_DATA_FLAG_USE_SDFGI;
 					}
-					inst->gi_offset_cache = 0xFFFFFFFF;
+					gi_offset = 0xFFFFFFFF;
 				}
 			}
 		}
-		inst->flags_cache = flags;
 
 		GeometryInstanceSurfaceDataCache *surf = inst->surface_caches;
 
 		float lod_distance = 0.0;
 
-		if (p_render_data->scene_data->cam_orthogonal) {
+		if (p_preparation->orthogonal) {
 			lod_distance = 1.0;
 		} else {
 			Vector3 aabb_min = inst->transformed_aabb.position;
 			Vector3 aabb_max = inst->transformed_aabb.position + inst->transformed_aabb.size;
-			Vector3 camera_position = p_render_data->scene_data->main_cam_transform.origin;
+			Vector3 camera_position = p_preparation->main_camera_transform.origin;
 			Vector3 surface_distance = Vector3(0.0, 0.0, 0.0).max(aabb_min - camera_position).max(camera_position - aabb_max);
 
 			lod_distance = surface_distance.length();
 		}
 
+		uint32_t surface_ordinal = 0;
 		while (surf) {
+			RenderElement element;
+			element.surface = surf;
+			element.sort = surf->sort;
+			element.ordinal = (uint64_t(i) << 32) | surface_ordinal++;
+			element.depth = depth;
+			element.flags = flags;
+			element.gi_offset = gi_offset;
+			element.sort.depth_layer = depth_layer;
 			if (rl->last_micro_pass && rl->last_micro_pass->surfaces.has(surf->persistent_surface)) {
 				surf = surf->next;
 				continue;
 			}
-			surf->sort.uses_forward_gi = 0;
-			surf->sort.uses_lightmap = 0;
+			element.sort.uses_forward_gi = 0;
+			element.sort.uses_lightmap = 0;
 
 			// LOD
-			if (p_pass_mode != PASS_MODE_RTXDI_SURFACE && p_render_data->scene_data->screen_mesh_lod_threshold > 0.0 && mesh_storage->mesh_surface_has_lod(surf->surface)) {
+			if (p_preparation->pass_mode != PASS_MODE_RTXDI_SURFACE && p_preparation->screen_mesh_lod_threshold > 0.0 && mesh_storage->mesh_surface_has_lod(surf->surface)) {
 				uint32_t indices = 0;
-				surf->sort.lod_index = mesh_storage->mesh_surface_get_lod(surf->surface, inst->lod_model_scale * inst->lod_bias, lod_distance * p_render_data->scene_data->lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, indices);
-				if (p_render_data->render_info && !p_alpha_only) {
+				element.sort.lod_index = mesh_storage->mesh_surface_get_lod(surf->surface, inst->lod_model_scale * inst->lod_bias, lod_distance * p_preparation->lod_distance_multiplier, p_preparation->screen_mesh_lod_threshold, indices);
+				if (p_preparation->render_info && !p_preparation->alpha_only) {
 					indices = _indices_to_primitives(surf->primitive, indices);
-					if (p_render_list == RENDER_LIST_OPAQUE) { //opaque
-						p_render_data->render_info->info[RSE::VIEWPORT_RENDER_INFO_TYPE_VISIBLE][RSE::VIEWPORT_RENDER_INFO_PRIMITIVES_IN_FRAME] += indices;
-					} else if (p_render_list == RENDER_LIST_SECONDARY) { //shadow
-						p_render_data->render_info->info[RSE::VIEWPORT_RENDER_INFO_TYPE_SHADOW][RSE::VIEWPORT_RENDER_INFO_PRIMITIVES_IN_FRAME] += indices;
+					if (p_preparation->list_type == RENDER_LIST_OPAQUE) { //opaque
+						batch.primitives += indices;
+					} else if (p_preparation->list_type == RENDER_LIST_SECONDARY) { //shadow
+						batch.primitives += indices;
 					}
 				}
 			} else {
-				surf->sort.lod_index = 0;
-				if (p_render_data->render_info && !p_alpha_only) {
+				element.sort.lod_index = 0;
+				if (p_preparation->render_info && !p_preparation->alpha_only) {
 					// This does not include primitives rendered via indirect draw calls.
 					uint32_t to_draw = mesh_storage->mesh_surface_get_vertices_drawn_count(surf->surface);
 					to_draw = _indices_to_primitives(surf->primitive, to_draw);
 					to_draw *= inst->instance_count;
-					if (p_render_list == RENDER_LIST_OPAQUE) { //opaque
-						p_render_data->render_info->info[RSE::VIEWPORT_RENDER_INFO_TYPE_VISIBLE][RSE::VIEWPORT_RENDER_INFO_PRIMITIVES_IN_FRAME] += to_draw;
-					} else if (p_render_list == RENDER_LIST_SECONDARY) { //shadow
-						p_render_data->render_info->info[RSE::VIEWPORT_RENDER_INFO_TYPE_SHADOW][RSE::VIEWPORT_RENDER_INFO_PRIMITIVES_IN_FRAME] += to_draw;
+					if (p_preparation->list_type == RENDER_LIST_OPAQUE) { //opaque
+						batch.primitives += to_draw;
+					} else if (p_preparation->list_type == RENDER_LIST_SECONDARY) { //shadow
+						batch.primitives += to_draw;
 					}
 				}
 			}
 
 			// ADD Element
-			if (p_pass_mode == PASS_MODE_RTXDI_SURFACE) {
-				rl->add_element(surf);
-			} else if (p_pass_mode == PASS_MODE_SHADOW || p_pass_mode == PASS_MODE_SHADOW_DP) {
+			if (p_preparation->pass_mode == PASS_MODE_RTXDI_SURFACE) {
+				batch.elements.push_back(element);
+			} else if (p_preparation->pass_mode == PASS_MODE_SHADOW || p_preparation->pass_mode == PASS_MODE_SHADOW_DP) {
 				if (surf->flags & GeometryInstanceSurfaceDataCache::FLAG_PASS_SHADOW) {
-					rl->add_element(surf);
+					batch.elements.push_back(element);
 				}
-			} else if (p_pass_mode == PASS_MODE_DEPTH_MATERIAL) {
+			} else if (p_preparation->pass_mode == PASS_MODE_DEPTH_MATERIAL) {
 				if (surf->flags & (GeometryInstanceSurfaceDataCache::FLAG_PASS_DEPTH | GeometryInstanceSurfaceDataCache::FLAG_PASS_OPAQUE | GeometryInstanceSurfaceDataCache::FLAG_PASS_ALPHA)) {
-					rl->add_element(surf);
+					batch.elements.push_back(element);
 				}
 			} else {
 				if (surf->flags & (GeometryInstanceSurfaceDataCache::FLAG_PASS_DEPTH | GeometryInstanceSurfaceDataCache::FLAG_PASS_OPAQUE)) {
-					rl->add_element(surf);
+					batch.elements.push_back(element);
 				}
 			}
-
-			surf->sort.depth_layer = depth_layer;
 
 			surf = surf->next;
 		}
 	}
 
-	if (p_render_list == RENDER_LIST_OPAQUE && lightmap_captures_used) {
-		RD::get_singleton()->buffer_update(scene_state.lightmap_capture_buffer, 0, sizeof(LightmapCaptureData) * lightmap_captures_used, scene_state.lightmap_captures);
+	if (p_preparation->profile) {
+		batch.end_usec = OS::get_singleton()->get_ticks_usec();
 	}
+}
+
+RenderForwardClustered::RenderListPreparation *RenderForwardClustered::_begin_render_list(RenderListType p_render_list, const RenderDataRD *p_render_data, PassMode p_pass_mode, bool p_using_sdfgi, bool p_using_opaque_gi, bool p_append, bool p_alpha_only, RenderList *p_target) {
+	if (p_render_list == RENDER_LIST_OPAQUE) {
+		scene_state.used_sss = false;
+		scene_state.used_screen_texture = false;
+		scene_state.used_normal_texture = false;
+		scene_state.used_depth_texture = false;
+		scene_state.used_lightmap = false;
+		scene_state.used_opaque_stencil = false;
+	}
+	RenderList *rl = p_target ? p_target : &render_list[p_render_list];
+	if (!p_target) {
+		_update_dirty_geometry_instances();
+	}
+
+	if (!p_append) {
+		rl->clear();
+		if (p_render_list == RENDER_LIST_OPAQUE) {
+			// Opaque fills motion and alpha lists.
+			render_list[RENDER_LIST_MOTION].clear();
+			render_list[RENDER_LIST_ALPHA].clear();
+		}
+	}
+
+	//fill list
+	RENDER_TIMESTAMP("Microgeometry Raster Prepare");
+	rl->last_micro_pass = _prepare_micro_geometry(p_render_data, p_pass_mode);
+	RENDER_TIMESTAMP("Raster Render List Fill");
+	if (rl->last_micro_pass) {
+		rl->micro_passes.push_back(rl->last_micro_pass);
+	}
+
+	RenderListPreparation *preparation = memnew(RenderListPreparation);
+	preparation->list = rl;
+	preparation->instances = p_render_data->instances;
+	preparation->render_info = p_render_data->render_info;
+	preparation->camera_transform = p_render_data->scene_data->cam_transform;
+	preparation->main_camera_transform = p_render_data->scene_data->main_cam_transform;
+	preparation->projection = p_render_data->scene_data->cam_projection;
+	preparation->orthogonal = p_render_data->scene_data->cam_orthogonal;
+	preparation->lod_distance_multiplier = p_render_data->scene_data->lod_distance_multiplier;
+	preparation->screen_mesh_lod_threshold = p_render_data->scene_data->screen_mesh_lod_threshold;
+	preparation->list_type = p_render_list;
+	preparation->pass_mode = p_pass_mode;
+	preparation->using_sdfgi = p_using_sdfgi;
+	preparation->using_opaque_gi = p_using_opaque_gi;
+	preparation->alpha_only = p_alpha_only;
+	preparation->lightmaps_used = scene_state.lightmaps_used;
+	preparation->voxelgis_used = scene_state.voxelgis_used;
+	preparation->max_lightmap_captures = scene_state.max_lightmap_captures;
+	for (uint32_t index = 0; index < preparation->lightmaps_used; index++) {
+		preparation->lightmap_ids[index] = scene_state.lightmap_ids[index];
+		preparation->lightmap_has_sh[index] = scene_state.lightmap_has_sh[index];
+	}
+	for (uint32_t index = 0; index < preparation->voxelgis_used; index++) {
+		preparation->voxelgi_ids[index] = scene_state.voxelgi_ids[index];
+	}
+	preparation->frame = RSG::rasterizer->get_frame_number();
+	preparation->profile = RSG::utilities->capturing_timestamps && preparation->frame % 120 == 0;
+	preparation->pass_index = shadow_preparations.size();
+	preparation->batches.resize((preparation->instances->size() + 255) / 256);
+	if (preparation->profile) {
+		preparation->coordinator = Thread::get_caller_id();
+		preparation->queued_usec = OS::get_singleton()->get_ticks_usec();
+	}
+	preparation->job = WorkerThreadPool::get_singleton()->add_template_group_task(this, &RenderForwardClustered::_prepare_render_list_chunk, preparation, preparation->batches.size(), -1, true, SNAME("RasterPassLists"));
+	return preparation;
+}
+
+void RenderForwardClustered::_finish_render_list(RenderListPreparation *p_preparation) {
+	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+	{
+		GodotProfileZone("RasterPassJoin");
+		pool->wait_for_group_task_completion(p_preparation->job);
+	}
+	if (p_preparation->profile) {
+		const uint64_t joined = OS::get_singleton()->get_ticks_usec();
+		String rows;
+		for (uint32_t index = 0; index < p_preparation->batches.size(); index++) {
+			const auto &batch = p_preparation->batches[index];
+			rows += vformat("RenderPrep stage=RasterPassLists frame=%d pass=%d mode=%d chunk=%d coordinator=%d queued_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d work=%d", p_preparation->frame, p_preparation->pass_index, p_preparation->pass_mode, index, p_preparation->coordinator, p_preparation->queued_usec, joined, batch.worker, batch.begin_usec, batch.end_usec, MIN(256u, p_preparation->instances->size() - index * 256)) + "\n";
+		}
+		print_line(rows);
+	}
+	LocalVector<LightmapCaptureData> captures;
+	int primitives = 0;
+	auto merge = [&](uint32_t) {
+		for (auto &batch : p_preparation->batches) {
+			const uint32_t capture_offset = captures.size();
+			for (const LightmapCaptureData &capture : batch.captures) {
+				if (captures.size() < p_preparation->max_lightmap_captures) {
+					captures.push_back(capture);
+				}
+			}
+			for (RenderElement &element : batch.elements) {
+				if (element.flags & INSTANCE_DATA_FLAG_USE_LIGHTMAP_CAPTURE) {
+					element.gi_offset += capture_offset;
+					if (element.gi_offset >= p_preparation->max_lightmap_captures) {
+						element.flags &= ~INSTANCE_DATA_FLAG_USE_LIGHTMAP_CAPTURE;
+						element.gi_offset = UINT32_MAX;
+					}
+				}
+				p_preparation->list->add_element(element);
+			}
+			primitives += batch.primitives;
+		}
+	};
+	auto job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("RasterPassMerge");
+		(*static_cast<decltype(merge) *>(p_data))(p_index);
+	},
+			&merge, 1, 1, true, SNAME("RasterPassMerge"));
+	pool->wait_for_group_task_completion(job);
+	if (p_preparation->render_info && (p_preparation->list_type == RENDER_LIST_OPAQUE || p_preparation->list_type == RENDER_LIST_SECONDARY)) {
+		const int kind = p_preparation->list_type == RENDER_LIST_OPAQUE ? RSE::VIEWPORT_RENDER_INFO_TYPE_VISIBLE : RSE::VIEWPORT_RENDER_INFO_TYPE_SHADOW;
+		p_preparation->render_info->info[kind][RSE::VIEWPORT_RENDER_INFO_PRIMITIVES_IN_FRAME] += primitives;
+	}
+	if (p_preparation->list_type == RENDER_LIST_OPAQUE && !captures.is_empty()) {
+		RD::get_singleton()->buffer_update(scene_state.lightmap_capture_buffer, 0, sizeof(LightmapCaptureData) * captures.size(), captures.ptr());
+	}
+	memdelete(p_preparation);
+}
+
+void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, const RenderDataRD *p_render_data, PassMode p_pass_mode, bool p_using_sdfgi, bool p_using_opaque_gi, bool p_append, bool p_alpha_only) {
+	_finish_render_list(_begin_render_list(p_render_list, p_render_data, p_pass_mode, p_using_sdfgi, p_using_opaque_gi, p_append, p_alpha_only));
 }
 
 void RenderForwardClustered::_setup_voxelgis(const PagedArray<RID> &p_voxelgis) {
@@ -2002,6 +2274,8 @@ void RenderForwardClustered::_pre_opaque_render(RenderDataRD *p_render_data) {
 			}
 		}
 
+		_discard_shadow_preparations();
+
 		if (p_render_data->directional_shadows.size()) {
 			//open the pass for directional shadows
 			light_storage->update_directional_shadow_atlas();
@@ -2342,31 +2616,44 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	p_render_data->scene_data->opaque_prepass_threshold = 0.0f;
 	p_render_data->scene_data->emissive_exposure_normalization = -1.0f;
 	const uint64_t engine_frame = RSG::rasterizer->get_frame_number();
-	for (const PagedArray<RenderGeometryInstance *> *instances : { p_render_data->instances, p_render_data->rt_instances }) {
-		if (instances) {
-			for (uint32_t i = 0; i < instances->size(); i++) {
-				static_cast<GeometryInstanceForwardClustered *>((*instances)[i])->age_out_motion(engine_frame);
+	auto prepare_camera_motion = [&](uint32_t) {
+		for (const PagedArray<RenderGeometryInstance *> *instances : { p_render_data->instances, p_render_data->rt_instances }) {
+			if (instances) {
+				for (uint32_t i = 0; i < instances->size(); i++) {
+					static_cast<GeometryInstanceForwardClustered *>((*instances)[i])->age_out_motion(engine_frame);
+				}
 			}
 		}
-	}
+	};
+	auto prepare_camera_motion_job = WorkerThreadPool::get_singleton()->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("prepare_camera_motion");
+		(*static_cast<decltype(prepare_camera_motion) *>(p_data))(p_index);
+	},
+			&prepare_camera_motion, 1, 1, true, SNAME("prepare_camera_motion"));
+	WorkerThreadPool::get_singleton()->wait_for_group_task_completion(prepare_camera_motion_job);
 	_setup_environment(p_render_data, false, screen_size, screen_size, p_default_bg_color, false);
 	_update_render_base_uniform_set();
-	_fill_render_list(RENDER_LIST_OPAQUE, p_render_data, PASS_MODE_RTXDI_SURFACE, false, false);
-	render_list[RENDER_LIST_OPAQUE].sort_by_key();
-	int *render_info = p_render_data->render_info ? p_render_data->render_info->info[RSE::VIEWPORT_RENDER_INFO_TYPE_VISIBLE] : nullptr;
-	_fill_instance_data(RENDER_LIST_OPAQUE, render_info);
+	_update_dirty_geometry_instances();
 	bool invalid_deformation = false;
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
-	for (uint32_t i = 0; i < p_render_data->instances->size() && !invalid_deformation; i++) {
-		GeometryInstanceForwardClustered *instance = static_cast<GeometryInstanceForwardClustered *>((*p_render_data->instances)[i]);
-		invalid_deformation = instance->transform_status == GeometryInstanceForwardClustered::TransformStatus::TELEPORTED || instance->rt_procedural != nullptr;
-		for (GeometryInstanceSurfaceDataCache *surface = instance->surface_caches; surface && !invalid_deformation; surface = surface->next) {
-			invalid_deformation = bool(surface->rtxdi_material_flags & GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_DEFORMED);
-			if (!invalid_deformation && instance->mesh_instance.is_valid() && mesh_storage->mesh_instance_get_last_change(instance->mesh_instance, surface->surface_index) == engine_frame) {
-				invalid_deformation = mesh_storage->mesh_instance_get_prev_vertex_buffer(instance->mesh_instance, surface->surface_index) == mesh_storage->mesh_instance_get_vertex_buffer(instance->mesh_instance, surface->surface_index);
+	auto prepare_deformation_validity = [&](uint32_t) {
+		for (uint32_t i = 0; i < p_render_data->instances->size() && !invalid_deformation; i++) {
+			GeometryInstanceForwardClustered *instance = static_cast<GeometryInstanceForwardClustered *>((*p_render_data->instances)[i]);
+			invalid_deformation = instance->transform_status == GeometryInstanceForwardClustered::TransformStatus::TELEPORTED || instance->rt_procedural != nullptr;
+			for (GeometryInstanceSurfaceDataCache *surface = instance->surface_caches; surface && !invalid_deformation; surface = surface->next) {
+				invalid_deformation = bool(surface->rtxdi_material_flags & GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_DEFORMED);
+				if (!invalid_deformation && instance->mesh_instance.is_valid() && mesh_storage->mesh_instance_get_last_change(instance->mesh_instance, surface->surface_index) == engine_frame) {
+					invalid_deformation = mesh_storage->mesh_instance_get_prev_vertex_buffer(instance->mesh_instance, surface->surface_index) == mesh_storage->mesh_instance_get_vertex_buffer(instance->mesh_instance, surface->surface_index);
+				}
 			}
 		}
-	}
+	};
+	auto prepare_deformation_validity_job = WorkerThreadPool::get_singleton()->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("prepare_deformation_validity");
+		(*static_cast<decltype(prepare_deformation_validity) *>(p_data))(p_index);
+	},
+			&prepare_deformation_validity, 1, 1, true, SNAME("prepare_deformation_validity"));
+	WorkerThreadPool::get_singleton()->wait_for_group_task_completion(prepare_deformation_validity_job);
 	color_framebuffer = rb_data->prepare_rtxdi_surface(p_render_data->scene_data, invalid_deformation);
 
 	_update_dirty_geometry_pipelines();
@@ -2460,7 +2747,12 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	}
 
 	const uint64_t camera_history_epoch = raytracing->_get_viewport_state(p_render_data)->camera_history_epoch;
+	RenderListPreparation *camera_preparation = _begin_render_list(RENDER_LIST_OPAQUE, p_render_data, PASS_MODE_RTXDI_SURFACE);
 	RTViewportState *rt_state = raytracing->build_tlas(p_render_data);
+	_finish_render_list(camera_preparation);
+	render_list[RENDER_LIST_OPAQUE].sort_by_key();
+	int *render_info = p_render_data->render_info ? p_render_data->render_info->info[RSE::VIEWPORT_RENDER_INFO_TYPE_VISIBLE] : nullptr;
+	_fill_instance_data(RENDER_LIST_OPAQUE, render_info);
 	ERR_FAIL_NULL(rt_state);
 	const bool geometry_history_changed = camera_history_epoch != rt_state->camera_history_epoch;
 	ERR_FAIL_COND_MSG(!raytracing->_prepare_ddgi(rt_state, rb->is_ddgi_debug_freeze_anchor()), "Camera-following DDGI state preparation failed.");
@@ -2924,14 +3216,28 @@ void RenderForwardClustered::_render_shadow_pass(RID p_light, RID p_shadow_atlas
 	}
 }
 
-void RenderForwardClustered::_render_shadow_begin() {
+void RenderForwardClustered::_discard_shadow_preparations() {
+	if (shadow_preparations.is_empty()) {
+		return;
+	}
+	for (ShadowPreparation &preparation : shadow_preparations) {
+		WorkerThreadPool::get_singleton()->wait_for_group_task_completion(preparation.preparation->job);
+		memdelete(preparation.preparation);
+		memdelete(preparation.list);
+	}
+	shadow_preparations.clear();
 	scene_state.shadow_passes.clear();
+	RD::get_singleton()->draw_command_end_label();
+}
+
+void RenderForwardClustered::_render_shadow_begin() {
+	_discard_shadow_preparations();
+	scene_state.shadow_passes.clear();
+	_update_dirty_geometry_instances();
 	RD::get_singleton()->draw_command_begin_label("Shadow Setup");
 	_update_render_base_uniform_set();
 
 	render_list[RENDER_LIST_SECONDARY].clear();
-	// No need to reset scene_state.curr_gpu_ptr or scene_state.instance_buffer[RENDER_LIST_SECONDARY]
-	// because _fill_instance_data will do that if it detects p_offset == 0u.
 }
 
 void RenderForwardClustered::_render_shadow_append(RID p_framebuffer, const PagedArray<RenderGeometryInstance *> &p_instances, const Projection &p_projection, const Transform3D &p_transform, float p_zfar, float p_bias, float p_normal_bias, bool p_reverse_cull_face, bool p_use_dp, bool p_use_dp_flip, bool p_use_pancake, float p_lod_distance_multiplier, float p_screen_mesh_lod_threshold, const Rect2i &p_rect, bool p_flip_y, bool p_clear_region, bool p_begin, bool p_end, RenderingServerTypes::RenderInfo *p_render_info, const Size2i &p_viewport_size, const Transform3D &p_main_cam_transform) {
@@ -2974,11 +3280,11 @@ void RenderForwardClustered::_render_shadow_append(RID p_framebuffer, const Page
 
 	PassMode pass_mode = p_use_dp ? PASS_MODE_SHADOW_DP : PASS_MODE_SHADOW;
 
-	uint32_t render_list_from = render_list[RENDER_LIST_SECONDARY].elements.size();
-	_fill_render_list(RENDER_LIST_SECONDARY, &render_data, pass_mode, false, false, true);
-	uint32_t render_list_size = render_list[RENDER_LIST_SECONDARY].elements.size() - render_list_from;
-	render_list[RENDER_LIST_SECONDARY].sort_by_key_range(render_list_from, render_list_size);
-	_fill_instance_data(RENDER_LIST_SECONDARY, p_render_info ? p_render_info->info[RSE::VIEWPORT_RENDER_INFO_TYPE_SHADOW] : (int *)nullptr, render_list_from, render_list_size, false);
+	ShadowPreparation preparation;
+	preparation.list = memnew(RenderList);
+	preparation.render_info = p_render_info;
+	preparation.preparation = _begin_render_list(RENDER_LIST_SECONDARY, &render_data, pass_mode, false, false, false, false, preparation.list);
+	shadow_preparations.push_back(preparation);
 
 	{
 		//regular forward for now
@@ -2991,9 +3297,9 @@ void RenderForwardClustered::_render_shadow_append(RID p_framebuffer, const Page
 			flip_cull = !flip_cull;
 		}
 
-		shadow_pass.element_from = render_list_from;
-		shadow_pass.micro_geometry = render_list[RENDER_LIST_SECONDARY].last_micro_pass;
-		shadow_pass.element_count = render_list_size;
+		shadow_pass.element_from = 0;
+		shadow_pass.micro_geometry = preparation.list->last_micro_pass;
+		shadow_pass.element_count = 0;
 		shadow_pass.flip_cull = flip_cull;
 		shadow_pass.pass_mode = pass_mode;
 
@@ -3012,8 +3318,97 @@ void RenderForwardClustered::_render_shadow_append(RID p_framebuffer, const Page
 }
 
 void RenderForwardClustered::_render_shadow_process() {
+	for (ShadowPreparation &preparation : shadow_preparations) {
+		_finish_render_list(preparation.preparation);
+		preparation.preparation = nullptr;
+	}
+	const uint64_t profile_frame = RSG::rasterizer->get_frame_number();
+	const bool profile = RSG::utilities->capturing_timestamps && profile_frame % 120 == 0;
+	const uint64_t coordinator = profile ? Thread::get_caller_id() : 0;
+	auto prepare_payload = [&](uint32_t p_index) {
+		ShadowPreparation &preparation = shadow_preparations[p_index];
+		if (profile) {
+			preparation.worker = Thread::get_caller_id();
+			preparation.begin_usec = OS::get_singleton()->get_ticks_usec();
+		}
+
+		RenderList *list = preparation.list;
+		if (list->elements.size() > 1) {
+			SortArray<RenderElement, RenderList::SortByKey> sorter;
+			sorter.sort(list->elements.ptr(), list->elements.size());
+		}
+		list->element_info.resize(list->elements.size());
+		list->instance_data.resize(list->elements.size());
+		_fill_instance_payload(list, 0, list->elements.size());
+		_fill_instance_runs(list, 0, list->elements.size(), preparation.render_info ? preparation.statistics.info[RSE::VIEWPORT_RENDER_INFO_TYPE_SHADOW] : nullptr);
+		if (profile) {
+			preparation.end_usec = OS::get_singleton()->get_ticks_usec();
+		}
+	};
+	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+	const uint64_t queued = profile ? OS::get_singleton()->get_ticks_usec() : 0;
+	auto job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("ShadowPassPayload");
+		(*static_cast<decltype(prepare_payload) *>(p_data))(p_index);
+	},
+			&prepare_payload, shadow_preparations.size(), -1, true, SNAME("ShadowPassPayload"));
+	pool->wait_for_group_task_completion(job);
+	if (profile) {
+		const uint64_t joined = OS::get_singleton()->get_ticks_usec();
+		String rows;
+		for (uint32_t index = 0; index < shadow_preparations.size(); index++) {
+			const auto &preparation = shadow_preparations[index];
+			rows += vformat("RenderPrep stage=ShadowPassPayload frame=%d pass=%d coordinator=%d queued_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d work=%d", profile_frame, index, coordinator, queued, joined, preparation.worker, preparation.begin_usec, preparation.end_usec, preparation.list->elements.size()) + "\n";
+		}
+		print_line(rows);
+	}
+
+	auto merge = [&](uint32_t) {
+		RenderList &destination = render_list[RENDER_LIST_SECONDARY];
+		for (uint32_t index = 0; index < shadow_preparations.size(); index++) {
+			RenderList &source = *shadow_preparations[index].list;
+			auto &pass = scene_state.shadow_passes[index];
+			pass.element_from = destination.elements.size();
+			pass.element_count = source.elements.size();
+			for (const auto &element : source.elements) {
+				destination.elements.push_back(element);
+			}
+			for (const auto &info : source.element_info) {
+				destination.element_info.push_back(info);
+			}
+			for (const auto &instance : source.instance_data) {
+				destination.instance_data.push_back(instance);
+			}
+			for (auto *micro_pass : source.micro_passes) {
+				destination.micro_passes.push_back(micro_pass);
+			}
+			destination.last_micro_pass = source.last_micro_pass;
+			source.micro_passes.clear();
+			source.last_micro_pass = nullptr;
+		}
+	};
+	job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("ShadowPassMerge");
+		(*static_cast<decltype(merge) *>(p_data))(p_index);
+	},
+			&merge, 1, 1, true, SNAME("ShadowPassMerge"));
+	pool->wait_for_group_task_completion(job);
+	for (ShadowPreparation &preparation : shadow_preparations) {
+		if (preparation.render_info) {
+			for (auto metric : { RSE::VIEWPORT_RENDER_INFO_OBJECTS_IN_FRAME, RSE::VIEWPORT_RENDER_INFO_DRAW_CALLS_IN_FRAME }) {
+				preparation.render_info->info[RSE::VIEWPORT_RENDER_INFO_TYPE_SHADOW][metric] += preparation.statistics.info[RSE::VIEWPORT_RENDER_INFO_TYPE_SHADOW][metric];
+			}
+		}
+		memdelete(preparation.list);
+	}
+	shadow_preparations.clear();
+
 	RenderingDevice *rd = RenderingDevice::get_singleton();
-	if (scene_state.instance_buffer[RENDER_LIST_SECONDARY].get_size(0u) > 0u) {
+	const auto &payload = render_list[RENDER_LIST_SECONDARY].instance_data;
+	if (!payload.is_empty()) {
+		scene_state.grow_instance_buffer(RENDER_LIST_SECONDARY, payload.size(), false);
+		void *destination = scene_state.instance_buffer[RENDER_LIST_SECONDARY].map_raw_for_upload(0u);
+		memcpy(destination, payload.ptr(), payload.size() * sizeof(SceneState::InstanceData));
 		rd->buffer_flush(scene_state.instance_buffer[RENDER_LIST_SECONDARY]._get(0u));
 	}
 
@@ -4850,28 +5245,42 @@ void RenderForwardClustered::_update_dirty_geometry_instances() {
 	}
 
 	const uint64_t frame = RSG::rasterizer->get_frame_number();
-	for (auto *entry = instance_motion_update_list.first(); entry;) {
-		auto *next = entry->next();
-		GeometryInstanceForwardClustered *instance = entry->self();
-		if (instance->last_aged_frame == frame) {
+	LocalVector<RenderGeometryInstance *> dirty_instances;
+	auto collect = [&](uint32_t) {
+		for (auto *entry = instance_motion_update_list.first(); entry;) {
+			auto *next = entry->next();
+			GeometryInstanceForwardClustered *instance = entry->self();
+			if (instance->last_aged_frame == frame) {
+				entry = next;
+				continue;
+			}
+			instance->age_out_motion(frame);
+			instance->_mark_instance_data_dirty();
+			const bool mm_moving = instance->data->base_type == RSE::INSTANCE_MULTIMESH && RendererRD::MeshStorage::get_singleton()->multimesh_get_last_change(instance->data->base) + 1 >= frame;
+			if (instance->transform_status == GeometryInstanceForwardClustered::NONE && !mm_moving) {
+				instance->motion_update_element.remove_from_list();
+			}
 			entry = next;
-			continue;
 		}
-		instance->age_out_motion(frame);
-		instance->_mark_instance_data_dirty();
-		const bool mm_moving = instance->data->base_type == RSE::INSTANCE_MULTIMESH && RendererRD::MeshStorage::get_singleton()->multimesh_get_last_change(instance->data->base) + 1 >= frame;
-		if (instance->transform_status == GeometryInstanceForwardClustered::NONE && !mm_moving) {
-			instance->motion_update_element.remove_from_list();
+
+		while (instance_data_dirty_list.first()) {
+			GeometryInstanceForwardClustered *instance = instance_data_dirty_list.first()->self();
+			instance->instance_data_dirty_element.remove_from_list();
+			dirty_instances.push_back(instance);
 		}
-		entry = next;
+	};
+	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+	if (instance_motion_update_list.first() || instance_data_dirty_list.first()) {
+		auto job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+			GodotProfileZone("GeometryMotionPreparation");
+			(*static_cast<decltype(collect) *>(p_data))(p_index);
+		},
+				&collect, 1, 1, true, SNAME("GeometryMotionPreparation"));
+		pool->wait_for_group_task_completion(job);
 	}
 	RENDER_TIMESTAMP("Geometry Persistent Upload");
-	while (instance_data_dirty_list.first()) {
-		GeometryInstanceForwardClustered *instance = instance_data_dirty_list.first()->self();
-		instance->instance_data_dirty_element.remove_from_list();
-		if (raytracing) {
-			raytracing->update_persistent_instance(instance);
-		}
+	if (raytracing) {
+		raytracing->update_persistent_instances(dirty_instances);
 	}
 	RENDER_TIMESTAMP("Geometry Pipeline Update");
 	_update_dirty_geometry_pipelines();
@@ -5349,6 +5758,7 @@ RenderForwardClustered::RenderForwardClustered() {
 }
 
 RenderForwardClustered::~RenderForwardClustered() {
+	_discard_shadow_preparations();
 	RD::get_singleton()->flush_and_stall();
 	for (auto &list : render_list) {
 		list.clear();

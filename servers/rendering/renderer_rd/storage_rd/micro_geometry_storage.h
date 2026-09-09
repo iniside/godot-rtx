@@ -179,6 +179,7 @@ private:
 		RID primitive_lookup;
 		RID primitive_offset_buffer;
 		Vector<uint32_t> primitive_offsets;
+		Vector<uint8_t> empty_primitive_lookup;
 		Ref<MicroGeometryData> source;
 		bool publication_pending = false;
 		bool groups_dirty = false;
@@ -200,12 +201,32 @@ private:
 		uint32_t page = 0;
 		uint64_t retirement = 0;
 	};
+	struct TriangleInfo {
+		uint32_t cluster_id = 0;
+		uint32_t cluster_flags = 0;
+		uint32_t packed_counts = 0;
+		uint32_t geometry_flags = 0;
+		uint16_t index_stride = 0;
+		uint16_t vertex_stride = 0;
+		uint16_t geometry_stride = 0;
+		uint16_t opacity_stride = 0;
+		uint64_t indices = 0;
+		uint64_t vertices = 0;
+		uint64_t geometry = 0;
+		uint64_t opacity = 0;
+		uint64_t opacity_indices = 0;
+	};
+	static_assert(sizeof(TriangleInfo) == 64);
 	struct ReadTask {
 		Ref<MicroGeometryData> source;
 		RID asset;
 		uint32_t page = 0;
 		WorkerThreadPool::TaskID task = WorkerThreadPool::INVALID_TASK_ID;
 		Vector<uint8_t> decoded;
+		LocalVector<TriangleInfo> triangle_infos;
+		RD::ClusterBuildInput build_input;
+		uint32_t max_vertices_per_cluster = 0;
+		uint32_t max_triangles_per_cluster = 0;
 		Error error = OK;
 	};
 	struct RetiredMetadata {
@@ -248,7 +269,7 @@ private:
 	void _unpublish_page(Asset &r_asset, uint32_t p_page);
 	uint32_t _allocate_slot();
 	void _free_asset_buffers(Asset &r_asset);
-	bool _build_page_clas(Asset &r_asset, uint32_t p_page, const Vector<uint8_t> &p_decoded);
+	bool _build_page_clas(Asset &r_asset, uint32_t p_page, ReadTask &r_task);
 
 public:
 	RID feedback_create(uint32_t p_capacity = 4096);

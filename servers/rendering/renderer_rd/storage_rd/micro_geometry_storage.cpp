@@ -31,6 +31,7 @@
 #include "micro_geometry_storage.h"
 
 #include "core/object/callable_mp.h"
+#include "core/profiling/profiling.h"
 #include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
 #include "servers/rendering/rendering_server_globals.h"
 
@@ -39,15 +40,40 @@ using namespace RendererRD;
 void MicroGeometryStorage::_read_page(void *p_userdata) {
 	ReadTask *task = static_cast<ReadTask *>(p_userdata);
 	task->error = task->source->read_page(task->page, task->decoded);
+	if (task->error != OK) {
+		return;
+	}
+	const auto &metadata = task->source->get_metadata();
+	const auto &page = metadata.pages[task->page];
+	task->build_input.max_acceleration_structure_count = page.cluster_count;
+	task->build_input.flags = RD::ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT;
+	for (uint32_t cluster_id = page.first_cluster; cluster_id < page.first_cluster + page.cluster_count; cluster_id++) {
+		const auto &cluster = metadata.clusters[cluster_id];
+		const auto &surface = metadata.surfaces[cluster.surface];
+		if (cluster.vertex_count > task->max_vertices_per_cluster || cluster.triangle_count > task->max_triangles_per_cluster ||
+				uint64_t(cluster.payload_offset) + uint64_t(cluster.vertex_count) * surface.vertex_stride + uint64_t(cluster.triangle_count) * 7 > uint64_t(task->decoded.size())) {
+			task->error = ERR_INVALID_DATA;
+			return;
+		}
+		TriangleInfo info;
+		info.cluster_id = cluster_id;
+		info.packed_counts = cluster.triangle_count | (cluster.vertex_count << 9) | (1u << 24);
+		info.vertex_stride = surface.vertex_stride;
+		info.vertices = cluster.payload_offset;
+		info.indices = info.vertices + uint64_t(cluster.vertex_count) * surface.vertex_stride;
+		task->triangle_infos.push_back(info);
+		task->build_input.max_cluster_triangle_count = MAX(task->build_input.max_cluster_triangle_count, cluster.triangle_count);
+		task->build_input.max_cluster_vertex_count = MAX(task->build_input.max_cluster_vertex_count, cluster.vertex_count);
+		task->build_input.max_total_triangle_count += cluster.triangle_count;
+		task->build_input.max_total_vertex_count += cluster.vertex_count;
+	}
 }
 
 RID MicroGeometryStorage::_create_buffer(Asset &r_asset, const void *p_data, uint32_t p_size) {
 	if (p_size == 0) {
 		return RID();
 	}
-	Vector<uint8_t> bytes;
-	bytes.resize(p_size);
-	memcpy(bytes.ptrw(), p_data, p_size);
+	Span<uint8_t> bytes(static_cast<const uint8_t *>(p_data), p_size);
 	RID buffer = RD::get_singleton()->storage_buffer_create(p_size, bytes, 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
 	if (buffer.is_valid()) {
 		r_asset.buffers.push_back(buffer);
@@ -72,7 +98,7 @@ void MicroGeometryStorage::_free_asset_buffers(Asset &r_asset) {
 	r_asset.rt_resources.clear();
 }
 
-bool MicroGeometryStorage::_build_page_clas(Asset &r_asset, uint32_t p_page, const Vector<uint8_t> &p_decoded) {
+bool MicroGeometryStorage::_build_page_clas(Asset &r_asset, uint32_t p_page, ReadTask &r_task) {
 	RD *rd = RD::get_singleton();
 	ERR_FAIL_COND_V(!rd->clas_is_supported(), false);
 	if (page_pipeline.is_null()) {
@@ -85,12 +111,6 @@ bool MicroGeometryStorage::_build_page_clas(Asset &r_asset, uint32_t p_page, con
 	ERR_FAIL_COND_V(page_pipeline.is_null(), false);
 	const MicroGeometryData::Build &metadata = r_asset.source->get_metadata();
 	if (r_asset.clas_addresses.is_null()) {
-		uint64_t primitives = 0;
-		for (const MicroGeometryData::Surface &surface : metadata.surfaces) {
-			r_asset.primitive_offsets.push_back(primitives);
-			primitives += surface.source_triangle_count;
-		}
-		ERR_FAIL_COND_V(primitives * 8 > UINT32_MAX, false);
 		auto allocate = [&](uint32_t p_size) {
 			RID buffer = rd->storage_buffer_create(MAX(p_size, 16u), Vector<uint8_t>(), 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT | RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT);
 			if (buffer.is_valid()) {
@@ -101,57 +121,23 @@ bool MicroGeometryStorage::_build_page_clas(Asset &r_asset, uint32_t p_page, con
 			return buffer;
 		};
 		r_asset.clas_addresses = allocate(metadata.clusters.size() * 8);
-		r_asset.primitive_lookup = allocate(primitives * 8);
+		r_asset.primitive_lookup = allocate(r_asset.empty_primitive_lookup.size());
 		r_asset.primitive_offset_buffer = allocate(r_asset.primitive_offsets.size() * 4);
 		ERR_FAIL_COND_V(r_asset.clas_addresses.is_null() || r_asset.primitive_lookup.is_null() || r_asset.primitive_offset_buffer.is_null(), false);
 		rd->buffer_clear(r_asset.clas_addresses, 0, MAX(metadata.clusters.size() * 8, 16));
-		Vector<uint8_t> empty_lookup;
-		empty_lookup.resize(MAX(uint32_t(primitives * 8), 16u));
-		memset(empty_lookup.ptrw(), 0xff, empty_lookup.size());
-		rd->buffer_update(r_asset.primitive_lookup, 0, empty_lookup.size(), empty_lookup.ptr());
+		rd->buffer_update(r_asset.primitive_lookup, 0, r_asset.empty_primitive_lookup.size(), r_asset.empty_primitive_lookup.ptr());
+		r_asset.empty_primitive_lookup.clear();
 		rd->buffer_update(r_asset.primitive_offset_buffer, 0, r_asset.primitive_offsets.size() * 4, r_asset.primitive_offsets.ptr());
 	}
 	ERR_FAIL_COND_V(r_asset.clas_addresses.is_null() || r_asset.primitive_lookup.is_null() || r_asset.primitive_offset_buffer.is_null(), false);
-	struct TriangleInfo {
-		uint32_t cluster_id = 0;
-		uint32_t cluster_flags = 0;
-		uint32_t packed_counts = 0;
-		uint32_t geometry_flags = 0;
-		uint16_t index_stride = 0;
-		uint16_t vertex_stride = 0;
-		uint16_t geometry_stride = 0;
-		uint16_t opacity_stride = 0;
-		uint64_t indices = 0;
-		uint64_t vertices = 0;
-		uint64_t geometry = 0;
-		uint64_t opacity = 0;
-		uint64_t opacity_indices = 0;
-	};
-	static_assert(sizeof(TriangleInfo) == 64);
 	const auto &source_page = metadata.pages[p_page];
 	Page &page = r_asset.pages[p_page];
 	const uint64_t page_address = rd->buffer_get_device_address(pool) + uint64_t(page.gpu.slot) * PAGE_SIZE;
-	LocalVector<TriangleInfo> infos;
-	RD::ClusterBuildInput input;
-	input.max_acceleration_structure_count = source_page.cluster_count;
-	input.flags = RD::ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT;
-	const auto limits = rd->clas_get_limits();
-	for (uint32_t cluster_id = source_page.first_cluster; cluster_id < source_page.first_cluster + source_page.cluster_count; cluster_id++) {
-		const auto &cluster = metadata.clusters[cluster_id];
-		const auto &surface = metadata.surfaces[cluster.surface];
-		ERR_FAIL_COND_V(cluster.vertex_count > limits.max_vertices_per_cluster || cluster.triangle_count > limits.max_triangles_per_cluster, false);
-		ERR_FAIL_COND_V(uint64_t(cluster.payload_offset) + uint64_t(cluster.vertex_count) * surface.vertex_stride + uint64_t(cluster.triangle_count) * 7 > uint64_t(p_decoded.size()), false);
-		TriangleInfo info;
-		info.cluster_id = cluster_id;
-		info.packed_counts = cluster.triangle_count | (cluster.vertex_count << 9) | (1u << 24);
-		info.vertex_stride = surface.vertex_stride;
-		info.vertices = page_address + cluster.payload_offset;
-		info.indices = info.vertices + uint64_t(cluster.vertex_count) * surface.vertex_stride;
-		infos.push_back(info);
-		input.max_cluster_triangle_count = MAX(input.max_cluster_triangle_count, cluster.triangle_count);
-		input.max_cluster_vertex_count = MAX(input.max_cluster_vertex_count, cluster.vertex_count);
-		input.max_total_triangle_count += cluster.triangle_count;
-		input.max_total_vertex_count += cluster.vertex_count;
+	LocalVector<TriangleInfo> &infos = r_task.triangle_infos;
+	RD::ClusterBuildInput &input = r_task.build_input;
+	for (TriangleInfo &info : infos) {
+		info.vertices += page_address;
+		info.indices += page_address;
 	}
 	RD::ClusterBuildSizes sizes;
 	rd->clas_get_build_sizes(input, sizes);
@@ -231,73 +217,99 @@ RID MicroGeometryStorage::acquire(const Ref<MicroGeometryData> &p_source) {
 	asset.source = p_source;
 	asset.gpu.identity = id.get_id();
 	asset.gpu.residency_generation = 1;
-	asset.pages.resize(metadata.pages.size());
-	asset.group_pages.resize(metadata.groups.size());
-	asset.group_pins.resize_initialized(metadata.groups.size());
-	asset.group_states.resize_initialized(metadata.groups.size());
 	LocalVector<GPUPage> pages;
-	pages.resize(metadata.pages.size());
+	LocalVector<GPUCluster> clusters;
+	LocalVector<GPUGroup> groups;
+	LocalVector<GPUSurface> surfaces;
+	LocalVector<GPUNode> nodes;
+	bool payload_valid = true;
+	auto prepare = [&](uint32_t) {
+		asset.pages.resize(metadata.pages.size());
+		asset.group_pages.resize(metadata.groups.size());
+		asset.group_pins.resize_initialized(metadata.groups.size());
+		asset.group_states.resize_initialized(metadata.groups.size());
+		pages.resize(metadata.pages.size());
+		for (const MicroGeometryData::Cluster &source : metadata.clusters) {
+			GPUCluster cluster = {};
+			cluster.surface = source.surface;
+			cluster.group = source.group;
+			cluster.refined_group = source.refined_group;
+			cluster.page = source.page;
+			cluster.payload_offset = source.payload_offset;
+			cluster.vertex_count = source.vertex_count;
+			cluster.triangle_count = source.triangle_count;
+			memcpy(cluster.center, source.bounds.center, sizeof(cluster.center));
+			cluster.radius = source.bounds.radius;
+			cluster.error = source.bounds.error;
+			clusters.push_back(cluster);
+		}
+		for (const MicroGeometryData::Group &source : metadata.groups) {
+			GPUGroup group = {};
+			group.first_cluster = source.first_cluster;
+			group.cluster_count = source.cluster_count;
+			group.depth = source.depth;
+			group.first_parent = source.first_parent;
+			group.parent_count = source.parent_count;
+			memcpy(group.center, source.bounds.center, sizeof(group.center));
+			group.radius = source.bounds.radius;
+			group.error = source.bounds.error;
+			Vector<uint32_t> &group_pages = asset.group_pages[groups.size()];
+			for (uint32_t i = source.first_cluster; i < source.first_cluster + source.cluster_count; i++) {
+				const uint32_t page = metadata.clusters[i].page;
+				if (!group_pages.has(page)) {
+					group_pages.push_back(page);
+				}
+			}
+			groups.push_back(group);
+		}
+		for (const MicroGeometryData::Surface &source : metadata.surfaces) {
+			GPUSurface surface = {};
+			surface.format = source.format;
+			surface.source_surface = source.source_surface;
+			surface.vertex_stride = source.vertex_stride;
+			memcpy(surface.attribute_offsets, source.attribute_offsets, sizeof(surface.attribute_offsets));
+			surface.source_vertex_count = source.source_vertex_count;
+			surface.source_triangle_count = source.source_triangle_count;
+			surfaces.push_back(surface);
+		}
+		for (const MicroGeometryData::Node &source : metadata.nodes) {
+			GPUNode node = {};
+			node.group = source.group;
+			node.first_child = source.first_child;
+			node.child_count = source.child_count;
+			memcpy(node.center, source.bounds.center, sizeof(node.center));
+			node.radius = source.bounds.radius;
+			node.error = source.bounds.error;
+			nodes.push_back(node);
+		}
+
+		uint64_t primitives = 0;
+		for (const auto &surface : metadata.surfaces) {
+			asset.primitive_offsets.push_back(primitives);
+			primitives += surface.source_triangle_count;
+		}
+		if (primitives * 8 > UINT32_MAX) {
+			payload_valid = false;
+			return;
+		}
+		asset.empty_primitive_lookup.resize(MAX(uint32_t(primitives * 8), 16u));
+		memset(asset.empty_primitive_lookup.ptrw(), 0xff, asset.empty_primitive_lookup.size());
+	};
+	WorkerThreadPool *workers = WorkerThreadPool::get_singleton();
+	auto job = workers->add_native_group_task([](void *p_data, uint32_t p_index) {
+		GodotProfileZone("MicrogeometryAssetPayload");
+		(*static_cast<decltype(prepare) *>(p_data))(p_index);
+	},
+			&prepare, 1, 1, true, SNAME("MicrogeometryAssetPayload"));
+	workers->wait_for_group_task_completion(job);
+	if (!payload_valid) {
+		assets.free(id);
+		return RID();
+	}
 	asset.page_buffer = _create_buffer(asset, pages.ptr(), pages.size() * sizeof(GPUPage));
 	asset.group_buffer = _create_buffer(asset, asset.group_states.ptr(), asset.group_states.size() * sizeof(uint32_t));
 	asset.gpu.pages = RD::get_singleton()->buffer_get_device_address(asset.page_buffer);
 	asset.gpu.group_states = RD::get_singleton()->buffer_get_device_address(asset.group_buffer);
-	LocalVector<GPUCluster> clusters;
-	for (const MicroGeometryData::Cluster &source : metadata.clusters) {
-		GPUCluster cluster = {};
-		cluster.surface = source.surface;
-		cluster.group = source.group;
-		cluster.refined_group = source.refined_group;
-		cluster.page = source.page;
-		cluster.payload_offset = source.payload_offset;
-		cluster.vertex_count = source.vertex_count;
-		cluster.triangle_count = source.triangle_count;
-		memcpy(cluster.center, source.bounds.center, sizeof(cluster.center));
-		cluster.radius = source.bounds.radius;
-		cluster.error = source.bounds.error;
-		clusters.push_back(cluster);
-	}
-	LocalVector<GPUGroup> groups;
-	for (const MicroGeometryData::Group &source : metadata.groups) {
-		GPUGroup group = {};
-		group.first_cluster = source.first_cluster;
-		group.cluster_count = source.cluster_count;
-		group.depth = source.depth;
-		group.first_parent = source.first_parent;
-		group.parent_count = source.parent_count;
-		memcpy(group.center, source.bounds.center, sizeof(group.center));
-		group.radius = source.bounds.radius;
-		group.error = source.bounds.error;
-		Vector<uint32_t> &group_pages = asset.group_pages[groups.size()];
-		for (uint32_t i = source.first_cluster; i < source.first_cluster + source.cluster_count; i++) {
-			const uint32_t page = metadata.clusters[i].page;
-			if (!group_pages.has(page)) {
-				group_pages.push_back(page);
-			}
-		}
-		groups.push_back(group);
-	}
-	LocalVector<GPUSurface> surfaces;
-	for (const MicroGeometryData::Surface &source : metadata.surfaces) {
-		GPUSurface surface = {};
-		surface.format = source.format;
-		surface.source_surface = source.source_surface;
-		surface.vertex_stride = source.vertex_stride;
-		memcpy(surface.attribute_offsets, source.attribute_offsets, sizeof(surface.attribute_offsets));
-		surface.source_vertex_count = source.source_vertex_count;
-		surface.source_triangle_count = source.source_triangle_count;
-		surfaces.push_back(surface);
-	}
-	LocalVector<GPUNode> nodes;
-	for (const MicroGeometryData::Node &source : metadata.nodes) {
-		GPUNode node = {};
-		node.group = source.group;
-		node.first_child = source.first_child;
-		node.child_count = source.child_count;
-		memcpy(node.center, source.bounds.center, sizeof(node.center));
-		node.radius = source.bounds.radius;
-		node.error = source.bounds.error;
-		nodes.push_back(node);
-	}
 	auto create_address = [&](const void *p_data, uint32_t p_size) -> uint64_t {
 		RID buffer = _create_buffer(asset, p_data, p_size);
 		return buffer.is_valid() ? RD::get_singleton()->buffer_get_device_address(buffer) : 0;
@@ -627,7 +639,7 @@ void MicroGeometryStorage::update() {
 			page.upload_submission = RD::get_singleton()->get_pending_submission_serial();
 			page.status = UPLOADING;
 			asset->publication_pending = true;
-			if (error != OK || !_build_page_clas(*asset, task->page, task->decoded)) {
+			if (error != OK || !_build_page_clas(*asset, task->page, *task)) {
 				_unpublish_page(*asset, task->page);
 				page.status = FAILED;
 			}
@@ -645,6 +657,7 @@ void MicroGeometryStorage::update() {
 		_publish(*assets.get_or_null(id));
 	}
 	RENDER_TIMESTAMP("Microgeometry Streaming Schedule");
+	const auto limits = RD::get_singleton()->clas_get_limits();
 	for (uint32_t priority = 0; priority < 2 && tasks.size() < MAX_IO_TASKS; priority++) {
 		for (RID id : active_assets) {
 			Asset &asset = *assets.get_or_null(id);
@@ -662,6 +675,8 @@ void MicroGeometryStorage::update() {
 				task->source = asset.source;
 				task->asset = id;
 				task->page = i;
+				task->max_vertices_per_cluster = limits.max_vertices_per_cluster;
+				task->max_triangles_per_cluster = limits.max_triangles_per_cluster;
 				page.status = READING;
 				task->task = WorkerThreadPool::get_singleton()->add_native_task(_read_page, task, false, "Microgeometry page");
 				tasks.push_back(task);

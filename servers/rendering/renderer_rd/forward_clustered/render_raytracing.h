@@ -873,7 +873,7 @@ class RenderRaytracing {
 
 public:
 	void initialize(RenderForwardClustered *p_owner);
-	void update_persistent_instance(RenderGeometryInstance *p_instance);
+	void update_persistent_instances(const LocalVector<RenderGeometryInstance *> &p_instances);
 	void release_persistent_instance(uint64_t p_handle, const Vector<uint64_t> &p_surfaces);
 	RID get_persistent_instance_buffer() const { return persistent_instance_buffer; }
 	RID get_persistent_surface_buffer() const { return persistent_surface_buffer; }

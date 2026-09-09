@@ -523,7 +523,7 @@ class RendererCanvasRenderRD : public RendererCanvasRender {
 		/// Push-constant payload for non-VAO draws.
 		InstanceData push_data = {};
 
-		TextureInfo *tex_info;
+		TextureInfo *tex_info = nullptr;
 
 		Color modulate = Color(1.0, 1.0, 1.0, 1.0);
 		float msdf_pix_range = 0.0;
@@ -577,6 +577,25 @@ class RendererCanvasRenderRD : public RendererCanvasRender {
 		}
 	};
 
+	struct BatchPreparation {
+		uint64_t worker = 0;
+		uint64_t begin_usec = 0;
+		uint64_t end_usec = 0;
+		struct ParticleCollision {
+			RID particles;
+			bool enabled = false;
+			Transform2D transform;
+		};
+		LocalVector<Batch> batches;
+		LocalVector<InstanceData> instances;
+		LocalVector<ParticleCollision> particle_collisions;
+		InstanceData intermediary;
+		bool redraw = false;
+		bool sdf_used = false;
+		double total_time = 0;
+		double frame_delta = 0;
+	};
+
 	HashMap<TextureState, TextureInfo, HashMapHasherDefault, HashMapComparatorDefault<TextureState>, PagedAllocator<HashMapElement<TextureState, TextureInfo>>> texture_info_map;
 
 	struct State {
@@ -601,22 +620,9 @@ class RendererCanvasRenderRD : public RendererCanvasRender {
 			uint32_t flags;
 		};
 
-		LocalVector<Batch> canvas_instance_batches;
-		uint32_t current_batch_index = 0;
-
 		static_assert(std::is_trivially_destructible_v<InstanceData>);
 		static_assert(std::is_trivially_constructible_v<InstanceData>);
-
 		MultiUmaBuffer<1u> instance_buffers = MultiUmaBuffer<1u>("CANVAS_INSTANCE_DATA");
-		/// A pointer to the current instance buffer retrieved from <c>instance_buffers</c>.
-		InstanceData *instance_data = nullptr;
-		/// The index of the next instance to be added to <c>instance_data</c>.
-		uint32_t instance_data_index = 0;
-		/// Save the previous instance data to allow us to append .
-		InstanceData *prev_instance_data = nullptr;
-		uint32_t prev_instance_data_index = 0;
-
-		InstanceData intermediary_instance_data;
 
 		uint32_t max_instances_per_buffer = 16384;
 		uint32_t max_instance_buffer_size = 16384 * sizeof(InstanceData);
@@ -644,7 +650,10 @@ class RendererCanvasRenderRD : public RendererCanvasRender {
 
 	} state;
 
-	Item *items[MAX_RENDER_ITEMS];
+	struct PreparedItem {
+		Item *item = nullptr;
+		bool use_canvas_group = false;
+	};
 
 	TextureInfo default_texture_info;
 
@@ -670,19 +679,21 @@ class RendererCanvasRenderRD : public RendererCanvasRender {
 		// Current render target for the canvas.
 		RID render_target;
 		bool use_linear_colors = false;
+		bool sdf_enabled = false;
+		RID sdf_texture;
+		Rect2 sdf_to_screen;
 	};
 
 	inline RID _get_pipeline_specialization_or_ubershader(CanvasShaderData *p_shader_data, PipelineKey &r_pipeline_key, PushConstant &r_push_constant, RID p_mesh_instance = RID(), void *p_surface = nullptr, uint32_t p_surface_index = 0, RID *r_vertex_array = nullptr);
-	void _render_batch_items(RenderTarget p_to_render_target, int p_item_count, const Transform2D &p_canvas_transform_inverse, Light *p_lights, bool &r_sdf_used, bool p_to_backbuffer = false, RenderingServerTypes::RenderInfo *r_render_info = nullptr);
-	void _record_item_commands(const Item *p_item, RenderTarget p_render_target, const Transform2D &p_base_transform, Item *&r_current_clip, Light *p_lights, bool &r_batch_broken, bool &r_sdf_used, Batch *&r_current_batch);
+	void _render_batch_items(RenderTarget p_to_render_target, const LocalVector<PreparedItem> &p_items, const Transform2D &p_canvas_transform_inverse, Light *p_lights, bool &r_sdf_used, bool p_to_backbuffer = false, RenderingServerTypes::RenderInfo *r_render_info = nullptr);
+	void _record_item_commands(BatchPreparation &r_preparation, const Item *p_item, RenderTarget p_render_target, const Transform2D &p_base_transform, Item *&r_current_clip, Light *p_lights, bool &r_batch_broken, bool &r_sdf_used, Batch *&r_current_batch);
 	void _render_batch(RD::DrawListID p_draw_list, CanvasShaderData *p_shader_data, RenderingDevice::FramebufferFormatID p_framebuffer_format, Light *p_lights, Batch const *p_batch, RenderingServerTypes::RenderInfo *r_render_info = nullptr);
 	void _prepare_batch_texture_info(RID p_texture, TextureState &p_state, TextureInfo *p_info);
 
 	// non-UMA
-	InstanceData *new_instance_data(Batch &p_current_batch, const InstanceData &template_instance, bool p_use_push_data = false);
-	[[nodiscard]] Batch *_new_batch(bool &r_batch_broken);
-	void _add_to_batch(bool &r_batch_broken, Batch *&r_current_batch);
-	void _allocate_instance_buffer();
+	InstanceData *new_instance_data(BatchPreparation &r_preparation, Batch &p_current_batch, const InstanceData &template_instance, bool p_use_push_data = false);
+	[[nodiscard]] Batch *_new_batch(BatchPreparation &r_preparation, bool &r_batch_broken);
+	void _add_to_batch(BatchPreparation &r_preparation, bool &r_batch_broken, Batch *&r_current_batch);
 
 	_FORCE_INLINE_ void _update_transform_2d_to_mat2x4(const Transform2D &p_transform, float *p_mat2x4);
 	_FORCE_INLINE_ void _update_transform_2d_to_mat2x3(const Transform2D &p_transform, float *p_mat2x3);

@@ -372,7 +372,12 @@ public:
 
 		Rect2 global_rect_cache;
 
-		const Rect2 &get_rect() const;
+		struct RectResources {
+			HashMap<RID, HashMap<RID, AABB>> meshes;
+			HashMap<RID, AABB> multimeshes;
+			HashMap<RID, AABB> particles;
+		};
+		const Rect2 &get_rect(const RectResources *p_resources = nullptr) const;
 
 		Command *commands = nullptr;
 		Command *last_command = nullptr;

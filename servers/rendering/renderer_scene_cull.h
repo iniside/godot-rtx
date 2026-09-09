@@ -849,6 +849,27 @@ public:
 	PagedArray<Instance *> instance_shadow_cull_result;
 
 	struct InstanceCullResult {
+		uint64_t worker = 0;
+		uint64_t begin_usec = 0;
+		uint64_t end_usec = 0;
+		struct StateChange {
+			uint64_t index = 0;
+			uint64_t occlusion_timeout = 0;
+			uint64_t viewport_state = 0;
+		};
+		struct RTVisibility {
+			RenderGeometryInstance *instance = nullptr;
+			bool receiver = false;
+			bool caster = false;
+			bool shadows_only = false;
+		};
+		LocalVector<StateChange> state_changes;
+		LocalVector<uint64_t> geometry_updates;
+		LocalVector<RTVisibility> rt_visibility;
+		LocalVector<InstanceVisibilityNotifierData *> notifiers;
+		LocalVector<RID> visible_lights;
+		LocalVector<RID> particles;
+		bool redraw = false;
 		PagedArray<RenderGeometryInstance *> geometry_instances;
 		PagedArray<Instance *> lights;
 		PagedArray<RID> light_instances;
@@ -871,6 +892,13 @@ public:
 		PagedArray<RID> sdfgi_cascade_lights[SDFGI_MAX_CASCADES];
 
 		void clear() {
+			state_changes.clear();
+			geometry_updates.clear();
+			rt_visibility.clear();
+			notifiers.clear();
+			visible_lights.clear();
+			particles.clear();
+			redraw = false;
 			geometry_instances.clear();
 			lights.clear();
 			light_instances.clear();
@@ -899,6 +927,13 @@ public:
 		}
 
 		void reset() {
+			state_changes.clear();
+			geometry_updates.clear();
+			rt_visibility.clear();
+			notifiers.clear();
+			visible_lights.clear();
+			particles.clear();
+			redraw = false;
 			geometry_instances.reset();
 			lights.reset();
 			light_instances.reset();
@@ -927,31 +962,61 @@ public:
 		}
 
 		void append_from(InstanceCullResult &p_cull_result) {
-			geometry_instances.merge_unordered(p_cull_result.geometry_instances);
-			lights.merge_unordered(p_cull_result.lights);
-			light_instances.merge_unordered(p_cull_result.light_instances);
-			lightmaps.merge_unordered(p_cull_result.lightmaps);
-			reflections.merge_unordered(p_cull_result.reflections);
-			decals.merge_unordered(p_cull_result.decals);
-			voxel_gi_instances.merge_unordered(p_cull_result.voxel_gi_instances);
-			mesh_instances.merge_unordered(p_cull_result.mesh_instances);
-			fog_volumes.merge_unordered(p_cull_result.fog_volumes);
-			rt_geometry_instances.merge_unordered(p_cull_result.rt_geometry_instances);
-			rt_light_instances.merge_unordered(p_cull_result.rt_light_instances);
-			rt_decals.merge_unordered(p_cull_result.rt_decals);
+			for (uint32_t index = 0; index < p_cull_result.geometry_instances.size(); index++) {
+				geometry_instances.push_back(p_cull_result.geometry_instances[index]);
+			}
+			for (uint32_t index = 0; index < p_cull_result.lights.size(); index++) {
+				lights.push_back(p_cull_result.lights[index]);
+			}
+			for (uint32_t index = 0; index < p_cull_result.light_instances.size(); index++) {
+				light_instances.push_back(p_cull_result.light_instances[index]);
+			}
+			for (uint32_t index = 0; index < p_cull_result.lightmaps.size(); index++) {
+				lightmaps.push_back(p_cull_result.lightmaps[index]);
+			}
+			for (uint32_t index = 0; index < p_cull_result.reflections.size(); index++) {
+				reflections.push_back(p_cull_result.reflections[index]);
+			}
+			for (uint32_t index = 0; index < p_cull_result.decals.size(); index++) {
+				decals.push_back(p_cull_result.decals[index]);
+			}
+			for (uint32_t index = 0; index < p_cull_result.voxel_gi_instances.size(); index++) {
+				voxel_gi_instances.push_back(p_cull_result.voxel_gi_instances[index]);
+			}
+			for (uint32_t index = 0; index < p_cull_result.mesh_instances.size(); index++) {
+				mesh_instances.push_back(p_cull_result.mesh_instances[index]);
+			}
+			for (uint32_t index = 0; index < p_cull_result.fog_volumes.size(); index++) {
+				fog_volumes.push_back(p_cull_result.fog_volumes[index]);
+			}
+			for (uint32_t index = 0; index < p_cull_result.rt_geometry_instances.size(); index++) {
+				rt_geometry_instances.push_back(p_cull_result.rt_geometry_instances[index]);
+			}
+			for (uint32_t index = 0; index < p_cull_result.rt_light_instances.size(); index++) {
+				rt_light_instances.push_back(p_cull_result.rt_light_instances[index]);
+			}
+			for (uint32_t index = 0; index < p_cull_result.rt_decals.size(); index++) {
+				rt_decals.push_back(p_cull_result.rt_decals[index]);
+			}
 
 			for (int i = 0; i < RendererSceneRender::MAX_DIRECTIONAL_LIGHTS; i++) {
 				for (int j = 0; j < RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES; j++) {
-					directional_shadows[i].cascade_geometry_instances[j].merge_unordered(p_cull_result.directional_shadows[i].cascade_geometry_instances[j]);
+					for (uint32_t index = 0; index < p_cull_result.directional_shadows[i].cascade_geometry_instances[j].size(); index++) {
+						directional_shadows[i].cascade_geometry_instances[j].push_back(p_cull_result.directional_shadows[i].cascade_geometry_instances[j][index]);
+					}
 				}
 			}
 
 			for (int i = 0; i < SDFGI_MAX_CASCADES * SDFGI_MAX_REGIONS_PER_CASCADE; i++) {
-				sdfgi_region_geometry_instances[i].merge_unordered(p_cull_result.sdfgi_region_geometry_instances[i]);
+				for (uint32_t index = 0; index < p_cull_result.sdfgi_region_geometry_instances[i].size(); index++) {
+					sdfgi_region_geometry_instances[i].push_back(p_cull_result.sdfgi_region_geometry_instances[i][index]);
+				}
 			}
 
 			for (int i = 0; i < SDFGI_MAX_CASCADES; i++) {
-				sdfgi_cascade_lights[i].merge_unordered(p_cull_result.sdfgi_cascade_lights[i]);
+				for (uint32_t index = 0; index < p_cull_result.sdfgi_cascade_lights[i].size(); index++) {
+					sdfgi_cascade_lights[i].push_back(p_cull_result.sdfgi_cascade_lights[i][index]);
+				}
 			}
 		}
 
@@ -1110,6 +1175,13 @@ public:
 	} cull;
 
 	struct VisibilityCullData {
+		struct Result {
+			InstanceVisibilityData visibility;
+			uint32_t flags = 0;
+			bool reset_motion = false;
+		};
+		LocalVector<Result> results;
+		uint32_t job_count = 1;
 		uint64_t viewport_mask;
 		Scenario *scenario = nullptr;
 		Vector3 camera_position;
@@ -1118,11 +1190,12 @@ public:
 	};
 
 	void _visibility_cull_threaded(uint32_t p_thread, VisibilityCullData *cull_data);
-	void _visibility_cull(const VisibilityCullData &cull_data, uint64_t p_from, uint64_t p_to);
+	void _visibility_cull(VisibilityCullData &cull_data, uint64_t p_from, uint64_t p_to);
 	template <bool p_fade_check>
 	_FORCE_INLINE_ int _visibility_range_check(InstanceVisibilityData &r_vis_data, const Vector3 &p_camera_pos, uint64_t p_viewport_mask);
 
 	struct CullData {
+		bool profile = false;
 		Cull *cull = nullptr;
 		Scenario *scenario = nullptr;
 		RID shadow_atlas;
@@ -1134,6 +1207,7 @@ public:
 		uint64_t visibility_viewport_mask;
 	};
 
+	void _scene_cull_geometry_updates(CullData &p_cull_data, const InstanceCullResult &p_result);
 	void _scene_cull_threaded(uint32_t p_thread, CullData *cull_data);
 	void _scene_cull(CullData &cull_data, InstanceCullResult &cull_result, uint64_t p_from, uint64_t p_to);
 	static void _scene_particles_set_view_axis(RID p_particles, const Vector3 &p_axis, const Vector3 &p_up_axis);

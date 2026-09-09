@@ -34,7 +34,7 @@
 
 RendererCanvasRender *RendererCanvasRender::singleton = nullptr;
 
-const Rect2 &RendererCanvasRender::Item::get_rect() const {
+const Rect2 &RendererCanvasRender::Item::get_rect(const RectResources *p_resources) const {
 	if (custom_rect || (!rect_dirty && !update_when_visible && skeleton == RID())) {
 		return rect;
 	}
@@ -83,14 +83,14 @@ const Rect2 &RendererCanvasRender::Item::get_rect() const {
 			} break;
 			case Item::Command::TYPE_MESH: {
 				const Item::CommandMesh *mesh = static_cast<const Item::CommandMesh *>(c);
-				AABB aabb = RSG::mesh_storage->mesh_get_aabb(mesh->mesh, skeleton);
+				AABB aabb = p_resources ? p_resources->meshes[mesh->mesh][skeleton] : RSG::mesh_storage->mesh_get_aabb(mesh->mesh, skeleton);
 
 				r = Rect2(aabb.position.x, aabb.position.y, aabb.size.x, aabb.size.y);
 
 			} break;
 			case Item::Command::TYPE_MULTIMESH: {
 				const Item::CommandMultiMesh *multimesh = static_cast<const Item::CommandMultiMesh *>(c);
-				AABB aabb = RSG::mesh_storage->multimesh_get_aabb(multimesh->multimesh);
+				AABB aabb = p_resources ? p_resources->multimeshes[multimesh->multimesh] : RSG::mesh_storage->multimesh_get_aabb(multimesh->multimesh);
 
 				r = Rect2(aabb.position.x, aabb.position.y, aabb.size.x, aabb.size.y);
 
@@ -98,7 +98,7 @@ const Rect2 &RendererCanvasRender::Item::get_rect() const {
 			case Item::Command::TYPE_PARTICLES: {
 				const Item::CommandParticles *particles_cmd = static_cast<const Item::CommandParticles *>(c);
 				if (particles_cmd->particles.is_valid()) {
-					AABB aabb = RSG::particles_storage->particles_get_aabb(particles_cmd->particles);
+					AABB aabb = p_resources ? p_resources->particles[particles_cmd->particles] : RSG::particles_storage->particles_get_aabb(particles_cmd->particles);
 					r = Rect2(aabb.position.x, aabb.position.y, aabb.size.x, aabb.size.y);
 				}
 

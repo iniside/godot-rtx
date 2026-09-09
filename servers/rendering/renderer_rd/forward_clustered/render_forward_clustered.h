@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/object/worker_thread_pool.h"
 #include "core/templates/paged_allocator.h"
 #include "servers/rendering/multi_uma_buffer.h"
 #include "servers/rendering/renderer_rd/cluster_builder_rd.h"
@@ -323,10 +324,13 @@ protected:
 	MicroGeometryRasterPass *_prepare_micro_geometry(const RenderDataRD *p_render_data, PassMode p_pass);
 
 	struct RenderElementInfo;
+	struct RenderElement;
+	struct RenderList;
+	struct RenderListPreparation;
 
 	struct RenderListParameters {
 		MicroGeometryRasterPass *micro_geometry = nullptr;
-		GeometryInstanceSurfaceDataCache **elements = nullptr;
+		RenderElement *elements = nullptr;
 		RenderElementInfo *element_info = nullptr;
 		int element_count = 0;
 		bool reverse_cull = false;
@@ -343,7 +347,7 @@ protected:
 		bool use_directional_soft_shadow = false;
 		SceneShaderForwardClustered::ShaderSpecialization base_specialization = {};
 
-		RenderListParameters(GeometryInstanceSurfaceDataCache **p_elements, RenderElementInfo *p_element_info, int p_element_count, bool p_reverse_cull, PassMode p_pass_mode, bool p_no_gi, bool p_use_directional_soft_shadows, RID p_render_pass_uniform_set, bool p_force_wireframe = false, const Vector2 &p_uv_offset = Vector2(), float p_lod_distance_multiplier = 0.0, float p_screen_mesh_lod_threshold = 0.0, uint32_t p_view_count = 1, uint32_t p_element_offset = 0, SceneShaderForwardClustered::ShaderSpecialization p_base_specialization = {}) {
+		RenderListParameters(RenderElement *p_elements, RenderElementInfo *p_element_info, int p_element_count, bool p_reverse_cull, PassMode p_pass_mode, bool p_no_gi, bool p_use_directional_soft_shadows, RID p_render_pass_uniform_set, bool p_force_wireframe = false, const Vector2 &p_uv_offset = Vector2(), float p_lod_distance_multiplier = 0.0, float p_screen_mesh_lod_threshold = 0.0, uint32_t p_view_count = 1, uint32_t p_element_offset = 0, SceneShaderForwardClustered::ShaderSpecialization p_base_specialization = {}) {
 			elements = p_elements;
 			element_info = p_element_info;
 			element_count = p_element_count;
@@ -515,7 +519,6 @@ protected:
 		RID lightmap_buffer;
 
 		MultiUmaBuffer<1u> instance_buffer[RENDER_LIST_MAX] = { MultiUmaBuffer<1u>("RENDER_LIST_OPAQUE"), MultiUmaBuffer<1u>("RENDER_LIST_MOTION"), MultiUmaBuffer<1u>("RENDER_LIST_ALPHA"), MultiUmaBuffer<1u>("RENDER_LIST_SECONDARY") };
-		InstanceData *curr_gpu_ptr[RENDER_LIST_MAX] = {};
 
 		LightmapCaptureData *lightmap_captures = nullptr;
 		uint32_t max_lightmap_captures;
@@ -586,6 +589,12 @@ protected:
 
 	void _fill_instance_data(RenderListType p_render_list, int *p_render_info = nullptr, uint32_t p_offset = 0, int32_t p_max_elements = -1, bool p_update_buffer = true);
 	void _fill_render_list(RenderListType p_render_list, const RenderDataRD *p_render_data, PassMode p_pass_mode, bool p_using_sdfgi = false, bool p_using_opaque_gi = false, bool p_append = false, bool p_alpha_only = false);
+	RenderListPreparation *_begin_render_list(RenderListType p_render_list, const RenderDataRD *p_render_data, PassMode p_pass_mode, bool p_using_sdfgi = false, bool p_using_opaque_gi = false, bool p_append = false, bool p_alpha_only = false, RenderList *p_target = nullptr);
+	void _finish_render_list(RenderListPreparation *p_preparation);
+	void _discard_shadow_preparations();
+	void _prepare_render_list_chunk(uint32_t p_chunk, RenderListPreparation *p_preparation);
+	static void _fill_instance_payload(RenderList *p_list, uint32_t p_from, uint32_t p_count);
+	static void _fill_instance_runs(RenderList *p_list, uint32_t p_from, uint32_t p_count, int *p_render_info);
 
 	HashMap<Size2i, RID> sdfgi_framebuffer_size_cache;
 
@@ -667,8 +676,6 @@ protected:
 		RID material_uniform_set_shadow;
 		SceneShaderForwardClustered::ShaderData *shader_shadow = nullptr;
 
-		mutable Transform3D cached_final_transform;
-		mutable bool cached_final_transform_valid = false;
 
 		mutable RID rt_deformed_handle;
 
@@ -694,7 +701,6 @@ protected:
 
 		//used during rendering
 
-		uint32_t gi_offset_cache = 0;
 		bool store_transform_cache = true;
 		RID transforms_uniform_set;
 		uint32_t instance_count = 0;
@@ -823,12 +829,21 @@ protected:
 	} global_surface_data;
 
 	/* Render List */
+	struct RenderElement {
+		GeometryInstanceSurfaceDataCache *surface = nullptr;
+		decltype(GeometryInstanceSurfaceDataCache::sort) sort = {};
+		uint64_t ordinal = 0;
+		float depth = 0.0f;
+		uint32_t flags = 0;
+		uint32_t gi_offset = UINT32_MAX;
+	};
 
 	struct RenderList {
 		LocalVector<MicroGeometryRasterPass *> micro_passes;
 		MicroGeometryRasterPass *last_micro_pass = nullptr;
-		LocalVector<GeometryInstanceSurfaceDataCache *> elements;
+		LocalVector<RenderElement> elements;
 		LocalVector<RenderElementInfo> element_info;
+		LocalVector<SceneState::InstanceData> instance_data;
 
 		void clear() {
 			for (MicroGeometryRasterPass *pass : micro_passes) {
@@ -838,55 +853,108 @@ protected:
 			last_micro_pass = nullptr;
 			elements.clear();
 			element_info.clear();
+			instance_data.clear();
 		}
 		~RenderList() { clear(); }
 
 		//should eventually be replaced by radix
 
 		struct SortByKey {
-			_FORCE_INLINE_ bool operator()(const GeometryInstanceSurfaceDataCache *A, const GeometryInstanceSurfaceDataCache *B) const {
-				return (A->sort.sort_key2 == B->sort.sort_key2) ? (A->sort.sort_key1 < B->sort.sort_key1) : (A->sort.sort_key2 < B->sort.sort_key2);
+			_FORCE_INLINE_ bool operator()(const RenderElement &A, const RenderElement &B) const {
+				if (A.sort.sort_key2 != B.sort.sort_key2) {
+					return A.sort.sort_key2 < B.sort.sort_key2;
+				}
+				return A.sort.sort_key1 == B.sort.sort_key1 ? A.ordinal < B.ordinal : A.sort.sort_key1 < B.sort.sort_key1;
 			}
 		};
 
+		void _sort_elements(uint32_t p_from, uint32_t p_count, uint32_t p_mode);
+
 		void sort_by_key() {
-			SortArray<GeometryInstanceSurfaceDataCache *, SortByKey> sorter;
-			sorter.sort(elements.ptr(), elements.size());
+			_sort_elements(0, elements.size(), 0);
 		}
 
 		void sort_by_key_range(uint32_t p_from, uint32_t p_size) {
-			SortArray<GeometryInstanceSurfaceDataCache *, SortByKey> sorter;
-			sorter.sort(elements.ptr() + p_from, p_size);
+			_sort_elements(p_from, p_size, 0);
 		}
 
 		struct SortByDepth {
-			_FORCE_INLINE_ bool operator()(const GeometryInstanceSurfaceDataCache *A, const GeometryInstanceSurfaceDataCache *B) const {
-				return (A->owner->depth < B->owner->depth);
+			_FORCE_INLINE_ bool operator()(const RenderElement &A, const RenderElement &B) const {
+				return A.depth == B.depth ? A.ordinal < B.ordinal : A.depth < B.depth;
 			}
 		};
 
 		void sort_by_depth() { //used for shadows
 
-			SortArray<GeometryInstanceSurfaceDataCache *, SortByDepth> sorter;
-			sorter.sort(elements.ptr(), elements.size());
+			_sort_elements(0, elements.size(), 1);
 		}
 
 		struct SortByReverseDepthAndPriority {
-			_FORCE_INLINE_ bool operator()(const GeometryInstanceSurfaceDataCache *A, const GeometryInstanceSurfaceDataCache *B) const {
-				return (A->sort.priority == B->sort.priority) ? (A->owner->depth > B->owner->depth) : (A->sort.priority < B->sort.priority);
+			_FORCE_INLINE_ bool operator()(const RenderElement &A, const RenderElement &B) const {
+				if (A.sort.priority != B.sort.priority) {
+					return A.sort.priority < B.sort.priority;
+				}
+				return A.depth == B.depth ? A.ordinal < B.ordinal : A.depth > B.depth;
 			}
 		};
 
 		void sort_by_reverse_depth_and_priority() { //used for alpha
 
-			SortArray<GeometryInstanceSurfaceDataCache *, SortByReverseDepthAndPriority> sorter;
-			sorter.sort(elements.ptr(), elements.size());
+			_sort_elements(0, elements.size(), 2);
 		}
 
-		_FORCE_INLINE_ void add_element(GeometryInstanceSurfaceDataCache *p_element) {
+		_FORCE_INLINE_ void add_element(const RenderElement &p_element) {
 			elements.push_back(p_element);
 		}
 	};
+
+	struct RenderListPreparation {
+		struct Batch {
+			uint64_t worker = 0;
+			uint64_t begin_usec = 0;
+			uint64_t end_usec = 0;
+			LocalVector<RenderElement> elements;
+			LocalVector<LightmapCaptureData> captures;
+			int primitives = 0;
+		};
+		bool profile = false;
+		uint64_t frame = 0;
+		uint64_t coordinator = 0;
+		uint64_t queued_usec = 0;
+		uint32_t pass_index = 0;
+		RenderList *list = nullptr;
+		const PagedArray<RenderGeometryInstance *> *instances = nullptr;
+		RenderingServerTypes::RenderInfo *render_info = nullptr;
+		Transform3D camera_transform;
+		Transform3D main_camera_transform;
+		Projection projection;
+		bool orthogonal = false;
+		float lod_distance_multiplier = 0;
+		float screen_mesh_lod_threshold = 0;
+		RenderListType list_type;
+		PassMode pass_mode;
+		bool using_sdfgi = false;
+		bool using_opaque_gi = false;
+		bool alpha_only = false;
+		uint32_t lightmaps_used = 0;
+		RID lightmap_ids[MAX_LIGHTMAPS];
+		bool lightmap_has_sh[MAX_LIGHTMAPS] = {};
+		uint32_t voxelgis_used = 0;
+		RID voxelgi_ids[MAX_VOXEL_GI_INSTANCESS];
+		uint32_t max_lightmap_captures = 0;
+		LocalVector<Batch> batches;
+		WorkerThreadPool::GroupID job = WorkerThreadPool::INVALID_TASK_ID;
+	};
+	struct ShadowPreparation {
+		uint64_t worker = 0;
+		uint64_t begin_usec = 0;
+		uint64_t end_usec = 0;
+		RenderList *list = nullptr;
+		RenderListPreparation *preparation = nullptr;
+		RenderingServerTypes::RenderInfo *render_info = nullptr;
+		RenderingServerTypes::RenderInfo statistics = {};
+	};
+	LocalVector<ShadowPreparation> shadow_preparations;
 
 	RenderList render_list[RENDER_LIST_MAX];
 

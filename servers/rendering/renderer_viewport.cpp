@@ -417,6 +417,30 @@ void RendererViewport::_draw_viewport(Viewport *p_viewport) {
 	}
 
 	if (can_draw_2d) {
+		WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+		const bool interpolation_enabled = RSG::canvas->_interpolation_data.interpolation_enabled;
+		const real_t interpolation_fraction = RSG::frame.interpolation_fraction;
+		HashMap<RID, Size2> light_texture_sizes;
+		auto discover_light_textures = [&](uint32_t) {
+			for (const auto &entry : p_viewport->canvas_map) {
+				const auto *canvas = static_cast<const RendererCanvasCull::Canvas *>(entry.value.canvas);
+				for (const auto *light : canvas->lights) {
+					if (light->enabled && light->texture.is_valid()) {
+						light_texture_sizes[light->texture];
+					}
+				}
+			}
+		};
+		auto texture_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+			GodotProfileZone("CanvasLightTextureDiscovery");
+			(*static_cast<decltype(discover_light_textures) *>(p_data))(p_index);
+		},
+				&discover_light_textures, 1, 1, true, SNAME("CanvasLightTextureDiscovery"));
+		pool->wait_for_group_task_completion(texture_job);
+		for (auto &entry : light_texture_sizes) {
+			entry.value = RSG::texture_storage->texture_size_with_proxy(entry.key);
+		}
+
 		RBMap<Viewport::CanvasKey, Viewport::CanvasData *> canvas_map;
 
 		Rect2 clip_rect(0, 0, p_viewport->size.x, p_viewport->size.y);
@@ -433,31 +457,38 @@ void RendererViewport::_draw_viewport(Viewport *p_viewport) {
 
 			RendererCanvasRender::LightOccluderInstance *occluders = nullptr;
 
-			// Make list of occluders.
-			for (KeyValue<RID, Viewport::CanvasData> &E : p_viewport->canvas_map) {
-				RendererCanvasCull::Canvas *canvas = static_cast<RendererCanvasCull::Canvas *>(E.value.canvas);
-				Transform2D xf = _canvas_get_transform(p_viewport, canvas, &E.value, clip_rect.size);
+			auto prepare_sdf_occluders = [&](uint32_t) {
+				// Make list of occluders.
+				for (KeyValue<RID, Viewport::CanvasData> &E : p_viewport->canvas_map) {
+					RendererCanvasCull::Canvas *canvas = static_cast<RendererCanvasCull::Canvas *>(E.value.canvas);
+					Transform2D xf = _canvas_get_transform(p_viewport, canvas, &E.value, clip_rect.size);
 
-				for (RendererCanvasRender::LightOccluderInstance *F : canvas->occluders) {
-					if (!F->enabled) {
-						continue;
-					}
+					for (RendererCanvasRender::LightOccluderInstance *F : canvas->occluders) {
+						if (!F->enabled) {
+							continue;
+						}
 
-					if (!RSG::canvas->_interpolation_data.interpolation_enabled || !F->interpolated) {
-						F->xform_cache = xf * F->xform_curr;
-					} else {
-						real_t f = RSG::frame.interpolation_fraction;
-						TransformInterpolator::interpolate_transform_2d(F->xform_prev, F->xform_curr, F->xform_cache, f);
-						F->xform_cache = xf * F->xform_cache;
-					}
+						if (!interpolation_enabled || !F->interpolated) {
+							F->xform_cache = xf * F->xform_curr;
+						} else {
+							real_t f = interpolation_fraction;
+							TransformInterpolator::interpolate_transform_2d(F->xform_prev, F->xform_curr, F->xform_cache, f);
+							F->xform_cache = xf * F->xform_cache;
+						}
 
-					if (sdf_rect.intersects_transformed(F->xform_cache, F->aabb_cache)) {
-						F->next = occluders;
-						occluders = F;
+						if (sdf_rect.intersects_transformed(F->xform_cache, F->aabb_cache)) {
+							F->next = occluders;
+							occluders = F;
+						}
 					}
 				}
-			}
-
+			};
+			auto prepare_sdf_occluders_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+				GodotProfileZone("prepare_sdf_occluders");
+				(*static_cast<decltype(prepare_sdf_occluders) *>(p_data))(p_index);
+			},
+					&prepare_sdf_occluders, 1, 1, true, SNAME("prepare_sdf_occluders"));
+			pool->wait_for_group_task_completion(prepare_sdf_occluders_job);
 			RSG::canvas_render->render_sdf(p_viewport->render_target, occluders);
 			RSG::texture_storage->render_target_mark_sdf_enabled(p_viewport->render_target, true);
 
@@ -472,82 +503,90 @@ void RendererViewport::_draw_viewport(Viewport *p_viewport) {
 		int directional_light_count = 0;
 
 		RENDER_TIMESTAMP("Cull 2D Lights");
-		for (KeyValue<RID, Viewport::CanvasData> &E : p_viewport->canvas_map) {
-			RendererCanvasCull::Canvas *canvas = static_cast<RendererCanvasCull::Canvas *>(E.value.canvas);
+		auto prepare_canvas_lights = [&](uint32_t) {
+			for (KeyValue<RID, Viewport::CanvasData> &E : p_viewport->canvas_map) {
+				RendererCanvasCull::Canvas *canvas = static_cast<RendererCanvasCull::Canvas *>(E.value.canvas);
 
-			Transform2D xf = _canvas_get_transform(p_viewport, canvas, &E.value, clip_rect.size);
+				Transform2D xf = _canvas_get_transform(p_viewport, canvas, &E.value, clip_rect.size);
 
-			// Find lights in canvas.
+				// Find lights in canvas.
 
-			for (RendererCanvasRender::Light *F : canvas->lights) {
-				RendererCanvasRender::Light *cl = F;
-				if (cl->enabled && cl->texture.is_valid()) {
-					//not super efficient..
-					Size2 tsize = RSG::texture_storage->texture_size_with_proxy(cl->texture);
-					tsize *= cl->scale;
+				for (RendererCanvasRender::Light *F : canvas->lights) {
+					RendererCanvasRender::Light *cl = F;
+					if (cl->enabled && cl->texture.is_valid()) {
+						//not super efficient..
+						Size2 tsize = light_texture_sizes[cl->texture];
+						tsize *= cl->scale;
 
-					Vector2 offset = tsize / 2.0;
-					Rect2 local_rect = Rect2(-offset + cl->texture_offset, tsize);
+						Vector2 offset = tsize / 2.0;
+						Rect2 local_rect = Rect2(-offset + cl->texture_offset, tsize);
 
-					if (!RSG::canvas->_interpolation_data.interpolation_enabled || !cl->interpolated) {
-						cl->xform_cache = xf * cl->xform_curr;
-					} else {
-						real_t f = RSG::frame.interpolation_fraction;
-						TransformInterpolator::interpolate_transform_2d(cl->xform_prev, cl->xform_curr, cl->xform_cache, f);
-						cl->xform_cache = xf * cl->xform_cache;
-					}
+						if (!interpolation_enabled || !cl->interpolated) {
+							cl->xform_cache = xf * cl->xform_curr;
+						} else {
+							real_t f = interpolation_fraction;
+							TransformInterpolator::interpolate_transform_2d(cl->xform_prev, cl->xform_curr, cl->xform_cache, f);
+							cl->xform_cache = xf * cl->xform_cache;
+						}
 
-					cl->rect_cache = cl->xform_cache.xform(local_rect);
+						cl->rect_cache = cl->xform_cache.xform(local_rect);
 
-					if (clip_rect.intersects(cl->rect_cache)) {
-						cl->filter_next_ptr = lights;
-						lights = cl;
-						Transform2D scale;
-						scale.scale(local_rect.size);
-						scale.columns[2] = local_rect.position;
-						cl->light_shader_xform = cl->xform_cache * scale;
-						if (cl->use_shadow) {
-							cl->shadows_next_ptr = lights_with_shadow;
-							if (lights_with_shadow == nullptr) {
-								shadow_rect = cl->rect_cache;
-							} else {
-								shadow_rect = shadow_rect.merge(cl->rect_cache);
+						if (clip_rect.intersects(cl->rect_cache)) {
+							cl->filter_next_ptr = lights;
+							lights = cl;
+							Transform2D scale;
+							scale.scale(local_rect.size);
+							scale.columns[2] = local_rect.position;
+							cl->light_shader_xform = cl->xform_cache * scale;
+							if (cl->use_shadow) {
+								cl->shadows_next_ptr = lights_with_shadow;
+								if (lights_with_shadow == nullptr) {
+									shadow_rect = cl->rect_cache;
+								} else {
+									shadow_rect = shadow_rect.merge(cl->rect_cache);
+								}
+								lights_with_shadow = cl;
+								cl->radius_cache = local_rect.size.length();
 							}
-							lights_with_shadow = cl;
-							cl->radius_cache = local_rect.size.length();
 						}
 					}
 				}
-			}
 
-			for (RendererCanvasRender::Light *F : canvas->directional_lights) {
-				RendererCanvasRender::Light *cl = F;
-				if (cl->enabled) {
-					cl->filter_next_ptr = directional_lights;
-					directional_lights = cl;
-					if (!RSG::canvas->_interpolation_data.interpolation_enabled || !cl->interpolated) {
-						cl->xform_cache = xf * cl->xform_curr;
-					} else {
-						real_t f = RSG::frame.interpolation_fraction;
-						TransformInterpolator::interpolate_transform_2d(cl->xform_prev, cl->xform_curr, cl->xform_cache, f);
-						cl->xform_cache = xf * cl->xform_cache;
-					}
-					cl->xform_cache.columns[2] = Vector2(); //translation is pointless
-					if (cl->use_shadow) {
-						cl->shadows_next_ptr = directional_lights_with_shadow;
-						directional_lights_with_shadow = cl;
-					}
+				for (RendererCanvasRender::Light *F : canvas->directional_lights) {
+					RendererCanvasRender::Light *cl = F;
+					if (cl->enabled) {
+						cl->filter_next_ptr = directional_lights;
+						directional_lights = cl;
+						if (!interpolation_enabled || !cl->interpolated) {
+							cl->xform_cache = xf * cl->xform_curr;
+						} else {
+							real_t f = interpolation_fraction;
+							TransformInterpolator::interpolate_transform_2d(cl->xform_prev, cl->xform_curr, cl->xform_cache, f);
+							cl->xform_cache = xf * cl->xform_cache;
+						}
+						cl->xform_cache.columns[2] = Vector2(); //translation is pointless
+						if (cl->use_shadow) {
+							cl->shadows_next_ptr = directional_lights_with_shadow;
+							directional_lights_with_shadow = cl;
+						}
 
-					directional_light_count++;
+						directional_light_count++;
 
-					if (directional_light_count == RSE::MAX_2D_DIRECTIONAL_LIGHTS) {
-						break;
+						if (directional_light_count == RSE::MAX_2D_DIRECTIONAL_LIGHTS) {
+							break;
+						}
 					}
 				}
-			}
 
-			canvas_map[Viewport::CanvasKey(E.key, E.value.layer, E.value.sublayer)] = &E.value;
-		}
+				canvas_map[Viewport::CanvasKey(E.key, E.value.layer, E.value.sublayer)] = &E.value;
+			}
+		};
+		auto prepare_canvas_lights_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+			GodotProfileZone("prepare_canvas_lights");
+			(*static_cast<decltype(prepare_canvas_lights) *>(p_data))(p_index);
+		},
+				&prepare_canvas_lights, 1, 1, true, SNAME("prepare_canvas_lights"));
+		pool->wait_for_group_task_completion(prepare_canvas_lights_job);
 
 		if (lights_with_shadow) {
 			//update shadows if any
@@ -557,28 +596,36 @@ void RendererViewport::_draw_viewport(Viewport *p_viewport) {
 			RENDER_TIMESTAMP("> Render PointLight2D Shadows");
 			RENDER_TIMESTAMP("Cull LightOccluder2Ds");
 
-			//make list of occluders
-			for (KeyValue<RID, Viewport::CanvasData> &E : p_viewport->canvas_map) {
-				RendererCanvasCull::Canvas *canvas = static_cast<RendererCanvasCull::Canvas *>(E.value.canvas);
-				Transform2D xf = _canvas_get_transform(p_viewport, canvas, &E.value, clip_rect.size);
+			auto prepare_point_occluders = [&](uint32_t) {
+				//make list of occluders
+				for (KeyValue<RID, Viewport::CanvasData> &E : p_viewport->canvas_map) {
+					RendererCanvasCull::Canvas *canvas = static_cast<RendererCanvasCull::Canvas *>(E.value.canvas);
+					Transform2D xf = _canvas_get_transform(p_viewport, canvas, &E.value, clip_rect.size);
 
-				for (RendererCanvasRender::LightOccluderInstance *F : canvas->occluders) {
-					if (!F->enabled) {
-						continue;
-					}
-					if (!RSG::canvas->_interpolation_data.interpolation_enabled || !F->interpolated) {
-						F->xform_cache = xf * F->xform_curr;
-					} else {
-						real_t f = RSG::frame.interpolation_fraction;
-						TransformInterpolator::interpolate_transform_2d(F->xform_prev, F->xform_curr, F->xform_cache, f);
-						F->xform_cache = xf * F->xform_cache;
-					}
-					if (shadow_rect.intersects_transformed(F->xform_cache, F->aabb_cache)) {
-						F->next = occluders;
-						occluders = F;
+					for (RendererCanvasRender::LightOccluderInstance *F : canvas->occluders) {
+						if (!F->enabled) {
+							continue;
+						}
+						if (!interpolation_enabled || !F->interpolated) {
+							F->xform_cache = xf * F->xform_curr;
+						} else {
+							real_t f = interpolation_fraction;
+							TransformInterpolator::interpolate_transform_2d(F->xform_prev, F->xform_curr, F->xform_cache, f);
+							F->xform_cache = xf * F->xform_cache;
+						}
+						if (shadow_rect.intersects_transformed(F->xform_cache, F->aabb_cache)) {
+							F->next = occluders;
+							occluders = F;
+						}
 					}
 				}
-			}
+			};
+			auto prepare_point_occluders_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+				GodotProfileZone("prepare_point_occluders");
+				(*static_cast<decltype(prepare_point_occluders) *>(p_data))(p_index);
+			},
+					&prepare_point_occluders, 1, 1, true, SNAME("prepare_point_occluders"));
+			pool->wait_for_group_task_completion(prepare_point_occluders_job);
 			//update the light shadowmaps with them
 
 			RendererCanvasRender::Light *light = lights_with_shadow;
@@ -596,81 +643,86 @@ void RendererViewport::_draw_viewport(Viewport *p_viewport) {
 			//update shadows if any
 			RendererCanvasRender::Light *light = directional_lights_with_shadow;
 			while (light) {
-				Vector2 light_dir = -light->xform_cache.columns[1].normalized(); // Y is light direction
-				float cull_distance = light->directional_distance;
-
-				Vector2 light_dir_sign;
-				light_dir_sign.x = (Math::abs(light_dir.x) < CMP_EPSILON) ? 0.0 : ((light_dir.x > 0.0) ? 1.0 : -1.0);
-				light_dir_sign.y = (Math::abs(light_dir.y) < CMP_EPSILON) ? 0.0 : ((light_dir.y > 0.0) ? 1.0 : -1.0);
-
-				Vector2 points[6];
-				int point_count = 0;
-
-				for (int j = 0; j < 4; j++) {
-					static const Vector2 signs[4] = { Vector2(1, 1), Vector2(1, 0), Vector2(0, 0), Vector2(0, 1) };
-					Vector2 sign_cmp = signs[j] * 2.0 - Vector2(1.0, 1.0);
-					Vector2 point = clip_rect.position + clip_rect.size * signs[j];
-
-					if (sign_cmp == light_dir_sign) {
-						//both point in same direction, plot offsetted
-						points[point_count++] = point + light_dir * cull_distance;
-					} else if (sign_cmp.x == light_dir_sign.x || sign_cmp.y == light_dir_sign.y) {
-						int next_j = (j + 1) % 4;
-						Vector2 next_sign_cmp = signs[next_j] * 2.0 - Vector2(1.0, 1.0);
-
-						//one point in the same direction, plot segment
-
-						if (next_sign_cmp.x == light_dir_sign.x || next_sign_cmp.y == light_dir_sign.y) {
-							if (light_dir_sign.x != 0.0 || light_dir_sign.y != 0.0) {
-								points[point_count++] = point;
-							}
-							points[point_count++] = point + light_dir * cull_distance;
-						} else {
-							points[point_count++] = point + light_dir * cull_distance;
-							if (light_dir_sign.x != 0.0 || light_dir_sign.y != 0.0) {
-								points[point_count++] = point;
-							}
-						}
-					} else {
-						//plot normally
-						points[point_count++] = point;
-					}
-				}
-
-				Vector2 xf_points[6];
-
+				const float cull_distance = light->directional_distance;
 				RendererCanvasRender::LightOccluderInstance *occluders = nullptr;
-
 				RENDER_TIMESTAMP("> Render DirectionalLight2D Shadows");
+				auto prepare_directional_occluders = [&](uint32_t) {
+					Vector2 light_dir = -light->xform_cache.columns[1].normalized(); // Y is light direction
 
-				// Make list of occluders.
-				for (KeyValue<RID, Viewport::CanvasData> &E : p_viewport->canvas_map) {
-					RendererCanvasCull::Canvas *canvas = static_cast<RendererCanvasCull::Canvas *>(E.value.canvas);
-					Transform2D xf = _canvas_get_transform(p_viewport, canvas, &E.value, clip_rect.size);
+					Vector2 light_dir_sign;
+					light_dir_sign.x = (Math::abs(light_dir.x) < CMP_EPSILON) ? 0.0 : ((light_dir.x > 0.0) ? 1.0 : -1.0);
+					light_dir_sign.y = (Math::abs(light_dir.y) < CMP_EPSILON) ? 0.0 : ((light_dir.y > 0.0) ? 1.0 : -1.0);
 
-					for (RendererCanvasRender::LightOccluderInstance *F : canvas->occluders) {
-						if (!F->enabled) {
-							continue;
-						}
-						if (!RSG::canvas->_interpolation_data.interpolation_enabled || !F->interpolated) {
-							F->xform_cache = xf * F->xform_curr;
+					Vector2 points[6];
+					int point_count = 0;
+
+					for (int j = 0; j < 4; j++) {
+						static const Vector2 signs[4] = { Vector2(1, 1), Vector2(1, 0), Vector2(0, 0), Vector2(0, 1) };
+						Vector2 sign_cmp = signs[j] * 2.0 - Vector2(1.0, 1.0);
+						Vector2 point = clip_rect.position + clip_rect.size * signs[j];
+
+						if (sign_cmp == light_dir_sign) {
+							//both point in same direction, plot offsetted
+							points[point_count++] = point + light_dir * cull_distance;
+						} else if (sign_cmp.x == light_dir_sign.x || sign_cmp.y == light_dir_sign.y) {
+							int next_j = (j + 1) % 4;
+							Vector2 next_sign_cmp = signs[next_j] * 2.0 - Vector2(1.0, 1.0);
+
+							//one point in the same direction, plot segment
+
+							if (next_sign_cmp.x == light_dir_sign.x || next_sign_cmp.y == light_dir_sign.y) {
+								if (light_dir_sign.x != 0.0 || light_dir_sign.y != 0.0) {
+									points[point_count++] = point;
+								}
+								points[point_count++] = point + light_dir * cull_distance;
+							} else {
+								points[point_count++] = point + light_dir * cull_distance;
+								if (light_dir_sign.x != 0.0 || light_dir_sign.y != 0.0) {
+									points[point_count++] = point;
+								}
+							}
 						} else {
-							real_t f = RSG::frame.interpolation_fraction;
-							TransformInterpolator::interpolate_transform_2d(F->xform_prev, F->xform_curr, F->xform_cache, f);
-							F->xform_cache = xf * F->xform_cache;
-						}
-						Transform2D localizer = F->xform_cache.affine_inverse();
-
-						for (int j = 0; j < point_count; j++) {
-							xf_points[j] = localizer.xform(points[j]);
-						}
-						if (F->aabb_cache.intersects_filled_polygon(xf_points, point_count)) {
-							F->next = occluders;
-							occluders = F;
+							//plot normally
+							points[point_count++] = point;
 						}
 					}
-				}
 
+					Vector2 xf_points[6];
+
+					// Make list of occluders.
+					for (KeyValue<RID, Viewport::CanvasData> &E : p_viewport->canvas_map) {
+						RendererCanvasCull::Canvas *canvas = static_cast<RendererCanvasCull::Canvas *>(E.value.canvas);
+						Transform2D xf = _canvas_get_transform(p_viewport, canvas, &E.value, clip_rect.size);
+
+						for (RendererCanvasRender::LightOccluderInstance *F : canvas->occluders) {
+							if (!F->enabled) {
+								continue;
+							}
+							if (!interpolation_enabled || !F->interpolated) {
+								F->xform_cache = xf * F->xform_curr;
+							} else {
+								real_t f = interpolation_fraction;
+								TransformInterpolator::interpolate_transform_2d(F->xform_prev, F->xform_curr, F->xform_cache, f);
+								F->xform_cache = xf * F->xform_cache;
+							}
+							Transform2D localizer = F->xform_cache.affine_inverse();
+
+							for (int j = 0; j < point_count; j++) {
+								xf_points[j] = localizer.xform(points[j]);
+							}
+							if (F->aabb_cache.intersects_filled_polygon(xf_points, point_count)) {
+								F->next = occluders;
+								occluders = F;
+							}
+						}
+					}
+				};
+				auto prepare_directional_occluders_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+					GodotProfileZone("prepare_directional_occluders");
+					(*static_cast<decltype(prepare_directional_occluders) *>(p_data))(p_index);
+				},
+						&prepare_directional_occluders, 1, 1, true, SNAME("prepare_directional_occluders"));
+				pool->wait_for_group_task_completion(prepare_directional_occluders_job);
 				RSG::canvas_render->light_update_directional_shadow(light->light_internal, shadow_count++, light->xform_cache, light->item_shadow_mask, cull_distance, clip_rect, occluders);
 
 				light = light->shadows_next_ptr;
@@ -700,24 +752,31 @@ void RendererViewport::_draw_viewport(Viewport *p_viewport) {
 			RendererCanvasRender::Light *canvas_lights = nullptr;
 			RendererCanvasRender::Light *canvas_directional_lights = nullptr;
 
-			RendererCanvasRender::Light *ptr = lights;
-			while (ptr) {
-				if (E.value->layer >= ptr->layer_min && E.value->layer <= ptr->layer_max) {
-					ptr->next_ptr = canvas_lights;
-					canvas_lights = ptr;
+			auto prepare_canvas_light_filter = [&](uint32_t) {
+				RendererCanvasRender::Light *ptr = lights;
+				while (ptr) {
+					if (E.value->layer >= ptr->layer_min && E.value->layer <= ptr->layer_max) {
+						ptr->next_ptr = canvas_lights;
+						canvas_lights = ptr;
+					}
+					ptr = ptr->filter_next_ptr;
 				}
-				ptr = ptr->filter_next_ptr;
-			}
 
-			ptr = directional_lights;
-			while (ptr) {
-				if (E.value->layer >= ptr->layer_min && E.value->layer <= ptr->layer_max) {
-					ptr->next_ptr = canvas_directional_lights;
-					canvas_directional_lights = ptr;
+				ptr = directional_lights;
+				while (ptr) {
+					if (E.value->layer >= ptr->layer_min && E.value->layer <= ptr->layer_max) {
+						ptr->next_ptr = canvas_directional_lights;
+						canvas_directional_lights = ptr;
+					}
+					ptr = ptr->filter_next_ptr;
 				}
-				ptr = ptr->filter_next_ptr;
-			}
-
+			};
+			auto prepare_canvas_light_filter_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+				GodotProfileZone("prepare_canvas_light_filter");
+				(*static_cast<decltype(prepare_canvas_light_filter) *>(p_data))(p_index);
+			},
+					&prepare_canvas_light_filter, 1, 1, true, SNAME("prepare_canvas_light_filter"));
+			pool->wait_for_group_task_completion(prepare_canvas_light_filter_job);
 			RENDER_TIMESTAMP("> Render Canvas " + itos(canvas_idx));
 
 			RSG::canvas->render_canvas(p_viewport->render_target, canvas, xform, canvas_lights, canvas_directional_lights, clip_rect, p_viewport->texture_filter, p_viewport->texture_repeat, p_viewport->snap_2d_transforms_to_pixel, p_viewport->snap_2d_vertices_to_pixel, p_viewport->canvas_cull_mask, &p_viewport->render_info);
