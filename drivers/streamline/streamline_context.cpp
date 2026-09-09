@@ -233,9 +233,12 @@ void StreamlineContext::reflex_get_state(sl::ReflexState &reflexState) {
 }
 
 sl::FrameToken *StreamlineContext::get_new_frame_token() {
-	sl::Result result = this->slGetNewFrameToken ? this->slGetNewFrameToken(last_token, nullptr) : sl::Result::eOk;
+	main_frame_token = nullptr;
+	sl::FrameToken *token = nullptr;
+	sl::Result result = this->slGetNewFrameToken ? this->slGetNewFrameToken(token, nullptr) : sl::Result::eOk;
 	ERR_FAIL_COND_V_MSG(result != sl::Result::eOk, nullptr, StreamlineContext::result_to_string(result));
-	return last_token;
+	main_frame_token = token;
+	return token;
 }
 
 const char *StreamlineContext::result_to_string(sl::Result result) {

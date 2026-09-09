@@ -31,6 +31,7 @@
 #pragma once
 
 #include "core/object/worker_thread_pool.h"
+#include "core/os/semaphore.h"
 #include "core/os/thread.h"
 #include "core/templates/command_queue_mt.h"
 #include "core/templates/hash_map.h"
@@ -59,10 +60,25 @@ class RenderingServerDefault : public RenderingServer {
 
 	};
 
-	static int changes;
+	static SafeNumeric<uint64_t> changes;
 	RID test_cube;
 
-	List<Callable> frame_drawn_callbacks;
+	Mutex callbacks_mutex;
+	Vector<Callable> frame_drawn_callbacks;
+	Vector<Vector<Callable>> completed_draw_callbacks;
+	bool processing_callbacks = false;
+	Semaphore frame_slots;
+	bool main_frame_active = false;
+	uint64_t draw_requests = 0;
+	SafeFlag main_iteration_active;
+
+	mutable Mutex frame_stats_mutex;
+	uint64_t completed_rendering_info[RSE::RENDERING_INFO_MAX] = {};
+	uint64_t pending_frame_profile_frame = 0;
+	Vector<RenderingServerTypes::FrameProfileArea> pending_frame_profile;
+	uint64_t completed_frame_profile_frame = 0;
+	Vector<RenderingServerTypes::FrameProfileArea> completed_frame_profile;
+	double completed_frame_setup_time = 0;
 
 	static void _changes_changed() {}
 
@@ -93,7 +109,12 @@ class RenderingServerDefault : public RenderingServer {
 	void _thread_exit();
 	void _thread_loop();
 
-	void _draw(bool p_swap_buffers, double frame_step);
+	void _draw(bool p_swap_buffers, double frame_step, RenderingServerGlobals::FrameContext p_frame, Vector<Callable> p_callbacks, uint64_t p_queued_usec);
+	void _end_frame();
+	void _set_physics_frame(bool p_active);
+	void _pre_draw(bool p_will_draw, RenderingServerGlobals::FrameContext p_frame);
+	RenderingServerGlobals::FrameContext _capture_frame() const;
+	uint64_t _get_rendering_info(RSE::RenderingInfo p_info);
 	void _run_post_draw_steps();
 	void _init();
 	void _finish();
@@ -108,13 +129,13 @@ public:
 
 #ifdef DEBUG_CHANGES
 	_FORCE_INLINE_ static void redraw_request() {
-		changes++;
+		changes.increment();
 		_changes_changed();
 	}
 
 #else
 	_FORCE_INLINE_ static void redraw_request() {
-		changes++;
+		changes.increment();
 	}
 #endif
 
@@ -229,8 +250,8 @@ public:
 	}
 
 	//these go through command queue if they are in another thread
-	FUNC3(texture_2d_update, RID, const Ref<Image> &, int)
-	FUNC2(texture_3d_update, RID, const Vector<Ref<Image>> &)
+	virtual void texture_2d_update(RID p_texture, const Ref<Image> &p_image, int p_layer) override;
+	virtual void texture_3d_update(RID p_texture, const Vector<Ref<Image>> &p_data) override;
 	FUNC4(texture_external_update, RID, int, int, uint64_t)
 	FUNC2(texture_proxy_update, RID, RID)
 
@@ -809,14 +830,14 @@ public:
 	FUNC1(viewport_set_occlusion_culling_build_quality, RSE::ViewportOcclusionCullingBuildQuality)
 	FUNC2(viewport_set_mesh_lod_threshold, RID, float)
 
-	FUNC3R(int, viewport_get_render_info, RID, RSE::ViewportRenderInfoType, RSE::ViewportRenderInfo)
+	virtual int viewport_get_render_info(RID p_viewport, RSE::ViewportRenderInfoType p_type, RSE::ViewportRenderInfo p_info) override;
 	FUNC2(viewport_set_ddgi_debug_freeze_anchor, RID, bool)
 	FUNC2(viewport_set_micro_geometry_debug_freeze, RID, bool)
 	FUNC2(viewport_set_debug_draw, RID, RSE::ViewportDebugDraw)
 
 	FUNC2(viewport_set_measure_render_time, RID, bool)
-	FUNC1RC(double, viewport_get_measured_render_time_cpu, RID)
-	FUNC1RC(double, viewport_get_measured_render_time_gpu, RID)
+	virtual double viewport_get_measured_render_time_cpu(RID p_viewport) const override;
+	virtual double viewport_get_measured_render_time_gpu(RID p_viewport) const override;
 	FUNC1RC(RID, viewport_find_from_screen_attachment, DisplayServerEnums::WindowID)
 
 	FUNC2(call_set_vsync_mode, DisplayServerEnums::VSyncMode, DisplayServerEnums::WindowID)
@@ -1223,6 +1244,11 @@ public:
 	virtual void set_physics_interpolation_enabled(bool p_enabled) override;
 
 	/* EVENT QUEUING */
+
+	uint64_t begin_frame();
+	void end_frame();
+	void finish_frames();
+	void set_physics_frame(bool p_active);
 
 	virtual void request_frame_drawn_callback(const Callable &p_callable) override;
 

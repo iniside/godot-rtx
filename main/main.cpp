@@ -186,7 +186,7 @@ static AudioServer *audio_server = nullptr;
 static CameraServer *camera_server = nullptr;
 static AccessibilityServer *accessibility_server = nullptr;
 static DisplayServer *display_server = nullptr;
-static RenderingServer *rendering_server = nullptr;
+static RenderingServerDefault *rendering_server = nullptr;
 static TextServerManager *tsman = nullptr;
 static ThemeDB *theme_db = nullptr;
 #ifndef PHYSICS_2D_DISABLED
@@ -2805,13 +2805,9 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	}
 
 	if (separate_thread_render == -1) {
-		separate_thread_render = (int)GLOBAL_DEF("rendering/driver/threads/thread_model", OS::RENDER_THREAD_SAFE) == OS::RENDER_SEPARATE_THREAD;
+		separate_thread_render = (int)GLOBAL_DEF("rendering/driver/threads/thread_model", OS::RENDER_SEPARATE_THREAD) == OS::RENDER_SEPARATE_THREAD;
 	}
 
-	if (editor || project_manager) {
-		// Editor and project manager cannot run with rendering in a separate thread (they will crash on startup).
-		separate_thread_render = 0;
-	}
 #if !defined(THREADS_ENABLED)
 	separate_thread_render = 0;
 #endif
@@ -3554,12 +3550,6 @@ Error Main::setup2(bool p_show_boot_logo) {
 				print_line("Requested V-Sync mode: Mailbox");
 				break;
 		}
-	}
-
-	if (OS::get_singleton()->_separate_thread_render) {
-		WARN_PRINT("The separate rendering thread feature is experimental. Feel free to try it since it will eventually become a stable feature.\n"
-				   "However, bear in mind that at the moment it can lead to project crashes or instability.\n"
-				   "So, unless you want to test the engine, set the \"rendering/driver/threads/thread_model\" project setting to 'Safe'.");
 	}
 
 	/* Initialize Pen Tablet Driver */
@@ -5005,6 +4995,9 @@ bool Main::iteration() {
 	GodotProfileZone("Main::iteration");
 	GodotProfileZoneGroupedFirst(_profile_zone, "prepare");
 
+	const uint64_t profile_admission_begin = profile_gpu ? OS::get_singleton()->get_ticks_usec() : 0;
+	const uint64_t profile_admission_wait = rendering_server->begin_frame();
+	const uint64_t profile_admission_active = profile_gpu ? OS::get_singleton()->get_ticks_usec() - profile_admission_begin - profile_admission_wait : 0;
 	if (Streamline::get_singleton()) {
 		Streamline::get_singleton()->emit_marker(STREAMLINE_MARKER_BEGIN_SIMULATION);
 	}
@@ -5063,6 +5056,7 @@ bool Main::iteration() {
 		}
 
 		Engine::get_singleton()->_in_physics = true;
+		rendering_server->set_physics_frame(true);
 		Engine::get_singleton()->_physics_frames++;
 
 		uint64_t physics_begin = OS::get_singleton()->get_ticks_usec();
@@ -5095,6 +5089,7 @@ bool Main::iteration() {
 #endif // PHYSICS_2D_DISABLED
 
 			Engine::get_singleton()->_in_physics = false;
+			rendering_server->set_physics_frame(false);
 			exit = true;
 			break;
 		}
@@ -5138,6 +5133,7 @@ bool Main::iteration() {
 		physics_process_max = MAX(OS::get_singleton()->get_ticks_usec() - physics_begin, physics_process_max);
 
 		Engine::get_singleton()->_in_physics = false;
+		rendering_server->set_physics_frame(false);
 	}
 
 	if (Input::get_singleton()->is_agile_input_event_flushing()) {
@@ -5166,9 +5162,6 @@ bool Main::iteration() {
 		Streamline::get_singleton()->emit_marker(STREAMLINE_MARKER_END_SIMULATION);
 	}
 
-	GodotProfileZoneGrouped(_profile_zone, "RenderingServer::sync");
-	const uint64_t profile_main_sync_begin = profile_gpu ? OS::get_singleton()->get_ticks_usec() : 0;
-	RenderingServer::get_singleton()->sync(); //sync if still drawing from previous frames.
 	const uint64_t profile_main_draw_begin = profile_gpu ? OS::get_singleton()->get_ticks_usec() : 0;
 
 	GodotProfileZoneGrouped(_profile_zone, "RenderingServer::draw");
@@ -5216,19 +5209,20 @@ bool Main::iteration() {
 	if (profile_gpu) {
 		static uint64_t profile_main_from = 0;
 		static uint64_t profile_main_frames = 0;
-		static uint64_t profile_main_usec[5] = {};
+		static uint64_t profile_main_usec[6] = {};
 		if (profile_main_from == 0) {
 			profile_main_from = ticks;
 		}
 		profile_main_frames++;
 		profile_main_usec[0] += profile_main_simulation;
-		profile_main_usec[1] += profile_main_sync_begin - process_begin;
-		profile_main_usec[2] += profile_main_draw_begin - profile_main_sync_begin;
+		profile_main_usec[1] += profile_main_draw_begin - process_begin;
+		profile_main_usec[2] += profile_admission_wait;
 		profile_main_usec[3] += profile_main_draw_end - profile_main_draw_begin;
+		profile_main_usec[5] += profile_admission_active;
 		profile_main_usec[4] += OS::get_singleton()->get_ticks_usec() - profile_main_draw_end;
 		if (ticks - profile_main_from >= 1000000) {
 			const double divisor = double(profile_main_frames) * 1000.0;
-			print_line(vformat("MAIN CPU PROFILE (frame means, render threaded %s): simulation %.3fms, process/navigation %.3fms, render sync %.3fms, render draw %.3fms, script/audio tail %.3fms", RSG::threaded, profile_main_usec[0] / divisor, profile_main_usec[1] / divisor, profile_main_usec[2] / divisor, profile_main_usec[3] / divisor, profile_main_usec[4] / divisor));
+			print_line(vformat("MAIN CPU PROFILE (frame means, render threaded %s): simulation %.3fms, process/navigation %.3fms, frame admission wait %.3fms, render transfer %.3fms, script/audio tail %.3fms, admission/callback active %.3fms", RSG::threaded, profile_main_usec[0] / divisor, profile_main_usec[1] / divisor, profile_main_usec[2] / divisor, profile_main_usec[3] / divisor, profile_main_usec[4] / divisor, profile_main_usec[5] / divisor));
 			profile_main_from = ticks;
 			profile_main_frames = 0;
 			for (uint64_t &time : profile_main_usec) {
@@ -5263,6 +5257,7 @@ bool Main::iteration() {
 		frames = 0;
 	}
 
+	rendering_server->end_frame();
 	iterating--;
 
 	if (movie_writer) {
@@ -5286,11 +5281,10 @@ bool Main::iteration() {
 	}
 #endif
 
+	if (exit) {
+		rendering_server->finish_frames();
+	}
 	if (fixed_fps != -1) {
-		if (Streamline::get_singleton()) {
-			RenderingServer::get_singleton()->sync();
-			Streamline::get_singleton()->emit_marker(STREAMLINE_MARKER_BEFORE_MESSAGE_LOOP);
-		}
 		return exit;
 	}
 
@@ -5306,11 +5300,13 @@ bool Main::iteration() {
 		// Only relevant when running the editor.
 		if (!editor) {
 			OS::get_singleton()->set_exit_code(EXIT_FAILURE);
+			rendering_server->finish_frames();
 			ERR_FAIL_V_MSG(true,
 					"Command line option --build-solutions was passed, but no project is being edited. Aborting.");
 		}
 		if (!EditorNode::get_singleton()->call_build()) {
 			OS::get_singleton()->set_exit_code(EXIT_FAILURE);
+			rendering_server->finish_frames();
 			ERR_FAIL_V_MSG(true,
 					"Command line option --build-solutions was passed, but the build callback failed. Aborting.");
 		}
@@ -5322,10 +5318,6 @@ bool Main::iteration() {
 		EditorNode::get_singleton()->unload_editor_addons();
 	}
 #endif
-
-	if (Streamline::get_singleton()) {
-		Streamline::get_singleton()->emit_marker(STREAMLINE_MARKER_BEFORE_MESSAGE_LOOP);
-	}
 
 	return exit;
 }

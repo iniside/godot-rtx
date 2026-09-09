@@ -446,7 +446,7 @@ void RendererViewport::_draw_viewport(Viewport *p_viewport) {
 					if (!RSG::canvas->_interpolation_data.interpolation_enabled || !F->interpolated) {
 						F->xform_cache = xf * F->xform_curr;
 					} else {
-						real_t f = Engine::get_singleton()->get_physics_interpolation_fraction();
+						real_t f = RSG::frame.interpolation_fraction;
 						TransformInterpolator::interpolate_transform_2d(F->xform_prev, F->xform_curr, F->xform_cache, f);
 						F->xform_cache = xf * F->xform_cache;
 					}
@@ -492,7 +492,7 @@ void RendererViewport::_draw_viewport(Viewport *p_viewport) {
 					if (!RSG::canvas->_interpolation_data.interpolation_enabled || !cl->interpolated) {
 						cl->xform_cache = xf * cl->xform_curr;
 					} else {
-						real_t f = Engine::get_singleton()->get_physics_interpolation_fraction();
+						real_t f = RSG::frame.interpolation_fraction;
 						TransformInterpolator::interpolate_transform_2d(cl->xform_prev, cl->xform_curr, cl->xform_cache, f);
 						cl->xform_cache = xf * cl->xform_cache;
 					}
@@ -528,7 +528,7 @@ void RendererViewport::_draw_viewport(Viewport *p_viewport) {
 					if (!RSG::canvas->_interpolation_data.interpolation_enabled || !cl->interpolated) {
 						cl->xform_cache = xf * cl->xform_curr;
 					} else {
-						real_t f = Engine::get_singleton()->get_physics_interpolation_fraction();
+						real_t f = RSG::frame.interpolation_fraction;
 						TransformInterpolator::interpolate_transform_2d(cl->xform_prev, cl->xform_curr, cl->xform_cache, f);
 						cl->xform_cache = xf * cl->xform_cache;
 					}
@@ -569,7 +569,7 @@ void RendererViewport::_draw_viewport(Viewport *p_viewport) {
 					if (!RSG::canvas->_interpolation_data.interpolation_enabled || !F->interpolated) {
 						F->xform_cache = xf * F->xform_curr;
 					} else {
-						real_t f = Engine::get_singleton()->get_physics_interpolation_fraction();
+						real_t f = RSG::frame.interpolation_fraction;
 						TransformInterpolator::interpolate_transform_2d(F->xform_prev, F->xform_curr, F->xform_cache, f);
 						F->xform_cache = xf * F->xform_cache;
 					}
@@ -655,7 +655,7 @@ void RendererViewport::_draw_viewport(Viewport *p_viewport) {
 						if (!RSG::canvas->_interpolation_data.interpolation_enabled || !F->interpolated) {
 							F->xform_cache = xf * F->xform_curr;
 						} else {
-							real_t f = Engine::get_singleton()->get_physics_interpolation_fraction();
+							real_t f = RSG::frame.interpolation_fraction;
 							TransformInterpolator::interpolate_transform_2d(F->xform_prev, F->xform_curr, F->xform_cache, f);
 							F->xform_cache = xf * F->xform_cache;
 						}
@@ -1589,12 +1589,9 @@ int RendererViewport::viewport_get_render_info(RID p_viewport, RSE::ViewportRend
 	ERR_FAIL_INDEX_V(p_type, RSE::VIEWPORT_RENDER_INFO_TYPE_MAX, -1);
 	ERR_FAIL_INDEX_V(p_info, RSE::VIEWPORT_RENDER_INFO_MAX, -1);
 
-	Viewport *viewport = viewport_owner.get_or_null(p_viewport);
-	if (!viewport) {
-		return 0; //there should be a lock here..
-	}
-
-	return viewport->render_info.info[p_type][p_info];
+	MutexLock lock(frame_stats_mutex);
+	const FrameStats *stats = completed_frame_stats.getptr(p_viewport);
+	return stats ? stats->render_info.info[p_type][p_info] : 0;
 }
 
 void RendererViewport::viewport_set_ddgi_debug_freeze_anchor(RID p_viewport, bool p_enabled) {
@@ -1636,17 +1633,15 @@ void RendererViewport::viewport_set_measure_render_time(RID p_viewport, bool p_e
 }
 
 float RendererViewport::viewport_get_measured_render_time_cpu(RID p_viewport) const {
-	Viewport *viewport = viewport_owner.get_or_null(p_viewport);
-	ERR_FAIL_NULL_V(viewport, 0);
-
-	return double(viewport->time_cpu_end - viewport->time_cpu_begin) / 1000.0;
+	MutexLock lock(frame_stats_mutex);
+	const FrameStats *stats = completed_frame_stats.getptr(p_viewport);
+	return stats ? stats->cpu_time : 0;
 }
 
 float RendererViewport::viewport_get_measured_render_time_gpu(RID p_viewport) const {
-	Viewport *viewport = viewport_owner.get_or_null(p_viewport);
-	ERR_FAIL_NULL_V(viewport, 0);
-
-	return double((viewport->time_gpu_end - viewport->time_gpu_begin) / 1000) / 1000.0;
+	MutexLock lock(frame_stats_mutex);
+	const FrameStats *stats = completed_frame_stats.getptr(p_viewport);
+	return stats ? stats->gpu_time : 0;
 }
 
 void RendererViewport::viewport_set_snap_2d_transforms_to_pixel(RID p_viewport, bool p_enabled) {
@@ -1747,11 +1742,25 @@ bool RendererViewport::free(RID p_rid) {
 		}
 
 		viewport_owner.free(p_rid);
+		{
+			MutexLock lock(frame_stats_mutex);
+			completed_frame_stats.erase(p_rid);
+		}
 
 		return true;
 	}
 
 	return false;
+}
+
+void RendererViewport::publish_frame_stats() {
+	MutexLock lock(frame_stats_mutex);
+	for (const Viewport *viewport : active_viewports) {
+		FrameStats &stats = completed_frame_stats[viewport->self];
+		stats.render_info = viewport->render_info;
+		stats.cpu_time = double(viewport->time_cpu_end - viewport->time_cpu_begin) / 1000.0;
+		stats.gpu_time = double(viewport->time_gpu_end - viewport->time_gpu_begin) / 1000000.0;
+	}
 }
 
 void RendererViewport::handle_timestamp(String p_timestamp, uint64_t p_cpu_time, uint64_t p_gpu_time) {

@@ -3595,7 +3595,7 @@ void RendererSceneCull::_render_scene(RID p_camera, const RendererSceneRender::C
 
 			// We can detect whether multiple cameras are hitting this light, whether or not the shadow is dirty,
 			// so that we can turn off tighter caster culling.
-			light->detect_light_intersects_multiple_cameras(Engine::get_singleton()->get_frames_drawn());
+			light->detect_light_intersects_multiple_cameras(RSG::frame.frames_drawn);
 
 			if (light->is_shadow_dirty()) {
 				// Dirty shadows have no need to be drawn if

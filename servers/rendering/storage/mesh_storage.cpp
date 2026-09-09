@@ -30,8 +30,8 @@
 
 #include "mesh_storage.h"
 
-#include "core/config/engine.h"
 #include "core/math/transform_interpolator.h"
+#include "servers/rendering/rendering_server_globals.h"
 
 RID RendererMeshStorage::multimesh_allocate() {
 	return _multimesh_allocate();
@@ -103,7 +103,7 @@ void RendererMeshStorage::multimesh_instance_set_transform(RID p_multimesh, int 
 		_multimesh_add_to_interpolation_lists(p_multimesh, *mmi);
 
 #if defined(DEBUG_ENABLED) && defined(TOOLS_ENABLED)
-		if (!Engine::get_singleton()->is_in_physics_frame()) {
+		if (!RSG::in_physics_frame) {
 			PHYSICS_INTERPOLATION_WARNING("MultiMesh interpolation is being triggered from outside physics process, this might lead to issues");
 		}
 #endif
@@ -138,7 +138,7 @@ void RendererMeshStorage::multimesh_instance_set_transform_2d(RID p_multimesh, i
 		_multimesh_add_to_interpolation_lists(p_multimesh, *mmi);
 
 #if defined(DEBUG_ENABLED) && defined(TOOLS_ENABLED)
-		if (!Engine::get_singleton()->is_in_physics_frame()) {
+		if (!RSG::in_physics_frame) {
 			PHYSICS_INTERPOLATION_WARNING("MultiMesh interpolation is being triggered from outside physics process, this might lead to issues");
 		}
 #endif
@@ -240,7 +240,7 @@ void RendererMeshStorage::multimesh_set_buffer(RID p_multimesh, const Vector<flo
 		_multimesh_add_to_interpolation_lists(p_multimesh, *mmi);
 
 #if defined(DEBUG_ENABLED) && defined(TOOLS_ENABLED)
-		if (!Engine::get_singleton()->is_in_physics_frame()) {
+		if (!RSG::in_physics_frame) {
 			PHYSICS_INTERPOLATION_WARNING("MultiMesh interpolation is being triggered from outside physics process, this might lead to issues");
 		}
 #endif
@@ -276,7 +276,7 @@ void RendererMeshStorage::multimesh_set_buffer_interpolated(RID p_multimesh, con
 		_multimesh_add_to_interpolation_lists(p_multimesh, *mmi);
 
 #if defined(DEBUG_ENABLED) && defined(TOOLS_ENABLED)
-		if (!Engine::get_singleton()->is_in_physics_frame()) {
+		if (!RSG::in_physics_frame) {
 			PHYSICS_INTERPOLATION_WARNING("MultiMesh interpolation is being triggered from outside physics process, this might lead to issues");
 		}
 #endif
@@ -429,7 +429,7 @@ void RendererMeshStorage::update_interpolation_tick(bool p_process) {
 void RendererMeshStorage::update_interpolation_frame(bool p_process) {
 	if (p_process) {
 		// Only need 32 bits for interpolation, don't use real_t.
-		float f = Engine::get_singleton()->get_physics_interpolation_fraction();
+		float f = RSG::frame.interpolation_fraction;
 
 		for (unsigned int c = 0; c < _interpolation_data.multimesh_interpolate_update_list.size(); c++) {
 			const RID &rid = _interpolation_data.multimesh_interpolate_update_list[c];

@@ -607,7 +607,7 @@ void RendererCanvasRenderRD::canvas_render_items(RID p_to_render_target, Item *p
 			if (!RSG::canvas->_interpolation_data.interpolation_enabled || !l->interpolated || !l->on_interpolate_transform_list) {
 				final_xform = l->xform_curr;
 			} else {
-				real_t f = Engine::get_singleton()->get_physics_interpolation_fraction();
+				real_t f = RSG::frame.interpolation_fraction;
 				TransformInterpolator::interpolate_transform_2d(l->xform_prev, l->xform_curr, final_xform, f);
 			}
 			// Convert light position to canvas coordinates, as all computation is done in canvas coordinates to avoid precision loss.

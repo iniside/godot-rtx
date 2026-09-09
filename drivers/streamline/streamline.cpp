@@ -33,6 +33,7 @@
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
 #include "core/object/object.h"
+#include "servers/rendering/rendering_server_globals.h"
 #ifdef STREAMLINE_ENABLED
 #include "drivers/streamline/streamline_context.h"
 #endif
@@ -89,6 +90,39 @@ void Streamline::update_project_settings() {
 #endif
 }
 
+void Streamline::begin_frame() {
+#ifdef STREAMLINE_ENABLED
+	_THREAD_SAFE_METHOD_
+	StreamlineContext &context = StreamlineContext::get();
+	context.get_new_frame_token();
+	if (!context.is_game || !context.streamline_capabilities.reflex_available) {
+		return;
+	}
+	if (context.pcl_options_dirty) {
+		context.pcl_set_options(context.pcl_options);
+	}
+	if (context.reflex_options_dirty) {
+		context.reflex_set_options(context.reflex_options);
+	}
+	if (context.main_frame_token && (context.reflex_options.mode != sl::ReflexMode::eOff || context.reflex_options.frameLimitUs > 0)) {
+		context.reflex_sleep(context.main_frame_token);
+	}
+#endif
+}
+
+StreamlineFrameData Streamline::get_frame_data() {
+	StreamlineFrameData frame;
+#ifdef STREAMLINE_ENABLED
+	_THREAD_SAFE_METHOD_
+	const StreamlineContext &context = StreamlineContext::get();
+	frame.token = context.main_frame_token;
+	frame.token_id = context.main_frame_token ? uint32_t(*context.main_frame_token) : 0;
+	frame.dlss_preset = context.dlss_default_preset;
+	frame.dlss_rr_preset = context.dlss_rr_default_preset;
+#endif
+	return frame;
+}
+
 void Streamline::emit_marker(StreamlineMarkerType marker) {
 #ifdef STREAMLINE_ENABLED
 	StreamlineContext &sl_context = StreamlineContext::get();
@@ -131,11 +165,10 @@ void Streamline::emit_marker(StreamlineMarkerType marker) {
 			break;
 	}
 
+	if (marker == STREAMLINE_MARKER_BEGIN_RENDER && sl_context.dlssg_delay > 0) {
+		--sl_context.dlssg_delay;
+	}
 	if (!sl_context.is_game || !sl_context.streamline_capabilities.reflex_available) {
-		// Make sure we still get frame tokens, needed for DLSS.
-		if (marker == StreamlineMarkerType::STREAMLINE_MARKER_BEFORE_MESSAGE_LOOP) {
-			sl_context.get_new_frame_token();
-		}
 		return;
 	}
 
@@ -144,22 +177,6 @@ void Streamline::emit_marker(StreamlineMarkerType marker) {
 		case StreamlineMarkerType::STREAMLINE_MARKER_MODIFY_SWAPCHAIN:
 			sl_context.dlssg_disable();
 			return;
-		case StreamlineMarkerType::STREAMLINE_MARKER_BEFORE_MESSAGE_LOOP:
-			if (sl_context.dlssg_delay > 0) {
-				--sl_context.dlssg_delay;
-			}
-			if (sl_context.pcl_options_dirty) {
-				sl_context.pcl_set_options(sl_context.pcl_options);
-			}
-			if (sl_context.reflex_options_dirty) {
-				sl_context.reflex_set_options(sl_context.reflex_options);
-			}
-
-			sl_context.get_new_frame_token();
-			if (sl_context.reflex_options.mode != sl::ReflexMode::eOff || sl_context.reflex_options.frameLimitUs > 0) {
-				sl_context.reflex_sleep(sl_context.last_token);
-			}
-			break;
 		case StreamlineMarkerType::STREAMLINE_MARKER_BEGIN_RENDER:
 			sl_marker = sl::PCLMarker::eRenderSubmitStart;
 			break;
@@ -185,8 +202,10 @@ void Streamline::emit_marker(StreamlineMarkerType marker) {
 			return;
 	}
 
-	if (sl_context.last_token && sl_marker != sl::PCLMarker::eMaximum) {
-		sl_context.pcl_marker(sl_context.last_token, sl_marker);
+	const bool render_marker = marker == STREAMLINE_MARKER_BEGIN_RENDER || marker == STREAMLINE_MARKER_END_RENDER || marker == STREAMLINE_MARKER_BEGIN_PRESENT || marker == STREAMLINE_MARKER_END_PRESENT;
+	sl::FrameToken *token = render_marker ? static_cast<sl::FrameToken *>(RSG::frame.streamline.token) : sl_context.main_frame_token;
+	if (token && sl_marker != sl::PCLMarker::eMaximum) {
+		sl_context.pcl_marker(token, sl_marker);
 	}
 #endif
 }

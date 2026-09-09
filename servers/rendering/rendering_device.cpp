@@ -29,6 +29,7 @@
 /**************************************************************************/
 
 #include "rendering_device.h"
+
 #include "rendering_device.compat.inc"
 
 #include "core/config/engine.h"
@@ -40,6 +41,7 @@
 #include "core/profiling/profiling.h"
 #include "core/templates/fixed_vector.h"
 #include "servers/rendering/rendering_device_binds.h"
+#include "servers/rendering/rendering_server_globals.h"
 #include "servers/rendering/rendering_shader_container.h"
 #include "servers/rendering/shader_include_db.h"
 
@@ -8387,7 +8389,7 @@ void RenderingDevice::_free_internal(RID p_id) {
 #endif
 	}
 
-	frames_pending_resources_for_processing = uint32_t(frames.size());
+	frames_pending_resources_for_processing.set(uint32_t(frames.size()));
 }
 
 // The full list of resources that can be named is in the VkObjectType enum.
@@ -8662,8 +8664,8 @@ void RenderingDevice::_free_pending_resources(int p_frame) {
 		frames[p_frame].buffers_to_dispose_of.pop_front();
 	}
 
-	if (frames_pending_resources_for_processing > 0u) {
-		--frames_pending_resources_for_processing;
+	if (frames_pending_resources_for_processing.get() > 0u) {
+		frames_pending_resources_for_processing.decrement();
 	}
 }
 
@@ -8741,7 +8743,7 @@ void RenderingDevice::_begin_frame(bool p_presented) {
 
 	frames[frame].timestamp_result_count = frames[frame].timestamp_count;
 	frames[frame].timestamp_count = 0;
-	frames[frame].index = Engine::get_singleton()->get_frames_drawn();
+	frames[frame].index = this == singleton ? RSG::frame.frames_drawn : frames_drawn;
 	if (cpu_profile_enabled) {
 		cpu_profile_usec[CPU_PROFILE_FRAME_RECYCLE] += OS::get_singleton()->get_ticks_usec() - cpu_begin;
 	}

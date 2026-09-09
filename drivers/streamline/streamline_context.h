@@ -107,7 +107,7 @@ public:
 
 	static StreamlineContext &get();
 
-	sl::FrameToken *last_token = nullptr;
+	sl::FrameToken *main_frame_token = nullptr;
 	bool is_game = false;
 
 	sl::ViewportHandle dlssg_viewport;

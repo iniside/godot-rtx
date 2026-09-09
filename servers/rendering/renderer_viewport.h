@@ -38,6 +38,14 @@
 #include "servers/rendering/storage/render_scene_buffers.h"
 
 class RendererViewport {
+	struct FrameStats {
+		RenderingServerTypes::RenderInfo render_info;
+		double cpu_time = 0;
+		double gpu_time = 0;
+	};
+	mutable Mutex frame_stats_mutex;
+	HashMap<RID, FrameStats> completed_frame_stats;
+
 public:
 	struct CanvasBase {
 	};
@@ -319,6 +327,7 @@ public:
 	void handle_timestamp(String p_timestamp, uint64_t p_cpu_time, uint64_t p_gpu_time);
 
 	void draw_viewports(bool p_swap_buffers);
+	void publish_frame_stats();
 
 	bool free(RID p_rid);
 

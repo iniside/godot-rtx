@@ -30,8 +30,8 @@
 
 #include "renderer_scene_occlusion_cull.h"
 
-#include "core/config/engine.h"
 #include "servers/rendering/rendering_server.h"
+#include "servers/rendering/rendering_server_globals.h"
 
 RendererSceneOcclusionCull *RendererSceneOcclusionCull::singleton = nullptr;
 
@@ -117,7 +117,7 @@ void RendererSceneOcclusionCull::HZBuffer::resize(const Size2i &p_size) {
 
 void RendererSceneOcclusionCull::HZBuffer::update_mips() {
 	// Keep this up to date as a local to be used for occlusion timers.
-	occlusion_frame = Engine::get_singleton()->get_frames_drawn();
+	occlusion_frame = RSG::frame.frames_drawn;
 
 	if (sizes.is_empty()) {
 		return;

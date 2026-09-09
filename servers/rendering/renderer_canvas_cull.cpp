@@ -120,7 +120,7 @@ void RendererCanvasCull::_collect_ysort_children(RendererCanvasCull::Item *p_can
 				if (!_interpolation_data.interpolation_enabled || !child_items[i]->interpolated || !child_items[i]->on_interpolate_transform_list) {
 					child_xform = child_items[i]->xform_curr;
 				} else {
-					real_t f = Engine::get_singleton()->get_physics_interpolation_fraction();
+					real_t f = RSG::frame.interpolation_fraction;
 					TransformInterpolator::interpolate_transform_2d(child_items[i]->xform_prev, child_items[i]->xform_curr, child_xform, f);
 				}
 
@@ -352,7 +352,7 @@ void RendererCanvasCull::_cull_canvas_item(Item *p_canvas_item, const Transform2
 		if (!_interpolation_data.interpolation_enabled || !ci->interpolated || !ci->on_interpolate_transform_list) {
 			self_xform = ci->xform_curr;
 		} else {
-			real_t f = Engine::get_singleton()->get_physics_interpolation_fraction();
+			real_t f = RSG::frame.interpolation_fraction;
 			TransformInterpolator::interpolate_transform_2d(ci->xform_prev, ci->xform_curr, self_xform, f);
 		}
 

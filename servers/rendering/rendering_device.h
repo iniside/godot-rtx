@@ -1945,10 +1945,10 @@ private:
 	// This is important for when the user requested for the logic loop to still be updated while
 	// graphics should not (e.g. headless Multiplayer servers, minimized windows that need to still
 	// process something on the background).
-	uint32_t frames_pending_resources_for_processing = 0u;
+	SafeNumeric<uint32_t> frames_pending_resources_for_processing;
 
 public:
-	bool has_pending_resources_for_processing() const { return frames_pending_resources_for_processing != 0u; }
+	bool has_pending_resources_for_processing() const { return frames_pending_resources_for_processing.get() != 0u; }
 
 private:
 	void _free_pending_resources(int p_frame);

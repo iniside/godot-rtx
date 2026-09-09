@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "drivers/streamline/streamline_data.h"
 #include "servers/rendering/environment/renderer_fog.h"
 #include "servers/rendering/environment/renderer_gi.h"
 #include "servers/rendering/storage/camera_attributes_storage.h"
@@ -48,6 +49,14 @@ class RenderingMethod;
 
 class RenderingServerGlobals {
 public:
+	struct FrameContext {
+		real_t interpolation_fraction = 0;
+		uint64_t frames_drawn = 0;
+		uint64_t process_frames = 0;
+		StreamlineFrameData streamline;
+	};
+	static FrameContext frame;
+	static inline bool in_physics_frame = false;
 	static inline bool threaded = false;
 
 	static inline RendererUtilities *utilities = nullptr;

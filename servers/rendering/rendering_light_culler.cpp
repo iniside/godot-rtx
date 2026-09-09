@@ -605,7 +605,7 @@ bool RenderingLightCuller::prepare_camera(const Transform3D &p_cam_transform, co
 	// For debug flash off and on.
 #ifdef LIGHT_CULLER_DEBUG_FLASH
 	if (!Engine::get_singleton()->is_editor_hint()) {
-		int dc = Engine::get_singleton()->get_process_frames() / LIGHT_CULLER_DEBUG_FLASH_FREQUENCY;
+		int dc = RSG::frame.process_frames / LIGHT_CULLER_DEBUG_FLASH_FREQUENCY;
 		bool bnew_active;
 		bnew_active = (dc % 2) == 0;
 

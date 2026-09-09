@@ -30,10 +30,18 @@
 
 #pragma once
 
+#include <cstdint>
+
+struct StreamlineFrameData {
+	void *token = nullptr;
+	uint32_t token_id = 0;
+	char dlss_preset = '?';
+	char dlss_rr_preset = '?';
+};
+
 enum StreamlineMarkerType {
 	STREAMLINE_MARKER_INITIALIZE_VULKAN,
 	STREAMLINE_MARKER_INITIALIZE_D3D12,
-	STREAMLINE_MARKER_BEFORE_MESSAGE_LOOP,
 	STREAMLINE_MARKER_BEFORE_DEVICE_DESTROY,
 	STREAMLINE_MARKER_AFTER_DEVICE_CREATION,
 	STREAMLINE_MARKER_MODIFY_SWAPCHAIN,
