@@ -1,0 +1,11 @@
+config_version=5
+
+[application]
+
+config/name="Microgeometry Dragon Import"
+config/features=PackedStringArray("4.8", "Forward Plus")
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+rendering_device/driver.windows="vulkan"
