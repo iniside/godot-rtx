@@ -112,7 +112,13 @@ Full ordinary Windows editor/console build 04 passed in 42.17 seconds with
 `C:/Users/lukas/AppData/Local/Temp/godot-micro-step5-host-20260909/`.
 The shader closure reports 56 current pinned compiler/SPIR-V variants in
 `C:/Users/lukas/AppData/Local/Temp/godot-micro-selected-step5-20260909/final-current-source-closure.json`.
-Fresh source and proof reviews are running; these are not yet review PASS claims.
+Round 1 source review rejected cached request-counter exhaustion, publication of
+new cuts before history invalidation, missing TIME material tracking, and incorrect
+behind-camera RT error/offscreen classification. Fixes are in progress. Proof
+review independently confirmed the 56 distinct artifacts, hashes, pinned tools
+and ABI, but rejected the final verifier: it did not enforce unique expected
+variant identities or exit nonzero on a failed report. That correction is also
+in progress; no final Step 5 review PASS is claimed.
 Cut membership history feedback is asynchronous and can lag the changed GPU cut
 by in-flight frames. Dense cluster membership storage and real GPU behavior
 remain unvalidated.
@@ -140,8 +146,10 @@ Four glTF packed-byte-stride warnings occurred. Diagnostic reimport using
 shipped fixture instructions. The shipped stats-only inspector subsequently
 passed in 3.399673 seconds with empty stderr. An editor documentation parser
 error caused by the self-closing tutorials element was corrected separately in
-`22089c9781` and included in build 04. Fixture source review is running; proof
-audit remains pending. No automated test suite was authored or run.
+`22089c9781` and included in build 04. Fixture source and proof round 1 confirmed the import evidence but rejected
+README artifact-location wording. Documentation fix `b03b5710aa` explicitly
+keeps both `.godot/` and the adjacent `.import` sidecar untracked. Fresh final
+source and proof reviews of that correction are running. No automated test suite was authored or run.
 
 Step 6 remains pending: selected raster/RT cluster debug views and frozen
 selection, counters, real Vulkan rendering, export/PCK, native save/load and OBJ,
