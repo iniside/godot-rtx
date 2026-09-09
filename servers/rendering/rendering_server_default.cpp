@@ -447,7 +447,7 @@ Error RenderingServerDefault::init() {
 }
 
 void RenderingServerDefault::finish() {
-	if (main_frame_active) {
+	while (main_frame_depth > 0) {
 		end_frame();
 	}
 	if (initialized) {
@@ -664,15 +664,18 @@ void RenderingServerDefault::sync() {
 
 uint64_t RenderingServerDefault::begin_frame() {
 	ERR_FAIL_COND_V(!Thread::is_main_thread(), 0);
-	ERR_FAIL_COND_V(main_frame_active, 0);
 	_run_post_draw_steps();
+	if (main_frame_depth > 0) {
+		main_frame_depth++;
+		return 0;
+	}
 	const uint64_t wait_begin = OS::get_singleton()->get_ticks_usec();
 	{
 		GodotProfileZone("Rendering frame admission wait");
 		frame_slots.wait();
 	}
 	const uint64_t wait_usec = OS::get_singleton()->get_ticks_usec() - wait_begin;
-	main_frame_active = true;
+	main_frame_depth = 1;
 	main_iteration_active.set();
 	if (Streamline::get_singleton()) {
 		Streamline::get_singleton()->begin_frame();
@@ -696,8 +699,11 @@ void RenderingServerDefault::finish_frames() {
 
 void RenderingServerDefault::end_frame() {
 	ERR_FAIL_COND(!Thread::is_main_thread());
-	ERR_FAIL_COND(!main_frame_active);
-	main_frame_active = false;
+	ERR_FAIL_COND(main_frame_depth == 0);
+	main_frame_depth--;
+	if (main_frame_depth > 0) {
+		return;
+	}
 	main_iteration_active.clear();
 	if (create_thread) {
 		command_queue.push(this, &RenderingServerDefault::_end_frame);
@@ -733,7 +739,7 @@ void RenderingServerDefault::set_physics_frame(bool p_active) {
 
 void RenderingServerDefault::draw(bool p_present, double frame_step) {
 	ERR_FAIL_COND_MSG(!Thread::is_main_thread(), "Manually triggering the draw function from the RenderingServer can only be done on the main thread. Call this function from the main thread or use call_deferred().");
-	const bool manual_frame = !main_frame_active;
+	const bool manual_frame = main_frame_depth == 0;
 	if (manual_frame) {
 		begin_frame();
 	}

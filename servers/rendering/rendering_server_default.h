@@ -68,7 +68,7 @@ class RenderingServerDefault : public RenderingServer {
 	Vector<Vector<Callable>> completed_draw_callbacks;
 	bool processing_callbacks = false;
 	Semaphore frame_slots;
-	bool main_frame_active = false;
+	uint32_t main_frame_depth = 0;
 	uint64_t draw_requests = 0;
 	SafeFlag main_iteration_active;
 
