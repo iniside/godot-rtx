@@ -219,6 +219,6 @@ void main(uint3 p_dispatch : SV_DispatchThreadID) {
 		info.reference_stride = 8u;
 		info.references = parameters.references_address + uint64_t(offset) * 8u;
 		dirty_infos[destination] = info;
-		dirty_destinations[destination] = output.blas_address;
+		dirty_destinations[destination] = blas_addresses[geometry];
 	}
 }

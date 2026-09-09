@@ -163,7 +163,7 @@ bool projected_bounds(float3 p_center, float p_radius, bool p_previous, out floa
 	if (p_center.z + p_radius >= -parameters.near_plane) { return false; }
 	r_min = float2(1e30);
 	r_max = float2(-1e30);
-	r_nearest = 0;
+	r_nearest = -1e30;
 	for (uint corner = 0; corner < 8; corner++) {
 		float3 offset = float3((corner & 1) != 0 ? 1 : -1, (corner & 2) != 0 ? 1 : -1, (corner & 4) != 0 ? 1 : -1) * p_radius;
 		float4 clip = project_point(p_center + offset, p_previous);
@@ -208,7 +208,7 @@ bool occluded(SelectionTask p_task, MicroGeometryInstance p_instance, uint p_mul
 	for (uint y = start.y; y <= finish.y; y++) {
 		for (uint x = start.x; x <= finish.x; x++) { depth = min(depth, hzb.Load(int3(x, y, level))); }
 	}
-	return nearest + 0.00001 < depth;
+	return max(nearest, 0.0) + 0.00001 < depth;
 }
 
 void request_group(uint64_t p_asset, uint p_group) {
