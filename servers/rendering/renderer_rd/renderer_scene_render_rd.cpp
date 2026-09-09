@@ -41,6 +41,7 @@
 #include "servers/rendering/renderer_rd/shaders/decal_data_inc.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/light_data_inc.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/scene_data_inc.glsl.gen.h"
+#include "servers/rendering/renderer_rd/storage_rd/mesh_storage.h"
 #include "servers/rendering/renderer_rd/storage_rd/particles_storage.h"
 #include "servers/rendering/renderer_rd/storage_rd/texture_storage.h"
 #include "servers/rendering/rendering_server_default.h"
@@ -1632,6 +1633,41 @@ float RendererSceneRenderRD::screen_space_roughness_limiter_get_limit() const {
 TypedArray<Image> RendererSceneRenderRD::bake_render_uv2(RID p_base, const TypedArray<RID> &p_material_overrides, const Size2i &p_image_size) {
 	ERR_FAIL_COND_V_MSG(p_image_size.width <= 0, TypedArray<Image>(), "Image width must be greater than 0.");
 	ERR_FAIL_COND_V_MSG(p_image_size.height <= 0, TypedArray<Image>(), "Image height must be greater than 0.");
+	auto *mesh_storage = RendererRD::MeshStorage::get_singleton();
+	struct BakeMesh {
+		RendererRD::MeshStorage *storage = nullptr;
+		RID mesh;
+		~BakeMesh() {
+			if (mesh.is_valid()) {
+				storage->mesh_free(mesh);
+			}
+		}
+	} bake_mesh{ mesh_storage };
+	RID bake_base = p_base;
+	const uint32_t sc = mesh_storage->mesh_get_surface_count(p_base);
+	if (mesh_storage->mesh_get_micro_geometry_asset(p_base).is_valid()) {
+		bake_mesh.mesh = mesh_storage->mesh_allocate();
+		ERR_FAIL_COND_V(bake_mesh.mesh.is_null(), TypedArray<Image>());
+		mesh_storage->mesh_initialize(bake_mesh.mesh);
+		mesh_storage->mesh_set_blend_shape_count(bake_mesh.mesh, mesh_storage->mesh_get_blend_shape_count(p_base));
+		mesh_storage->mesh_set_blend_shape_mode(bake_mesh.mesh, mesh_storage->mesh_get_blend_shape_mode(p_base));
+		mesh_storage->mesh_set_custom_aabb(bake_mesh.mesh, mesh_storage->mesh_get_custom_aabb(p_base));
+		for (uint32_t surface = 0; surface < sc; surface++) {
+			RenderingServerTypes::SurfaceData source = RSG::mesh_storage->mesh_get_surface(p_base, surface);
+			ERR_FAIL_COND_V(source.vertex_data.is_empty(), TypedArray<Image>());
+			source.material = mesh_storage->mesh_surface_get_material(p_base, surface);
+			source.lods.clear();
+			mesh_storage->mesh_add_surface(bake_mesh.mesh, source);
+			ERR_FAIL_COND_V(mesh_storage->mesh_get_surface_count(bake_mesh.mesh) != surface + 1, TypedArray<Image>());
+			ERR_FAIL_COND_V(mesh_storage->mesh_surface_get_vertex_buffer_rd_rid(bake_mesh.mesh, surface).is_null(), TypedArray<Image>());
+			ERR_FAIL_COND_V(!source.attribute_data.is_empty() && mesh_storage->mesh_surface_get_attribute_buffer_rd_rid(bake_mesh.mesh, surface).is_null(), TypedArray<Image>());
+			ERR_FAIL_COND_V(!source.skin_data.is_empty() && mesh_storage->mesh_surface_get_skin_buffer_rd_rid(bake_mesh.mesh, surface).is_null(), TypedArray<Image>());
+			ERR_FAIL_COND_V(source.index_count && mesh_storage->mesh_surface_get_index_buffer_rd_rid(bake_mesh.mesh, surface).is_null(), TypedArray<Image>());
+		}
+		bake_base = bake_mesh.mesh;
+	}
+	RenderGeometryInstance *gi_inst = geometry_instance_create(bake_base);
+	ERR_FAIL_NULL_V(gi_inst, TypedArray<Image>());
 	RD::TextureFormat tf;
 	tf.format = RD::DATA_FORMAT_R8G8B8A8_UNORM;
 	tf.width = p_image_size.width; // Always 64x64
@@ -1664,10 +1700,6 @@ TypedArray<Image> RendererSceneRenderRD::bake_render_uv2(RID p_base, const Typed
 
 	//RID sampled_light;
 
-	RenderGeometryInstance *gi_inst = geometry_instance_create(p_base);
-	ERR_FAIL_NULL_V(gi_inst, TypedArray<Image>());
-
-	uint32_t sc = RSG::mesh_storage->mesh_get_surface_count(p_base);
 	Vector<RID> materials;
 	materials.resize(sc);
 

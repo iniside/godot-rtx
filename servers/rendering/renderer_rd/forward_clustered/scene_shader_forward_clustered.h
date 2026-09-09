@@ -251,6 +251,7 @@ public:
 		bool unshaded = false;
 		bool uses_vertex = false;
 		bool uses_position = false;
+		bool writes_depth = false;
 		bool uses_previous_time = false;
 		bool uses_sss = false;
 		bool uses_transmittance = false;

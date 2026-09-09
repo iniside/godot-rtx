@@ -504,6 +504,9 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 		task.multimesh_count = instances;
 		task.bin = bin_index;
 		task.flags = instance->store_transform_cache ? 0 : 1;
+		if (bin.shader->writes_depth) {
+			task.flags |= 16;
+		}
 		if (p_pass == PASS_MODE_SDF || p_pass == PASS_MODE_SHADOW_DP || p_render_data->scene_data->material_uv2_mode) {
 			task.flags |= 2;
 		}

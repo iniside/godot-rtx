@@ -188,7 +188,7 @@ bool frustum_visible(SelectionTask p_task, MicroGeometryInstance p_instance, uin
 }
 
 bool occluded(SelectionTask p_task, MicroGeometryInstance p_instance, uint p_multimesh, MicroGeometryCluster p_cluster, bool p_previous) {
-	if ((parameters.flags & 4) == 0 || parameters.hzb_mips == 0 || (p_task.flags & 2) != 0) { return false; }
+	if ((parameters.flags & 4) == 0 || parameters.hzb_mips == 0 || (p_task.flags & 18) != 0) { return false; }
 	float3 center;
 	float radius, nearest;
 	float2 low, high;
