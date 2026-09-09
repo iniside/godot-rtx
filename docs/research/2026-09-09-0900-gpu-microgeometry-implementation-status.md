@@ -149,7 +149,9 @@ error caused by the self-closing tutorials element was corrected separately in
 `22089c9781` and included in build 04. Fixture source and proof round 1 confirmed the import evidence but rejected
 README artifact-location wording. Documentation fix `b03b5710aa` explicitly
 keeps both `.godot/` and the adjacent `.import` sidecar untracked. Fresh final
-source and proof reviews of that correction are running. No automated test suite was authored or run.
+source and proof reviews both returned PASS at
+`b03b5710aafad689a6274a8bfbb174c9c33acc08`, examining the original, correction
+and cumulative history. No automated test suite was authored or run.
 
 Step 6 remains pending: selected raster/RT cluster debug views and frozen
 selection, counters, real Vulkan rendering, export/PCK, native save/load and OBJ,
