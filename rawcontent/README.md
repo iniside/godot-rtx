@@ -25,7 +25,9 @@ Check the log for errors, the external `.mgdata` dependency, nonempty geometry
 statistics, and the expected single mesh/surface. The `triangles` statistic sums
 all hierarchy levels; it is neither the input count nor a selected rendering
 count. `encoded_bytes` counts compressed page payloads; the complete `.mgdata`
-also contains metadata. Generated import files remain under `.godot/imported`.
+also contains metadata. Godot creates the `.godot/` cache directory and the
+`xyzrgb_dragon.glb.import` sidecar beside the input. Both remain untracked and
+must not be staged with this fixture.
 
 Open `project.godot` in the editor to inspect the imported dragon asset. The
 project uses Forward+ and Vulkan. Headless import and resource inspection do
