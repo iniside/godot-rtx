@@ -484,9 +484,21 @@ struct RTMicroGeometryTask {
 	uint32_t group_count = 0;
 	uint32_t instance_flags = 0;
 	uint32_t instance_mask = 255;
-	uint32_t padding[2] = {};
+	uint32_t tile_offset = 0;
+	uint32_t mode = 0;
+	uint32_t scan_offset = 0;
+	uint32_t scan_stride = 0;
 };
-static_assert(sizeof(RTMicroGeometryTask) == 72);
+static_assert(sizeof(RTMicroGeometryTask) == 80);
+
+struct RTMicroGeometryScanTask {
+	uint32_t task = 0;
+	uint32_t group_offset = 0;
+	uint32_t element_count = 0;
+	uint32_t input_offset = 0;
+	uint32_t output_offset = 0;
+};
+static_assert(sizeof(RTMicroGeometryScanTask) == 20);
 
 struct RTMicroGeometryPin {
 	RID asset;
@@ -495,6 +507,11 @@ struct RTMicroGeometryPin {
 };
 
 struct RTMicroGeometryBuild {
+	struct ScanLevel {
+		uint32_t task_offset = 0;
+		uint32_t task_count = 0;
+		uint32_t group_count = 0;
+	};
 	struct RetiredPins {
 		Vector<RTMicroGeometryPin> pins;
 		uint64_t submission = 0;
@@ -526,6 +543,9 @@ struct RTMicroGeometryBuild {
 	MicroGeometrySelection::Pass *selection = nullptr;
 	Vector<MicroGeometrySelection::Task> selection_tasks;
 	Vector<RTMicroGeometryTask> task_data;
+	Vector<ScanLevel> scan_levels;
+	uint32_t tile_work = 0;
+	uint32_t selected_work = 0;
 	Vector<RID> assets;
 	Vector<RTMicroGeometryPin> pins;
 	Vector<RTMicroGeometryPin> candidate_pins;
@@ -540,6 +560,10 @@ struct RTMicroGeometryBuild {
 	RID blas_addresses;
 	RID membership;
 	RID cached_membership;
+	RID candidate_state;
+	RID committed_state;
+	RID scan_data;
+	RID scan_tasks;
 	RID references;
 	RID dirty_infos;
 	RID dirty_destinations;
@@ -630,7 +654,17 @@ class RenderRaytracing {
 	MicroGeometrySelection *micro_selection = nullptr;
 	MicroGeometryRtShaderRD micro_rt_shader;
 	RID micro_rt_version;
-	RID micro_rt_pipeline;
+	enum MicroRTPhase {
+		MICRO_RT_RESET,
+		MICRO_RT_SCATTER,
+		MICRO_RT_COMPARE,
+		MICRO_RT_SCAN,
+		MICRO_RT_ADD_OFFSETS,
+		MICRO_RT_EMIT,
+		MICRO_RT_FINALIZE,
+		MICRO_RT_PHASE_COUNT,
+	};
+	RID micro_rt_pipelines[MICRO_RT_PHASE_COUNT];
 	GeometryPositionsShaderRD geometry_positions_shader;
 	RID geometry_positions_version;
 	RID geometry_positions_pipeline;
