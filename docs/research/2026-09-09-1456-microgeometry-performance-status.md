@@ -461,3 +461,11 @@ exact/cumulative material source review round 1 passes at `e319cca724`. Final sh
 at frozen `cfa892579a`, including dense admission, successful profiled shutdown,
 streaming and the bounded unload/reload observations above. It does not close
 transform-only invariance or the remaining threading steps.
+
+## Remaining worker preparation
+
+Step 4 frame ownership is in implementation. The bounded
+[canvas preparation inspection](2026-09-09-1919-canvas-worker-preparation-summary.md)
+and [RT gather inspection](2026-09-09-1919-rt-worker-preparation-summary.md)
+identify cull, batch, cache and upload ownership for Step 5. They do not claim
+worker dispatch. RD recording remains Step 6.
