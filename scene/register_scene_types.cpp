@@ -111,6 +111,7 @@
 #include "scene/main/timer.h"
 #include "scene/main/viewport.h"
 #include "scene/main/window.h"
+#include "scene/resources/3d/micro_geometry.h"
 #include "scene/resources/animation_library.h"
 #include "scene/resources/atlas_texture.h"
 #include "scene/resources/audio_stream_polyphonic.h"
@@ -375,6 +376,9 @@
 #include "scene/resources/3d/world_boundary_shape_3d.h"
 #endif // PHYSICS_3D_DISABLED
 
+static Ref<ResourceFormatLoaderMicroGeometry> resource_loader_micro_geometry;
+static Ref<ResourceFormatSaverMicroGeometry> resource_saver_micro_geometry;
+
 static Ref<ResourceFormatSaverText> resource_saver_text;
 static Ref<ResourceFormatLoaderText> resource_loader_text;
 
@@ -411,6 +415,12 @@ void register_scene_types() {
 		resource_loader_texture_3d.instantiate();
 		ResourceLoader::add_resource_format_loader(resource_loader_texture_3d);
 	}
+
+	GDREGISTER_CLASS(MicroGeometry);
+	resource_loader_micro_geometry.instantiate();
+	ResourceLoader::add_resource_format_loader(resource_loader_micro_geometry, true);
+	resource_saver_micro_geometry.instantiate();
+	ResourceSaver::add_resource_format_saver(resource_saver_micro_geometry, true);
 
 	resource_saver_text.instantiate();
 	ResourceSaver::add_resource_format_saver(resource_saver_text, true);
@@ -1338,6 +1348,11 @@ void unregister_scene_types() {
 		ResourceLoader::remove_resource_format_loader(resource_loader_stream_texture);
 		resource_loader_stream_texture.unref();
 	}
+
+	ResourceLoader::remove_resource_format_loader(resource_loader_micro_geometry);
+	resource_loader_micro_geometry.unref();
+	ResourceSaver::remove_resource_format_saver(resource_saver_micro_geometry);
+	resource_saver_micro_geometry.unref();
 
 	ResourceSaver::remove_resource_format_saver(resource_saver_text);
 	resource_saver_text.unref();

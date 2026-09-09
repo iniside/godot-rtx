@@ -75,6 +75,7 @@ private:
 	struct MeshInstance;
 
 	struct Mesh {
+		Ref<MicroGeometryData> micro_geometry;
 		struct Surface {
 			RSE::PrimitiveType primitive = RSE::PRIMITIVE_POINTS;
 			uint64_t format = 0;
@@ -416,6 +417,7 @@ public:
 	virtual AABB mesh_get_custom_aabb(RID p_mesh) const override;
 
 	virtual AABB mesh_get_aabb(RID p_mesh, RID p_skeleton = RID()) override;
+	virtual void mesh_set_micro_geometry(RID p_mesh, const Ref<MicroGeometryData> &p_data) override;
 	virtual void mesh_set_shadow_mesh(RID p_mesh, RID p_shadow_mesh) override;
 
 	virtual void mesh_set_path(RID p_mesh, const String &p_path) override;

@@ -81,6 +81,7 @@ public:
 	virtual void mesh_set_path(RID p_mesh, const String &p_path) = 0;
 	virtual String mesh_get_path(RID p_mesh) const = 0;
 
+	virtual void mesh_set_micro_geometry(RID p_mesh, const Ref<MicroGeometryData> &p_data) = 0;
 	virtual void mesh_set_shadow_mesh(RID p_mesh, RID p_shadow_mesh) = 0;
 
 	virtual void mesh_surface_remove(RID p_mesh, int p_surface) = 0;

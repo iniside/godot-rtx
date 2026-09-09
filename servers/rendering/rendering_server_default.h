@@ -420,6 +420,7 @@ public:
 	FUNC2(mesh_set_path, RID, const String &)
 	FUNC1RC(String, mesh_get_path, RID)
 
+	FUNC2(mesh_set_micro_geometry, RID, const Ref<MicroGeometryData> &)
 	FUNC2(mesh_set_shadow_mesh, RID, RID)
 
 	FUNC2(mesh_surface_remove, RID, int)

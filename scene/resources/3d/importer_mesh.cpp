@@ -325,6 +325,7 @@ String ImporterMesh::validate_blend_shape_name(const String &p_name) {
 }
 
 void ImporterMesh::add_blend_shape(const String &p_name) {
+	micro_geometry.unref();
 	ERR_FAIL_COND(surfaces.size() > 0);
 	blend_shapes.push_back(validate_blend_shape_name(p_name));
 }
@@ -347,6 +348,7 @@ Mesh::BlendShapeMode ImporterMesh::get_blend_shape_mode() const {
 }
 
 void ImporterMesh::add_surface(Mesh::PrimitiveType p_primitive, const Array &p_arrays, const TypedArray<Array> &p_blend_shapes, const Dictionary &p_lods, const Ref<Material> &p_material, const String &p_surface_name, const uint64_t p_flags) {
+	micro_geometry.unref();
 	ERR_FAIL_COND(p_blend_shapes.size() != blend_shapes.size());
 	ERR_FAIL_COND(p_arrays.size() != Mesh::ARRAY_MAX);
 	Surface s;
@@ -488,6 +490,7 @@ static void _remap_arrays(Array &r_arrays, const Vector<uint32_t> &p_remap, uint
 }
 
 void ImporterMesh::optimize_indices() {
+	micro_geometry.unref();
 	if (!SurfaceTool::optimize_vertex_cache_func) {
 		return;
 	}
@@ -513,7 +516,6 @@ void ImporterMesh::optimize_indices() {
 		// A baked cluster blob indexes into ARRAY_INDEX/ARRAY_VERTEX by base_triangle and vertex
 		// position; remapping either below without invalidating it would leave the blob pointing
 		// at the wrong geometry (the a643a15e48 bug class, reintroduced by call order).
-		surfaces.write[i].cluster_data.clear();
 
 		// Optimize indices for vertex cache to establish final triangle order.
 		int *indices_ptr = indices.ptrw();
@@ -560,166 +562,32 @@ void ImporterMesh::optimize_indices() {
 	}
 }
 
-namespace {
-constexpr uint32_t CLUSTER_BLOB_MAGIC = 0x53554c43; // "CLUS", read as little-endian bytes.
-constexpr uint32_t CLUSTER_BLOB_VERSION = 1;
-constexpr uint32_t CLUSTER_HEADER_SIZE = 32;
-constexpr uint32_t CLUSTER_RECORD_SIZE = 16;
-constexpr size_t CLUSTER_MAX_VERTICES = 128;
-constexpr size_t CLUSTER_MIN_TRIANGLES = 96;
-constexpr size_t CLUSTER_MAX_TRIANGLES = 128;
-constexpr float CLUSTER_FILL_WEIGHT = 0.5f;
-} // namespace
-
-void ImporterMesh::generate_clusters() {
-	if (!SurfaceTool::build_meshlets_bound_func || !SurfaceTool::build_meshlets_spatial_func || !SurfaceTool::optimize_meshlet_func) {
-		return;
+Error ImporterMesh::generate_micro_geometry(String &r_error) {
+	if (surfaces.is_empty() || !blend_shapes.is_empty()) {
+		return OK;
 	}
-
-	for (int i = 0; i < surfaces.size(); i++) {
-		Surface &s = surfaces.write[i];
-		s.cluster_data.clear();
-
-		if (s.primitive != Mesh::PRIMITIVE_TRIANGLES) {
-			continue;
+	for (const Surface &surface : surfaces) {
+		if (surface.primitive != Mesh::PRIMITIVE_TRIANGLES || (surface.flags & Mesh::ARRAY_FLAG_USE_DYNAMIC_UPDATE) || surface.arrays[Mesh::ARRAY_VERTEX].get_type() != Variant::PACKED_VECTOR3_ARRAY || surface.arrays[Mesh::ARRAY_BONES].get_type() != Variant::NIL || surface.arrays[Mesh::ARRAY_WEIGHTS].get_type() != Variant::NIL) {
+			return OK;
 		}
-
-		PackedVector3Array vertices = s.arrays[RSE::ARRAY_VERTEX];
-		PackedInt32Array indices = s.arrays[RSE::ARRAY_INDEX];
-
-		size_t vertex_count = vertices.size();
-		size_t index_count = indices.size();
-		if (vertex_count == 0) {
-			continue;
-		}
-
-		if (index_count == 0) {
-			ERR_CONTINUE_MSG(vertex_count % 3 != 0, "ImporterMesh::generate_clusters: non-indexed surface " + itos(i) + " has a vertex count that is not a multiple of 3.");
-			Error indices_err = indices.resize(vertex_count);
-			ERR_CONTINUE_MSG(indices_err != OK, "ImporterMesh::generate_clusters: failed to allocate index buffer for surface " + itos(i) + ".");
-			int32_t *indices_w = indices.ptrw();
-			for (size_t j = 0; j < vertex_count; j++) {
-				indices_w[j] = (int32_t)j;
-			}
-			index_count = vertex_count;
-		}
-		ERR_CONTINUE_MSG(index_count % 3 != 0, "ImporterMesh::generate_clusters: surface " + itos(i) + " has an index count that is not a multiple of 3.");
-
-		LocalVector<unsigned int> indices_u32;
-		indices_u32.resize(index_count);
-		for (size_t j = 0; j < index_count; j++) {
-			indices_u32[j] = (unsigned int)indices[j];
-		}
-
-		// vector3_to_float32_array always yields float32, unlike Vector3 itself in a precision=double build.
-		Vector<float> vertices_f32 = vector3_to_float32_array(vertices.ptr(), vertex_count);
-
-		size_t max_meshlets = SurfaceTool::build_meshlets_bound_func(index_count, CLUSTER_MAX_VERTICES, CLUSTER_MIN_TRIANGLES);
-
-		LocalVector<SurfaceTool::Meshlet> meshlets;
-		meshlets.resize(max_meshlets);
-		LocalVector<unsigned int> meshlet_vertices;
-		meshlet_vertices.resize(index_count);
-		LocalVector<unsigned char> meshlet_triangles;
-		meshlet_triangles.resize(index_count);
-
-		size_t meshlet_count = SurfaceTool::build_meshlets_spatial_func(
-				meshlets.ptr(), meshlet_vertices.ptr(), meshlet_triangles.ptr(),
-				indices_u32.ptr(), index_count,
-				vertices_f32.ptr(), vertex_count, sizeof(float) * 3,
-				CLUSTER_MAX_VERTICES, CLUSTER_MIN_TRIANGLES, CLUSTER_MAX_TRIANGLES, CLUSTER_FILL_WEIGHT);
-
-		meshlets.resize(meshlet_count);
-
-		uint32_t total_triangles = 0;
-		uint32_t position_vertex_total = 0;
-		bool cluster_overflow = false;
-		for (size_t j = 0; j < meshlet_count; j++) {
-			SurfaceTool::optimize_meshlet_func(
-					meshlet_vertices.ptr() + meshlets[j].vertex_offset,
-					meshlet_triangles.ptr() + meshlets[j].triangle_offset,
-					meshlets[j].triangle_count, meshlets[j].vertex_count);
-			if (meshlets[j].vertex_count > 255 || meshlets[j].triangle_count > 255) {
-				cluster_overflow = true;
-				break;
-			}
-			total_triangles += meshlets[j].triangle_count;
-			position_vertex_total += meshlets[j].vertex_count;
-		}
-		ERR_CONTINUE_MSG(cluster_overflow, "ImporterMesh::generate_clusters: cluster vertex/triangle count exceeds the 8-bit blob record capacity (surface " + itos(i) + ").");
-
-		uint32_t index_section_offset = CLUSTER_HEADER_SIZE + (uint32_t)meshlet_count * CLUSTER_RECORD_SIZE;
-		uint32_t index_section_size = total_triangles * 3;
-		uint32_t position_section_offset = index_section_offset + index_section_size;
-		uint32_t position_section_size = position_vertex_total * (uint32_t)sizeof(float) * 3;
-
-		Vector<uint8_t> blob;
-		Error blob_err = blob.resize(position_section_offset + position_section_size);
-		ERR_CONTINUE_MSG(blob_err != OK, "ImporterMesh::generate_clusters: failed to allocate cluster blob for surface " + itos(i) + ".");
-		uint8_t *w = blob.ptrw();
-
-		encode_uint32(CLUSTER_BLOB_MAGIC, w + 0);
-		encode_uint32(CLUSTER_BLOB_VERSION, w + 4);
-		encode_uint32((uint32_t)meshlet_count, w + 8);
-		encode_uint32(total_triangles, w + 12);
-		encode_uint32(index_section_offset, w + 16);
-		encode_uint32(position_section_offset, w + 20);
-		encode_uint32(position_vertex_total, w + 24);
-		encode_uint32(0, w + 28);
-
-		uint32_t base_triangle = 0;
-		uint32_t running_index_offset = 0;
-		uint32_t running_position_offset = 0;
-		const float *vertices_f32_ptr = vertices_f32.ptr();
-
-		// base_triangle is a valid global triangle index only if ARRAY_INDEX is rewritten into this same cluster order below.
-		PackedInt32Array cluster_order_indices;
-		Error cluster_order_err = cluster_order_indices.resize(total_triangles * 3);
-		ERR_CONTINUE_MSG(cluster_order_err != OK, "ImporterMesh::generate_clusters: failed to allocate cluster-ordered index buffer for surface " + itos(i) + ".");
-		int32_t *cluster_order_indices_w = cluster_order_indices.ptrw();
-
-		for (size_t j = 0; j < meshlet_count; j++) {
-			const SurfaceTool::Meshlet &m = meshlets[j];
-			uint8_t *record = w + CLUSTER_HEADER_SIZE + j * CLUSTER_RECORD_SIZE;
-			// position_offset/index_offset are relative to their own section, not the blob start.
-			encode_uint32(running_position_offset, record + 0);
-			encode_uint32(running_index_offset, record + 4);
-			record[8] = (uint8_t)m.vertex_count;
-			record[9] = (uint8_t)m.triangle_count;
-			record[10] = 0;
-			record[11] = 0;
-			encode_uint32(base_triangle, record + 12);
-
-			const unsigned char *tri_src = meshlet_triangles.ptr() + m.triangle_offset;
-			memcpy(w + index_section_offset + running_index_offset, tri_src, m.triangle_count * 3);
-
-			const unsigned int *vert_src = meshlet_vertices.ptr() + m.vertex_offset;
-			uint8_t *pos_dst = w + position_section_offset + running_position_offset;
-			for (uint32_t v = 0; v < m.vertex_count; v++) {
-				const float *p = vertices_f32_ptr + (size_t)vert_src[v] * 3;
-				encode_float(p[0], pos_dst + v * 12 + 0);
-				encode_float(p[1], pos_dst + v * 12 + 4);
-				encode_float(p[2], pos_dst + v * 12 + 8);
-			}
-
-			int32_t *cluster_tri_dst = cluster_order_indices_w + base_triangle * 3;
-			for (uint32_t t = 0; t < m.triangle_count; t++) {
-				for (uint32_t k = 0; k < 3; k++) {
-					unsigned int local_vertex = tri_src[t * 3 + k];
-					cluster_tri_dst[t * 3 + k] = (int32_t)vert_src[local_vertex];
-				}
-			}
-
-			running_index_offset += m.triangle_count * 3;
-			running_position_offset += m.vertex_count * 12;
-			base_triangle += m.triangle_count;
-		}
-
-		ERR_CONTINUE_MSG((uint32_t)cluster_order_indices.size() != index_count, "ImporterMesh::generate_clusters: cluster-ordered triangle count does not match the original index count for surface " + itos(i) + ".");
-
-		s.arrays[RSE::ARRAY_INDEX] = cluster_order_indices;
-		s.cluster_data = blob;
 	}
+	if (!micro_geometry_builder) {
+		r_error = "Mesh '" + get_name() + "': meshoptimizer is required to import microgeometry.";
+		return ERR_UNAVAILABLE;
+	}
+	Ref<MicroGeometryData> data;
+	Error err = micro_geometry_builder(*this, data, r_error);
+	if (err != OK) {
+		return err;
+	}
+	Ref<MicroGeometry> geometry;
+	geometry.instantiate();
+	geometry->set_data(data);
+	micro_geometry = geometry;
+	if (mesh.is_valid()) {
+		mesh->set_micro_geometry(micro_geometry);
+	}
+	return OK;
 }
 
 #define VERTEX_SKIN_FUNC(bone_count, vert_idx, read_array, write_array, transform_array, bone_array, weight_array) \
@@ -1061,8 +929,7 @@ Ref<ArrayMesh> ImporterMesh::get_mesh(const Ref<ArrayMesh> &p_base) {
 			RenderingServerTypes::SurfaceData surface_data;
 			Error err = RS::get_singleton()->mesh_create_surface_data_from_arrays(&surface_data, (RSE::PrimitiveType)surfaces[i].primitive, surfaces[i].arrays, bs_data, lods, surfaces[i].flags);
 			ERR_CONTINUE(err != OK);
-			surface_data.cluster_data = surfaces[i].cluster_data;
-			mesh->add_surface(surface_data.format, Mesh::PrimitiveType(surface_data.primitive), surface_data.vertex_data, surface_data.attribute_data, surface_data.skin_data, surface_data.vertex_count, surface_data.index_data, surface_data.index_count, surface_data.aabb, surface_data.blend_shape_data, surface_data.bone_aabbs, surface_data.lods, surface_data.uv_scale, surface_data.cluster_data);
+			mesh->add_surface(surface_data.format, Mesh::PrimitiveType(surface_data.primitive), surface_data.vertex_data, surface_data.attribute_data, surface_data.skin_data, surface_data.vertex_count, surface_data.index_data, surface_data.index_count, surface_data.aabb, surface_data.blend_shape_data, surface_data.bone_aabbs, surface_data.lods, surface_data.uv_scale);
 			if (surfaces[i].material.is_valid()) {
 				mesh->surface_set_material(mesh->get_surface_count() - 1, surfaces[i].material);
 			}
@@ -1071,6 +938,7 @@ Ref<ArrayMesh> ImporterMesh::get_mesh(const Ref<ArrayMesh> &p_base) {
 			}
 		}
 
+		mesh->set_micro_geometry(micro_geometry);
 		mesh->set_lightmap_size_hint(lightmap_size_hint);
 
 		if (shadow_mesh.is_valid()) {
@@ -1121,6 +989,7 @@ Ref<ImporterMesh> ImporterMesh::from_mesh(const Ref<Mesh> &p_mesh) {
 }
 
 void ImporterMesh::clear() {
+	micro_geometry.unref();
 	surfaces.clear();
 	blend_shapes.clear();
 	mesh.unref();
@@ -1257,24 +1126,11 @@ void ImporterMesh::_set_data(const Dictionary &p_data) {
 			if (s.has("flags")) {
 				flags = s["flags"];
 			}
-			int surface_count_before = surfaces.size();
 			add_surface(prim, arr, b_shapes, lods, material, surf_name, flags);
-			if (s.has("clusters") && surfaces.size() > surface_count_before) {
-				Vector<uint8_t> cluster_data = s["clusters"];
-				if (cluster_data.size() >= (int)CLUSTER_HEADER_SIZE) {
-					const uint8_t *cluster_ptr = cluster_data.ptr();
-					uint32_t magic = decode_uint32(cluster_ptr + 0);
-					uint32_t version = decode_uint32(cluster_ptr + 4);
-					if (magic == CLUSTER_BLOB_MAGIC && version == CLUSTER_BLOB_VERSION) {
-						surfaces.write[surfaces.size() - 1].cluster_data = cluster_data;
-					} else {
-						WARN_PRINT("ImporterMesh::_set_data: surface " + itos(surfaces.size() - 1) + " has a cluster blob with an unrecognized magic/version, discarding it.");
-					}
-				} else if (!cluster_data.is_empty()) {
-					WARN_PRINT("ImporterMesh::_set_data: surface " + itos(surfaces.size() - 1) + " has a cluster blob smaller than the header size, discarding it.");
-				}
-			}
 		}
+	}
+	if (p_data.has("micro_geometry")) {
+		micro_geometry = p_data["micro_geometry"];
 	}
 }
 Dictionary ImporterMesh::_get_data() const {
@@ -1312,13 +1168,12 @@ Dictionary ImporterMesh::_get_data() const {
 
 		d["flags"] = surfaces[i].flags;
 
-		if (!surfaces[i].cluster_data.is_empty()) {
-			d["clusters"] = surfaces[i].cluster_data;
-		}
-
 		surface_arr.push_back(d);
 	}
 	data["surfaces"] = surface_arr;
+	if (micro_geometry.is_valid()) {
+		data["micro_geometry"] = micro_geometry;
+	}
 	return data;
 }
 
@@ -1512,6 +1367,7 @@ struct EditorSceneFormatImporterMeshLightmapSurface {
 static const uint32_t custom_shift[RSE::ARRAY_CUSTOM_COUNT] = { Mesh::ARRAY_FORMAT_CUSTOM0_SHIFT, Mesh::ARRAY_FORMAT_CUSTOM1_SHIFT, Mesh::ARRAY_FORMAT_CUSTOM2_SHIFT, Mesh::ARRAY_FORMAT_CUSTOM3_SHIFT };
 
 Error ImporterMesh::lightmap_unwrap_cached(const Transform3D &p_base_transform, float p_texel_size, const Vector<uint8_t> &p_src_cache, Vector<uint8_t> &r_dst_cache) {
+	micro_geometry.unref();
 	ERR_FAIL_NULL_V(array_mesh_lightmap_unwrap_callback, ERR_UNCONFIGURED);
 	ERR_FAIL_COND_V_MSG(blend_shapes.size() != 0, ERR_UNAVAILABLE, "Can't unwrap mesh with blend shapes.");
 

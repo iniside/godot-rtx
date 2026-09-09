@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  mesh_storage.cpp                                                      */
+/*  micro_geometry.h                                                      */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,77 +28,42 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "mesh_storage.h"
+#pragma once
 
-using namespace RendererDummy;
+#include "core/io/resource.h"
+#include "core/io/resource_loader.h"
+#include "core/io/resource_saver.h"
+#include "servers/rendering/micro_geometry_data.h"
 
-MeshStorage *MeshStorage::singleton = nullptr;
+class MicroGeometry : public Resource {
+	GDCLASS(MicroGeometry, Resource);
+	Ref<MicroGeometryData> data;
 
-MeshStorage::MeshStorage() {
-	singleton = this;
-}
+protected:
+	static void _bind_methods();
 
-MeshStorage::~MeshStorage() {
-	singleton = nullptr;
-}
+public:
+	String get_base_extension() const override { return "mgdata"; }
+	Error copy_from(const Ref<Resource> &p_resource) override;
+	void reset_state() override;
+	void set_data(const Ref<MicroGeometryData> &p_data);
+	Ref<MicroGeometryData> get_data() const { return data; }
+	String get_content_id() const;
+	Dictionary get_statistics() const;
+};
 
-RID MeshStorage::mesh_allocate() {
-	return mesh_owner.allocate_rid();
-}
+class ResourceFormatLoaderMicroGeometry : public ResourceFormatLoader {
+public:
+	Ref<Resource> load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE) override;
+	void get_recognized_extensions(List<String> *p_extensions) const override;
+	bool handles_type(const String &p_type) const override;
+	String get_resource_type(const String &p_path) const override;
+	void get_classes_used(const String &p_path, HashSet<StringName> *r_classes) override;
+};
 
-void MeshStorage::mesh_initialize(RID p_rid) {
-	mesh_owner.initialize_rid(p_rid, DummyMesh());
-}
-
-void MeshStorage::mesh_free(RID p_rid) {
-	DummyMesh *mesh = mesh_owner.get_or_null(p_rid);
-	ERR_FAIL_NULL(mesh);
-	mesh->dependency.deleted_notify(p_rid);
-	mesh_owner.free(p_rid);
-}
-
-void MeshStorage::mesh_surface_remove(RID p_mesh, int p_surface) {
-	DummyMesh *m = mesh_owner.get_or_null(p_mesh);
-	ERR_FAIL_NULL(m);
-	m->micro_geometry.unref();
-	m->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MESH);
-	m->surfaces.remove_at(p_surface);
-}
-
-void MeshStorage::mesh_clear(RID p_mesh) {
-	DummyMesh *m = mesh_owner.get_or_null(p_mesh);
-	ERR_FAIL_NULL(m);
-	m->micro_geometry.unref();
-
-	m->surfaces.clear();
-}
-
-RID MeshStorage::_multimesh_allocate() {
-	return multimesh_owner.allocate_rid();
-}
-
-void MeshStorage::_multimesh_initialize(RID p_rid) {
-	multimesh_owner.initialize_rid(p_rid, DummyMultiMesh());
-}
-
-void MeshStorage::_multimesh_free(RID p_rid) {
-	DummyMultiMesh *multimesh = multimesh_owner.get_or_null(p_rid);
-	ERR_FAIL_NULL(multimesh);
-
-	multimesh_owner.free(p_rid);
-}
-
-void MeshStorage::_multimesh_set_buffer(RID p_multimesh, const Vector<float> &p_buffer) {
-	DummyMultiMesh *multimesh = multimesh_owner.get_or_null(p_multimesh);
-	ERR_FAIL_NULL(multimesh);
-	multimesh->buffer.resize(p_buffer.size());
-	float *cache_data = multimesh->buffer.ptrw();
-	memcpy(cache_data, p_buffer.ptr(), p_buffer.size() * sizeof(float));
-}
-
-Vector<float> MeshStorage::_multimesh_get_buffer(RID p_multimesh) const {
-	DummyMultiMesh *multimesh = multimesh_owner.get_or_null(p_multimesh);
-	ERR_FAIL_NULL_V(multimesh, Vector<float>());
-
-	return multimesh->buffer;
-}
+class ResourceFormatSaverMicroGeometry : public ResourceFormatSaver {
+public:
+	Error save(const Ref<Resource> &p_resource, const String &p_path, uint32_t p_flags = 0) override;
+	bool recognize(const Ref<Resource> &p_resource) const override;
+	void get_recognized_extensions(const Ref<Resource> &p_resource, List<String> *p_extensions) const override;
+};

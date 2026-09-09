@@ -115,21 +115,6 @@ public:
 	static RemapIndexFunc remap_index_func;
 	static void strip_mesh_arrays(PackedVector3Array &r_vertices, PackedInt32Array &r_indices);
 
-	// Mirrors thirdparty/meshoptimizer/meshoptimizer.h's meshopt_Meshlet layout; kept local so this header does not pull in the thirdparty one.
-	struct Meshlet {
-		uint32_t vertex_offset = 0;
-		uint32_t triangle_offset = 0;
-		uint32_t vertex_count = 0;
-		uint32_t triangle_count = 0;
-	};
-
-	typedef size_t (*BuildMeshletsBoundFunc)(size_t index_count, size_t max_vertices, size_t max_triangles);
-	static BuildMeshletsBoundFunc build_meshlets_bound_func;
-	typedef size_t (*BuildMeshletsSpatialFunc)(Meshlet *meshlets, unsigned int *meshlet_vertices, unsigned char *meshlet_triangles, const unsigned int *indices, size_t index_count, const float *vertex_positions, size_t vertex_count, size_t vertex_positions_stride, size_t max_vertices, size_t min_triangles, size_t max_triangles, float fill_weight);
-	static BuildMeshletsSpatialFunc build_meshlets_spatial_func;
-	typedef void (*OptimizeMeshletFunc)(unsigned int *meshlet_vertices, unsigned char *meshlet_triangles, size_t triangle_count, size_t vertex_count);
-	static OptimizeMeshletFunc optimize_meshlet_func;
-
 private:
 	struct VertexHasher {
 		static _FORCE_INLINE_ uint32_t hash(const Vertex &p_vtx);

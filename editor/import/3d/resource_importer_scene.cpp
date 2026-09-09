@@ -30,6 +30,8 @@
 
 #include "resource_importer_scene.h"
 
+#include "micro_geometry_import.h"
+
 #include "core/error/error_macros.h"
 #include "core/io/dir_access.h"
 #include "core/io/resource_loader.h"
@@ -285,7 +287,7 @@ String ResourceImporterScene::get_resource_type() const {
 }
 
 int ResourceImporterScene::get_format_version() const {
-	return 1;
+	return 2;
 }
 
 bool ResourceImporterScene::get_option_visibility(const String &p_path, const String &p_option, const HashMap<StringName, Variant> &p_options) const {
@@ -2694,7 +2696,7 @@ Array ResourceImporterScene::_get_skinned_pose_transforms(ImporterMeshInstance3D
 	return skin_pose_transform_array;
 }
 
-Node *ResourceImporterScene::_generate_meshes(Node *p_node, const Dictionary &p_mesh_data, bool p_generate_lods, bool p_create_shadow_meshes, LightBakeMode p_light_bake_mode, float p_lightmap_texel_size, const Vector<uint8_t> &p_src_lightmap_cache, Vector<Vector<uint8_t>> &r_lightmap_caches) {
+Node *ResourceImporterScene::_generate_meshes(Node *p_node, const Dictionary &p_mesh_data, bool p_generate_lods, bool p_create_shadow_meshes, LightBakeMode p_light_bake_mode, float p_lightmap_texel_size, const Vector<uint8_t> &p_src_lightmap_cache, Vector<Vector<uint8_t>> &r_lightmap_caches, HashMap<Ref<ArrayMesh>, String> &r_external_mesh_paths) {
 	ImporterMeshInstance3D *src_mesh_node = Object::cast_to<ImporterMeshInstance3D>(p_node);
 	if (src_mesh_node) {
 		//is mesh
@@ -2817,31 +2819,12 @@ Node *ResourceImporterScene::_generate_meshes(Node *p_node, const Dictionary &p_
 				}
 
 				importer_mesh->optimize_indices();
-				importer_mesh->generate_clusters();
 
+				mesh = importer_mesh->get_mesh();
 				if (!save_to_file.is_empty()) {
-					String save_res_path = ResourceUID::ensure_path(save_to_file);
-					Ref<Mesh> existing = ResourceCache::get_ref(save_res_path);
-					if (existing.is_valid()) {
-						//if somehow an existing one is useful, create
-						existing->reset_state();
-					}
-					mesh = importer_mesh->get_mesh(existing);
-
-					Error err = ResourceSaver::save(mesh, save_res_path); //override
-					if (err != OK) {
-						WARN_PRINT(vformat("Failed to save mesh %s to '%s'.", mesh->get_name(), save_res_path));
-					}
-					if (err == OK && save_to_file.begins_with("uid://")) {
-						// slow
-						ResourceSaver::set_uid(save_res_path, ResourceUID::get_singleton()->text_to_id(save_to_file));
-					}
-
-					mesh->set_path(save_res_path, true); //takeover existing, if needed
-
-				} else {
-					mesh = importer_mesh->get_mesh();
+					r_external_mesh_paths[mesh] = save_to_file;
 				}
+
 			} else {
 				mesh = importer_mesh->get_mesh();
 			}
@@ -2887,7 +2870,7 @@ Node *ResourceImporterScene::_generate_meshes(Node *p_node, const Dictionary &p_
 	}
 
 	for (int i = 0; i < p_node->get_child_count(); i++) {
-		_generate_meshes(p_node->get_child(i), p_mesh_data, p_generate_lods, p_create_shadow_meshes, p_light_bake_mode, p_lightmap_texel_size, p_src_lightmap_cache, r_lightmap_caches);
+		_generate_meshes(p_node->get_child(i), p_mesh_data, p_generate_lods, p_create_shadow_meshes, p_light_bake_mode, p_lightmap_texel_size, p_src_lightmap_cache, r_lightmap_caches, r_external_mesh_paths);
 	}
 
 	return p_node;
@@ -3351,7 +3334,8 @@ Error ResourceImporterScene::import(ResourceUID::ID p_source_id, const String &p
 		}
 	}
 
-	scene = _generate_meshes(scene, mesh_data, gen_lods, create_shadow_meshes, LightBakeMode(light_bake_mode), lightmap_texel_size, src_lightmap_cache, mesh_lightmap_caches);
+	HashMap<Ref<ArrayMesh>, String> external_mesh_paths;
+	scene = _generate_meshes(scene, mesh_data, gen_lods, create_shadow_meshes, LightBakeMode(light_bake_mode), lightmap_texel_size, src_lightmap_cache, mesh_lightmap_caches, external_mesh_paths);
 
 	if (mesh_lightmap_caches.size()) {
 		Ref<FileAccess> f = FileAccess::open(p_source_file + ".unwrap_cache", FileAccess::WRITE);
@@ -3417,6 +3401,12 @@ Error ResourceImporterScene::import(ResourceUID::ID p_source_id, const String &p
 
 	for (int i = 0; i < post_importer_plugins.size(); i++) {
 		post_importer_plugins.write[i]->post_process(scene, p_options);
+	}
+
+	err = import_scene_micro_geometry(scene, p_save_path, r_gen_files, external_mesh_paths);
+	if (err != OK) {
+		memdelete(scene);
+		return err;
 	}
 
 	progress.step(TTR("Saving..."), 104);

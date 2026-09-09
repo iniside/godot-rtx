@@ -2470,7 +2470,7 @@ Error ResourceFormatSaverBinary::set_uid(const String &p_path, ResourceUID::ID p
 }
 
 bool ResourceFormatSaverBinary::recognize(const Ref<Resource> &p_resource) const {
-	return true; //all recognized
+	return !p_resource->is_class("MicroGeometry");
 }
 
 void ResourceFormatSaverBinary::get_recognized_extensions(const Ref<Resource> &p_resource, List<String> *p_extensions) const {

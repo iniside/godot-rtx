@@ -30,6 +30,8 @@
 
 #include "resource_importer_obj.h"
 
+#include "micro_geometry_import.h"
+
 #include "core/io/file_access.h"
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
@@ -631,7 +633,7 @@ String ResourceImporterOBJ::get_resource_type() const {
 }
 
 int ResourceImporterOBJ::get_format_version() const {
-	return 1;
+	return 2;
 }
 
 int ResourceImporterOBJ::get_preset_count() const {
@@ -677,6 +679,7 @@ Error ResourceImporterOBJ::import(ResourceUID::ID p_source_id, const String &p_s
 	}
 
 	err = _parse_obj(p_source_file, meshes, true, p_options["generate_tangents"], p_options["generate_lods"], p_options["generate_shadow_mesh"], p_options["generate_lightmap_uv2"], p_options["generate_lightmap_uv2_texel_size"], src_lightmap_cache, p_options["scale_mesh"], p_options["offset_mesh"], p_options["force_disable_mesh_compression"], mesh_lightmap_caches, nullptr);
+	ERR_FAIL_COND_V(err != OK, err);
 
 	if (mesh_lightmap_caches.size()) {
 		Ref<FileAccess> f = FileAccess::open(p_source_file + ".unwrap_cache", FileAccess::WRITE);
@@ -695,7 +698,10 @@ Error ResourceImporterOBJ::import(ResourceUID::ID p_source_id, const String &p_s
 
 	String save_path = p_save_path + ".mesh";
 
-	err = ResourceSaver::save(meshes.front()->get()->get_mesh(), save_path);
+	Ref<ArrayMesh> mesh = meshes.front()->get()->get_mesh();
+	err = import_micro_geometry(mesh, p_save_path, r_gen_files);
+	ERR_FAIL_COND_V(err != OK, err);
+	err = ResourceSaver::save(mesh, save_path);
 
 	ERR_FAIL_COND_V_MSG(err != OK, err, "Cannot save Mesh to file '" + save_path + "'.");
 

@@ -62,7 +62,6 @@ class ImporterMesh : public Resource {
 		Ref<Material> material;
 		String name;
 		uint64_t flags = 0;
-		Vector<uint8_t> cluster_data;
 
 		struct LODComparator {
 			_FORCE_INLINE_ bool operator()(const LOD &l, const LOD &r) const {
@@ -75,6 +74,7 @@ class ImporterMesh : public Resource {
 	Mesh::BlendShapeMode blend_shape_mode = Mesh::BLEND_SHAPE_MODE_NORMALIZED;
 
 	Ref<ArrayMesh> mesh;
+	Ref<MicroGeometry> micro_geometry;
 
 	Ref<ImporterMesh> shadow_mesh;
 
@@ -118,7 +118,10 @@ public:
 
 	void optimize_indices();
 
-	void generate_clusters();
+	using MicroGeometryBuilder = Error (*)(const ImporterMesh &, Ref<MicroGeometryData> &, String &);
+	static inline MicroGeometryBuilder micro_geometry_builder = nullptr;
+	Error generate_micro_geometry(String &r_error);
+	Ref<MicroGeometry> get_micro_geometry() const { return micro_geometry; }
 
 	void generate_lods(float p_normal_merge_angle, Array p_skin_pose_transform_array);
 

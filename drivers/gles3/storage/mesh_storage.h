@@ -49,6 +49,7 @@ namespace GLES3 {
 struct MeshInstance;
 
 struct Mesh {
+	Ref<MicroGeometryData> micro_geometry;
 	struct Surface {
 		struct Attrib {
 			bool enabled;
@@ -336,6 +337,11 @@ public:
 	virtual void mesh_set_path(RID p_mesh, const String &p_path) override;
 	virtual String mesh_get_path(RID p_mesh) const override;
 
+	virtual void mesh_set_micro_geometry(RID p_mesh, const Ref<MicroGeometryData> &p_data) override {
+		Mesh *mesh = mesh_owner.get_or_null(p_mesh);
+		ERR_FAIL_NULL(mesh);
+		mesh->micro_geometry = p_data;
+	}
 	virtual void mesh_set_shadow_mesh(RID p_mesh, RID p_shadow_mesh) override;
 
 	virtual void mesh_clear(RID p_mesh) override;

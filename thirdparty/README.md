@@ -720,13 +720,19 @@ Update instructions:
 ## meshoptimizer
 
 - Upstream: https://github.com/zeux/meshoptimizer
-- Version: 1.1.1 (b22872835dbabc56a6e4a366ea9917f62b7daf1a, 2026)
+- Version: git (0870c3881655df9b7d22faa35c825393534416bc, 2026)
 - License: MIT
 
 Files extracted from upstream repository:
 
 - All files in `src/`
 - `LICENSE.md`
+- `demo/clusterlod.h` as `clusterlod.h`
+
+`import.json` records the pinned source and hashes of the upstream and imported
+files. Run `python misc/scripts/update_meshoptimizer.py` to reproduce the import.
+The optional `--source` accepts a local upstream Git repository; files are
+always read from the pinned commits, never from its working tree.
 
 
 ## mingw-std-threads

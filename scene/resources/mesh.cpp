@@ -31,6 +31,7 @@
 #include "mesh.h"
 
 #include "core/math/convex_hull.h"
+#include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
 #include "core/templates/pair.h"
 #include "scene/resources/surface_tool.h"
@@ -1559,10 +1560,6 @@ Array ArrayMesh::_get_surfaces() const {
 			data["blend_shapes"] = surface.blend_shape_data;
 		}
 
-		if (surface.cluster_data.size()) {
-			data["cluster_data"] = surface.cluster_data;
-		}
-
 		if (surfaces[i].material.is_valid()) {
 			data["material"] = surfaces[i].material;
 		}
@@ -1591,6 +1588,7 @@ void ArrayMesh::_create_if_empty() const {
 }
 
 void ArrayMesh::_set_surfaces(const Array &p_surfaces) {
+	set_micro_geometry(Ref<MicroGeometry>());
 	Vector<RenderingServerTypes::SurfaceData> surface_data;
 	Vector<Ref<Material>> surface_materials;
 	Vector<String> surface_names;
@@ -1646,10 +1644,6 @@ void ArrayMesh::_set_surfaces(const Array &p_surfaces) {
 
 		if (d.has("blend_shapes")) {
 			surface.blend_shape_data = d["blend_shapes"];
-		}
-
-		if (d.has("cluster_data")) {
-			surface.cluster_data = d["cluster_data"];
 		}
 
 		Ref<Material> material;
@@ -1753,6 +1747,7 @@ bool ArrayMesh::_get(const StringName &p_name, Variant &r_ret) const {
 }
 
 void ArrayMesh::reset_state() {
+	set_micro_geometry(Ref<MicroGeometry>());
 	clear_surfaces();
 	clear_blend_shapes();
 
@@ -1790,7 +1785,8 @@ void ArrayMesh::_recompute_aabb() {
 }
 
 // TODO: Need to add binding to add_surface using future MeshSurfaceData object.
-void ArrayMesh::add_surface(BitField<ArrayFormat> p_format, PrimitiveType p_primitive, const Vector<uint8_t> &p_array, const Vector<uint8_t> &p_attribute_array, const Vector<uint8_t> &p_skin_array, int p_vertex_count, const Vector<uint8_t> &p_index_array, int p_index_count, const AABB &p_aabb, const Vector<uint8_t> &p_blend_shape_data, const Vector<AABB> &p_bone_aabbs, const Vector<RenderingServerTypes::SurfaceData::LOD> &p_lods, const Vector4 p_uv_scale, const Vector<uint8_t> &p_cluster_data) {
+void ArrayMesh::add_surface(BitField<ArrayFormat> p_format, PrimitiveType p_primitive, const Vector<uint8_t> &p_array, const Vector<uint8_t> &p_attribute_array, const Vector<uint8_t> &p_skin_array, int p_vertex_count, const Vector<uint8_t> &p_index_array, int p_index_count, const AABB &p_aabb, const Vector<uint8_t> &p_blend_shape_data, const Vector<AABB> &p_bone_aabbs, const Vector<RenderingServerTypes::SurfaceData::LOD> &p_lods, const Vector4 p_uv_scale) {
+	set_micro_geometry(Ref<MicroGeometry>());
 	ERR_FAIL_COND(surfaces.size() == RSE::MAX_MESH_SURFACES);
 	_create_if_empty();
 
@@ -1819,7 +1815,6 @@ void ArrayMesh::add_surface(BitField<ArrayFormat> p_format, PrimitiveType p_prim
 	sd.bone_aabbs = p_bone_aabbs;
 	sd.lods = p_lods;
 	sd.uv_scale = p_uv_scale;
-	sd.cluster_data = p_cluster_data;
 
 	RenderingServer::get_singleton()->mesh_add_surface(mesh, sd);
 
@@ -1988,18 +1983,21 @@ String ArrayMesh::surface_get_name(int p_idx) const {
 }
 
 void ArrayMesh::surface_update_vertex_region(int p_surface, int p_offset, const Vector<uint8_t> &p_data) {
+	set_micro_geometry(Ref<MicroGeometry>());
 	ERR_FAIL_INDEX(p_surface, surfaces.size());
 	RS::get_singleton()->mesh_surface_update_vertex_region(mesh, p_surface, p_offset, p_data);
 	emit_changed();
 }
 
 void ArrayMesh::surface_update_attribute_region(int p_surface, int p_offset, const Vector<uint8_t> &p_data) {
+	set_micro_geometry(Ref<MicroGeometry>());
 	ERR_FAIL_INDEX(p_surface, surfaces.size());
 	RS::get_singleton()->mesh_surface_update_attribute_region(mesh, p_surface, p_offset, p_data);
 	emit_changed();
 }
 
 void ArrayMesh::surface_update_skin_region(int p_surface, int p_offset, const Vector<uint8_t> &p_data) {
+	set_micro_geometry(Ref<MicroGeometry>());
 	ERR_FAIL_INDEX(p_surface, surfaces.size());
 	RS::get_singleton()->mesh_surface_update_skin_region(mesh, p_surface, p_offset, p_data);
 	emit_changed();
@@ -2027,6 +2025,7 @@ AABB ArrayMesh::get_aabb() const {
 }
 
 void ArrayMesh::clear_surfaces() {
+	set_micro_geometry(Ref<MicroGeometry>());
 	if (!mesh.is_valid()) {
 		return;
 	}
@@ -2036,6 +2035,7 @@ void ArrayMesh::clear_surfaces() {
 }
 
 void ArrayMesh::surface_remove(int p_surface) {
+	set_micro_geometry(Ref<MicroGeometry>());
 	ERR_FAIL_INDEX(p_surface, surfaces.size());
 	RS::get_singleton()->mesh_surface_remove(mesh, p_surface);
 	surfaces.remove_at(p_surface);
@@ -2300,7 +2300,29 @@ Ref<ArrayMesh> ArrayMesh::get_shadow_mesh() const {
 	return shadow_mesh;
 }
 
+void ArrayMesh::set_micro_geometry(const Ref<MicroGeometry> &p_geometry) {
+	if (micro_geometry == p_geometry) {
+		return;
+	}
+	if (micro_geometry.is_valid()) {
+		micro_geometry->disconnect_changed(callable_mp(this, &ArrayMesh::_micro_geometry_changed));
+	}
+	micro_geometry = p_geometry;
+	if (micro_geometry.is_valid()) {
+		micro_geometry->connect_changed(callable_mp(this, &ArrayMesh::_micro_geometry_changed));
+	}
+	_micro_geometry_changed();
+}
+
+void ArrayMesh::_micro_geometry_changed() {
+	_create_if_empty();
+	RS::get_singleton()->mesh_set_micro_geometry(mesh, micro_geometry.is_valid() ? micro_geometry->get_data() : Ref<MicroGeometryData>());
+	emit_changed();
+}
+
 void ArrayMesh::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_micro_geometry", "geometry"), &ArrayMesh::set_micro_geometry);
+	ClassDB::bind_method(D_METHOD("get_micro_geometry"), &ArrayMesh::get_micro_geometry);
 	ClassDB::bind_method(D_METHOD("add_blend_shape", "name"), &ArrayMesh::add_blend_shape);
 	ClassDB::bind_method(D_METHOD("get_blend_shape_count"), &ArrayMesh::get_blend_shape_count);
 	ClassDB::bind_method(D_METHOD("get_blend_shape_name", "index"), &ArrayMesh::get_blend_shape_name);
@@ -2347,12 +2369,14 @@ void ArrayMesh::_bind_methods() {
 
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_STRING_ARRAY, "_blend_shape_names", PROPERTY_HINT_NO_NODEPATH, "", PROPERTY_USAGE_NO_EDITOR | PROPERTY_USAGE_INTERNAL), "_set_blend_shape_names", "_get_blend_shape_names");
 	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "_surfaces", PROPERTY_HINT_NO_NODEPATH, "", PROPERTY_USAGE_NO_EDITOR | PROPERTY_USAGE_INTERNAL), "_set_surfaces", "_get_surfaces");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "micro_geometry", PROPERTY_HINT_RESOURCE_TYPE, "MicroGeometry", PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_NEVER_DUPLICATE), "set_micro_geometry", "get_micro_geometry");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "blend_shape_mode", PROPERTY_HINT_ENUM, "Normalized,Relative"), "set_blend_shape_mode", "get_blend_shape_mode");
 	ADD_PROPERTY(PropertyInfo(Variant::AABB, "custom_aabb", PROPERTY_HINT_NO_NODEPATH, "suffix:m"), "set_custom_aabb", "get_custom_aabb");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "shadow_mesh", PROPERTY_HINT_RESOURCE_TYPE, ArrayMesh::get_class_static()), "set_shadow_mesh", "get_shadow_mesh");
 }
 
 void ArrayMesh::reload_from_file() {
+	set_micro_geometry(Ref<MicroGeometry>());
 	RenderingServer::get_singleton()->mesh_clear(mesh);
 	surfaces.clear();
 	clear_blend_shapes();

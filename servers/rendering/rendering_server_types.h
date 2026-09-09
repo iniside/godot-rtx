@@ -40,6 +40,7 @@
 #include "core/string/ustring.h"
 #include "core/templates/rid.h"
 #include "core/templates/vector.h"
+#include "servers/rendering/micro_geometry_data.h"
 #include "servers/rendering/rendering_server_enums.h"
 
 #include <cstdint>
@@ -108,8 +109,6 @@ struct SurfaceData {
 	Vector4 uv_scale;
 
 	RID material;
-
-	Vector<uint8_t> cluster_data;
 };
 
 struct MeshInfo {

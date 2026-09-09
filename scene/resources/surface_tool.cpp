@@ -43,9 +43,6 @@ SurfaceTool::SimplifyScaleFunc SurfaceTool::simplify_scale_func = nullptr;
 SurfaceTool::GenerateRemapFunc SurfaceTool::generate_remap_func = nullptr;
 SurfaceTool::RemapVertexFunc SurfaceTool::remap_vertex_func = nullptr;
 SurfaceTool::RemapIndexFunc SurfaceTool::remap_index_func = nullptr;
-SurfaceTool::BuildMeshletsBoundFunc SurfaceTool::build_meshlets_bound_func = nullptr;
-SurfaceTool::BuildMeshletsSpatialFunc SurfaceTool::build_meshlets_spatial_func = nullptr;
-SurfaceTool::OptimizeMeshletFunc SurfaceTool::optimize_meshlet_func = nullptr;
 
 void SurfaceTool::strip_mesh_arrays(PackedVector3Array &r_vertices, PackedInt32Array &r_indices) {
 	ERR_FAIL_COND_MSG(!generate_remap_func || !remap_vertex_func || !remap_index_func, "Meshoptimizer library is not initialized.");

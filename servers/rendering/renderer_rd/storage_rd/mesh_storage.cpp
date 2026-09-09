@@ -255,6 +255,7 @@ void MeshStorage::mesh_set_blend_shape_count(RID p_mesh, int p_blend_shape_count
 
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
+	mesh->micro_geometry.unref();
 
 	ERR_FAIL_COND(mesh->surface_count > 0); //surfaces already exist
 
@@ -265,6 +266,7 @@ void MeshStorage::mesh_set_blend_shape_count(RID p_mesh, int p_blend_shape_count
 void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::SurfaceData &p_surface) {
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
+	mesh->micro_geometry.unref();
 
 	ERR_FAIL_COND(mesh->surface_count == RSE::MAX_MESH_SURFACES);
 
@@ -371,46 +373,6 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 	}
 #endif
 
-	uint32_t cluster_buffer_size = 0;
-	uint32_t cluster_position_buffer_size = 0;
-	uint32_t cluster_index_section_offset = 0;
-	uint32_t cluster_count = 0;
-
-	constexpr uint32_t CLUSTER_BLOB_HEADER_SIZE = 32;
-
-	if (new_surface.cluster_data.size()) {
-		constexpr uint32_t CLUSTER_BLOB_MAGIC = 0x53554c43;
-		constexpr uint32_t CLUSTER_BLOB_VERSION = 1;
-		constexpr uint32_t CLUSTER_RECORD_SIZE = 16;
-
-		const Vector<uint8_t> &blob = new_surface.cluster_data;
-		ERR_FAIL_COND_MSG(blob.size() < CLUSTER_BLOB_HEADER_SIZE, "Cluster data blob is smaller than its header.");
-
-		const uint8_t *blob_ptr = blob.ptr();
-		uint32_t magic = decode_uint32(blob_ptr + 0);
-		uint32_t version = decode_uint32(blob_ptr + 4);
-		uint32_t blob_cluster_count = decode_uint32(blob_ptr + 8);
-		uint32_t index_section_offset = decode_uint32(blob_ptr + 16);
-		uint32_t position_section_offset = decode_uint32(blob_ptr + 20);
-		uint32_t position_vertex_total = decode_uint32(blob_ptr + 24);
-
-		ERR_FAIL_COND_MSG(magic != CLUSTER_BLOB_MAGIC, "Cluster data blob has an invalid magic number.");
-		ERR_FAIL_COND_MSG(version != CLUSTER_BLOB_VERSION, "Cluster data blob has an unsupported version.");
-		ERR_FAIL_COND_MSG(index_section_offset < CLUSTER_BLOB_HEADER_SIZE, "Cluster data blob has an invalid index section offset.");
-		ERR_FAIL_COND_MSG((uint64_t)index_section_offset != (uint64_t)CLUSTER_BLOB_HEADER_SIZE + (uint64_t)blob_cluster_count * CLUSTER_RECORD_SIZE, "Cluster data blob's index section offset does not match its cluster record count.");
-		ERR_FAIL_COND_MSG(index_section_offset > position_section_offset, "Cluster data blob has an invalid index/position section ordering.");
-		ERR_FAIL_COND_MSG(position_section_offset > (uint32_t)blob.size(), "Cluster data blob has an invalid position section offset.");
-		ERR_FAIL_COND_MSG((uint64_t)blob.size() - (uint64_t)position_section_offset != (uint64_t)position_vertex_total * 12, "Cluster data blob's position section size does not match its position vertex count.");
-		ERR_FAIL_COND_MSG(blob_cluster_count > 0 && position_vertex_total == 0, "Cluster data blob has clusters but no position vertices.");
-
-		// cluster_buffer spans the header, per-cluster records and the local index section; the
-		// index section starts at cluster_index_section_offset, not at the start of cluster_buffer.
-		cluster_buffer_size = position_section_offset;
-		cluster_position_buffer_size = (uint32_t)blob.size() - position_section_offset;
-		cluster_index_section_offset = index_section_offset;
-		cluster_count = blob_cluster_count;
-	}
-
 	static uint32_t s_next_rt_invalidation_counter = 1; // Monotonic counter is required so that new surfaces are also invalidated.
 	Mesh::Surface *s = memnew(Mesh::Surface);
 	s->rt_invalidation_counter = s_next_rt_invalidation_counter++;
@@ -491,27 +453,6 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 	}
 
 	ERR_FAIL_COND_MSG(!new_surface.index_count && !new_surface.vertex_count, "Meshes must contain a vertex array, an index array, or both");
-
-	if (new_surface.cluster_data.size()) {
-		const uint8_t *blob_ptr = new_surface.cluster_data.ptr();
-
-		s->cluster_buffer = RD::get_singleton()->storage_buffer_create(cluster_buffer_size, Span<uint8_t>(blob_ptr, cluster_buffer_size), 0, as_storage_flag);
-		s->cluster_buffer_size = cluster_buffer_size;
-
-		if (cluster_position_buffer_size > 0) {
-			s->cluster_position_buffer = RD::get_singleton()->storage_buffer_create(cluster_position_buffer_size, Span<uint8_t>(blob_ptr + cluster_buffer_size, cluster_position_buffer_size), 0, as_storage_flag);
-			s->cluster_position_buffer_size = cluster_position_buffer_size;
-		}
-
-		s->cluster_count = cluster_count;
-		s->cluster_index_section_offset = cluster_index_section_offset;
-
-		const uint32_t records_size = cluster_index_section_offset - CLUSTER_BLOB_HEADER_SIZE;
-		if (records_size > 0) {
-			s->cluster_records.resize(records_size);
-			memcpy(s->cluster_records.ptrw(), blob_ptr + CLUSTER_BLOB_HEADER_SIZE, records_size);
-		}
-	}
 
 	s->aabb = new_surface.aabb;
 	s->bone_aabbs = new_surface.bone_aabbs; //only really useful for returning them.
@@ -656,6 +597,7 @@ void MeshStorage::mesh_surface_update_vertex_region(RID p_mesh, int p_surface, i
 	ERR_FAIL_COND(p_data.is_empty());
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
+	mesh->micro_geometry.unref();
 	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_surface, mesh->surface_count);
 	ERR_FAIL_COND(mesh->surfaces[p_surface]->vertex_buffer.is_null());
 
@@ -672,6 +614,7 @@ void MeshStorage::mesh_surface_update_attribute_region(RID p_mesh, int p_surface
 	ERR_FAIL_COND(p_data.is_empty());
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
+	mesh->micro_geometry.unref();
 	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_surface, mesh->surface_count);
 	ERR_FAIL_COND(mesh->surfaces[p_surface]->attribute_buffer.is_null());
 
@@ -688,6 +631,7 @@ void MeshStorage::mesh_surface_update_skin_region(RID p_mesh, int p_surface, int
 	ERR_FAIL_COND(p_data.is_empty());
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
+	mesh->micro_geometry.unref();
 	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_surface, mesh->surface_count);
 	ERR_FAIL_COND(mesh->surfaces[p_surface]->skin_buffer.is_null());
 
@@ -704,6 +648,7 @@ void RendererRD::MeshStorage::mesh_surface_update_index_region(RID p_mesh, int p
 	ERR_FAIL_COND(p_data.is_empty());
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
+	mesh->micro_geometry.unref();
 	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_surface, mesh->surface_count);
 	ERR_FAIL_COND(mesh->surfaces[p_surface]->index_buffer.is_null());
 
@@ -805,15 +750,6 @@ RenderingServerTypes::SurfaceData MeshStorage::mesh_get_surface(RID p_mesh, int 
 
 	if (s.blend_shape_buffer.is_valid()) {
 		sd.blend_shape_data = RD::get_singleton()->buffer_get_data(s.blend_shape_buffer);
-	}
-
-	if (s.cluster_buffer.is_valid()) {
-		Vector<uint8_t> cluster_blob = RD::get_singleton()->buffer_get_data(s.cluster_buffer);
-		if (s.cluster_position_buffer.is_valid()) {
-			Vector<uint8_t> position_blob = RD::get_singleton()->buffer_get_data(s.cluster_position_buffer);
-			cluster_blob.append_array(position_blob);
-		}
-		sd.cluster_data = cluster_blob;
 	}
 
 	return sd;
@@ -974,6 +910,13 @@ String MeshStorage::mesh_get_path(RID p_mesh) const {
 	return mesh->path;
 }
 
+void MeshStorage::mesh_set_micro_geometry(RID p_mesh, const Ref<MicroGeometryData> &p_data) {
+	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
+	ERR_FAIL_NULL(mesh);
+	mesh->micro_geometry = p_data;
+	mesh->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MESH);
+}
+
 void MeshStorage::mesh_set_shadow_mesh(RID p_mesh, RID p_shadow_mesh) {
 	ERR_FAIL_COND_MSG(p_mesh == p_shadow_mesh, "Cannot set a mesh as its own shadow mesh.");
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
@@ -997,6 +940,7 @@ void MeshStorage::mesh_set_shadow_mesh(RID p_mesh, RID p_shadow_mesh) {
 void MeshStorage::mesh_clear(RID p_mesh) {
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
+	mesh->micro_geometry.unref();
 
 	// Clear instance data before mesh data.
 	for (MeshInstance *mi : mesh->instances) {
@@ -1027,6 +971,7 @@ void MeshStorage::mesh_clear(RID p_mesh) {
 void MeshStorage::mesh_surface_remove(RID p_mesh, int p_surface) {
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
+	mesh->micro_geometry.unref();
 	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_surface, mesh->surface_count);
 
 	// Clear instance data before mesh data.

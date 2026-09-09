@@ -36,6 +36,7 @@
 namespace RendererDummy {
 
 struct DummyMesh {
+	Ref<MicroGeometryData> micro_geometry;
 	Vector<RenderingServerTypes::SurfaceData> surfaces;
 	int blend_shape_count;
 	RSE::BlendShapeMode blend_shape_mode;
@@ -79,6 +80,7 @@ public:
 	virtual void mesh_add_surface(RID p_mesh, const RenderingServerTypes::SurfaceData &p_surface) override {
 		DummyMesh *m = mesh_owner.get_or_null(p_mesh);
 		ERR_FAIL_NULL(m);
+		m->micro_geometry.unref();
 		m->surfaces.push_back(RenderingServerTypes::SurfaceData());
 		RenderingServerTypes::SurfaceData *s = &m->surfaces.write[m->surfaces.size() - 1];
 		s->format = p_surface.format;
@@ -96,7 +98,6 @@ public:
 		s->blend_shape_data = p_surface.blend_shape_data;
 		s->uv_scale = p_surface.uv_scale;
 		s->material = p_surface.material;
-		s->cluster_data = p_surface.cluster_data;
 		m->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MESH);
 	}
 
@@ -152,6 +153,11 @@ public:
 	virtual void mesh_set_path(RID p_mesh, const String &p_path) override {}
 	virtual String mesh_get_path(RID p_mesh) const override { return String(); }
 
+	virtual void mesh_set_micro_geometry(RID p_mesh, const Ref<MicroGeometryData> &p_data) override {
+		DummyMesh *mesh = mesh_owner.get_or_null(p_mesh);
+		ERR_FAIL_NULL(mesh);
+		mesh->micro_geometry = p_data;
+	}
 	virtual void mesh_set_shadow_mesh(RID p_mesh, RID p_shadow_mesh) override {}
 
 	virtual void mesh_surface_remove(RID p_mesh, int p_surface) override;

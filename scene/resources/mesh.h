@@ -34,6 +34,7 @@
 #include "core/math/face3.h"
 #include "core/math/triangle_mesh.h"
 #include "core/variant/typed_array.h"
+#include "scene/resources/3d/micro_geometry.h"
 #include "scene/resources/material.h"
 #include "servers/rendering/rendering_server_enums.h"
 #include "servers/rendering/rendering_server_types.h"
@@ -308,6 +309,8 @@ class ArrayMesh : public Mesh {
 	Array _get_surfaces() const;
 	void _set_surfaces(const Array &p_data);
 	Ref<ArrayMesh> shadow_mesh;
+	Ref<MicroGeometry> micro_geometry;
+	void _micro_geometry_changed();
 
 private:
 	struct Surface {
@@ -346,7 +349,7 @@ protected:
 public:
 	void add_surface_from_arrays(PrimitiveType p_primitive, const Array &p_arrays, const TypedArray<Array> &p_blend_shapes = TypedArray<Array>(), const Dictionary &p_lods = Dictionary(), BitField<ArrayFormat> p_flags = 0);
 
-	void add_surface(BitField<ArrayFormat> p_format, PrimitiveType p_primitive, const Vector<uint8_t> &p_array, const Vector<uint8_t> &p_attribute_array, const Vector<uint8_t> &p_skin_array, int p_vertex_count, const Vector<uint8_t> &p_index_array, int p_index_count, const AABB &p_aabb, const Vector<uint8_t> &p_blend_shape_data = Vector<uint8_t>(), const Vector<AABB> &p_bone_aabbs = Vector<AABB>(), const Vector<RenderingServerTypes::SurfaceData::LOD> &p_lods = Vector<RenderingServerTypes::SurfaceData::LOD>(), const Vector4 p_uv_scale = Vector4(), const Vector<uint8_t> &p_cluster_data = Vector<uint8_t>());
+	void add_surface(BitField<ArrayFormat> p_format, PrimitiveType p_primitive, const Vector<uint8_t> &p_array, const Vector<uint8_t> &p_attribute_array, const Vector<uint8_t> &p_skin_array, int p_vertex_count, const Vector<uint8_t> &p_index_array, int p_index_count, const AABB &p_aabb, const Vector<uint8_t> &p_blend_shape_data = Vector<uint8_t>(), const Vector<AABB> &p_bone_aabbs = Vector<AABB>(), const Vector<RenderingServerTypes::SurfaceData::LOD> &p_lods = Vector<RenderingServerTypes::SurfaceData::LOD>(), const Vector4 p_uv_scale = Vector4());
 
 	Array surface_get_arrays(int p_surface) const override;
 	TypedArray<Array> surface_get_blend_shape_arrays(int p_surface) const override;
@@ -397,6 +400,8 @@ public:
 
 	virtual void reload_from_file() override;
 
+	void set_micro_geometry(const Ref<MicroGeometry> &p_geometry);
+	Ref<MicroGeometry> get_micro_geometry() const { return micro_geometry; }
 	void set_shadow_mesh(const Ref<ArrayMesh> &p_mesh);
 	Ref<ArrayMesh> get_shadow_mesh() const;
 

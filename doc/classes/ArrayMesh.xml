@@ -215,6 +215,9 @@
 		</method>
 	</methods>
 	<members>
+		<member name="micro_geometry" type="MicroGeometry" setter="set_micro_geometry" getter="get_micro_geometry">
+			External immutable cluster geometry produced by the importer. Stored with the mesh and invalidated by geometry mutation.
+		</member>
 		<member name="blend_shape_mode" type="int" setter="set_blend_shape_mode" getter="get_blend_shape_mode" enum="Mesh.BlendShapeMode" default="1">
 			The blend shape mode.
 		</member>

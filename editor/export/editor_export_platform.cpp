@@ -667,6 +667,30 @@ void EditorExportPlatform::_export_find_customized_resources(const Ref<EditorExp
 	}
 }
 
+static void collect_micro_geometry_dependencies(const String &p_path, HashSet<String> &r_paths, HashSet<String> &r_visited) {
+	if (r_visited.has(p_path)) {
+		return;
+	}
+	r_visited.insert(p_path);
+	List<String> dependencies;
+	ResourceLoader::get_dependencies(p_path, &dependencies);
+	for (const String &dependency : dependencies) {
+		String path = dependency.get_slice("::", 0);
+		if (path.begins_with("uid://")) {
+			ResourceUID::ID uid = ResourceUID::get_singleton()->text_to_id(path);
+			path = ResourceUID::get_singleton()->has_id(uid) ? ResourceUID::get_singleton()->get_id_path(uid) : dependency.get_slice("::", 2);
+		}
+		if (path.is_empty()) {
+			continue;
+		}
+		if (path.get_extension().to_lower() == "mgdata") {
+			r_paths.insert(path);
+		} else {
+			collect_micro_geometry_dependencies(path, r_paths, r_visited);
+		}
+	}
+}
+
 void EditorExportPlatform::_export_find_dependencies(const String &p_path, HashSet<String> &p_paths) {
 	if (p_paths.has(p_path)) {
 		return;
@@ -1121,7 +1145,7 @@ String EditorExportPlatform::_export_customize(const String &p_path, LocalVector
 		if (modified || p_force_save) {
 			// If modified, save it again. This is also used for TRES -> RES conversion on export.
 
-			String base_file = p_path.get_file().get_basename() + ".res"; // use RES for saving (binary)
+			String base_file = p_path.get_file().get_basename() + (res->is_class("MicroGeometry") ? ".mgdata" : ".res");
 			save_path = export_base_path.path_join("export-" + p_path.md5_text() + "-" + base_file);
 
 			Error err = ResourceSaver::save(res, save_path);
@@ -1363,6 +1387,15 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 		}
 	}
 
+	HashSet<String> micro_geometry_paths;
+	HashSet<String> dependency_visited;
+	for (const String &path : paths) {
+		collect_micro_geometry_dependencies(path, micro_geometry_paths, dependency_visited);
+	}
+	for (const String &path : micro_geometry_paths) {
+		paths.insert(path);
+	}
+
 	//add native icons to non-resource include list
 	_edit_filter_list(paths, String("*.icns"), false);
 	_edit_filter_list(paths, String("*.ico"), false);
@@ -1405,6 +1438,25 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 	}
 
 	EditorExportSaveProxy save_proxy(p_save_func, p_remove_func != nullptr);
+
+	HashSet<String> exported_micro_geometry;
+	auto save_micro_geometry_dependencies = [&](const String &p_path) -> Error {
+		HashSet<String> dependencies;
+		HashSet<String> visited;
+		collect_micro_geometry_dependencies(p_path, dependencies, visited);
+		for (const String &dependency : dependencies) {
+			if (paths.has(dependency) || exported_micro_geometry.has(dependency)) {
+				continue;
+			}
+			Error read_error;
+			Vector<uint8_t> bytes = FileAccess::get_file_as_bytes(dependency, &read_error);
+			ERR_FAIL_COND_V(read_error != OK, read_error);
+			Error save_error = save_proxy.save_file(p_preset, p_udata, dependency, bytes, 0, paths.size(), enc_in_filters, enc_ex_filters, key, seed, false);
+			ERR_FAIL_COND_V(save_error != OK, save_error);
+			exported_micro_geometry.insert(dependency);
+		}
+		return OK;
+	};
 
 	Error err = OK;
 	Vector<Ref<EditorExportPlugin>> export_plugins = EditorExport::get_singleton()->get_export_plugins();
@@ -1599,6 +1651,9 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 			// Before doing this, try to see if it can be customized.
 			String export_path = _export_customize(path, customize_resources_plugins, customize_scenes_plugins, export_cache, export_base_path, false);
 
+			err = save_micro_geometry_dependencies(export_path);
+			ERR_FAIL_COND_V(err != OK, err);
+
 			if (export_path != path) {
 				// It was actually customized.
 				// Since the original file is likely not recognized, just use the import system.
@@ -1713,6 +1768,8 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 				// Customization only happens if plugins did not take care of it before.
 				bool force_binary = convert_text_to_binary && (path.has_extension("tres") || path.has_extension("tscn"));
 				export_path = _export_customize(path, customize_resources_plugins, customize_scenes_plugins, export_cache, export_base_path, force_binary);
+				err = save_micro_geometry_dependencies(export_path);
+				ERR_FAIL_COND_V(err != OK, err);
 
 				if (export_path != path) {
 					// Add a remap entry.

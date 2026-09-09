@@ -2231,7 +2231,7 @@ Error ResourceFormatSaverText::set_uid(const String &p_path, ResourceUID::ID p_u
 }
 
 bool ResourceFormatSaverText::recognize(const Ref<Resource> &p_resource) const {
-	return true; // All resources recognized!
+	return !p_resource->is_class("MicroGeometry");
 }
 
 void ResourceFormatSaverText::get_recognized_extensions(const Ref<Resource> &p_resource, List<String> *p_extensions) const {
