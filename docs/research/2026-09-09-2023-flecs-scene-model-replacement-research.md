@@ -51,6 +51,20 @@ Największe granice wymiany to: trwała tożsamość i zapis, natywna edycja pó
 model skryptów, celowanie animacji i zdarzeń oraz własność zasobów podsystemów.
 Bezpośrednie zastąpienie `Node*` przez `flecs::entity` nie zamyka tych kontraktów.
 
+### Doprecyzowanie granicy renderera
+
+[Osobny research granicy encje–renderer](2026-09-09-2046-entity-renderer-boundary-research.md),
+2026-09-09 przy `986f28ec3c`, sprawdza dopuszczoną przez właściciela bezpośrednią
+przebudowę zamiast dokładania abstrakcji. Użycie istniejących RID setterów jest
+mniejszą pierwszą integracją, ale nie jest wymaganą docelową granicą ani etapem
+przejściowym. Dla pełnej wymiany sceny rekomendowana jest przebudowa CPU scene
+preparation i zależnych od ownerów konsumentów geometrii, przy zachowaniu
+asset storage, numerycznych rekordów GPU, microgeometry/RT i lifetime.
+RendererSceneCull już używa zwykłych struktur/tablic, nie Node'ów; nowy model
+ma usuwać rzeczywiste etapy i zbędne powielanie, nie domniemaną hierarchię Node.
+Bezpośrednia przebudowa nie została wykazana jako szybsza do napisania ani
+wydajniejsza w pomiarach. Obecny FrameContext nie zawiera snapshotu sceny.
+
 ## Sprawdzone kontrakty Godota: zapis i uruchomienie
 
 | Źródło w tym checkoutcie | Obecny kontrakt | Konsekwencja dla sceny encji |
