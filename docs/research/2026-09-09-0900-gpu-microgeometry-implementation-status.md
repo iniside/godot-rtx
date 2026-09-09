@@ -80,6 +80,38 @@ parent adjacency, coarse count and original vertex IDs; importer versions are 3.
 Twelve scoped C++ objects and 164 native plus four compute shader compilation/
 SPIR-V validation invocations passed, according to retained receipts in
 `C:/Users/lukas/AppData/Local/Temp/godot-micro-native-step4-20260909/`.
+Round 1 source review rejected geometric HZB occlusion for fragment DEPTH writers
+and coarse streaming fallback during one-shot UV2 baking. Proof audit rejected
+the pinned-compiler claim (receipts used SDK CLI, not the exact pinned DLL) and
+the compiler driver returning success despite failed/missing jobs. Existing
+per-case successful SDK compilation and ABI observations remain bounded evidence;
+the object build was eight compiled plus four up-to-date targets. Fix commit
+`ec399801bfb9bfeab4bd7e1867ebbc13a06b36d1` disables geometric HZB rejection for
+DEPTH-writing materials and uses an exact temporary native mesh for one-shot
+UV2 baking, independent of page residency. General microgeometry UV2 remains
+wired; the one-shot bake is an explicit native exception. The corrected compiler
+driver reports 164 raster and four compute successes with strict cardinality and
+the verified pinned compiler. Final source and proof reviews both returned PASS
+at `ec399801bfb9bfeab4bd7e1867ebbc13a06b36d1`, including original and cumulative
+history. Fresh pinned disassembly and exact incremental object-build receipts
+are retained.
+At the Step 4 gate, actual import/rendering had not run. Frozen ABI: GPUAsset 120, GPUGroup 48,
+SelectedCluster 64, Task 72,
+Parameters 432, native InstanceData 192/224 bytes. At this gate, full static buffers remained for unmigrated RT consumers. Cuts are transient; frozen inspection needs
+group pins before retaining them across storage updates.
+
+Step 5 committed `ec9a584644c14c889b91ac1c939d2eb98feedaab`, baseline
+`ec399801bfb9bfeab4bd7e1867ebbc13a06b36d1`. Shared resident CLAS and GPU-selected
+per-instance BLAS/TLAS replace the old static cluster assembly. Selected payload
+hit decoding preserves native material consumers and original emitter identities.
+Environment controls default to 4 output-image pixels and a 2x offscreen
+multiplier. Static exact GPU buffers are recreated for native consumers and
+retired after completed use; public RD RID exposure pins them.
+Full ordinary Windows editor/console build 04 passed in 42.17 seconds with
+`accesskit=no d3d12=no`; source hashes remained unchanged. Host receipts:
+`C:/Users/lukas/AppData/Local/Temp/godot-micro-step5-host-20260909/`.
+The shader closure reports 56 current pinned compiler/SPIR-V variants in
+`C:/Users/lukas/AppData/Local/Temp/godot-micro-selected-step5-20260909/final-current-source-closure.json`.
 Round 1 source review rejected cached request-counter exhaustion, publication of
 new cuts before history invalidation, missing TIME material tracking, and incorrect
 behind-camera RT error/offscreen classification. Fix commit
