@@ -205,6 +205,13 @@ list/cut with live transforms and invalidate on topology/material/reload changes
 Owner scene-location instruction: build the visual dragon/raster/RT scene in
 `demos/rtxdi_manual`, preserving its existing dirty owner changes. The current
 `rawcontent` project remains an import inspector, not the visual validation scene.
+The owner subsequently stopped Step 6 verification and requested CPU/GPU
+instrumentation for the visual fixture's performance. Step 6 source and fixture
+changes remain uncommitted and without final review. Ordinary/double/template
+builds and selected native/frozen/motion/reload Vulkan observations exist in
+`C:/Users/lukas/AppData/Local/Temp/godot-micro-step6-20260909/`; emissive
+empty-to-hittable publication and PCK runtime were not completed before the stop.
+See [performance investigation](2026-09-09-1456-microgeometry-performance-status.md).
 The overall owner-authorized implementation is incomplete.
 
 Existing unrelated dirty scenes/documents and the source dragon are preserved.

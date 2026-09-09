@@ -11,13 +11,17 @@ The owner renewed the two remaining corrections after the review-limit stop;
 `bf2818e0ef` repairs the empty-to-nonempty BLAS build destination and signed
 far-plane classification. Fresh source and bounded compiler-proof reviews pass;
 ordinary editor/console build 08 and four refreshed shader variants pass.
-Step 6 debug views and real GPU validation are now in progress. The visual scene
-belongs in `demos/rtxdi_manual`, preserving its existing owner changes.
+Step 6 debug views and the visual scene in `demos/rtxdi_manual/microgeometry`
+are present as uncommitted work; their final review remains pending. The owner
+stopped correctness/appearance verification and prioritized CPU/GPU performance.
+[Initial measurements and active instrumentation](../research/2026-09-09-1456-microgeometry-performance-status.md)
+show 38.210 ms GPU with live selection and 27.066 ms when frozen; the broad
+TLAS Build interval dominates, but its internal cause is not yet isolated.
 Actual dragon import/reimport passed in 82.66/67.04 seconds, yielding 17 DAG
 levels and 9737 pages with byte-identical reused `.mgdata`; the diagnostic
 reimport command had shutdown warnings. Import evidence uses an immutable
-intermediate binary, not final GPU runtime proof. Debug views, real GPU checks,
-export/PCK and double/template coverage remain outstanding. Owner scope:
+intermediate binary, not final GPU runtime proof. Selected runtime checks and ordinary/double/template builds passed on dirty
+Step 6 sources; emissive publication, PCK runtime and final review remain open. Owner scope:
 nondeforming geometry including rigid movement/instancing; preserve existing
 deformations; exclude foliage/voxels and new reflections. RT simplification uses
 simple error control plus an offscreen multiplier, without light/receiver/probe
