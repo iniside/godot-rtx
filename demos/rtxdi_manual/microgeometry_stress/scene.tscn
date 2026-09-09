@@ -1,0 +1,73 @@
+[gd_scene load_steps=9 format=3]
+
+[ext_resource type="Script" path="res://microgeometry_stress/scene.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://microgeometry_stress/lucy.glb" id="2_lucy"]
+[ext_resource type="PackedScene" path="res://microgeometry_stress/thai_statuette.glb" id="3_thai"]
+
+[sub_resource type="ProceduralSkyMaterial" id="SkyMaterial"]
+sky_top_color = Color(0.08, 0.12, 0.2, 1)
+sky_horizon_color = Color(0.42, 0.5, 0.62, 1)
+ground_bottom_color = Color(0.025, 0.03, 0.04, 1)
+ground_horizon_color = Color(0.32, 0.36, 0.42, 1)
+sun_angle_max = 20.0
+
+[sub_resource type="Sky" id="Sky"]
+sky_material = SubResource("SkyMaterial")
+
+[sub_resource type="Environment" id="Environment"]
+raytracing_geometry_error = 4.0
+raytracing_geometry_offscreen_multiplier = 2.0
+rtxdi_resolution = 2
+ddgi_resolution = 2
+ddgi_cascade_count = 4
+ddgi_updates_per_frame = 2
+background_mode = 2
+sky = SubResource("Sky")
+tonemap_mode = 4
+
+[sub_resource type="StandardMaterial3D" id="FloorMaterial"]
+albedo_color = Color(0.24, 0.27, 0.31, 1)
+roughness = 0.78
+
+[sub_resource type="BoxMesh" id="FloorMesh"]
+material = SubResource("FloorMaterial")
+size = Vector3(148, 0.2, 132)
+
+[node name="MicrogeometryStress" type="Node3D"]
+script = ExtResource("1_script")
+lucy_scene = ExtResource("2_lucy")
+thai_scene = ExtResource("3_thai")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment")
+
+[node name="Instances" type="Node3D" parent="."]
+
+[node name="Floor" type="MeshInstance3D" parent="."]
+position = Vector3(0, -0.1, 0)
+mesh = SubResource("FloorMesh")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-55, -35, 0)
+light_energy = 1.2
+shadow_enabled = true
+directional_shadow_max_distance = 80.0
+
+[node name="Camera" type="Camera3D" parent="."]
+position = Vector3(0, 115, 144)
+rotation_degrees = Vector3(-38.66, 0, 0)
+current = true
+fov = 55.0
+far = 600.0
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="State" type="Label" parent="HUD"]
+offset_left = 16.0
+offset_top = 14.0
+offset_right = 1000.0
+offset_bottom = 70.0
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 16
+text = "Dense microgeometry scene loading..."
