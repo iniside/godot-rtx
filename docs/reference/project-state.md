@@ -45,11 +45,18 @@ The owner additionally requires real instancing/streaming for 5000 Lucy plus
 workload; the sparse selection/shared-cut extension passes plan review before
 the threading steps. Dense fixture `c4633542e7` passes source/proof reviews,
 normal import and headless population (5000+5000 nodes sharing two meshes).
-Full dense GPU admission remains pending. SceneTree scalability fixes remain
-outside this task. Step 3A sparse selection correction `571816b9f4` passes final
-source review, both builds and single-view still/moving Vulkan captures. Step 3B
-shared RT cuts/BLAS and exact streaming ownership are being implemented.
-Threading changes remain pending.
+SceneTree scalability fixes remain outside this task. Step 3A sparse selection
+correction `571816b9f4` passes final source review, both builds and single-view
+still/moving Vulkan captures. Step 3B shared RT cuts/BLAS and exact streaming
+ownership pass final source and bounded proof reviews at `cfa892579a`. Native
+Vulkan admits all 10000 instances with two shared assets and 2-3 cuts/BLAS;
+corrected profiled shutdown exits 0 without errors. Native unload/reload releases
+and restores resident pages and AS allocations; interrupted sessions are not
+normal-exit proof. Gather-local material reuse `e319cca724` builds in both
+precisions and lowers measured RT gather CPU from 50.269 to 6.809 ms on the dense
+scene; fresh source review passes. These are reported window medians, not
+main active time or isolated whole-GPU gains. Step 4 bounded main/render frame
+ownership is being implemented; worker preparation/recording remain pending.
 Actual dragon import/reimport passed in 82.66/67.04 seconds, yielding 17 DAG
 levels and 9737 pages with byte-identical reused `.mgdata`; the diagnostic
 reimport command had shutdown warnings. Import evidence uses an immutable

@@ -357,3 +357,107 @@ The dragon HUD CLAS statistic is cumulative successful cluster builds, increment
 at page CLAS creation in `micro_geometry_storage.cpp:206`; it is not a live CLAS
 count. Rigid transform changes alone must preserve CLAS. New resident pages may
 require new builds; the Step 3B telemetry distinguishes sharing and residency.
+
+The follow-up `step3a-frozen-transform` interaction was interrupted before the
+freeze/motion observation. Its wrapper reached the 180-second timeout and
+records no actual normal exit; it supplies no transform-only CLAS proof.
+
+Bounded selector-cost research at `571816b9f4` identifies repeated parameter
+buffer uploads and 21-binding uniform construction on every depth dispatch.
+The dragon traverse interval includes 37 dispatches. Fix `d7b9f9cdd2` moves
+mode/level to an 8-byte push constant, prepares the 424-byte parameter block
+and uniform set once per operation, and rejects unused queue reservations
+before resolving task/instance/asset data. It preserves the publication
+dispatch and raw-address dependencies on every list. Both selector Slang and
+SPIR-V variants pass; coordinated Step 3B caller closure, engine builds, fresh
+source review and matched runtime timing remain pending. No performance gain
+is claimed from source or shader compilation alone.
+
+## Step 3B shared RT cuts: admission and bounded lifetime proof passed
+
+Commit `48e42e5fb9` and selector optimization `d7b9f9cdd2` pass fresh source
+reviews and ordinary/double engine builds. Pinned ordinary SHA256 is
+`bf838f143a68c6935fd6adbd29c75f2a5f0de006a5109962736371ef639deab3`;
+double is `4b523b414dbbaad7b8eaf8f2e052b7b8bc1cf753b1312a692cebdc627c78cdcb`.
+The seven-file RT/storage replacement removes full-DAG per-instance membership
+and broad CLAS dependencies, introduces exact shared cut/page ownership, and
+closes metadata replacement admission in MeshStorage. Existing Slang build
+registration remains authoritative; no new RD public API is introduced.
+
+`step3b-dense-admission` renders 300 real RTX 4090/Vulkan frames at 1280x720,
+exits 0 without timeout or Godot ERROR lines, and confirms 5000 Lucy plus 5000
+Thai native instances sharing two meshes and two cut BLAS. Latest publication
+reports 53873376 B cut working storage, 62375288 B metadata, 268435456 B page
+pool and six resident pages with zero pending. These are separate accounting
+buckets; neither a whole-VRAM measurement nor a like-for-like total reduction
+from the old 64.39 GiB membership/reference bound is claimed.
+
+`step3b-dragon-moving` completes 600 frames and exits 0 without timeout/ERROR.
+Its eight geometry instances publish three then six shared cuts, selected count
+8 to 1982, and resident pages 3 to 2147 with final pending zero. The 3000-frame
+`step3b-dense-orbit` instead reaches the 180-second timeout. Its 148 reporting
+windows have no ERROR lines; provisional last-ten medians are GPU 13.045 ms,
+MAIN render-draw reported frame mean 71.784 ms (including waits) and RT Scene
+Gather CPU 49.024 ms. This is not normal
+completion evidence. The saved screenshot establishes the rendered dense field.
+
+The 600-frame `step3b-dense-orbit-bounded` records normal profiles followed by
+37781 timestamp-capacity ERROR lines and a 120-second timeout with no actual
+exit. The first proof audit rejected completion on this concrete shutdown/
+lifetime gap. The submission-maintenance correction below closes that failing
+branch without raising the timestamp budget. Receipts retain all failed runs;
+the earlier admitted/dragon runs remain bounded valid evidence.
+
+Separate source diagnosis found two full material-generation scans per instance
+surface inside RT Scene Gather despite shared materials. The gather-local
+RID/instance-uniform-offset reuse below addresses this without changing
+SceneTree behavior or adding a persistent material cache.
+
+### Submission maintenance correction and subsequent evidence
+
+`cfa892579a` adds one maintenance execution per pending GPU submission.
+Source tracing shows instance teardown repeatedly called dirty-resource
+maintenance and emitted five streaming timestamps without a new frame reset.
+The finite cleanup amplification, rather than a proven readback-drain loop,
+owns this correction. Ordinary/double builds and fresh final source review pass.
+Pinned ordinary is `06cdd71759609c800fee3effd131f193ee13dbe3445299e0541bef1493c5382c`;
+double is `30af6881dc080de20402a4332afd8145e30fe0cb7baf7095933d891e3aa2c04e`.
+`step3b-fixed-dense-orbit` still timed out at 120 seconds without timestamp
+errors; it remains invalid as normal-exit proof. The same 600-frame engine
+command in `step3b-fixed-orbit-stack` completed naturally in 95.017 seconds
+with exit 0, no timeout, no ERROR lines and unchanged binary hashes. Its
+external timeout was 180 seconds. No debugger was attached and no input action
+closed that run; the name reflects an unused stack-capture intention. This
+proves that retained run, not the cause of every earlier timeout.
+
+Native cfa unload/reload observations in `step3b-fixed-lifetime` show pages
+541 -> 1 -> 541 and AS accounting 105371 -> 55 -> 105371 KiB. Screenshots
+and events retain the successful transitions; that manual session later reached
+its external timeout, so it is not normal-exit proof. F4 plus motion retained
+selected counts but continued requesting pages; camera-pass freeze does not
+freeze internal shadow selection (`render_forward_clustered.cpp:650`). No
+transform-only CLAS invariance is claimed. A subsequent manual reload/close
+session was cancelled after Computer Use stopped; root terminated only its
+verified helper process. The owner clarified that stopping Computer Use does
+not cancel implementation. Normal shutdown evidence comes from the completed
+automatic dense and dragon runs, not those interrupted manual sessions.
+
+### Gather-local material reuse
+
+`e319cca724` implements the gather-local full-RID material and RID/instance-
+uniform-offset generation tables in the four `build_tlas()` geometry paths.
+No cross-frame cache or SceneTree behavior changes. Ordinary/double builds pass;
+ordinary SHA256 `9af58feaaadf0aaa1c2cc50f3187c0a14af2d7e332c90518a4e9f37a77035596`,
+double `57d784798aa04f15dcdaF710c658e9f3de260e397ba9f7adfa15ee4fbd28b537`.
+`material-reuse-dense-orbit` completes 1500 Vulkan frames and exits 0 without
+timeout/ERROR, retaining 10000 instances and two shared assets. Last-ten report
+medians against the successful cfa 600-frame run are RT Scene Gather CPU
+50.269 -> 6.809 ms and MAIN CPU PROFILE render draw 73.876 -> 27.103 ms
+(reported frame means, including waits). Both use unchanged
+1280x720/settings/workload, but time-driven camera positions differ; no isolated
+whole-GPU gain is claimed. MAIN render draw includes waits and is not main
+active CPU. `material-reuse-comparison.json` retains raw labels and boundaries. Fresh
+exact/cumulative material source review round 1 passes at `e319cca724`. Final shared-cut proof round 2 passes
+at frozen `cfa892579a`, including dense admission, successful profiled shutdown,
+streaming and the bounded unload/reload observations above. It does not close
+transform-only invariance or the remaining threading steps.
