@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/templates/hash_set.h"
+#include "core/templates/list.h"
 #include "core/templates/local_vector.h"
 #include "core/templates/vector.h"
 #include "core/typedefs.h"
@@ -105,13 +106,27 @@ public:
 		uint32_t records = 0;
 	};
 	struct CapacityHistory : RefCounted {
-		HashMap<CapacityKey, Capacity, CapacityKey> capacities;
+		struct Entry {
+			Capacity capacity;
+			uint32_t owners = 0;
+			uint64_t last_owner = 0;
+			List<CapacityKey>::Element *retired = nullptr;
+		};
+		HashMap<CapacityKey, Entry, CapacityKey> capacities;
+		List<CapacityKey> retired;
+		uint64_t next_owner = 0;
+		uint64_t retired_callback_floor = 0;
+		uint64_t retirement_revision = 0;
 	};
 	struct CapacityFeedback : RefCounted {
 		Ref<CapacityHistory> history;
 		Vector<CapacityKey> keys;
 		Vector<Capacity> limits;
 		Vector<Capacity> allocated;
+		Vector<uint8_t> leased;
+		uint64_t owner = 0;
+		uint64_t blocked_revision = 0;
+		bool retired = false;
 		bool pending = false;
 		bool retry = false;
 		bool failed = false;
@@ -202,6 +217,8 @@ private:
 	RID _buffer(Pass &r_pass, uint64_t p_size, const void *p_data = nullptr, uint32_t p_usage = 0);
 	bool _resize(Pass *p_pass, const Vector<Unit> &p_units);
 	static void _retire_buffers(Pass *p_pass);
+	static Capacity *_capacity_entry(CapacityFeedback *p_feedback, uint32_t p_index, bool p_create);
+	static void _retire_capacity(CapacityFeedback *p_feedback);
 	static void _capacity_feedback(const Vector<uint8_t> &p_bytes, Ref<RefCounted> p_feedback);
 	void _dispatch(Pass *p_pass, uint32_t p_mode, uint32_t p_items, RID p_hzb);
 };

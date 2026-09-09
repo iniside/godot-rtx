@@ -10,6 +10,9 @@
 using namespace RendererSceneRenderImplementation;
 
 MicroGeometrySelection::Pass::~Pass() {
+	if (capacity_feedback.is_valid()) {
+		MicroGeometrySelection::_retire_capacity(capacity_feedback.ptr());
+	}
 	auto *storage = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage();
 	if (raster_memory_accounted) {
 		storage->remove_raster_selection_memory(memory_bytes);
@@ -71,6 +74,69 @@ RID MicroGeometrySelection::_buffer(Pass &r_pass, uint64_t p_size, const void *p
 	return buffer;
 }
 
+MicroGeometrySelection::Capacity *MicroGeometrySelection::_capacity_entry(CapacityFeedback *p_feedback, uint32_t p_index, bool p_create) {
+	CapacityHistory &history = *p_feedback->history.ptr();
+	if (p_feedback->retired && p_feedback->owner <= history.retired_callback_floor) {
+		return nullptr;
+	}
+	const CapacityKey &key = p_feedback->keys[p_index];
+	CapacityHistory::Entry *entry = history.capacities.getptr(key);
+	if (!entry && p_create) {
+		if (history.capacities.size() >= 65536) {
+			List<CapacityKey>::Element *oldest = history.retired.front();
+			if (!oldest) {
+				p_feedback->failed = true;
+				p_feedback->retry = false;
+				p_feedback->blocked_revision = history.retirement_revision;
+				ERR_PRINT("Microgeometry sparse selection capacity history is occupied by active passes.");
+				return nullptr;
+			}
+			const uint64_t old_owner = history.capacities[oldest->get()].last_owner;
+			if (p_feedback->retired && p_feedback->owner <= old_owner) {
+				return nullptr;
+			}
+			history.retired_callback_floor = MAX(history.retired_callback_floor, old_owner);
+			history.capacities.erase(oldest->get());
+			history.retired.erase(oldest);
+		}
+		history.capacities.insert(key, CapacityHistory::Entry());
+		entry = history.capacities.getptr(key);
+	}
+	if (!entry) {
+		return nullptr;
+	}
+	entry->last_owner = MAX(entry->last_owner, p_feedback->owner);
+	if (entry->retired) {
+		history.retired.erase(entry->retired);
+		entry->retired = nullptr;
+	}
+	if (!p_feedback->retired && !p_feedback->leased[p_index]) {
+		entry->owners++;
+		p_feedback->leased.write[p_index] = 1;
+	}
+	if (entry->owners == 0) {
+		entry->retired = history.retired.push_back(key);
+	}
+	return &entry->capacity;
+}
+
+void MicroGeometrySelection::_retire_capacity(CapacityFeedback *p_feedback) {
+	p_feedback->retired = true;
+	CapacityHistory &history = *p_feedback->history.ptr();
+	for (uint32_t index = 0; index < uint32_t(p_feedback->keys.size()); index++) {
+		if (!p_feedback->leased[index]) {
+			continue;
+		}
+		CapacityHistory::Entry &entry = history.capacities[p_feedback->keys[index]];
+		entry.owners--;
+		if (entry.owners == 0) {
+			entry.retired = history.retired.push_back(p_feedback->keys[index]);
+			history.retirement_revision++;
+		}
+		p_feedback->leased.write[index] = 0;
+	}
+}
+
 void MicroGeometrySelection::_capacity_feedback(const Vector<uint8_t> &p_bytes, Ref<RefCounted> p_feedback) {
 	auto *feedback = static_cast<CapacityFeedback *>(p_feedback.ptr());
 	feedback->pending = false;
@@ -93,16 +159,15 @@ void MicroGeometrySelection::_capacity_feedback(const Vector<uint8_t> &p_bytes, 
 		if (flags & 2) {
 			capacity.records = MIN(uint64_t(limit.records), MAX(uint64_t(capacity.records) * 2, uint64_t(decode_uint32(state + 4))));
 		}
-		const CapacityKey &key = feedback->keys[index];
-		if (!feedback->history->capacities.has(key) && feedback->history->capacities.size() >= 65536) {
-			feedback->failed = true;
-			feedback->retry = false;
-			ERR_PRINT("Microgeometry sparse selection capacity history admission exhausted.");
-			return;
+		Capacity *retained = _capacity_entry(feedback, index, true);
+		if (!retained) {
+			if (feedback->failed) {
+				return;
+			}
+			continue;
 		}
-		Capacity &retained = feedback->history->capacities[key];
-		retained.queue = MAX(retained.queue, capacity.queue);
-		retained.records = MAX(retained.records, capacity.records);
+		retained->queue = MAX(retained->queue, capacity.queue);
+		retained->records = MAX(retained->records, capacity.records);
 	}
 }
 
@@ -123,6 +188,11 @@ void MicroGeometrySelection::_retire_buffers(Pass *p_pass) {
 
 bool MicroGeometrySelection::needs_retry(Pass *p_pass) const {
 	_retire_buffers(p_pass);
+	CapacityFeedback &feedback = *p_pass->capacity_feedback.ptr();
+	if (feedback.failed && feedback.blocked_revision != feedback.history->retirement_revision) {
+		feedback.failed = false;
+		feedback.retry = true;
+	}
 	return !p_pass->admission_failed && !p_pass->capacity_feedback->failed && p_pass->capacity_feedback->retry;
 }
 
@@ -225,6 +295,7 @@ MicroGeometrySelection::Pass *MicroGeometrySelection::create(const Vector<Task> 
 	pass->task_data = p_tasks;
 	pass->capacity_feedback.instantiate();
 	pass->capacity_feedback->history = capacity_history;
+	pass->capacity_feedback->owner = ++capacity_history->next_owner;
 	Vector<Unit> units;
 	for (uint32_t task_index = 0; task_index < uint32_t(p_tasks.size()); task_index++) {
 		const Task &task = p_tasks[task_index];
@@ -234,14 +305,15 @@ MicroGeometrySelection::Pass *MicroGeometrySelection::create(const Vector<Task> 
 		}
 		for (uint32_t ordinal = 0; ordinal < task.multimesh_count; ordinal++) {
 			CapacityKey key = { task.surface, task.asset, ordinal };
-			const Capacity *retained = capacity_history->capacities.getptr(key);
+			pass->capacity_feedback->keys.push_back(key);
+			pass->capacity_feedback->leased.push_back(0);
+			const Capacity *retained = _capacity_entry(pass->capacity_feedback.ptr(), pass->capacity_feedback->keys.size() - 1, false);
 			Unit unit;
 			unit.task = task_index;
 			unit.ordinal = ordinal;
 			unit.queue_capacity = MIN(task.group_count, MAX(32u, retained ? retained->queue : 0u));
 			unit.record_capacity = MIN(task.cluster_count, MAX(MAX(32u, task.coarse_count), retained ? retained->records : 0u));
 			units.push_back(unit);
-			pass->capacity_feedback->keys.push_back(key);
 			pass->capacity_feedback->limits.push_back({ task.group_count, task.cluster_count });
 		}
 	}
@@ -324,13 +396,13 @@ void MicroGeometrySelection::_dispatch(Pass *p_pass, uint32_t p_mode, uint32_t p
 
 void MicroGeometrySelection::select(Pass *p_pass, RID p_hzb) {
 	ERR_FAIL_NULL(p_pass);
-	_retire_buffers(p_pass);
+	needs_retry(p_pass);
 	if (!p_pass->admission_failed && !p_pass->capacity_feedback->pending) {
 		Vector<Unit> units = p_pass->unit_data;
 		bool resize = false;
 		for (uint32_t index = 0; index < uint32_t(units.size()); index++) {
 			Unit &unit = units.write[index];
-			const Capacity *capacity = capacity_history->capacities.getptr(p_pass->capacity_feedback->keys[index]);
+			const Capacity *capacity = _capacity_entry(p_pass->capacity_feedback.ptr(), index, false);
 			if (capacity) {
 				resize |= capacity->queue > unit.queue_capacity || capacity->records > unit.record_capacity;
 				unit.queue_capacity = MAX(unit.queue_capacity, capacity->queue);
@@ -365,6 +437,7 @@ void MicroGeometrySelection::select(Pass *p_pass, RID p_hzb) {
 	RENDER_TIMESTAMP(rt ? "Microgeometry RT Sparse Traverse" : "Microgeometry Raster Sparse Traverse");
 	for (uint32_t depth = p_pass->levels; depth > 0; depth--) {
 		p_pass->data.level = depth - 1;
+		_dispatch(p_pass, 14, p_pass->data.unit_count, p_hzb);
 		_dispatch(p_pass, 4, p_pass->data.queue_work, p_hzb);
 	}
 	_dispatch(p_pass, 5, p_pass->data.queue_work, p_hzb);

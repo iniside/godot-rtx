@@ -33,7 +33,8 @@ struct SelectionState {
 	uint committed_count;
 	uint status;
 	uint rejected_count;
-	uint padding[3];
+	uint published_frontier_count;
+	uint padding[2];
 };
 struct SelectionParameters {
 	float projection[16];
@@ -362,6 +363,10 @@ void main(uint3 id : SV_DispatchThreadID) {
 		unit_states[index] = state;
 		return;
 	}
+	if (parameters.mode == 14) {
+		if (index < parameters.unit_count) { unit_states[index].published_frontier_count = min(unit_states[index].queue_count, units[index].queue_capacity); }
+		return;
+	}
 	if (parameters.mode == 3 || parameters.mode == 9) {
 		if (index >= parameters.unit_count) { return; }
 		SelectionUnit unit = units[index];
@@ -425,7 +430,8 @@ void main(uint3 id : SV_DispatchThreadID) {
 		return;
 	}
 	if (queue_work) {
-		if (relative >= min(unit_states[unit_index].queue_count, unit.queue_capacity)) { return; }
+		uint published_count = parameters.mode == 4 ? unit_states[unit_index].published_frontier_count : min(unit_states[unit_index].queue_count, unit.queue_capacity);
+		if (relative >= published_count) { return; }
 		uint slot = frontier[index];
 		uint group_id = sparse_states[slot].x - 1;
 		MicroGeometryGroup group = ((MicroGeometryGroup*)asset.groups)[group_id];
