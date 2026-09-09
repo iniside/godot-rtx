@@ -1352,6 +1352,7 @@ private:
 
 		// --- Top Level ---
 		uint32_t max_instance_count = 0;
+		LocalVector<RDG::ResourceTracker *> dependency_trackers;
 
 		struct InstanceBuffer {
 			RDD::BufferID driver_id;
@@ -1366,6 +1367,7 @@ private:
 	Error _acceleration_structure_scratch_buffer_create(AccelerationStructure *p_acceleration_structure);
 	void _blas_remove_tlas_dependencies(AccelerationStructure *p_blas, RID p_blas_id);
 	void _tlas_remove_blas_dependencies(AccelerationStructure *p_tlas, RID p_tlas_id);
+	Error _tlas_update_dependency_trackers(AccelerationStructure *p_tlas);
 
 	RID_Owner<AccelerationStructure, true> acceleration_structure_owner;
 
@@ -1458,8 +1460,9 @@ public:
 	Error tlas_build(RID p_tlas, Span<AccelerationStructureInstance> p_instances);
 
 private:
-	Error _cluster_address_region_resolve(const ClusterAddressRegion &p_region, RDD::ClusterAddressRegion &r_region, LocalVector<RDG::ResourceTracker *> &r_trackers);
-	Error _cluster_buffer_resolve(RID p_buffer, bool p_require_acceleration_structure_storage, RDD::BufferID &r_buffer, LocalVector<RDG::ResourceTracker *> &r_trackers);
+	void _cluster_tracker_push_unique(LocalVector<RDG::ResourceTracker *> &r_trackers, HashSet<RDG::ResourceTracker *> &r_seen, RDG::ResourceTracker *p_tracker);
+	Error _cluster_address_region_resolve(const ClusterAddressRegion &p_region, RDD::ClusterAddressRegion &r_region, LocalVector<RDG::ResourceTracker *> &r_trackers, HashSet<RDG::ResourceTracker *> &r_seen);
+	Error _cluster_buffer_resolve(RID p_buffer, bool p_require_acceleration_structure_storage, RDD::BufferID &r_buffer, LocalVector<RDG::ResourceTracker *> &r_trackers, HashSet<RDG::ResourceTracker *> &r_seen);
 
 	/**********************************/
 	/**** HIT SHADER BINDING TABLE ****/
@@ -1997,16 +2000,29 @@ public:
 		CPU_PROFILE_FENCE_WAIT,
 		CPU_PROFILE_DOWNLOAD_COPY,
 		CPU_PROFILE_DOWNLOAD_CALLBACK,
+		CPU_PROFILE_AS_DEPENDENCY_UNION,
+		CPU_PROFILE_AS_DEPENDENCY_USAGE,
+		CPU_PROFILE_CLUSTER_BLAS_BUILD,
 		CPU_PROFILE_MAX,
+	};
+
+	enum CPUProfileCounter {
+		CPU_PROFILE_DEPENDENCY_CALLS,
+		CPU_PROFILE_TRACKER_CANDIDATES,
+		CPU_PROFILE_DEPENDENCY_UNION_BUILDS,
+		CPU_PROFILE_DEPENDENCY_USAGES,
+		CPU_PROFILE_COUNTER_MAX,
 	};
 
 private:
 	bool cpu_profile_enabled = false;
 	uint64_t cpu_profile_usec[CPU_PROFILE_MAX] = {};
+	uint64_t cpu_profile_counts[CPU_PROFILE_COUNTER_MAX] = {};
 
 public:
 	void begin_cpu_frame_profile(bool p_enabled);
 	uint64_t get_cpu_frame_profile_usec(CPUProfilePhase p_phase) const { return cpu_profile_usec[p_phase]; }
+	uint64_t get_cpu_frame_profile_count(CPUProfileCounter p_counter) const { return cpu_profile_counts[p_counter]; }
 
 	void capture_timestamp(const String &p_name);
 	uint32_t get_captured_timestamps_count() const;

@@ -351,6 +351,7 @@ void RenderingDevice::_blas_remove_tlas_dependencies(AccelerationStructure *p_bl
 		ERR_FAIL_COND(tlas->type != ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL);
 
 		tlas->invalidated = true;
+		tlas->dependency_trackers.clear();
 		tlas->acceleration_structure_dependencies.erase(p_blas_id);
 	}
 
@@ -358,6 +359,8 @@ void RenderingDevice::_blas_remove_tlas_dependencies(AccelerationStructure *p_bl
 }
 
 void RenderingDevice::_tlas_remove_blas_dependencies(AccelerationStructure *p_tlas, RID p_tlas_id) {
+	p_tlas->invalidated = true;
+	p_tlas->dependency_trackers.clear();
 	for (RID id : p_tlas->acceleration_structure_dependencies) {
 		AccelerationStructure *blas = acceleration_structure_owner.get_or_null(id);
 		ERR_FAIL_NULL(blas);
@@ -367,6 +370,28 @@ void RenderingDevice::_tlas_remove_blas_dependencies(AccelerationStructure *p_tl
 	}
 
 	p_tlas->acceleration_structure_dependencies.clear();
+}
+
+Error RenderingDevice::_tlas_update_dependency_trackers(AccelerationStructure *p_tlas) {
+	const uint64_t cpu_begin = cpu_profile_enabled ? OS::get_singleton()->get_ticks_usec() : 0;
+	p_tlas->dependency_trackers.clear();
+	HashSet<RDG::ResourceTracker *> seen;
+	for (RID blas_id : p_tlas->acceleration_structure_dependencies) {
+		AccelerationStructure *blas = acceleration_structure_owner.get_or_null(blas_id);
+		ERR_FAIL_NULL_V(blas, ERR_INVALID_PARAMETER);
+		ERR_FAIL_COND_V(blas->invalidated, ERR_INVALID_PARAMETER);
+		_cluster_tracker_push_unique(p_tlas->dependency_trackers, seen, blas->draw_tracker);
+		for (RID storage_id : blas->cluster_storage_dependencies) {
+			Buffer *storage = _get_buffer_from_owner(storage_id);
+			ERR_FAIL_NULL_V(storage, ERR_INVALID_PARAMETER);
+			_cluster_tracker_push_unique(p_tlas->dependency_trackers, seen, storage->draw_tracker);
+		}
+	}
+	if (cpu_profile_enabled) {
+		cpu_profile_usec[CPU_PROFILE_AS_DEPENDENCY_UNION] += OS::get_singleton()->get_ticks_usec() - cpu_begin;
+		cpu_profile_counts[CPU_PROFILE_DEPENDENCY_UNION_BUILDS]++;
+	}
+	return OK;
 }
 
 RID RenderingDevice::blas_create(Span<AccelerationStructureGeometry> p_geometries, BitField<AccelerationStructureFlagBits> p_flags) {
@@ -629,14 +654,17 @@ void RenderingDevice::clas_get_build_sizes(const ClusterBuildInput &p_input, Clu
 	driver->clas_get_build_sizes(p_input, r_sizes);
 }
 
-// Packed build arguments share one tracker per command.
-static void _cluster_tracker_push_unique(LocalVector<RDG::ResourceTracker *> &r_trackers, RDG::ResourceTracker *p_tracker) {
-	if (!r_trackers.has(p_tracker)) {
+void RenderingDevice::_cluster_tracker_push_unique(LocalVector<RDG::ResourceTracker *> &r_trackers, HashSet<RDG::ResourceTracker *> &r_seen, RDG::ResourceTracker *p_tracker) {
+	if (cpu_profile_enabled) {
+		cpu_profile_counts[CPU_PROFILE_TRACKER_CANDIDATES]++;
+	}
+	if (!r_seen.has(p_tracker)) {
+		r_seen.insert(p_tracker);
 		r_trackers.push_back(p_tracker);
 	}
 }
 
-Error RenderingDevice::_cluster_address_region_resolve(const ClusterAddressRegion &p_region, RDD::ClusterAddressRegion &r_region, LocalVector<RDG::ResourceTracker *> &r_trackers) {
+Error RenderingDevice::_cluster_address_region_resolve(const ClusterAddressRegion &p_region, RDD::ClusterAddressRegion &r_region, LocalVector<RDG::ResourceTracker *> &r_trackers, HashSet<RDG::ResourceTracker *> &r_seen) {
 	r_region = RDD::ClusterAddressRegion();
 
 	Buffer *buffer = _get_buffer_from_owner(p_region.buffer);
@@ -657,12 +685,12 @@ Error RenderingDevice::_cluster_address_region_resolve(const ClusterAddressRegio
 	r_region.offset = p_region.offset;
 	r_region.stride = p_region.stride;
 	r_region.size = p_region.size;
-	_cluster_tracker_push_unique(r_trackers, buffer->draw_tracker);
+	_cluster_tracker_push_unique(r_trackers, r_seen, buffer->draw_tracker);
 
 	return OK;
 }
 
-Error RenderingDevice::_cluster_buffer_resolve(RID p_buffer, bool p_require_acceleration_structure_storage, RDD::BufferID &r_buffer, LocalVector<RDG::ResourceTracker *> &r_trackers) {
+Error RenderingDevice::_cluster_buffer_resolve(RID p_buffer, bool p_require_acceleration_structure_storage, RDD::BufferID &r_buffer, LocalVector<RDG::ResourceTracker *> &r_trackers, HashSet<RDG::ResourceTracker *> &r_seen) {
 	r_buffer = RDD::BufferID();
 
 	Buffer *buffer = _get_buffer_from_owner(p_buffer);
@@ -677,7 +705,7 @@ Error RenderingDevice::_cluster_buffer_resolve(RID p_buffer, bool p_require_acce
 	}
 
 	r_buffer = buffer->driver_id;
-	_cluster_tracker_push_unique(r_trackers, buffer->draw_tracker);
+	_cluster_tracker_push_unique(r_trackers, r_seen, buffer->draw_tracker);
 
 	return OK;
 }
@@ -716,37 +744,39 @@ Error RenderingDevice::clas_build(const ClusterBuildInput &p_input, RID p_dst_im
 	thread_local LocalVector<RDG::ResourceTracker *> read_trackers;
 	write_trackers.clear();
 	read_trackers.clear();
+	HashSet<RDG::ResourceTracker *> write_seen;
+	HashSet<RDG::ResourceTracker *> read_seen;
 
 	RDD::BufferID dst_implicit_buffer;
-	Error err = _cluster_buffer_resolve(p_dst_implicit_buffer, true, dst_implicit_buffer, write_trackers);
+	Error err = _cluster_buffer_resolve(p_dst_implicit_buffer, true, dst_implicit_buffer, write_trackers, write_seen);
 	ERR_FAIL_COND_V(err != OK, err);
 
 	RDD::BufferID scratch_buffer;
-	err = _cluster_buffer_resolve(p_scratch_buffer, false, scratch_buffer, write_trackers);
+	err = _cluster_buffer_resolve(p_scratch_buffer, false, scratch_buffer, write_trackers, write_seen);
 	ERR_FAIL_COND_V(err != OK, err);
 
 	RDD::ClusterAddressRegion dst_addresses;
-	err = _cluster_address_region_resolve(p_dst_addresses, dst_addresses, write_trackers);
+	err = _cluster_address_region_resolve(p_dst_addresses, dst_addresses, write_trackers, write_seen);
 	ERR_FAIL_COND_V(err != OK, err);
 
 	RDD::ClusterAddressRegion dst_sizes;
 	if (p_dst_sizes.buffer.is_valid()) {
-		err = _cluster_address_region_resolve(p_dst_sizes, dst_sizes, write_trackers);
+		err = _cluster_address_region_resolve(p_dst_sizes, dst_sizes, write_trackers, write_seen);
 		ERR_FAIL_COND_V(err != OK, err);
 	}
 
 	RDD::ClusterAddressRegion src_infos;
-	err = _cluster_address_region_resolve(p_src_infos, src_infos, read_trackers);
+	err = _cluster_address_region_resolve(p_src_infos, src_infos, read_trackers, read_seen);
 	ERR_FAIL_COND_V(err != OK, err);
 
 	RDD::BufferID src_infos_count_buffer;
-	err = _cluster_buffer_resolve(p_src_infos_count_buffer, false, src_infos_count_buffer, read_trackers);
+	err = _cluster_buffer_resolve(p_src_infos_count_buffer, false, src_infos_count_buffer, read_trackers, read_seen);
 	ERR_FAIL_COND_V(err != OK, err);
 
 	ERR_FAIL_COND_V(p_geometry_buffers.is_empty(), ERR_INVALID_PARAMETER);
 	for (RID geometry_buffer : p_geometry_buffers) {
 		RDD::BufferID geometry;
-		err = _cluster_buffer_resolve(geometry_buffer, false, geometry, read_trackers);
+		err = _cluster_buffer_resolve(geometry_buffer, false, geometry, read_trackers, read_seen);
 		ERR_FAIL_COND_V(err != OK, err);
 	}
 	ClusterBuildSizes sizes;
@@ -765,7 +795,7 @@ Error RenderingDevice::clas_build(const ClusterBuildInput &p_input, RID p_dst_im
 	}
 
 	for (uint32_t i = read_trackers.size(); i > 0; i--) {
-		if (write_trackers.has(read_trackers[i - 1])) {
+		if (write_seen.has(read_trackers[i - 1])) {
 			read_trackers.remove_at(i - 1);
 		}
 	}
@@ -804,6 +834,7 @@ uint64_t RenderingDevice::acceleration_structure_get_device_address(RID p_accele
 
 Error RenderingDevice::blas_build_from_clusters(const ClusterBottomLevelBuildInput &p_input, Span<RID> p_destinations, const ClusterAddressRegion &p_dst_addresses, const ClusterAddressRegion &p_src_infos, const ClusterAddressRegion &p_src_infos_count, RID p_scratch_buffer, Span<RID> p_cluster_address_buffers, Span<RID> p_clas_storage_buffers) {
 	ERR_RENDER_THREAD_GUARD_V(ERR_UNAVAILABLE);
+	const uint64_t cpu_begin = cpu_profile_enabled ? OS::get_singleton()->get_ticks_usec() : 0;
 	ERR_FAIL_COND_V(!driver->clas_is_supported(), ERR_UNAVAILABLE);
 	ERR_FAIL_COND_V(draw_list.active || compute_list.active || raytracing_list.active, ERR_INVALID_PARAMETER);
 	ERR_FAIL_COND_V(p_input.max_acceleration_structure_count == 0 || p_input.max_total_cluster_count == 0 || p_input.max_cluster_count_per_acceleration_structure == 0, ERR_INVALID_PARAMETER);
@@ -811,8 +842,10 @@ Error RenderingDevice::blas_build_from_clusters(const ClusterBottomLevelBuildInp
 
 	LocalVector<RDG::ResourceTracker *> write_trackers;
 	LocalVector<RDG::ResourceTracker *> read_trackers;
+	HashSet<RDG::ResourceTracker *> write_seen;
+	HashSet<RDG::ResourceTracker *> read_seen;
 	RDD::BufferID scratch;
-	Error err = _cluster_buffer_resolve(p_scratch_buffer, false, scratch, write_trackers);
+	Error err = _cluster_buffer_resolve(p_scratch_buffer, false, scratch, write_trackers, write_seen);
 	ERR_FAIL_COND_V(err != OK, err);
 	ClusterBuildSizes sizes;
 	driver->blas_get_cluster_build_sizes(p_input, sizes);
@@ -820,29 +853,29 @@ Error RenderingDevice::blas_build_from_clusters(const ClusterBottomLevelBuildInp
 	ERR_FAIL_COND_V(!_get_buffer_from_owner(p_scratch_buffer)->usage.has_flag(RDD::BUFFER_USAGE_STORAGE_BIT), ERR_INVALID_PARAMETER);
 
 	RDD::ClusterAddressRegion dst_addresses;
-	err = _cluster_address_region_resolve(p_dst_addresses, dst_addresses, write_trackers);
+	err = _cluster_address_region_resolve(p_dst_addresses, dst_addresses, write_trackers, write_seen);
 	ERR_FAIL_COND_V(err != OK, err);
 	ERR_FAIL_COND_V(p_dst_addresses.stride < 8 || (p_dst_addresses.offset % 8) != 0 || (p_dst_addresses.stride % 8) != 0 || p_dst_addresses.size / p_dst_addresses.stride < p_input.max_acceleration_structure_count, ERR_INVALID_PARAMETER);
 	ERR_FAIL_COND_V(!_get_buffer_from_owner(p_dst_addresses.buffer)->usage.has_flag(RDD::BUFFER_USAGE_STORAGE_BIT), ERR_INVALID_PARAMETER);
 
 	RDD::ClusterAddressRegion src_infos;
-	err = _cluster_address_region_resolve(p_src_infos, src_infos, read_trackers);
+	err = _cluster_address_region_resolve(p_src_infos, src_infos, read_trackers, read_seen);
 	ERR_FAIL_COND_V(err != OK, err);
 	ERR_FAIL_COND_V(p_src_infos.stride < sizeof(ClusterBottomLevelBuildInfo) || (p_src_infos.offset % 8) != 0 || (p_src_infos.stride % 8) != 0 || p_src_infos.size / p_src_infos.stride < p_input.max_acceleration_structure_count, ERR_INVALID_PARAMETER);
 	RDD::ClusterAddressRegion src_infos_count;
-	err = _cluster_address_region_resolve(p_src_infos_count, src_infos_count, read_trackers);
+	err = _cluster_address_region_resolve(p_src_infos_count, src_infos_count, read_trackers, read_seen);
 	ERR_FAIL_COND_V(err != OK, err);
 	ERR_FAIL_COND_V((p_src_infos_count.offset % 4) != 0 || p_src_infos_count.size < 4, ERR_INVALID_PARAMETER);
 	ERR_FAIL_COND_V(!_get_buffer_from_owner(p_src_infos.buffer)->usage.has_flag(RDD::BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT) || !_get_buffer_from_owner(p_src_infos_count.buffer)->usage.has_flag(RDD::BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT), ERR_INVALID_PARAMETER);
 
 	for (RID address_buffer : p_cluster_address_buffers) {
 		RDD::BufferID resolved;
-		err = _cluster_buffer_resolve(address_buffer, false, resolved, read_trackers);
+		err = _cluster_buffer_resolve(address_buffer, false, resolved, read_trackers, read_seen);
 		ERR_FAIL_COND_V(err != OK, err);
 	}
 	for (RID storage_buffer : p_clas_storage_buffers) {
 		RDD::BufferID resolved;
-		err = _cluster_buffer_resolve(storage_buffer, true, resolved, read_trackers);
+		err = _cluster_buffer_resolve(storage_buffer, true, resolved, read_trackers, read_seen);
 		ERR_FAIL_COND_V(err != OK, err);
 	}
 	HashSet<RID> destinations;
@@ -852,10 +885,10 @@ Error RenderingDevice::blas_build_from_clusters(const ClusterBottomLevelBuildInp
 		ERR_FAIL_COND_V(!blas->cluster_based || blas->max_cluster_reference_count < p_input.max_cluster_count_per_acceleration_structure, ERR_INVALID_PARAMETER);
 		ERR_FAIL_COND_V(destinations.has(destination), ERR_INVALID_PARAMETER);
 		destinations.insert(destination);
-		_cluster_tracker_push_unique(write_trackers, blas->draw_tracker);
+		_cluster_tracker_push_unique(write_trackers, write_seen, blas->draw_tracker);
 	}
 	for (uint32_t i = read_trackers.size(); i > 0; i--) {
-		if (write_trackers.has(read_trackers[i - 1])) {
+		if (write_seen.has(read_trackers[i - 1])) {
 			read_trackers.remove_at(i - 1);
 		}
 	}
@@ -873,6 +906,9 @@ Error RenderingDevice::blas_build_from_clusters(const ClusterBottomLevelBuildInp
 		blas->invalidated = false;
 		_blas_remove_tlas_dependencies(blas, destination);
 	}
+	if (cpu_profile_enabled) {
+		cpu_profile_usec[CPU_PROFILE_CLUSTER_BLAS_BUILD] += OS::get_singleton()->get_ticks_usec() - cpu_begin;
+	}
 	return OK;
 }
 
@@ -883,8 +919,9 @@ Error RenderingDevice::tlas_build_from_buffer(RID p_tlas, RID p_instance_buffer,
 	ERR_FAIL_NULL_V(tlas, ERR_INVALID_PARAMETER);
 	ERR_FAIL_COND_V(tlas->type != RDD::ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL || p_instance_count > tlas->max_instance_count, ERR_INVALID_PARAMETER);
 	LocalVector<RDG::ResourceTracker *> read_trackers;
+	HashSet<RDG::ResourceTracker *> read_seen;
 	RDD::BufferID instances;
-	Error err = _cluster_buffer_resolve(p_instance_buffer, false, instances, read_trackers);
+	Error err = _cluster_buffer_resolve(p_instance_buffer, false, instances, read_trackers, read_seen);
 	ERR_FAIL_COND_V(err != OK, err);
 	Buffer *instance_buffer = _get_buffer_from_owner(p_instance_buffer);
 	ERR_FAIL_COND_V(!instance_buffer->usage.has_flag(RDD::BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT), ERR_INVALID_PARAMETER);
@@ -893,7 +930,7 @@ Error RenderingDevice::tlas_build_from_buffer(RID p_tlas, RID p_instance_buffer,
 		AccelerationStructure *blas = acceleration_structure_owner.get_or_null(dependency);
 		ERR_FAIL_NULL_V(blas, ERR_INVALID_PARAMETER);
 		ERR_FAIL_COND_V(blas->type != RDD::ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL || blas->invalidated, ERR_INVALID_PARAMETER);
-		_cluster_tracker_push_unique(read_trackers, blas->draw_tracker);
+		_cluster_tracker_push_unique(read_trackers, read_seen, blas->draw_tracker);
 	}
 	err = _acceleration_structure_scratch_buffer_create(tlas);
 	ERR_FAIL_COND_V(err != OK, err);
@@ -902,6 +939,8 @@ Error RenderingDevice::tlas_build_from_buffer(RID p_tlas, RID p_instance_buffer,
 		tlas->acceleration_structure_dependencies.insert(dependency);
 		acceleration_structure_owner.get_or_null(dependency)->acceleration_structure_dependencies.insert(p_tlas);
 	}
+	err = _tlas_update_dependency_trackers(tlas);
+	ERR_FAIL_COND_V(err != OK, err);
 	draw_graph.add_tlas_build(tlas->driver_id, tlas->scratch_buffer, instances, p_instance_offset, p_instance_count, tlas->draw_tracker, read_trackers);
 	tlas->invalidated = false;
 	return OK;
@@ -1013,6 +1052,8 @@ Error RenderingDevice::tlas_build(RID p_tlas, Span<AccelerationStructureInstance
 
 	memcpy(instance_buffer.data_ptr + instance_buffer_offset, shadow_buffer.ptr(), instance_size * p_instances.size());
 
+	err = _tlas_update_dependency_trackers(tlas);
+	ERR_FAIL_COND_V(err != OK, err);
 	draw_graph.add_tlas_build(tlas->driver_id, tlas->scratch_buffer, instance_buffer.driver_id, instance_buffer_offset, p_instances.size(), tlas->draw_tracker, draw_trackers);
 
 	tlas->invalidated = false;
@@ -5264,7 +5305,13 @@ void RenderingDevice::uniform_set_set_invalidation_callback(RID p_uniform_set, I
 }
 
 void RenderingDevice::_uniform_set_add_acceleration_structure_dependencies(UniformSet *p_uniform_set, PipelineType p_pipeline_type) {
-	LocalVector<RDG::ResourceTracker *> trackers;
+	if (cpu_profile_enabled) {
+		cpu_profile_counts[CPU_PROFILE_DEPENDENCY_CALLS]++;
+	}
+	if (p_uniform_set->acceleration_structures.is_empty()) {
+		return;
+	}
+	const uint64_t cpu_begin = cpu_profile_enabled ? OS::get_singleton()->get_ticks_usec() : 0;
 	for (RID acceleration_structure_id : p_uniform_set->acceleration_structures) {
 		AccelerationStructure *acceleration_structure = acceleration_structure_owner.get_or_null(acceleration_structure_id);
 		ERR_FAIL_NULL(acceleration_structure);
@@ -5272,31 +5319,27 @@ void RenderingDevice::_uniform_set_add_acceleration_structure_dependencies(Unifo
 		if (acceleration_structure->type != RDD::ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL) {
 			continue;
 		}
-		for (RID blas_id : acceleration_structure->acceleration_structure_dependencies) {
-			AccelerationStructure *blas = acceleration_structure_owner.get_or_null(blas_id);
-			ERR_FAIL_NULL(blas);
-			_cluster_tracker_push_unique(trackers, blas->draw_tracker);
-			for (RID storage_id : blas->cluster_storage_dependencies) {
-				Buffer *storage = _get_buffer_from_owner(storage_id);
-				ERR_FAIL_NULL(storage);
-				_cluster_tracker_push_unique(trackers, storage->draw_tracker);
+		if (cpu_profile_enabled) {
+			cpu_profile_counts[CPU_PROFILE_DEPENDENCY_USAGES] += acceleration_structure->dependency_trackers.size();
+		}
+		for (RDG::ResourceTracker *tracker : acceleration_structure->dependency_trackers) {
+			switch (p_pipeline_type) {
+				case PIPELINE_TYPE_RASTERIZATION:
+					draw_graph.add_draw_list_usage(tracker, RDG::RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ);
+					break;
+				case PIPELINE_TYPE_COMPUTE:
+					draw_graph.add_compute_list_usage(tracker, RDG::RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ);
+					break;
+				case PIPELINE_TYPE_RAYTRACING:
+					draw_graph.add_raytracing_list_usage(tracker, RDG::RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ);
+					break;
+				default:
+					break;
 			}
 		}
 	}
-	for (RDG::ResourceTracker *tracker : trackers) {
-		switch (p_pipeline_type) {
-			case PIPELINE_TYPE_RASTERIZATION:
-				draw_graph.add_draw_list_usage(tracker, RDG::RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ);
-				break;
-			case PIPELINE_TYPE_COMPUTE:
-				draw_graph.add_compute_list_usage(tracker, RDG::RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ);
-				break;
-			case PIPELINE_TYPE_RAYTRACING:
-				draw_graph.add_raytracing_list_usage(tracker, RDG::RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ);
-				break;
-			default:
-				break;
-		}
+	if (cpu_profile_enabled) {
+		cpu_profile_usec[CPU_PROFILE_AS_DEPENDENCY_USAGE] += OS::get_singleton()->get_ticks_usec() - cpu_begin;
 	}
 }
 
@@ -9336,6 +9379,9 @@ void RenderingDevice::begin_cpu_frame_profile(bool p_enabled) {
 	cpu_profile_enabled = p_enabled;
 	for (uint64_t &time : cpu_profile_usec) {
 		time = 0;
+	}
+	for (uint64_t &count : cpu_profile_counts) {
+		count = 0;
 	}
 }
 

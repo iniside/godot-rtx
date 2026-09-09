@@ -75,6 +75,7 @@ class RenderingServerDefault : public RenderingServer {
 	bool print_gpu_profile = false;
 	HashMap<String, float> print_gpu_profile_task_time;
 	HashMap<String, float> print_cpu_profile_task_time;
+	HashMap<String, uint64_t> print_cpu_profile_work_counts;
 	uint64_t print_frame_profile_ticks_from = 0;
 	uint32_t print_frame_profile_frame_count = 0;
 

@@ -178,8 +178,20 @@ void RenderingServerDefault::_draw(bool p_swap_buffers, double frame_step) {
 			"CPU Device Fence Wait",
 			"CPU Device Download Copy",
 			"CPU Device Download Callbacks",
+			"CPU AS Dependency Union",
+			"CPU AS Dependency Usage",
+			"CPU Cluster BLAS Build Inclusive",
+		};
+		static const char *const cpu_device_counters[RenderingDevice::CPU_PROFILE_COUNTER_MAX] = {
+			"AS Dependency Calls",
+			"Tracker Candidates",
+			"AS Dependency Union Builds",
+			"AS Dependency Usages",
 		};
 		if (RenderingDevice::get_singleton()) {
+			for (uint32_t counter = 0; counter < RenderingDevice::CPU_PROFILE_COUNTER_MAX; counter++) {
+				print_cpu_profile_work_counts[cpu_device_counters[counter]] += RenderingDevice::get_singleton()->get_cpu_frame_profile_count(RenderingDevice::CPUProfileCounter(counter));
+			}
 			for (uint32_t phase = 0; phase < RenderingDevice::CPU_PROFILE_MAX; phase++) {
 				print_cpu_profile_task_time[cpu_device_phases[phase]] += double(RenderingDevice::get_singleton()->get_cpu_frame_profile_usec(RenderingDevice::CPUProfilePhase(phase))) / 1000.0;
 			}
@@ -228,6 +240,10 @@ void RenderingServerDefault::_draw(bool p_swap_buffers, double frame_step) {
 			for (const char *phase : cpu_device_phases) {
 				print_line("\t-" + String(phase) + ": " + rtos(print_cpu_profile_task_time[phase] / double(print_frame_profile_frame_count)) + "ms");
 			}
+			for (const char *counter : cpu_device_counters) {
+				print_line("\t-CPU Work " + String(counter) + ": " + rtos(double(print_cpu_profile_work_counts[counter]) / double(print_frame_profile_frame_count)) + " per frame");
+			}
+			print_cpu_profile_work_counts.clear();
 			print_gpu_profile_task_time.clear();
 			print_cpu_profile_task_time.clear();
 			print_frame_profile_ticks_from = OS::get_singleton()->get_ticks_usec();
