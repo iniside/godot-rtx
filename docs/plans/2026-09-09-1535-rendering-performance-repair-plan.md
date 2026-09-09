@@ -160,6 +160,124 @@ Why now: makes later worker jobs small and event-driven. Acceptance: a settled
 still scene has no repeated cut rebuild/publication/upload work; camera/object
 motion, page arrival, settings and reload still trigger all necessary updates.
 
+## Dense-instance extension authorized during execution
+
+The owner supplied Lucy and Thai and requested at least 5000 instances of each,
+then explicitly required real instancing and streaming. Fresh independent review
+of this extension passes against `0d1ed0abe9`; implementation remains separate.
+SceneTree/game-logic
+performance remains outside this repair. Insert Steps 3A and 3B before Step 4:
+they establish the instance/cut resource ownership consumed by later worker jobs.
+No new simplification solver, quality tiers, serialized mesh format, public
+setting, or streaming subsystem is authorized or needed.
+
+Frozen `984dccbd32` capacity evidence: RT reserves 16 bytes per instance times
+full asset DAG cluster count before other storage and rejects work above
+`UINT32_MAX / 8`. The source-triangle lower bound already exceeds that guard
+2.77 times. Shared raster/RT selection independently replaces normal selection
+with a global coarse fallback above 4194304 work items. Existing storage already
+shares source assets, resident pages and CLAS, but RT allocates a BLAS per
+instance and pins/attaches overly broad page sets. Removing one guard is not a
+solution. See the performance status for exact counts and source evidence.
+
+## Step 3A -> Sparse GPU selection over shared asset DAGs [independent]
+
+Files: `forward_clustered/micro_geometry_selection.{cpp,h}`,
+`shaders/forward_clustered/micro_geometry_select.slang`, selection consumers in
+`render_forward_clustered.{cpp,h}` and `render_raytracing.{cpp,h}`; existing shared
+shader layouts as required.
+
+Replace per-instance full-DAG group/cluster arrays and dispatch ranges with
+bounded GPU traversal queues and sparse state keyed by task, instance and group.
+Keep imported DAG metadata shared once per asset. Start from terminal groups,
+apply the existing error/offscreen/residency predicates, and emit compact selected
+records. A refined group becomes active only when all unique parent groups are
+active; retain depth ordering and deduplicate shared DAG descendants. Preserve
+stable source cluster/triangle identity, task/instance routing and material
+eligibility. Keep a compact rejected-cluster list for raster HZB recovery.
+
+Replace the global work-limit/coarse-fallback path and fixed tiny extra-cluster
+allowance per task. Queue/selected-buffer overflow retains the affected task's
+valid committed output, records required capacity, and grows/retries or continues
+bounded batches. It must not force unrelated tasks to a coarse cut. A task with
+no committed output may use its resident terminal cut during refinement;
+force-finest surfaces keep their contract and wait for required geometry.
+Physical resource admission failures stay explicit. Do not raise limits into
+unbounded allocations or suppress safety guards.
+
+Keep camera raster, RT and internal shadow predicates distinct. No worker/thread
+ownership changes here. Close C++/Slang bindings, strides, variants, barriers,
+allocation failures and resource retirement; preserve Step 3 dirty-input and
+motion semantics. Existing Slang compilation units remain the build authority.
+
+Why now: sparse selection is needed independently of RT BLAS sharing. Acceptance:
+no instance-count times full-DAG working allocation or unconditional scan remains
+in the shared selector; single-view Vulkan selection, HZB recovery and residency
+progress work. The full 10k RT scene still awaits Step 3B, so this intermediate
+step cannot claim dense-scene completion. Build ordinary/double, record source
+and binary hashes, and obtain a fresh exact/cumulative review. No automated tests.
+
+## Step 3B -> Compact shared RT cuts and streaming ownership [independent]
+
+Files: `render_raytracing.{cpp,h}`, `micro_geometry_rt.slang`,
+`storage_rd/micro_geometry_storage.{cpp,h}`, and necessary compact-selection
+interfaces from Step 3A. Extend existing RD contracts only if an actual missing
+native ownership/dependency operation is established; no public binding is planned.
+
+Replace per-instance full-DAG membership/reference/group-usage storage and
+full-capacity BLAS allocations with compact, immutable shared cut objects. GPU
+PREPARE canonicalizes selected `(cluster ID, page generation)` sequences using
+integer phases in the existing RT pipeline. Asset/source-surface identity and
+geometry-affecting build flags qualify equality. Hashes only locate candidates;
+GPU exact sequence comparison establishes identity and groups equal cuts.
+Process collision buckets in bounded rounds with continuation. Existing float
+SortEffects is not an exact integer sorter and must not be used as one.
+
+Keep geometry-to-cut mappings and cluster sequences on GPU. Bounded asynchronous
+feedback supplies only new representative descriptors/counts/capacities, slot
+usage and unique per-cut page/generation associations. Do not transfer selected
+cluster or triangle topology to CPU for interning. Feedback arenas support
+continuation; incomplete feedback cannot publish a partial cut. The existing
+PREPARE/feedback/PUBLISH epoch remains authoritative, with one candidate epoch
+in flight and explicit producing-input generations.
+
+CPU owns cut slot IDs/generations, compact GPU storage, BLAS RIDs, references,
+page pins and submission-based retirement. GPU receives representative-to-slot
+and address mappings. Identical cuts reuse one BLAS; distinct instance transforms,
+SBT indices, masks and motion remain in individual TLAS records. Bootstrap one
+resident terminal cut per unique asset/source surface for ordinary eligible
+surfaces. Transform-only changes preserve shared BLAS. Different membership or
+page generation uses a new cut generation while old committed users remain live.
+
+Size destinations and scratch from selected-cut capacities and actual unique
+build batches. Current RD requires unique destination RIDs and common-capacity
+compatible batches; repeated addresses belong in TLAS instance records, not BLAS
+build destination lists. Attach each cut's exact CLAS page dependency subset.
+Keep compute/CLAS/BLAS/TLAS graph hazards and same-address invalidation sound.
+
+Extend existing MicroGeometryStorage rather than adding a second streamer.
+Replace ready-group-wide temporary pins with one bounded lease over the resident
+page snapshot for the selection epoch. This protects pages until exact candidate
+pins arrive; free slots may still receive uploads. Release the lease promptly on
+completion, cancellation or errors, and validate generations before publication.
+Committed/candidate/retired cut owners retain their exact page pins until CPU
+feedback and relevant GPU submissions are finished. Unrelated page eviction must
+not invalidate every BLAS. Preserve shared asset/page/CLAS allocations and terminal
+page residency, and report actual metadata/geometry/CLAS/BLAS/scratch budgets.
+Imported manifests determine asset admission; do not silently multiply budgets
+by instance count or duplicate asset payloads.
+
+Why before threading: this replaces the GPU/CPU resource ownership that worker
+jobs will consume. Acceptance uses the actual single-view Lucy/Thai fixture with
+5000 instances of each, unchanged RT controls, bounded shared residency and
+working storage proportional to queued/selected records and unique cuts. Report
+logical instance count, unique assets/cuts/BLAS, resident/pending pages, memory,
+CPU/GPU time and setup separately. Exercise camera motion and streaming progress;
+no appearance tuning, SceneTree scalability repair, split-screen or XR/VR matrix.
+Preserve empty/nonempty, reload, cancellation and shutdown lifetimes. Build
+ordinary/double, inspect real Vulkan execution and obtain fresh source and proof
+reviews. Exact performance/fit is measured, not guaranteed by the source bound.
+
 ## Step 4 -> Separate main from rendering with bounded frame ownership [independent]
 
 Files: `main/main.cpp`, `servers/rendering/rendering_server_default.{cpp,h}`,
@@ -299,7 +417,9 @@ The owner additionally authorized a dense workload scene under
 Import both through the existing microgeometry importer and preserve the source
 files. Use shared imported mesh resources and separate static object instances,
 placed densely with a single camera, to exercise CPU preparation and GPU
-selection. Keep setup out of steady-state measurements. This fixture is a
+selection. Keep setup out of steady-state measurements. SceneTree/game-logic
+scalability repairs are explicitly outside this task; report their cost separately.
+This fixture is a
 separate delegated task; its source, import evidence and measured instance count
 require build/source review and proof audit. Do not add automated tests.
 

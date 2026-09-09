@@ -32,12 +32,18 @@ the plan is committed at `02e21acb92`. Step 1 CPU dependency optimization
 CPU cost falls from 114.8 to 2.8 ms at approximately matched graph-usage counts.
 Earlier overall GPU/frame comparisons lack controlled workload conditions.
 Bounded native unload/reload, two-view, freeze and resize validation exits 0;
-Step 1 artifact-audit documentation corrections await a fresh check.
+Step 1 artifact-audit documentation corrections pass fresh round 2.
 Step 2 parallel GPU preparation is committed at `984dccbd32`; ordinary/double
 builds and fresh source review pass. Single-view Vulkan captures after Steps 1-2
 report GPU medians 2.96 ms still and 4.91 ms moving, versus 38.82/39.44 ms with
 the retained pre-repair shader binary; see timing semantics and receipt limits
-in the measurement document. Step 3 dirty-input work is in progress.
+in the measurement document. Step 3 `0d1ed0abe9` passes source review and both
+builds; single-view still capture stops repeated RT preparation and dependency
+union builds. Moving capture is not an incremental performance-win claim.
+The owner additionally requires real instancing/streaming for 5000 Lucy plus
+5000 Thai instances. Current full-DAG-per-instance buffers cannot admit that
+workload; the sparse selection/shared-cut extension passes plan review before
+the threading steps. SceneTree scalability fixes remain outside this task.
 Threading changes remain pending.
 Actual dragon import/reimport passed in 82.66/67.04 seconds, yielding 17 DAG
 levels and 9737 pages with byte-identical reused `.mgdata`; the diagnostic

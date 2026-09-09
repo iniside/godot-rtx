@@ -180,7 +180,9 @@ secondary-view screenshot shows 4064 resident pages and approximately 1.49 GiB
 of AS storage; exact pre-unload operator observations were not retained. Events, five screenshots and the receipt are retained.
 This exercises real resource-lifetime transitions, not exact RID-generation
 reuse or appearance correctness. The owned process exited; Step 2 builds are
-released. Independent artifact audit is pending alongside Step 2 implementation.
+released. Independent artifact audit round 2 passes at documentation commit
+`57e9d447e5`, after correcting baseline provenance and narrowing unsupported
+exact-memory and external-workload claims.
 
 The Step 1 instrumentation-only binary (`e39298f9...`) and adjacent DLLs are
 preserved in `C:/Users/lukas/AppData/Local/Temp/godot-render-repair-20260909/instrumented-before-bin`;
@@ -242,3 +244,48 @@ is not attributed to automation. Events and screenshots are retained separately
 from profiling captures. This is resource-lifetime evidence, not appearance or
 an exact RID-generation-reuse claim. Step 3 dirty-input work is in progress;
 main/worker architecture changes remain pending.
+
+The dense Lucy/Thai workload is authorized at 5000 separate instances per mesh.
+SceneTree/game-logic scalability work is explicitly excluded by the owner and
+remains on separate roadmap items; its measured cost must be reported separately
+from rendering preparation, recording and synchronization.
+
+Dense-workload capacity finding before launch: preserved Lucy/Thai inputs contain
+28,055,742 and 10,000,000 triangles. The importer caps each cluster at 128
+triangles (`micro_geometry_builder.cpp:95,305`) and checks complete leaf coverage,
+so the two assets require at least 297311 leaf clusters. With 5000 instances
+each, current RT `cluster_work` is at least 1486555000, exceeding its
+`UINT32_MAX / 8` admission limit (536870911). Membership plus committed membership
+and reference buffers alone require at least 23784880000 bytes (22.15 GiB),
+before internal DAG clusters, selection, AS and scratch allocations. The current
+10k-instance path therefore necessarily rejects before rendering. Do not lower
+the fixture count or change it to a few MultiMeshes to hide this renderer limit.
+Exact imported DAG counts remain pending. A bounded investigation is identifying
+the necessary renderer data-layout correction; SceneTree changes remain excluded.
+
+## Step 3 dirty-input reuse
+
+Commit `0d1ed0abe9` passes fresh exact/cumulative source review and final ordinary
+and double builds. Twelve source hashes are unchanged across both recorded
+builds. The double executable is retained under `step3-bin`, SHA256
+`4e0ff3dd0979531bdc0d999a229cf11c34da307b4899052b2e3013f517d7cbff`.
+The native RD invalidation query preserves same-address BLAS rebuild/refit
+handling; externally exposed MultiMesh buffers remain conservatively dirty.
+
+`step3-still` and `step3-moving` each complete 3000 single-view Vulkan frames
+with exit 0, unchanged executable hashes, no timeout and no Godot `ERROR:` lines.
+Existing startup diagnostics remain. `step3-comparison.json` retains raw-label
+summaries. Still capture reports RT Prepare Cut only in the first batch; the last
+ten dependency-union build counts and measured helper cost are zero. Still GPU
+median is 2.981 ms and render-wall median 3.175 ms. Moving work remains active:
+last-ten union builds are one per frame and helper cost 2.837 ms. Moving GPU
+median is 6.482 ms and render wall 10.033 ms; this capture does not establish an
+incremental moving-frame improvement over Step 2. Several unrelated GPU pass
+intervals also differ, so additional causal attribution is withheld. The main
+thread boundary and workers remain unimplemented at this checkpoint.
+
+The owner-authorized instancing/streaming extension is recorded as Steps 3A/3B
+in the corrective plan: sparse shared selection, then compact GPU-interned cuts
+and shared BLAS with exact page ownership. Existing asset/page streaming remains
+the authority. Fresh independent extension-plan review passes against `0d1ed0abe9`; Step 3A
+implementation follows, with Step 3B and threading still pending.
