@@ -27,8 +27,15 @@ render thread as the synchronization/submission point. The
 [approved corrective plan](../plans/2026-09-09-1535-rendering-performance-repair-plan.md)
 orders CPU/GPU redundant-work removal before frame ownership and worker dispatch;
 GPU async compute is a separate final extension. The owner approved execution;
-the plan is committed at `02e21acb92` and Step 1 is next.
-No threading or shader performance fix has landed yet.
+the plan is committed at `02e21acb92`. Step 1 CPU dependency optimization
+`2b2d8476f7` passes source review and the double build; moving dependency-union
+CPU cost falls from 114.8 to 2.8 ms at approximately matched graph-usage counts.
+Earlier overall GPU/frame comparisons lack controlled workload conditions.
+Bounded native unload/reload, two-view, freeze and resize validation exits 0;
+Step 1 artifact-audit documentation corrections await a fresh check.
+Step 2 parallel GPU preparation is committed at `984dccbd32`; ordinary/double
+builds and fresh source review pass. Real Vulkan measurement is in progress.
+Threading changes remain pending.
 Actual dragon import/reimport passed in 82.66/67.04 seconds, yielding 17 DAG
 levels and 9737 pages with byte-identical reused `.mgdata`; the diagnostic
 reimport command had shutdown warnings. Import evidence uses an immutable

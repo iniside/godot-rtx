@@ -132,14 +132,64 @@ has been implemented in this instrumentation task.
 ## Approved repair execution
 
 The owner approved the corrective plan, committed separately at `02e21acb92`.
-Step 1 implementation dispatch is blocked by repeated runtime
-`agent thread limit reached` responses, including a follow-up to the prior
-implementer. No repair source edits or builds have occurred. A requested owner
-exception to mandatory separate-context implementation is pending.
+The owner restarted the session after the runtime agent-limit blocker.
+Step 1 resumed through a separate implementer from `ac7045103c`; helper-level
+instrumentation and matched before/after CPU measurements precede the optimization.
+The normal delegated implementation/review workflow is active again.
 
-The source-matched instrumented binary and adjacent DLLs are preserved in
-`C:/Users/lukas/AppData/Local/Temp/godot-render-repair-20260909/baseline-bin`,
-with `baseline-binaries.json`. An additional 600-frame moving baseline without
+Step 1 instrumentation-only double build passed (source hashes unchanged during
+build); binary SHA256 `e39298f9bef40163e72ddcffcfff5826cc052d318ca57aed238957399c6a0160`.
+`step1-before-moving` and `step1-before-still` each completed 600 frames with
+exit 0 and no Godot `ERROR:` lines. Existing SPIR-V parser startup diagnostics
+also occur in the earlier baseline logs; these captures are not a claim that
+all startup diagnostics or fixture material warnings have been fixed.
+
+In `step1-before-moving-summary.json`, 44 reported batches remain after the
+first five. Median AS dependency-union CPU time is **114.216 ms**, versus
+**0.470 ms** for registering the resulting graph usages and **1.922 ms** for
+inclusive cluster-BLAS build CPU work. Median tracker candidates are 196524 per
+frame. The unique-search counter reports an upper bound of 748940453.5 comparisons
+per frame, not an actual comparison count. This directly confirms the helper's
+dominant CPU cost.
+
+Step 1 optimization is committed at `2b2d8476f7`; fresh exact/cumulative review
+passes. The double build passed with unchanged source hashes; optimized binary
+SHA256 is `8fdfbc65a8ed0db4b426e954b04bcdedcb5bede552179ef5bd008da4114105f5`.
+Both matched after captures exit 0 without Godot `ERROR:` lines.
+`step1-comparison.json` records the same conditional batch-mean semantics. In the
+last ten moving batches, dependency-union CPU falls from 114.789 to 2.822 ms,
+including construction at its new TLAS-build location. Graph usages remain
+approximately matched (24486 versus 24470 per frame). Still union cost falls
+from 4.124 to 0.403 ms with 3312 graph usages in both runs.
+
+Whole-frame attribution is not settled: initial moving render wall improves,
+but still wall varies upward; a repeat of the OLD binary also rises sharply
+(last samples approximately 80 ms GPU). The retained sequence does not establish isolated GPU conditions or identify
+a competing process. After-exit GPU activity and Unreal Editor presence were
+operator observations without a retained process inventory. Do not infer a GPU
+regression or improvement from this noisy sequence. The owner was asked to quiet
+the competing workload; their applications were not modified.
+Direct CPU-helper reduction is supported separately.
+
+The bounded `step1-lifetime` run exited 0 without timeout, with unchanged binary
+hash and no Godot `ERROR:` lines. Native controls exercised two unload/reload
+cycles (including two active viewports), freeze/unfreeze and maximize/restore.
+Retained events show unloaded AS memory in the tens of KiB and one resident
+page, followed by visible reload and `cache=replace` log events. The reloaded
+secondary-view screenshot shows 4064 resident pages and approximately 1.49 GiB
+of AS storage; exact pre-unload operator observations were not retained. Events, five screenshots and the receipt are retained.
+This exercises real resource-lifetime transitions, not exact RID-generation
+reuse or appearance correctness. The owned process exited; Step 2 builds are
+released. Independent artifact audit is pending alongside Step 2 implementation.
+
+The Step 1 instrumentation-only binary (`e39298f9...`) and adjacent DLLs are
+preserved in `C:/Users/lukas/AppData/Local/Temp/godot-render-repair-20260909/instrumented-before-bin`;
+its provenance is recorded in `build-step1-instrument-double.receipt.json` and
+the `step1-before-*` launch receipts. The optimized Step 1 binary (`8fdfbc65...`)
+was overwritten by the subsequent build; its build/run hashes remain retained,
+but that exact binary is unavailable for replay. The separate `baseline-bin`
+and `baseline-binaries.json` retain the earlier `738c1735...` binary.
+An additional 600-frame moving baseline without
 `--gpu-profile` exited 0 without ERROR output in 57.84 seconds including startup
 and shutdown. Receipt: `repair-baseline-moving-no-profile.receipt.json` in the
 original evidence root above. This elapsed process duration is not a steady-state
