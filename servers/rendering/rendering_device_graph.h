@@ -179,6 +179,8 @@ public:
 		RESOURCE_USAGE_GENERAL,
 		RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ,
 		RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ_WRITE,
+		RESOURCE_USAGE_ACCELERATION_STRUCTURE_BUILD_READ,
+		RESOURCE_USAGE_ACCELERATION_STRUCTURE_BUILD_READ_WRITE,
 		RESOURCE_USAGE_MAX
 	};
 
@@ -362,9 +364,11 @@ private:
 	};
 
 	struct RecordedBottomLevelAccelerationStructureFromClustersBuildCommand : RecordedCommand {
-		RDD::AccelerationStructureID acceleration_structure;
+		RDD::ClusterBottomLevelBuildInput input;
 		RDD::BufferID scratch_buffer;
-		RDD::ClusterAddressRegion cluster_addresses;
+		RDD::ClusterAddressRegion dst_addresses;
+		RDD::ClusterAddressRegion src_infos;
+		RDD::ClusterAddressRegion src_infos_count;
 	};
 
 	struct RecordedTopLevelAccelerationStructureBuildCommand : RecordedCommand {
@@ -640,6 +644,8 @@ private:
 
 	struct DrawListDrawIndirectInstruction : DrawListInstruction {
 		RDD::BufferID buffer;
+		RDD::BufferID count_buffer;
+		uint32_t count_offset = 0;
 		uint32_t offset = 0;
 		uint32_t draw_count = 0;
 		uint32_t stride = 0;
@@ -647,6 +653,8 @@ private:
 
 	struct DrawListDrawIndexedIndirectInstruction : DrawListInstruction {
 		RDD::BufferID buffer;
+		RDD::BufferID count_buffer;
+		uint32_t count_offset = 0;
 		uint32_t offset = 0;
 		uint32_t draw_count = 0;
 		uint32_t stride = 0;
@@ -913,7 +921,7 @@ public:
 	void add_blas_build(RDD::AccelerationStructureID p_blas, RDD::BufferID p_scratch_buffer, ResourceTracker *p_dst_tracker, VectorView<ResourceTracker *> p_src_trackers);
 	void add_blas_update(RDD::AccelerationStructureID p_blas, RDD::BufferID p_scratch_buffer, ResourceTracker *p_dst_tracker, VectorView<ResourceTracker *> p_src_trackers);
 	void add_clas_build(const RDD::ClusterBuildInput &p_input, RDD::BufferID p_dst_implicit_buffer, const RDD::ClusterAddressRegion &p_dst_addresses, const RDD::ClusterAddressRegion &p_dst_sizes, RDD::BufferID p_scratch_buffer, const RDD::ClusterAddressRegion &p_src_infos, RDD::BufferID p_src_infos_count_buffer, VectorView<ResourceTracker *> p_write_trackers, VectorView<ResourceTracker *> p_read_trackers);
-	void add_blas_build_from_clusters(RDD::AccelerationStructureID p_blas, RDD::BufferID p_scratch_buffer, const RDD::ClusterAddressRegion &p_cluster_addresses, ResourceTracker *p_dst_tracker, VectorView<ResourceTracker *> p_src_trackers);
+	void add_blas_build_from_clusters(const RDD::ClusterBottomLevelBuildInput &p_input, RDD::BufferID p_scratch_buffer, const RDD::ClusterAddressRegion &p_dst_addresses, const RDD::ClusterAddressRegion &p_src_infos, const RDD::ClusterAddressRegion &p_src_infos_count, VectorView<ResourceTracker *> p_write_trackers, VectorView<ResourceTracker *> p_read_trackers);
 	void add_tlas_build(RDD::AccelerationStructureID p_tlas, RDD::BufferID p_scratch_buffer, RDD::BufferID p_instance_buffer, uint32_t p_instance_offset, uint32_t p_instance_count, ResourceTracker *p_dst_tracker, VectorView<ResourceTracker *> p_src_trackers);
 	void add_buffer_clear(RDD::BufferID p_dst, ResourceTracker *p_dst_tracker, uint32_t p_offset, uint32_t p_size);
 	void add_buffer_copy(RDD::BufferID p_src, ResourceTracker *p_src_tracker, RDD::BufferID p_dst, ResourceTracker *p_dst_tracker, RDD::BufferCopyRegion p_region);
@@ -950,8 +958,8 @@ public:
 	void add_draw_list_clear_attachments(VectorView<RDD::AttachmentClear> p_attachments_clear, VectorView<Rect2i> p_attachments_clear_rect);
 	void add_draw_list_draw(uint32_t p_vertex_count, uint32_t p_instance_count);
 	void add_draw_list_draw_indexed(uint32_t p_index_count, uint32_t p_instance_count, uint32_t p_first_index);
-	void add_draw_list_draw_indirect(RDD::BufferID p_buffer, uint32_t p_offset, uint32_t p_draw_count, uint32_t p_stride);
-	void add_draw_list_draw_indexed_indirect(RDD::BufferID p_buffer, uint32_t p_offset, uint32_t p_draw_count, uint32_t p_stride);
+	void add_draw_list_draw_indirect(RDD::BufferID p_buffer, uint32_t p_offset, uint32_t p_draw_count, uint32_t p_stride, RDD::BufferID p_count_buffer = RDD::BufferID(), uint32_t p_count_offset = 0);
+	void add_draw_list_draw_indexed_indirect(RDD::BufferID p_buffer, uint32_t p_offset, uint32_t p_draw_count, uint32_t p_stride, RDD::BufferID p_count_buffer = RDD::BufferID(), uint32_t p_count_offset = 0);
 	void add_draw_list_execute_commands(RDD::CommandBufferID p_command_buffer);
 	void add_draw_list_next_subpass(RDD::CommandBufferType p_command_buffer_type);
 	void add_draw_list_set_blend_constants(const Color &p_color);

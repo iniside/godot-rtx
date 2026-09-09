@@ -379,6 +379,14 @@
 				Submits [param draw_list] for rendering on the GPU. This is the raster equivalent to [method compute_list_dispatch].
 			</description>
 		</method>
+		<method name="draw_list_add_buffer_dependency">
+			<return type="void" />
+			<param index="0" name="draw_list" type="int" />
+			<param index="1" name="buffer" type="RID" />
+			<description>
+				Declares a shader read of [param buffer] through its device address in [param draw_list], allowing the render graph to synchronize earlier writes. Call for every address-loaded buffer that is not already declared by a bound uniform set. The buffer must have [constant BUFFER_CREATION_DEVICE_ADDRESS_BIT].
+			</description>
+		</method>
 		<method name="draw_list_draw_indirect">
 			<return type="void" />
 			<param index="0" name="draw_list" type="int" />
@@ -389,6 +397,20 @@
 			<param index="5" name="stride" type="int" default="0" />
 			<description>
 				Submits [param draw_list] for rendering on the GPU with the given parameters stored in the [param buffer] at [param offset]. Parameters being integers: vertex count, instance count, first vertex, first instance. And when using indices: index count, instance count, first index, vertex offset, first instance. Buffer must have been created with [constant STORAGE_BUFFER_USAGE_DISPATCH_INDIRECT] flag.
+			</description>
+		</method>
+		<method name="draw_list_draw_indirect_count">
+			<return type="void" />
+			<param index="0" name="draw_list" type="int" />
+			<param index="1" name="use_indices" type="bool" />
+			<param index="2" name="buffer" type="RID" />
+			<param index="3" name="offset" type="int" />
+			<param index="4" name="count_buffer" type="RID" />
+			<param index="5" name="count_offset" type="int" />
+			<param index="6" name="max_draw_count" type="int" />
+			<param index="7" name="stride" type="int" />
+			<description>
+				Draws commands using the layout of [method draw_list_draw_indirect], with a GPU-written unsigned 32-bit count at [param count_offset] in [param count_buffer], limited by [param max_draw_count]. Both buffers require [constant STORAGE_BUFFER_USAGE_DISPATCH_INDIRECT]. Offsets and stride are multiples of 4 bytes; stride is at least 16 bytes, or 20 with indices. The command buffer must fit [param max_draw_count] commands. Requires driver support for indirect draw counts. The render graph synchronizes both buffers without reading the count back to the CPU.
 			</description>
 		</method>
 		<method name="draw_list_enable_scissor">

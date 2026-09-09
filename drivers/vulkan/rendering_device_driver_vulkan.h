@@ -98,6 +98,7 @@ class RenderingDeviceDriverVulkan : public RenderingDeviceDriver {
 	struct AccelerationStructureCapabilities {
 		bool acceleration_structure_support = false;
 		uint32_t min_acceleration_structure_scratch_offset_alignment = 0;
+		uint64_t max_instance_count = 0;
 	};
 
 	struct ClusterAccelerationStructureCapabilities {
@@ -172,6 +173,7 @@ class RenderingDeviceDriverVulkan : public RenderingDeviceDriver {
 	StorageBufferCapabilities storage_buffer_capabilities;
 	RenderingShaderContainerFormatVulkan shader_container_format;
 	bool buffer_device_address_support = false;
+	bool draw_indirect_count_support = false;
 	bool vulkan_memory_model_support = false;
 	bool vulkan_memory_model_device_scope_support = false;
 	AccelerationStructureCapabilities acceleration_structure_capabilities;
@@ -666,6 +668,7 @@ public:
 	virtual void command_render_draw_indexed(CommandBufferID p_cmd_buffer, uint32_t p_index_count, uint32_t p_instance_count, uint32_t p_first_index, int32_t p_vertex_offset, uint32_t p_first_instance) override final;
 	virtual void command_render_draw_indexed_indirect(CommandBufferID p_cmd_buffer, BufferID p_indirect_buffer, uint64_t p_offset, uint32_t p_draw_count, uint32_t p_stride) override final;
 	virtual void command_render_draw_indexed_indirect_count(CommandBufferID p_cmd_buffer, BufferID p_indirect_buffer, uint64_t p_offset, BufferID p_count_buffer, uint64_t p_count_buffer_offset, uint32_t p_max_draw_count, uint32_t p_stride) override final;
+	virtual uint32_t draw_indirect_count_get_max() const override;
 	virtual void command_render_draw_indirect(CommandBufferID p_cmd_buffer, BufferID p_indirect_buffer, uint64_t p_offset, uint32_t p_draw_count, uint32_t p_stride) override final;
 	virtual void command_render_draw_indirect_count(CommandBufferID p_cmd_buffer, BufferID p_indirect_buffer, uint64_t p_offset, BufferID p_count_buffer, uint64_t p_count_buffer_offset, uint32_t p_max_draw_count, uint32_t p_stride) override final;
 
@@ -735,10 +738,7 @@ public:
 
 		// Cluster bottom level only.
 		bool cluster_bottom_level = false;
-		VkClusterAccelerationStructureClustersBottomLevelInputNV cluster_bottom_level_input = {};
-		VkBuildAccelerationStructureFlagsKHR cluster_build_flags = 0;
-		RDD::BufferID cluster_args_buffer;
-		uint8_t *cluster_args_ptr = nullptr;
+
 	};
 
 	virtual AccelerationStructureID blas_create(VectorView<AccelerationStructureGeometry> p_geometries, BitField<AccelerationStructureFlagBits> p_flags) override final;
@@ -746,15 +746,18 @@ public:
 	virtual void acceleration_structure_instance_write(uint8_t *r_driver_instance, const AccelerationStructureInstance &p_instance) override final;
 	virtual void acceleration_structure_free(AccelerationStructureID p_acceleration_structure) override final;
 	virtual uint32_t acceleration_structure_get_scratch_size_bytes(AccelerationStructureID p_acceleration_structure) override final;
+	virtual uint64_t acceleration_structure_get_device_address(AccelerationStructureID p_acceleration_structure) override final;
 
 	virtual bool clas_is_supported() override final;
 	virtual ClusterAccelerationStructureLimits clas_get_limits() override final;
 	virtual void clas_get_build_sizes(const ClusterBuildInput &p_input, ClusterBuildSizes &r_sizes) override final;
+	virtual void blas_get_cluster_build_sizes(const ClusterBottomLevelBuildInput &p_input, ClusterBuildSizes &r_sizes) override final;
 	virtual AccelerationStructureID blas_create_from_clusters(uint32_t p_max_cluster_count, uint32_t p_max_cluster_count_per_acceleration_structure) override final;
 
 private:
 	void _acceleration_structure_create(VkAccelerationStructureTypeKHR p_type, VkAccelerationStructureBuildSizesInfoKHR p_size_info, AccelerationStructureInfo *r_accel_info);
 	void _cluster_build_input_to_vk(const ClusterBuildInput &p_input, VkClusterAccelerationStructureTriangleClusterInputNV &r_triangle_input, VkClusterAccelerationStructureInputInfoNV &r_input_info);
+	void _cluster_bottom_level_input_to_vk(const ClusterBottomLevelBuildInput &p_input, VkClusterAccelerationStructureClustersBottomLevelInputNV &r_bottom_level_input, VkClusterAccelerationStructureInputInfoNV &r_input_info);
 	VkStridedDeviceAddressRegionKHR _cluster_region_to_vk(const ClusterAddressRegion &p_region);
 
 private:
@@ -766,7 +769,7 @@ public:
 	virtual void command_update_blas(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer) override final;
 	virtual void command_build_tlas(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer, BufferID p_instance_buffer, uint32_t p_instance_offset, uint32_t p_instance_count) override final;
 	virtual void command_build_clas(CommandBufferID p_cmd_buffer, const ClusterBuildInput &p_input, BufferID p_dst_implicit_buffer, const ClusterAddressRegion &p_dst_addresses, const ClusterAddressRegion &p_dst_sizes, BufferID p_scratch_buffer, const ClusterAddressRegion &p_src_infos, BufferID p_src_infos_count_buffer) override final;
-	virtual void command_build_blas_from_clusters(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer, const ClusterAddressRegion &p_cluster_addresses) override final;
+	virtual void command_build_blas_from_clusters(CommandBufferID p_cmd_buffer, const ClusterBottomLevelBuildInput &p_input, BufferID p_scratch_buffer, const ClusterAddressRegion &p_dst_addresses, const ClusterAddressRegion &p_src_infos, const ClusterAddressRegion &p_src_infos_count) override final;
 	virtual void command_bind_raytracing_pipeline(CommandBufferID p_cmd_buffer, RaytracingPipelineID p_pipeline) override final;
 	virtual void command_bind_raytracing_uniform_set(CommandBufferID p_cmd_buffer, UniformSetID p_uniform_set, ShaderID p_shader, uint32_t p_set_index) override final;
 	virtual void command_trace_rays(CommandBufferID p_cmd_buffer, const ShaderBindingTable &p_raygen_sbt, const ShaderBindingTable &p_miss_sbt, const ShaderBindingTable &p_hit_sbt, uint32_t p_width, uint32_t p_height, uint32_t p_depth) override final;

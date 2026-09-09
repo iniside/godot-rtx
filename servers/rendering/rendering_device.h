@@ -308,6 +308,8 @@ public:
 		CALLBACK_RESOURCE_USAGE_GENERAL,
 		CALLBACK_RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ,
 		CALLBACK_RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ_WRITE,
+		CALLBACK_RESOURCE_USAGE_ACCELERATION_STRUCTURE_BUILD_READ,
+		CALLBACK_RESOURCE_USAGE_ACCELERATION_STRUCTURE_BUILD_READ_WRITE,
 		CALLBACK_RESOURCE_USAGE_MAX
 	};
 
@@ -1179,6 +1181,7 @@ private:
 
 	RID_Owner<UniformSet, true> uniform_set_owner;
 
+	void _uniform_set_add_acceleration_structure_dependencies(UniformSet *p_uniform_set, PipelineType p_pipeline_type);
 	void _uniform_set_update_shared(UniformSet *p_uniform_set);
 	void _uniform_set_update_clears(UniformSet *p_uniform_set);
 
@@ -1345,7 +1348,7 @@ private:
 		Vector<RDG::ResourceTracker *> draw_trackers;
 		HashSet<RID> untracked_buffers;
 		bool cluster_based = false;
-		bool cluster_built = false;
+		HashSet<RID> cluster_storage_dependencies;
 		uint32_t max_cluster_reference_count = 0;
 
 		// --- Top Level ---
@@ -1416,6 +1419,9 @@ public:
 
 	typedef RDD::ClusterAccelerationStructureLimits ClusterAccelerationStructureLimits;
 	typedef RDD::ClusterBuildInput ClusterBuildInput;
+	typedef RDD::ClusterBottomLevelBuildInput ClusterBottomLevelBuildInput;
+	typedef RDD::ClusterBottomLevelBuildInfo ClusterBottomLevelBuildInfo;
+	typedef RDD::AccelerationStructureGPUInstance AccelerationStructureGPUInstance;
 	typedef RDD::ClusterBuildSizes ClusterBuildSizes;
 
 	struct ClusterAddressRegion {
@@ -1428,6 +1434,8 @@ public:
 	bool clas_is_supported() const;
 	ClusterAccelerationStructureLimits clas_get_limits() const;
 	void clas_get_build_sizes(const ClusterBuildInput &p_input, ClusterBuildSizes &r_sizes);
+	void blas_get_cluster_build_sizes(const ClusterBottomLevelBuildInput &p_input, ClusterBuildSizes &r_sizes);
+	uint64_t acceleration_structure_get_device_address(RID p_acceleration_structure);
 	RID blas_create_from_clusters(uint32_t p_max_cluster_count, uint32_t p_max_cluster_count_per_acceleration_structure);
 
 	typedef int64_t HitShaderBindingTableRange;
@@ -1444,8 +1452,9 @@ public:
 	bool acceleration_structure_is_valid(RID p_acceleration_structure);
 	Error blas_build(RID p_blas);
 	Error blas_update(RID p_blas);
-	Error clas_build(const ClusterBuildInput &p_input, RID p_dst_implicit_buffer, const ClusterAddressRegion &p_dst_addresses, const ClusterAddressRegion &p_dst_sizes, RID p_scratch_buffer, const ClusterAddressRegion &p_src_infos, RID p_src_infos_count_buffer);
-	Error blas_build_from_clusters(RID p_blas, const ClusterAddressRegion &p_cluster_addresses, RID p_clas_storage_buffer);
+	Error clas_build(const ClusterBuildInput &p_input, RID p_dst_implicit_buffer, const ClusterAddressRegion &p_dst_addresses, const ClusterAddressRegion &p_dst_sizes, RID p_scratch_buffer, const ClusterAddressRegion &p_src_infos, RID p_src_infos_count_buffer, Span<RID> p_geometry_buffers);
+	Error blas_build_from_clusters(const ClusterBottomLevelBuildInput &p_input, Span<RID> p_destinations, const ClusterAddressRegion &p_dst_addresses, const ClusterAddressRegion &p_src_infos, const ClusterAddressRegion &p_src_infos_count, RID p_scratch_buffer, Span<RID> p_cluster_address_buffers, Span<RID> p_clas_storage_buffers);
+	Error tlas_build_from_buffer(RID p_tlas, RID p_instance_buffer, uint32_t p_instance_offset, uint32_t p_instance_count, Span<RID> p_blas_dependencies);
 	Error tlas_build(RID p_tlas, Span<AccelerationStructureInstance> p_instances);
 
 private:
@@ -1621,6 +1630,13 @@ public:
 
 	void draw_list_draw(DrawListID p_list, bool p_use_indices, uint32_t p_instances = 1, uint32_t p_procedural_vertices = 0);
 	void draw_list_draw_indirect(DrawListID p_list, bool p_use_indices, RID p_buffer, uint32_t p_offset = 0, uint32_t p_draw_count = 1, uint32_t p_stride = 0);
+	void draw_list_draw_indirect_count(DrawListID p_list, bool p_use_indices, RID p_buffer, uint32_t p_offset, RID p_count_buffer, uint32_t p_count_offset, uint32_t p_max_draw_count, uint32_t p_stride);
+	void draw_list_add_buffer_dependency(DrawListID p_list, RID p_buffer);
+
+private:
+	void _draw_list_draw_indirect(DrawListID p_list, bool p_use_indices, RID p_buffer, uint32_t p_offset, uint32_t p_draw_count, uint32_t p_stride, RID p_count_buffer, uint32_t p_count_offset);
+
+public:
 
 	void draw_list_set_viewport(DrawListID p_list, const Rect2 &p_rect);
 	void draw_list_enable_scissor(DrawListID p_list, const Rect2 &p_rect);

@@ -86,6 +86,10 @@ String RenderingDeviceGraph::_usage_to_string(ResourceUsage p_usage) {
 			return "Attachment Depth Stencil Read Write";
 		case RESOURCE_USAGE_GENERAL:
 			return "General";
+		case RESOURCE_USAGE_ACCELERATION_STRUCTURE_BUILD_READ:
+			return "Acceleration Structure Build Read";
+		case RESOURCE_USAGE_ACCELERATION_STRUCTURE_BUILD_READ_WRITE:
+			return "Acceleration Structure Build Read Write";
 		default:
 			ERR_FAIL_V_MSG("Invalid", vformat("Invalid resource usage %d.", p_usage));
 	}
@@ -105,6 +109,7 @@ bool RenderingDeviceGraph::_is_write_usage(ResourceUsage p_usage) {
 		case RESOURCE_USAGE_STORAGE_IMAGE_READ:
 		case RESOURCE_USAGE_ATTACHMENT_FRAGMENT_SHADING_RATE_READ:
 		case RESOURCE_USAGE_ATTACHMENT_FRAGMENT_DENSITY_MAP_READ:
+		case RESOURCE_USAGE_ACCELERATION_STRUCTURE_BUILD_READ:
 		case RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ:
 			return false;
 		case RESOURCE_USAGE_COPY_TO:
@@ -115,6 +120,7 @@ bool RenderingDeviceGraph::_is_write_usage(ResourceUsage p_usage) {
 		case RESOURCE_USAGE_ATTACHMENT_COLOR_READ_WRITE:
 		case RESOURCE_USAGE_ATTACHMENT_DEPTH_STENCIL_READ_WRITE:
 		case RESOURCE_USAGE_GENERAL:
+		case RESOURCE_USAGE_ACCELERATION_STRUCTURE_BUILD_READ_WRITE:
 		case RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ_WRITE:
 			return true;
 		default:
@@ -175,6 +181,10 @@ RDD::BarrierAccessBits RenderingDeviceGraph::_usage_to_access_bits(ResourceUsage
 			return RDD::BARRIER_ACCESS_UNIFORM_READ_BIT;
 		case RESOURCE_USAGE_INDIRECT_BUFFER_READ:
 			return RDD::BARRIER_ACCESS_INDIRECT_COMMAND_READ_BIT;
+		case RESOURCE_USAGE_ACCELERATION_STRUCTURE_BUILD_READ:
+			return RDD::BarrierAccessBits(RDD::BARRIER_ACCESS_ACCELERATION_STRUCTURE_READ_BIT | RDD::BARRIER_ACCESS_INDIRECT_COMMAND_READ_BIT | RDD::BARRIER_ACCESS_SHADER_READ_BIT);
+		case RESOURCE_USAGE_ACCELERATION_STRUCTURE_BUILD_READ_WRITE:
+			return RDD::BarrierAccessBits(RDD::BARRIER_ACCESS_ACCELERATION_STRUCTURE_READ_BIT | RDD::BARRIER_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT | RDD::BARRIER_ACCESS_INDIRECT_COMMAND_READ_BIT | RDD::BARRIER_ACCESS_SHADER_READ_BIT);
 		case RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ:
 			return RDD::BARRIER_ACCESS_ACCELERATION_STRUCTURE_READ_BIT;
 		case RESOURCE_USAGE_STORAGE_BUFFER_READ:
@@ -977,12 +987,20 @@ void RenderingDeviceGraph::_run_draw_list_command(RDD::CommandBufferID p_command
 			} break;
 			case DrawListInstruction::TYPE_DRAW_INDIRECT: {
 				const DrawListDrawIndirectInstruction *draw_indirect_instruction = reinterpret_cast<const DrawListDrawIndirectInstruction *>(instruction);
-				driver->command_render_draw_indirect(p_command_buffer, draw_indirect_instruction->buffer, draw_indirect_instruction->offset, draw_indirect_instruction->draw_count, draw_indirect_instruction->stride);
+				if (draw_indirect_instruction->count_buffer) {
+					driver->command_render_draw_indirect_count(p_command_buffer, draw_indirect_instruction->buffer, draw_indirect_instruction->offset, draw_indirect_instruction->count_buffer, draw_indirect_instruction->count_offset, draw_indirect_instruction->draw_count, draw_indirect_instruction->stride);
+				} else {
+					driver->command_render_draw_indirect(p_command_buffer, draw_indirect_instruction->buffer, draw_indirect_instruction->offset, draw_indirect_instruction->draw_count, draw_indirect_instruction->stride);
+				}
 				instruction_data_cursor += sizeof(DrawListDrawIndirectInstruction);
 			} break;
 			case DrawListInstruction::TYPE_DRAW_INDEXED_INDIRECT: {
 				const DrawListDrawIndexedIndirectInstruction *draw_indexed_indirect_instruction = reinterpret_cast<const DrawListDrawIndexedIndirectInstruction *>(instruction);
-				driver->command_render_draw_indexed_indirect(p_command_buffer, draw_indexed_indirect_instruction->buffer, draw_indexed_indirect_instruction->offset, draw_indexed_indirect_instruction->draw_count, draw_indexed_indirect_instruction->stride);
+				if (draw_indexed_indirect_instruction->count_buffer) {
+					driver->command_render_draw_indexed_indirect_count(p_command_buffer, draw_indexed_indirect_instruction->buffer, draw_indexed_indirect_instruction->offset, draw_indexed_indirect_instruction->count_buffer, draw_indexed_indirect_instruction->count_offset, draw_indexed_indirect_instruction->draw_count, draw_indexed_indirect_instruction->stride);
+				} else {
+					driver->command_render_draw_indexed_indirect(p_command_buffer, draw_indexed_indirect_instruction->buffer, draw_indexed_indirect_instruction->offset, draw_indexed_indirect_instruction->draw_count, draw_indexed_indirect_instruction->stride);
+				}
 				instruction_data_cursor += sizeof(DrawListDrawIndexedIndirectInstruction);
 			} break;
 			case DrawListInstruction::TYPE_EXECUTE_COMMANDS: {
@@ -1103,7 +1121,7 @@ void RenderingDeviceGraph::_run_render_commands(int32_t p_level, const RecordedC
 			} break;
 			case RecordedCommand::TYPE_BOTTOM_LEVEL_ACCELERATION_STRUCTURE_FROM_CLUSTERS_BUILD: {
 				const RecordedBottomLevelAccelerationStructureFromClustersBuildCommand *blas_from_clusters_command = reinterpret_cast<const RecordedBottomLevelAccelerationStructureFromClustersBuildCommand *>(command);
-				driver->command_build_blas_from_clusters(r_command_buffer, blas_from_clusters_command->acceleration_structure, blas_from_clusters_command->scratch_buffer, blas_from_clusters_command->cluster_addresses);
+				driver->command_build_blas_from_clusters(r_command_buffer, blas_from_clusters_command->input, blas_from_clusters_command->scratch_buffer, blas_from_clusters_command->dst_addresses, blas_from_clusters_command->src_infos, blas_from_clusters_command->src_infos_count);
 			} break;
 			case RecordedCommand::TYPE_BUFFER_CLEAR: {
 				const RecordedBufferClearCommand *buffer_clear_command = reinterpret_cast<const RecordedBufferClearCommand *>(command);
@@ -1873,7 +1891,7 @@ void RenderingDeviceGraph::add_tlas_build(RDD::AccelerationStructureID p_acceler
 
 	for (uint32_t i = 0; i < p_src_trackers.size(); ++i) {
 		trackers[i] = p_src_trackers[i];
-		usages[i] = RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ;
+		usages[i] = RESOURCE_USAGE_ACCELERATION_STRUCTURE_BUILD_READ;
 	}
 
 	trackers[resource_count - 1] = p_dst_tracker;
@@ -1904,41 +1922,42 @@ void RenderingDeviceGraph::add_clas_build(const RDD::ClusterBuildInput &p_input,
 
 	for (uint32_t i = 0; i < p_write_trackers.size(); ++i) {
 		trackers[i] = p_write_trackers[i];
-		usages[i] = RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ_WRITE;
+		usages[i] = RESOURCE_USAGE_ACCELERATION_STRUCTURE_BUILD_READ_WRITE;
 	}
 
 	for (uint32_t i = 0; i < p_read_trackers.size(); ++i) {
 		trackers[p_write_trackers.size() + i] = p_read_trackers[i];
-		usages[p_write_trackers.size() + i] = RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ;
+		usages[p_write_trackers.size() + i] = RESOURCE_USAGE_ACCELERATION_STRUCTURE_BUILD_READ;
 	}
 
 	_add_command_to_graph(trackers.ptr(), usages.ptr(), usages.size(), command_index, command);
 }
 
-void RenderingDeviceGraph::add_blas_build_from_clusters(RDD::AccelerationStructureID p_blas, RDD::BufferID p_scratch_buffer, const RDD::ClusterAddressRegion &p_cluster_addresses, ResourceTracker *p_dst_tracker, VectorView<ResourceTracker *> p_src_trackers) {
+void RenderingDeviceGraph::add_blas_build_from_clusters(const RDD::ClusterBottomLevelBuildInput &p_input, RDD::BufferID p_scratch_buffer, const RDD::ClusterAddressRegion &p_dst_addresses, const RDD::ClusterAddressRegion &p_src_infos, const RDD::ClusterAddressRegion &p_src_infos_count, VectorView<ResourceTracker *> p_write_trackers, VectorView<ResourceTracker *> p_read_trackers) {
 	int32_t command_index;
 	RecordedBottomLevelAccelerationStructureFromClustersBuildCommand *command = static_cast<RecordedBottomLevelAccelerationStructureFromClustersBuildCommand *>(_allocate_command(sizeof(RecordedBottomLevelAccelerationStructureFromClustersBuildCommand), command_index));
 	command->type = RecordedCommand::TYPE_BOTTOM_LEVEL_ACCELERATION_STRUCTURE_FROM_CLUSTERS_BUILD;
 	command->self_stages = RDD::PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT;
-	command->acceleration_structure = p_blas;
+	command->input = p_input;
 	command->scratch_buffer = p_scratch_buffer;
-	command->cluster_addresses = p_cluster_addresses;
+	command->dst_addresses = p_dst_addresses;
+	command->src_infos = p_src_infos;
+	command->src_infos_count = p_src_infos_count;
 
 	thread_local LocalVector<ResourceTracker *> trackers;
 	thread_local LocalVector<ResourceUsage> usages;
 
-	// Sources and destination.
-	uint32_t resource_count = p_src_trackers.size() + 1;
+	uint32_t resource_count = p_write_trackers.size() + p_read_trackers.size();
 	trackers.resize(resource_count);
 	usages.resize(resource_count);
-
-	for (uint32_t i = 0; i < p_src_trackers.size(); ++i) {
-		trackers[i] = p_src_trackers[i];
-		usages[i] = RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ;
+	for (uint32_t i = 0; i < p_write_trackers.size(); i++) {
+		trackers[i] = p_write_trackers[i];
+		usages[i] = RESOURCE_USAGE_ACCELERATION_STRUCTURE_BUILD_READ_WRITE;
 	}
-
-	trackers[resource_count - 1] = p_dst_tracker;
-	usages[resource_count - 1] = RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ_WRITE;
+	for (uint32_t i = 0; i < p_read_trackers.size(); i++) {
+		trackers[p_write_trackers.size() + i] = p_read_trackers[i];
+		usages[p_write_trackers.size() + i] = RESOURCE_USAGE_ACCELERATION_STRUCTURE_BUILD_READ;
+	}
 
 	_add_command_to_graph(trackers.ptr(), usages.ptr(), usages.size(), command_index, command);
 }
@@ -2092,6 +2111,16 @@ void RenderingDeviceGraph::add_raytracing_list_usage(ResourceTracker *p_tracker,
 		p_tracker->raytracing_list_index = raytracing_instruction_list.index;
 		p_tracker->raytracing_list_usage = p_usage;
 	}
+	else if (p_tracker->buffer_driver_id && p_tracker->raytracing_list_usage != p_usage) {
+		for (uint32_t i = 0; i < raytracing_instruction_list.command_trackers.size(); i++) {
+			if (raytracing_instruction_list.command_trackers[i] == p_tracker) {
+				raytracing_instruction_list.command_tracker_usages[i] = RESOURCE_USAGE_GENERAL;
+				break;
+			}
+		}
+		p_tracker->raytracing_list_usage = RESOURCE_USAGE_GENERAL;
+	}
+
 #ifdef DEV_ENABLED
 	else if (p_tracker->raytracing_list_usage != p_usage) {
 		ERR_FAIL_MSG(vformat("Tracker can't have more than one type of usage in the same raytracing list. Raytracing list usage is %d and the requested usage is %d.", p_tracker->raytracing_list_usage, p_usage));
@@ -2199,6 +2228,16 @@ void RenderingDeviceGraph::add_compute_list_usage(ResourceTracker *p_tracker, Re
 		p_tracker->compute_list_index = compute_instruction_list.index;
 		p_tracker->compute_list_usage = p_usage;
 	}
+	else if (p_tracker->buffer_driver_id && p_tracker->compute_list_usage != p_usage) {
+		for (uint32_t i = 0; i < compute_instruction_list.command_trackers.size(); i++) {
+			if (compute_instruction_list.command_trackers[i] == p_tracker) {
+				compute_instruction_list.command_tracker_usages[i] = RESOURCE_USAGE_GENERAL;
+				break;
+			}
+		}
+		p_tracker->compute_list_usage = RESOURCE_USAGE_GENERAL;
+	}
+
 #ifdef DEV_ENABLED
 	else if (p_tracker->compute_list_usage != p_usage) {
 		ERR_FAIL_MSG(vformat("Tracker can't have more than one type of usage in the same compute list. Compute list usage is %s and the requested usage is %s.", _usage_to_string(p_tracker->compute_list_usage), _usage_to_string(p_usage)));
@@ -2327,20 +2366,24 @@ void RenderingDeviceGraph::add_draw_list_draw_indexed(uint32_t p_index_count, ui
 	instruction->first_index = p_first_index;
 }
 
-void RenderingDeviceGraph::add_draw_list_draw_indirect(RDD::BufferID p_buffer, uint32_t p_offset, uint32_t p_draw_count, uint32_t p_stride) {
+void RenderingDeviceGraph::add_draw_list_draw_indirect(RDD::BufferID p_buffer, uint32_t p_offset, uint32_t p_draw_count, uint32_t p_stride, RDD::BufferID p_count_buffer, uint32_t p_count_offset) {
 	DrawListDrawIndirectInstruction *instruction = reinterpret_cast<DrawListDrawIndirectInstruction *>(_allocate_draw_list_instruction(sizeof(DrawListDrawIndirectInstruction)));
 	instruction->type = DrawListInstruction::TYPE_DRAW_INDIRECT;
 	instruction->buffer = p_buffer;
+	instruction->count_buffer = p_count_buffer;
+	instruction->count_offset = p_count_offset;
 	instruction->offset = p_offset;
 	instruction->draw_count = p_draw_count;
 	instruction->stride = p_stride;
 	draw_instruction_list.stages.set_flag(RDD::PIPELINE_STAGE_DRAW_INDIRECT_BIT);
 }
 
-void RenderingDeviceGraph::add_draw_list_draw_indexed_indirect(RDD::BufferID p_buffer, uint32_t p_offset, uint32_t p_draw_count, uint32_t p_stride) {
+void RenderingDeviceGraph::add_draw_list_draw_indexed_indirect(RDD::BufferID p_buffer, uint32_t p_offset, uint32_t p_draw_count, uint32_t p_stride, RDD::BufferID p_count_buffer, uint32_t p_count_offset) {
 	DrawListDrawIndexedIndirectInstruction *instruction = reinterpret_cast<DrawListDrawIndexedIndirectInstruction *>(_allocate_draw_list_instruction(sizeof(DrawListDrawIndexedIndirectInstruction)));
 	instruction->type = DrawListInstruction::TYPE_DRAW_INDEXED_INDIRECT;
 	instruction->buffer = p_buffer;
+	instruction->count_buffer = p_count_buffer;
+	instruction->count_offset = p_count_offset;
 	instruction->offset = p_offset;
 	instruction->draw_count = p_draw_count;
 	instruction->stride = p_stride;
@@ -2409,6 +2452,16 @@ void RenderingDeviceGraph::add_draw_list_usage(ResourceTracker *p_tracker, Resou
 		p_tracker->draw_list_index = draw_instruction_list.index;
 		p_tracker->draw_list_usage = p_usage;
 	}
+	else if (p_tracker->buffer_driver_id && p_tracker->draw_list_usage != p_usage) {
+		for (uint32_t i = 0; i < draw_instruction_list.command_trackers.size(); i++) {
+			if (draw_instruction_list.command_trackers[i] == p_tracker) {
+				draw_instruction_list.command_tracker_usages[i] = RESOURCE_USAGE_GENERAL;
+				break;
+			}
+		}
+		p_tracker->draw_list_usage = RESOURCE_USAGE_GENERAL;
+	}
+
 #ifdef DEV_ENABLED
 	else if (p_tracker->draw_list_usage != p_usage) {
 		ERR_FAIL_MSG(vformat("Tracker can't have more than one type of usage in the same draw list. Draw list usage is %s and the requested usage is %s.", _usage_to_string(p_tracker->draw_list_usage), _usage_to_string(p_usage)));

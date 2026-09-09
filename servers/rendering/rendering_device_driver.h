@@ -691,6 +691,7 @@ public:
 	virtual void command_bind_render_uniform_sets(CommandBufferID p_cmd_buffer, VectorView<UniformSetID> p_uniform_sets, ShaderID p_shader, uint32_t p_first_set_index, uint32_t p_set_count, uint32_t p_dynamic_offsets) = 0;
 
 	// Drawing.
+	virtual uint32_t draw_indirect_count_get_max() const { return 0; }
 	virtual void command_render_draw(CommandBufferID p_cmd_buffer, uint32_t p_vertex_count, uint32_t p_instance_count, uint32_t p_base_vertex, uint32_t p_first_instance) = 0;
 	virtual void command_render_draw_indexed(CommandBufferID p_cmd_buffer, uint32_t p_index_count, uint32_t p_instance_count, uint32_t p_first_index, int32_t p_vertex_offset, uint32_t p_first_instance) = 0;
 	virtual void command_render_draw_indexed_indirect(CommandBufferID p_cmd_buffer, BufferID p_indirect_buffer, uint64_t p_offset, uint32_t p_draw_count, uint32_t p_stride) = 0;
@@ -805,10 +806,12 @@ public:
 	virtual void acceleration_structure_instance_write(uint8_t *r_driver_instance, const AccelerationStructureInstance &p_instance) = 0;
 	virtual void acceleration_structure_free(AccelerationStructureID p_acceleration_structure) = 0;
 	virtual uint32_t acceleration_structure_get_scratch_size_bytes(AccelerationStructureID p_acceleration_structure) = 0;
+	virtual uint64_t acceleration_structure_get_device_address(AccelerationStructureID p_acceleration_structure) { return 0; }
 
 	// ----- CLUSTER ACCELERATION STRUCTURE -----
 
 	struct ClusterAccelerationStructureLimits {
+		uint32_t triangle_cluster_build_info_size = 0;
 		uint32_t max_vertices_per_cluster = 0;
 		uint32_t max_triangles_per_cluster = 0;
 		uint32_t max_cluster_geometry_index = 0;
@@ -835,6 +838,25 @@ public:
 		uint32_t min_position_truncate_bit_count = 0;
 	};
 
+	struct ClusterBottomLevelBuildInput {
+		uint32_t max_acceleration_structure_count = 0;
+		uint32_t max_total_cluster_count = 0;
+		uint32_t max_cluster_count_per_acceleration_structure = 0;
+	};
+
+	struct ClusterBottomLevelBuildInfo {
+		uint32_t cluster_references_count = 0;
+		uint32_t cluster_references_stride = 8;
+		uint64_t cluster_references = 0;
+	};
+
+	struct AccelerationStructureGPUInstance {
+		float transform[12] = {};
+		uint32_t custom_index_and_mask = 0;
+		uint32_t sbt_offset_and_flags = 0;
+		uint64_t acceleration_structure_reference = 0;
+	};
+
 	struct ClusterBuildSizes {
 		uint64_t acceleration_structure_size = 0;
 		uint64_t build_scratch_size = 0;
@@ -850,6 +872,7 @@ public:
 	virtual bool clas_is_supported() = 0;
 	virtual ClusterAccelerationStructureLimits clas_get_limits() = 0;
 	virtual void clas_get_build_sizes(const ClusterBuildInput &p_input, ClusterBuildSizes &r_sizes) = 0;
+	virtual void blas_get_cluster_build_sizes(const ClusterBottomLevelBuildInput &p_input, ClusterBuildSizes &r_sizes) { r_sizes = ClusterBuildSizes(); }
 	virtual AccelerationStructureID blas_create_from_clusters(uint32_t p_max_cluster_count, uint32_t p_max_cluster_count_per_acceleration_structure) = 0;
 
 	// ----- PIPELINE -----
@@ -879,7 +902,7 @@ public:
 	virtual void command_update_blas(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer) = 0;
 	virtual void command_build_tlas(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer, BufferID p_instance_buffer, uint32_t p_instance_offset, uint32_t p_instance_count) = 0;
 	virtual void command_build_clas(CommandBufferID p_cmd_buffer, const ClusterBuildInput &p_input, BufferID p_dst_implicit_buffer, const ClusterAddressRegion &p_dst_addresses, const ClusterAddressRegion &p_dst_sizes, BufferID p_scratch_buffer, const ClusterAddressRegion &p_src_infos, BufferID p_src_infos_count_buffer) = 0;
-	virtual void command_build_blas_from_clusters(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer, const ClusterAddressRegion &p_cluster_addresses) = 0;
+	virtual void command_build_blas_from_clusters(CommandBufferID p_cmd_buffer, const ClusterBottomLevelBuildInput &p_input, BufferID p_scratch_buffer, const ClusterAddressRegion &p_dst_addresses, const ClusterAddressRegion &p_src_infos, const ClusterAddressRegion &p_src_infos_count) = 0;
 	virtual void command_bind_raytracing_pipeline(CommandBufferID p_cmd_buffer, RaytracingPipelineID p_pipeline) = 0;
 	virtual void command_bind_raytracing_uniform_set(CommandBufferID p_cmd_buffer, UniformSetID p_uniform_set, ShaderID p_shader, uint32_t p_set_index) = 0;
 

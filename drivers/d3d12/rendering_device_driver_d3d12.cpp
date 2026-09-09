@@ -5613,7 +5613,7 @@ void RenderingDeviceDriverD3D12::command_build_clas(CommandBufferID p_cmd_buffer
 	ERR_FAIL_MSG("Ray tracing is not currently supported by the D3D12 driver.");
 }
 
-void RenderingDeviceDriverD3D12::command_build_blas_from_clusters(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer, const ClusterAddressRegion &p_cluster_addresses) {
+void RenderingDeviceDriverD3D12::command_build_blas_from_clusters(CommandBufferID p_cmd_buffer, const ClusterBottomLevelBuildInput &p_input, BufferID p_scratch_buffer, const ClusterAddressRegion &p_dst_addresses, const ClusterAddressRegion &p_src_infos, const ClusterAddressRegion &p_src_infos_count) {
 	ERR_FAIL_MSG("Ray tracing is not currently supported by the D3D12 driver.");
 }
 
