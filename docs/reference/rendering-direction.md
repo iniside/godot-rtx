@@ -1,5 +1,23 @@
 # Docelowy kierunek renderera i TODO
 
+## Model sceny — decyzja właściciela 2026-09-09
+
+Flecs jest docelowym fundamentem całej sceny świata 3D, w edytorze i runtime.
+Scena zawiera encje i komponenty, bez Node/Object/Resource wrapperów encji;
+hierarchie pozostają relacjami. Gęste populacje mają być domyślnie płaskie,
+bez skomplikowanego drzewa dla każdego obiektu; grupowanie w edytorze lub
+streamingu nie wymusza rodzica transformacji. Hierarchie tylko tam, gdzie są
+potrzebne. Najpierw ten model, potem world streaming.
+Cel to automatyczna obsługa gęstych światów 100 km+, zapisanych/proceduralnych,
+z trwałą tożsamością niezależną od rezydencji. Sceny 2D nie są wspierane;
+UI gry będzie osobną warstwą HTML/CSS. Infrastruktura UI edytora i współdzielone
+assety mogą zachować typy Godota. Zastępuje to wcześniejszy otwarty wybór ECS.
+[Research źródeł i kontraktów](../research/2026-09-09-2023-flecs-scene-model-replacement-research.md)
+przy `999bbd18c` określa granice wymiany i decyzje przed planem. Brak
+implementacji, pomiarów i autoryzacji przebudowy; zgodność starego API oraz
+model skryptów wymagają doprecyzowania. Źródło kierunku: bieżąca rozmowa.
+
+
 Zakres implementacji zatwierdzony 2026-09-09, plan `414a19fdef`:
 import mesha → meshlety i automatyczny DAG → scena GPU, raster/RT selection,
 stronicowanie i debug view rzeczywiście wybranych klastrów/trójkątów.
