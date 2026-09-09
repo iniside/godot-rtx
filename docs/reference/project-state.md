@@ -6,7 +6,11 @@ GPU-driven microgeometry implementation (2026-09-09, `ec9a584644`):
 Importer, paged storage, RD/GPU AS APIs and GPU selection/native raster passed
 final source reviews; raster pinned compiler proof passed at `ec399801bf`.
 Selected RT integration and simple error/offscreen controls are committed;
-ordinary editor/console build passes, with source/proof reviews pending.
+ordinary editor/console build and final compiler proof pass at `40650bd3bc`.
+Final source review rejects an empty-to-nonempty cut's null BLAS build destination
+and missed offscreen classification beyond the camera far plane. Work is stopped
+at the repository's two-round review limit; recommended fixes are recorded in
+the execution evidence.
 Actual dragon import/reimport passed in 82.66/67.04 seconds, yielding 17 DAG
 levels and 9737 pages with byte-identical reused `.mgdata`; the diagnostic
 reimport command had shutdown warnings. Import evidence uses an immutable

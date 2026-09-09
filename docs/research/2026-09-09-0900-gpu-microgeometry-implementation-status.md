@@ -120,7 +120,7 @@ candidate cut until generation-bound feedback permits publication with same-fram
 history reset, preserves material time tracking, and corrects behind-camera RT
 selection. Committed/candidate/retiring group pins track completed GPU use.
 DDGI preparation follows publication and changed camera history reaches the
-existing surface-history consumers. These fixes are awaiting final source review.
+existing surface-history consumers. Final source review returned REJECT with the two remaining defects below.
 
 Proof round 1 independently confirmed the 56 distinct artifacts, hashes, pinned
 tools and ABI, but rejected the final verifier: it did not enforce unique expected
@@ -130,8 +130,29 @@ checks exact identities and exits nonzero; stale receipts returned 1, refreshed
 Final ordinary editor/console build 07 passed in 34.14 seconds with unchanged
 source hashes. Host `build-07-{source,result}.json` and shader
 `round1-verifier-run.json` retain the evidence in the directories above.
-Fresh final source/proof reviews are running. Real GPU behavior and the dense
-cluster membership storage cost remain unvalidated.
+Fresh final proof review returned PASS at `40650bd3bc`: 34 host source hashes,
+binaries, 56 distinct current shader artifacts and inspected ABI match. The
+current closure receipt is `round1-current-source-closure.json`; the older
+`final-current-source-closure.json` contains superseded selection/AS receipts.
+Real GPU behavior and dense cluster membership storage cost remain unvalidated.
+
+Final source review returned REJECT with two concrete remaining issues:
+
+1. `micro_geometry_rt.slang:222`: an empty committed cut followed by a nonempty
+   candidate records a null build destination, because PREPARE derives it from
+   the old cut's inactive TLAS address. This is reachable while emissive finest
+   leaves stream after terminal CLAS readiness. Use the allocated
+   `blas_addresses[geometry]` for build destinations independently of TLAS
+   activation; no source correction has been made after this final review.
+2. `micro_geometry_select.slang:317`: projected reverse-Z nearest depth starts
+   at zero, masking wholly negative depths beyond the camera far plane. Such
+   RT instances incorrectly skip the offscreen multiplier. Preserve signed
+   far-plane classification while retaining their RT coverage.
+
+Repository policy `.agents/shared/planning-dispatch.md`, Hostile Diff Review,
+limits a task to two review rounds and requires stopping/reporting remaining
+issues after round 2. Implementation is stopped at this gate; no third review
+or post-gate source fix was attempted.
 
 ## Actual dragon import
 
@@ -165,7 +186,11 @@ and cumulative history. No automated test suite was authored or run.
 
 Step 6 remains pending: selected raster/RT cluster debug views and frozen
 selection, counters, real Vulkan rendering, export/PCK, native save/load and OBJ,
-and required double/template build coverage. Continue review closure and this
-remaining implementation under the existing owner authorization.
+and required double/template build coverage. A separate Step 6 context performed
+read-only navigation only and stopped at the failed prerequisite gate; no code,
+fixture or build changes. Existing raster cluster-color hook and RT primary-hit
+payload can serve debug views; frozen selection must retain the actual selected
+list/cut with live transforms and invalidate on topology/material/reload changes.
+The overall owner-authorized implementation is incomplete.
 
 Existing unrelated dirty scenes/documents and the source dragon are preserved.
