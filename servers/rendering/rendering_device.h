@@ -1990,6 +1990,24 @@ public:
 	/**** Timing ****/
 	/****************/
 
+	enum CPUProfilePhase {
+		CPU_PROFILE_FRAME_END,
+		CPU_PROFILE_FRAME_EXECUTE,
+		CPU_PROFILE_FRAME_RECYCLE,
+		CPU_PROFILE_FENCE_WAIT,
+		CPU_PROFILE_DOWNLOAD_COPY,
+		CPU_PROFILE_DOWNLOAD_CALLBACK,
+		CPU_PROFILE_MAX,
+	};
+
+private:
+	bool cpu_profile_enabled = false;
+	uint64_t cpu_profile_usec[CPU_PROFILE_MAX] = {};
+
+public:
+	void begin_cpu_frame_profile(bool p_enabled);
+	uint64_t get_cpu_frame_profile_usec(CPUProfilePhase p_phase) const { return cpu_profile_usec[p_phase]; }
+
 	void capture_timestamp(const String &p_name);
 	uint32_t get_captured_timestamps_count() const;
 	uint64_t get_captured_timestamps_frame() const;

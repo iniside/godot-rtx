@@ -32,6 +32,7 @@
 
 #include "core/object/callable_mp.h"
 #include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
+#include "servers/rendering/rendering_server_globals.h"
 
 using namespace RendererRD;
 
@@ -529,6 +530,7 @@ uint32_t MicroGeometryStorage::_allocate_slot() {
 }
 
 void MicroGeometryStorage::update() {
+	RENDER_TIMESTAMP("Microgeometry Streaming Retire");
 	clock++;
 	const uint64_t completed = RD::get_singleton()->get_completed_submission_serial();
 	for (uint32_t i = 0; i < retired_metadata.size();) {
@@ -544,6 +546,7 @@ void MicroGeometryStorage::update() {
 		statistics.acceleration_structure_bytes -= retired.rt_bytes;
 		retired_metadata.remove_at_unordered(i);
 	}
+	RENDER_TIMESTAMP("Microgeometry Streaming Upload and CLAS");
 	for (uint32_t i = 0; i < tasks.size();) {
 		ReadTask *task = tasks[i];
 		if (!WorkerThreadPool::get_singleton()->is_task_completed(task->task)) {
@@ -580,9 +583,11 @@ void MicroGeometryStorage::update() {
 		memdelete(task);
 		tasks.remove_at_unordered(i);
 	}
+	RENDER_TIMESTAMP("Microgeometry Streaming Publish");
 	for (RID id : active_assets) {
 		_publish(*assets.get_or_null(id));
 	}
+	RENDER_TIMESTAMP("Microgeometry Streaming Schedule");
 	for (uint32_t priority = 0; priority < 2 && tasks.size() < MAX_IO_TASKS; priority++) {
 		for (RID id : active_assets) {
 			Asset &asset = *assets.get_or_null(id);
@@ -607,6 +612,7 @@ void MicroGeometryStorage::update() {
 			asset.has_requests = remaining;
 		}
 	}
+	RENDER_TIMESTAMP("Microgeometry Streaming Complete");
 }
 
 bool MicroGeometryStorage::is_group_ready(RID p_asset, uint32_t p_group, bool p_require_clas) const {
@@ -768,11 +774,13 @@ void MicroGeometryStorage::feedback_submit(RID p_feedback) {
 	}
 	feedback->pending = true;
 	pending_feedback_count++;
+	RENDER_TIMESTAMP("Microgeometry Request Readback");
 	Error error = RD::get_singleton()->buffer_get_data_async(feedback->buffer, callable_mp_static(&MicroGeometryStorage::_feedback_dispatch).bind(uint64_t(uintptr_t(this)), p_feedback));
 	if (error != OK) {
 		pending_feedback_count--;
 		feedback->pending = false;
 	}
+	RENDER_TIMESTAMP("Microgeometry Request Readback Complete");
 }
 
 void MicroGeometryStorage::_feedback_received(const Vector<uint8_t> &p_bytes, RID p_feedback) {

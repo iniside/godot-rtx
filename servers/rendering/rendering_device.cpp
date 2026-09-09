@@ -8641,6 +8641,7 @@ uint64_t RenderingDevice::get_memory_usage(MemoryType p_type) const {
 }
 
 void RenderingDevice::_begin_frame(bool p_presented) {
+	const uint64_t cpu_begin = cpu_profile_enabled ? OS::get_singleton()->get_ticks_usec() : 0;
 	GodotProfileZoneGroupedFirst(_profile_zone, "_stall_for_frame");
 	// Before writing to this frame, wait for it to be finished.
 	_stall_for_frame(frame);
@@ -8692,9 +8693,13 @@ void RenderingDevice::_begin_frame(bool p_presented) {
 	frames[frame].timestamp_result_count = frames[frame].timestamp_count;
 	frames[frame].timestamp_count = 0;
 	frames[frame].index = Engine::get_singleton()->get_frames_drawn();
+	if (cpu_profile_enabled) {
+		cpu_profile_usec[CPU_PROFILE_FRAME_RECYCLE] += OS::get_singleton()->get_ticks_usec() - cpu_begin;
+	}
 }
 
 void RenderingDevice::_end_frame() {
+	const uint64_t cpu_begin = cpu_profile_enabled ? OS::get_singleton()->get_ticks_usec() : 0;
 	if (draw_list.active) {
 		ERR_PRINT("Found open draw list at the end of the frame, this should never happen (further drawing will likely not work).");
 	}
@@ -8720,6 +8725,9 @@ void RenderingDevice::_end_frame() {
 	driver->command_buffer_end(command_buffer);
 	GodotProfileZoneGrouped(_profile_zone, "driver->end_segment");
 	driver->end_segment();
+	if (cpu_profile_enabled) {
+		cpu_profile_usec[CPU_PROFILE_FRAME_END] += OS::get_singleton()->get_ticks_usec() - cpu_begin;
+	}
 }
 
 void RenderingDevice::execute_chained_cmds(bool p_present_swap_chain, RenderingDeviceDriver::FenceID p_draw_fence,
@@ -8780,6 +8788,7 @@ void RenderingDevice::execute_chained_cmds(bool p_present_swap_chain, RenderingD
 }
 
 void RenderingDevice::_execute_frame(bool p_present) {
+	const uint64_t cpu_begin = cpu_profile_enabled ? OS::get_singleton()->get_ticks_usec() : 0;
 	// Check whether this frame should present the swap chains and in which queue.
 	const bool frame_can_present = p_present && !frames[frame].swap_chains_to_present.is_empty();
 	const bool separate_present_queue = main_queue != present_queue;
@@ -8805,6 +8814,9 @@ void RenderingDevice::_execute_frame(bool p_present) {
 
 		frames[frame].swap_chains_to_present.clear();
 	}
+	if (cpu_profile_enabled) {
+		cpu_profile_usec[CPU_PROFILE_FRAME_EXECUTE] += OS::get_singleton()->get_ticks_usec() - cpu_begin;
+	}
 }
 
 void RenderingDevice::_stall_for_frame(uint32_t p_frame) {
@@ -8812,7 +8824,11 @@ void RenderingDevice::_stall_for_frame(uint32_t p_frame) {
 
 	if (frames[p_frame].fence_signaled) {
 		GodotProfileZoneGroupedFirst(_profile_zone, "driver->fence_wait");
+		const uint64_t cpu_wait_begin = cpu_profile_enabled ? OS::get_singleton()->get_ticks_usec() : 0;
 		driver->fence_wait(frames[p_frame].fence);
+		if (cpu_profile_enabled) {
+			cpu_profile_usec[CPU_PROFILE_FENCE_WAIT] += OS::get_singleton()->get_ticks_usec() - cpu_wait_begin;
+		}
 		completed_submission_serial = MAX(completed_submission_serial, frames[p_frame].submission_serial);
 		frames[p_frame].fence_signaled = false;
 
@@ -8820,6 +8836,7 @@ void RenderingDevice::_stall_for_frame(uint32_t p_frame) {
 		if (!frames[p_frame].download_buffer_get_data_requests.is_empty()) {
 			GodotProfileZoneGrouped(_profile_zone, "flush asynchronous buffer downloads");
 			for (uint32_t i = 0; i < frames[p_frame].download_buffer_get_data_requests.size(); i++) {
+				const uint64_t cpu_download_begin = cpu_profile_enabled ? OS::get_singleton()->get_ticks_usec() : 0;
 				const BufferGetDataRequest &request = frames[p_frame].download_buffer_get_data_requests[i];
 				packed_byte_array.resize(request.size);
 
@@ -8833,7 +8850,14 @@ void RenderingDevice::_stall_for_frame(uint32_t p_frame) {
 					array_offset += region.size;
 				}
 
+				const uint64_t cpu_callback_begin = cpu_profile_enabled ? OS::get_singleton()->get_ticks_usec() : 0;
+				if (cpu_profile_enabled) {
+					cpu_profile_usec[CPU_PROFILE_DOWNLOAD_COPY] += cpu_callback_begin - cpu_download_begin;
+				}
 				request.callback.call(packed_byte_array);
+				if (cpu_profile_enabled) {
+					cpu_profile_usec[CPU_PROFILE_DOWNLOAD_CALLBACK] += OS::get_singleton()->get_ticks_usec() - cpu_callback_begin;
+				}
 			}
 
 			frames[p_frame].download_buffer_staging_buffers.clear();
@@ -8845,6 +8869,7 @@ void RenderingDevice::_stall_for_frame(uint32_t p_frame) {
 		if (!frames[p_frame].download_texture_get_data_requests.is_empty()) {
 			GodotProfileZoneGrouped(_profile_zone, "flush asynchronous texture downloads");
 			for (uint32_t i = 0; i < frames[p_frame].download_texture_get_data_requests.size(); i++) {
+				const uint64_t cpu_download_begin = cpu_profile_enabled ? OS::get_singleton()->get_ticks_usec() : 0;
 				const TextureGetDataRequest &request = frames[p_frame].download_texture_get_data_requests[i];
 				uint32_t texture_size = get_image_format_required_size(request.format, request.width, request.height, request.depth, request.mipmaps);
 				packed_byte_array.resize(texture_size);
@@ -8884,7 +8909,14 @@ void RenderingDevice::_stall_for_frame(uint32_t p_frame) {
 					driver->buffer_unmap(frames[p_frame].download_texture_staging_buffers[local_index]);
 				}
 
+				const uint64_t cpu_callback_begin = cpu_profile_enabled ? OS::get_singleton()->get_ticks_usec() : 0;
+				if (cpu_profile_enabled) {
+					cpu_profile_usec[CPU_PROFILE_DOWNLOAD_COPY] += cpu_callback_begin - cpu_download_begin;
+				}
 				request.callback.call(packed_byte_array);
+				if (cpu_profile_enabled) {
+					cpu_profile_usec[CPU_PROFILE_DOWNLOAD_CALLBACK] += OS::get_singleton()->get_ticks_usec() - cpu_callback_begin;
+				}
 			}
 
 			GodotProfileZoneGrouped(_profile_zone, "clear buffers");
@@ -9296,6 +9328,14 @@ void RenderingDevice::_free_rids(T &p_owner, const char *p_type) {
 #endif
 			free_rid(rid);
 		}
+	}
+}
+
+void RenderingDevice::begin_cpu_frame_profile(bool p_enabled) {
+	ERR_RENDER_THREAD_GUARD();
+	cpu_profile_enabled = p_enabled;
+	for (uint64_t &time : cpu_profile_usec) {
+		time = 0;
 	}
 }
 

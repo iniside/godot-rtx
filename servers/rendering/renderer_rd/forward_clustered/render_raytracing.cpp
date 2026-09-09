@@ -1977,6 +1977,7 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 	}
 	build->selection->persistent_instances = persistent_instance_buffer;
 	build->selection->persistent_surfaces = persistent_surface_buffer;
+	RENDER_TIMESTAMP("Microgeometry RT Dependencies");
 	build->dependencies.clear();
 	build->clas_dependencies.clear();
 	get_persistent_buffer_dependencies(build->dependencies);
@@ -1995,6 +1996,7 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 }
 
 bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
+	RENDER_TIMESTAMP("Microgeometry RT Retire Pins");
 	RTMicroGeometryBuild *build = p_state->micro_geometry;
 	RD *rd = RD::get_singleton();
 	auto *storage = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage();
@@ -2026,6 +2028,7 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 	}
 	RTMicroGeometryFeedback *feedback = nullptr;
 	if (select) {
+		RENDER_TIMESTAMP("Microgeometry RT Residency Pinning");
 		feedback = memnew(RTMicroGeometryFeedback);
 		feedback->build = build;
 		feedback->cut_generation = ++build->cut_generation;
@@ -2042,6 +2045,7 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 		micro_selection->select(build->selection, RID());
 		micro_selection->submit_feedback(build->selection);
 	}
+	RENDER_TIMESTAMP("Microgeometry RT Instance Upload");
 	LocalVector<RD::AccelerationStructureGPUInstance> instances;
 	LocalVector<uint64_t> addresses;
 	instances.resize(blass.size());
@@ -2095,6 +2099,14 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 	parameters.task_count = build->task_data.size();
 	parameters.geometry_count = blass.size();
 	parameters.references = rd->buffer_get_device_address(build->references);
+	static const char *const mode_timestamps[] = {
+		"Microgeometry RT Prepare Cut",
+		"Microgeometry RT Publish Cut",
+		"Microgeometry RT Update Transforms",
+		"Microgeometry RT Restore Cut",
+		"Microgeometry RT Initial Cut",
+	};
+	RENDER_TIMESTAMP(mode_timestamps[mode]);
 	RD::ComputeListID list = rd->compute_list_begin();
 	rd->compute_list_bind_compute_pipeline(list, micro_rt_pipeline);
 	rd->compute_list_bind_uniform_set(list, uniform, 0);
@@ -2112,6 +2124,7 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 	RD::ClusterAddressRegion count = { build->dirty_counts, 0, 4, 4 };
 	Error error = OK;
 	if (mode == RTMicroGeometryBuild::PUBLISH_CUT || mode == RTMicroGeometryBuild::RESTORE_CUT || mode == RTMicroGeometryBuild::INITIAL_CUT) {
+		RENDER_TIMESTAMP("Microgeometry RT Cluster BLAS Build");
 		error = rd->blas_build_from_clusters(build->input, build->blas, destinations, infos, count, build->scratch, address_dependencies, build->clas_dependencies);
 		if (error == OK) {
 			build->has_committed_cut = true;
@@ -2132,6 +2145,7 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 			}
 		}
 	}
+	RENDER_TIMESTAMP("Microgeometry RT Cut Readbacks");
 	if (select) {
 		build->pending_feedback += 2;
 		build->candidate_pending = mode == RTMicroGeometryBuild::PREPARE_CUT;
@@ -2149,7 +2163,10 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 		}
 	}
 	ERR_FAIL_COND_V(error != OK, false);
-	return rd->tlas_build_from_buffer(p_state->tlas, build->tlas_instances, 0, blass.size(), dependencies) == OK;
+	RENDER_TIMESTAMP("Microgeometry RT TLAS Build");
+	const bool success = rd->tlas_build_from_buffer(p_state->tlas, build->tlas_instances, 0, blass.size(), dependencies) == OK;
+	RENDER_TIMESTAMP("Microgeometry RT AS Complete");
+	return success;
 }
 
 bool RenderRaytracing::build_acceleration_structures(RTViewportState *p_state, const LocalVector<RID> &p_dirty_blas_list, const LocalVector<RID> &p_dirty_blas_update_list) {
@@ -2684,7 +2701,9 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 		return nullptr;
 	}
 
+	RENDER_TIMESTAMP("RT Frame Prepare");
 	prepare_frame();
+	RENDER_TIMESTAMP("RT Scene Gather");
 
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
 	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
@@ -3260,6 +3279,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 	// -----------------------------------------------------------------------
 	// Phase 2: GPU compute — merged MultiMesh BLAS dispatches.
 	// -----------------------------------------------------------------------
+	RENDER_TIMESTAMP("RT Merged Geometry Compute");
 	RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();
 
 	for (const PendingMMSurface &pending : pending_mm_surfaces) {
@@ -3426,10 +3446,14 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 
 	RD::get_singleton()->compute_list_end();
 
+	RENDER_TIMESTAMP("Microgeometry RT Prepare");
 	ERR_FAIL_COND_V(!_prepare_micro_geometry(state, p_render_data, micro_tasks, micro_rt_tasks, micro_levels), nullptr);
+	RENDER_TIMESTAMP("RT Material Pipeline");
 	ERR_FAIL_COND_V(!update_material_pipeline(state), nullptr);
+	RENDER_TIMESTAMP("RT Finalize Buffers");
 	finalize_buffers(state);
 	ERR_FAIL_COND_V(!build_acceleration_structures(state, dirty_blas_list, dirty_blas_update_list), nullptr);
+	RENDER_TIMESTAMP("RT Decals and Lights");
 	state->decal_count = 0;
 	state->decal_generation = 0;
 	if (p_render_data->rt_decals && p_render_data->decals) {

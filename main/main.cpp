@@ -80,6 +80,7 @@
 #include "servers/rendering/rendering_device.h"
 #include "servers/rendering/rendering_server.h"
 #include "servers/rendering/rendering_server_default.h"
+#include "servers/rendering/rendering_server_globals.h"
 #include "servers/text/text_server.h"
 #include "servers/text/text_server_dummy.h"
 
@@ -3649,7 +3650,8 @@ Error Main::setup2(bool p_show_boot_logo) {
 		//rendering_server->call_set_use_vsync(OS::get_singleton()->_use_vsync);
 		rendering_server->set_render_loop_enabled(!disable_render_loop);
 
-		if (profile_gpu || (!editor && bool(GLOBAL_GET("debug/settings/stdout/print_gpu_profile")))) {
+		profile_gpu |= !editor && bool(GLOBAL_GET("debug/settings/stdout/print_gpu_profile"));
+		if (profile_gpu) {
 			rendering_server->set_print_gpu_profile(true);
 		}
 
@@ -5143,6 +5145,7 @@ bool Main::iteration() {
 	}
 
 	uint64_t process_begin = OS::get_singleton()->get_ticks_usec();
+	const uint64_t profile_main_simulation = process_begin - ticks;
 
 	GodotProfileZoneGrouped(_profile_zone, "process");
 	if (OS::get_singleton()->get_main_loop()->process(process_step * time_scale)) {
@@ -5164,7 +5167,9 @@ bool Main::iteration() {
 	}
 
 	GodotProfileZoneGrouped(_profile_zone, "RenderingServer::sync");
+	const uint64_t profile_main_sync_begin = profile_gpu ? OS::get_singleton()->get_ticks_usec() : 0;
 	RenderingServer::get_singleton()->sync(); //sync if still drawing from previous frames.
+	const uint64_t profile_main_draw_begin = profile_gpu ? OS::get_singleton()->get_ticks_usec() : 0;
 
 	GodotProfileZoneGrouped(_profile_zone, "RenderingServer::draw");
 	const bool has_pending_resources_for_processing = RD::get_singleton() && RD::get_singleton()->has_pending_resources_for_processing();
@@ -5187,6 +5192,7 @@ bool Main::iteration() {
 	}
 
 	process_ticks = OS::get_singleton()->get_ticks_usec() - process_begin;
+	const uint64_t profile_main_draw_end = profile_gpu ? OS::get_singleton()->get_ticks_usec() : 0;
 	process_max = MAX(process_ticks, process_max);
 	uint64_t frame_time = OS::get_singleton()->get_ticks_usec() - ticks;
 
@@ -5207,6 +5213,29 @@ bool Main::iteration() {
 
 	frames++;
 	Engine::get_singleton()->_process_frames++;
+	if (profile_gpu) {
+		static uint64_t profile_main_from = 0;
+		static uint64_t profile_main_frames = 0;
+		static uint64_t profile_main_usec[5] = {};
+		if (profile_main_from == 0) {
+			profile_main_from = ticks;
+		}
+		profile_main_frames++;
+		profile_main_usec[0] += profile_main_simulation;
+		profile_main_usec[1] += profile_main_sync_begin - process_begin;
+		profile_main_usec[2] += profile_main_draw_begin - profile_main_sync_begin;
+		profile_main_usec[3] += profile_main_draw_end - profile_main_draw_begin;
+		profile_main_usec[4] += OS::get_singleton()->get_ticks_usec() - profile_main_draw_end;
+		if (ticks - profile_main_from >= 1000000) {
+			const double divisor = double(profile_main_frames) * 1000.0;
+			print_line(vformat("MAIN CPU PROFILE (frame means, render threaded %s): simulation %.3fms, process/navigation %.3fms, render sync %.3fms, render draw %.3fms, script/audio tail %.3fms", RSG::threaded, profile_main_usec[0] / divisor, profile_main_usec[1] / divisor, profile_main_usec[2] / divisor, profile_main_usec[3] / divisor, profile_main_usec[4] / divisor));
+			profile_main_from = ticks;
+			profile_main_frames = 0;
+			for (uint64_t &time : profile_main_usec) {
+				time = 0;
+			}
+		}
+	}
 
 	if (frame > 1000000) {
 		// Wait a few seconds before printing FPS, as FPS reporting just after the engine has started is inaccurate.

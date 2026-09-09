@@ -658,6 +658,7 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 		micro_geometry_index_array = RD::get_singleton()->index_array_create(micro_geometry_index_buffer, 0, 384);
 	}
 	Vector<RID> dependencies;
+	RENDER_TIMESTAMP("Microgeometry Raster Dependencies");
 	raytracing->get_persistent_buffer_dependencies(dependencies);
 	snapshot_key.push_back(parameters.scenario);
 	snapshot_key.push_back(parameters.layer_mask);
@@ -675,6 +676,7 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 		memdelete(frozen);
 		pass->render_buffers->frozen_micro_geometry = nullptr;
 	}
+	RENDER_TIMESTAMP("Microgeometry Raster Allocate");
 	pass->gpu = micro_geometry->create(tasks, bins, parameters, levels, sizeof(SceneState::InstanceData), raytracing->get_persistent_instance_buffer(), raytracing->get_persistent_surface_buffer(), dependencies);
 	if (pass->gpu && camera_pass && p_render_data->render_buffers->is_micro_geometry_debug_freeze()) {
 		pass->gpu->snapshot_key = snapshot_key;
@@ -706,6 +708,7 @@ void RenderForwardClustered::_select_micro_geometry(MicroGeometryRasterPass *p_p
 	if (!p_pass || p_pass->dispatched) {
 		return;
 	}
+	RENDER_TIMESTAMP("Microgeometry Raster Selection Prepare");
 	p_pass->gpu->persistent_instances = raytracing->get_persistent_instance_buffer();
 	p_pass->gpu->persistent_surfaces = raytracing->get_persistent_surface_buffer();
 	p_pass->gpu->dependencies.clear();
@@ -1137,10 +1140,12 @@ void RenderForwardClustered::_render_list_with_draw_list(RenderListParameters *p
 	_select_micro_geometry(p_params->micro_geometry);
 	RD::FramebufferFormatID fb_format = RD::get_singleton()->framebuffer_get_format(p_framebuffer);
 	p_params->framebuffer_format = fb_format;
+	RENDER_TIMESTAMP("Raster Initial Draw");
 
 	RD::DrawListID draw_list = RD::get_singleton()->draw_list_begin(p_framebuffer, p_draw_flags, p_clear_color_values, p_clear_depth_value, p_clear_stencil_value, p_region);
 	_render_list(draw_list, fb_format, p_params, 0, p_params->element_count);
 	RD::get_singleton()->draw_list_end();
+	RENDER_TIMESTAMP("Raster Initial Draw Complete");
 	MicroGeometryRasterPass *pass = p_params->micro_geometry;
 	if (pass && !pass->gpu->frozen && pass->render_buffers && p_params->view_count == 1) {
 		auto &pyramid = pass->render_buffers->micro_geometry_depth;
@@ -1151,12 +1156,14 @@ void RenderForwardClustered::_render_list_with_draw_list(RenderListParameters *p
 		if ((pass->gpu->data.flags & 4) != 0) {
 			pass->gpu->data.hzb_mips = pyramid.levels.size();
 			micro_geometry->recover(pass->gpu, pyramid.texture);
+			RENDER_TIMESTAMP("Microgeometry Raster Recovery Draw");
 			RD::DrawListID recovery_list = RD::get_singleton()->draw_list_begin(p_framebuffer, RD::DRAW_DEFAULT_ALL, Vector<Color>(), 0, 0, p_region);
 			RD::get_singleton()->draw_list_bind_uniform_set(recovery_list, render_base_uniform_set, SCENE_UNIFORM_SET);
 			RD::get_singleton()->draw_list_bind_uniform_set(recovery_list, p_params->render_pass_uniform_set, RENDER_PASS_UNIFORM_SET);
 			RD::get_singleton()->draw_list_bind_uniform_set(recovery_list, scene_shader.default_vec4_xform_uniform_set, TRANSFORMS_UNIFORM_SET);
 			_render_micro_geometry(recovery_list, fb_format, p_params);
 			RD::get_singleton()->draw_list_end();
+			RENDER_TIMESTAMP("Microgeometry Raster Recovery Draw Complete");
 			pass->render_buffers->commit_rtxdi_surface();
 			micro_geometry->build_depth_pyramid(pyramid, depth, size);
 		}
@@ -1170,11 +1177,13 @@ void RenderForwardClustered::_render_list_with_draw_list(RenderListParameters *p
 			}
 		}
 		if (pass->render_buffers && !pass->render_buffers->micro_geometry_stats_pending) {
+			RENDER_TIMESTAMP("Microgeometry Raster Statistics Readback");
 			Ref<RenderBufferDataForwardClustered> data(pass->render_buffers);
 			data->micro_geometry_stats_pending = true;
 			if (RD::get_singleton()->buffer_get_data_async(pass->gpu->statistics, callable_mp_static(&RenderBufferDataForwardClustered::micro_geometry_stats_received).bind(data, data->micro_geometry_stats_epoch)) != OK) {
 				data->micro_geometry_stats_pending = false;
 			}
+			RENDER_TIMESTAMP("Microgeometry Raster Statistics Readback Complete");
 		}
 	}
 }
@@ -1448,7 +1457,9 @@ void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, con
 	}
 
 	//fill list
+	RENDER_TIMESTAMP("Microgeometry Raster Prepare");
 	rl->last_micro_pass = _prepare_micro_geometry(p_render_data, p_pass_mode);
+	RENDER_TIMESTAMP("Raster Render List Fill");
 	if (rl->last_micro_pass) {
 		rl->micro_passes.push_back(rl->last_micro_pass);
 	}
@@ -4861,6 +4872,7 @@ void RenderForwardClustered::_mesh_generate_all_pipelines_for_surface_cache(Geom
 }
 
 void RenderForwardClustered::_update_dirty_geometry_instances() {
+	RENDER_TIMESTAMP("Geometry Dirty Instances");
 	while (geometry_instance_dirty_list.first()) {
 		_geometry_instance_update(geometry_instance_dirty_list.first()->self());
 	}
@@ -4881,6 +4893,7 @@ void RenderForwardClustered::_update_dirty_geometry_instances() {
 		}
 		entry = next;
 	}
+	RENDER_TIMESTAMP("Geometry Persistent Upload");
 	while (instance_data_dirty_list.first()) {
 		GeometryInstanceForwardClustered *instance = instance_data_dirty_list.first()->self();
 		instance->instance_data_dirty_element.remove_from_list();
@@ -4888,7 +4901,9 @@ void RenderForwardClustered::_update_dirty_geometry_instances() {
 			raytracing->update_persistent_instance(instance);
 		}
 	}
+	RENDER_TIMESTAMP("Geometry Pipeline Update");
 	_update_dirty_geometry_pipelines();
+	RENDER_TIMESTAMP("Geometry Dirty Update Complete");
 }
 
 void RenderForwardClustered::_update_dirty_geometry_pipelines() {

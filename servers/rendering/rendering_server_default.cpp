@@ -74,6 +74,10 @@ void RenderingServerDefault::request_frame_drawn_callback(const Callable &p_call
 }
 
 void RenderingServerDefault::_draw(bool p_swap_buffers, double frame_step) {
+	const uint64_t profile_cpu_begin = print_gpu_profile ? OS::get_singleton()->get_ticks_usec() : 0;
+	if (RenderingDevice::get_singleton()) {
+		RenderingDevice::get_singleton()->begin_cpu_frame_profile(print_gpu_profile);
+	}
 	GodotProfileZoneGroupedFirst(_profile_zone, "rasterizer->begin_frame");
 	RSG::rasterizer->begin_frame(frame_step);
 
@@ -113,6 +117,7 @@ void RenderingServerDefault::_draw(bool p_swap_buffers, double frame_step) {
 
 	GodotProfileZoneGrouped(_profile_zone, "rasterizer->end_frame");
 	RSG::rasterizer->end_frame(p_swap_buffers);
+	const double profile_cpu_render_wall = print_gpu_profile ? double(OS::get_singleton()->get_ticks_usec() - profile_cpu_begin) / 1000.0 : 0.0;
 
 #ifndef XR_DISABLED
 	if (xr_server != nullptr) {
@@ -166,6 +171,19 @@ void RenderingServerDefault::_draw(bool p_swap_buffers, double frame_step) {
 
 	if (print_gpu_profile) {
 		GodotProfileZoneGrouped(_profile_zone, "gpu_profile");
+		static const char *const cpu_device_phases[RenderingDevice::CPU_PROFILE_MAX] = {
+			"CPU Device End Frame",
+			"CPU Device Execute Frame",
+			"CPU Device Frame Recycle Inclusive",
+			"CPU Device Fence Wait",
+			"CPU Device Download Copy",
+			"CPU Device Download Callbacks",
+		};
+		if (RenderingDevice::get_singleton()) {
+			for (uint32_t phase = 0; phase < RenderingDevice::CPU_PROFILE_MAX; phase++) {
+				print_cpu_profile_task_time[cpu_device_phases[phase]] += double(RenderingDevice::get_singleton()->get_cpu_frame_profile_usec(RenderingDevice::CPUProfilePhase(phase))) / 1000.0;
+			}
+		}
 		if (print_frame_profile_ticks_from == 0) {
 			print_frame_profile_ticks_from = OS::get_singleton()->get_ticks_usec();
 		}
@@ -178,6 +196,7 @@ void RenderingServerDefault::_draw(bool p_swap_buffers, double frame_step) {
 			}
 
 			double time = frame_profile[i + 1].gpu_msec - frame_profile[i].gpu_msec;
+			print_cpu_profile_task_time[name] += frame_profile[i + 1].cpu_msec - frame_profile[i].cpu_msec;
 
 			if (print_gpu_profile_task_time.has(name)) {
 				print_gpu_profile_task_time[name] += time;
@@ -194,15 +213,23 @@ void RenderingServerDefault::_draw(bool p_swap_buffers, double frame_step) {
 		print_frame_profile_frame_count++;
 		if (ticks_elapsed > 1000000) {
 			print_line("GPU PROFILE (total " + rtos(total_time) + "ms): ");
+			print_line(vformat("GPU TIMESTAMPS (count %d)", frame_profile.size()));
+			const double cpu_span = frame_profile.is_empty() ? 0.0 : frame_profile[frame_profile.size() - 1].cpu_msec;
+			print_line("CPU PROFILE (timestamp span " + rtos(cpu_span) + "ms, current render wall " + rtos(profile_cpu_render_wall) + "ms):");
 
 			float print_threshold = 0.01;
 			for (const KeyValue<String, float> &E : print_gpu_profile_task_time) {
 				double time = E.value / double(print_frame_profile_frame_count);
-				if (time > print_threshold) {
-					print_line("\t-" + E.key + ": " + rtos(time) + "ms");
+				double cpu_time = print_cpu_profile_task_time[E.key] / double(print_frame_profile_frame_count);
+				if (time > print_threshold || cpu_time > print_threshold) {
+					print_line("\t-" + E.key + ": " + rtos(time) + "ms (CPU " + rtos(cpu_time) + "ms)");
 				}
 			}
+			for (const char *phase : cpu_device_phases) {
+				print_line("\t-" + String(phase) + ": " + rtos(print_cpu_profile_task_time[phase] / double(print_frame_profile_frame_count)) + "ms");
+			}
 			print_gpu_profile_task_time.clear();
+			print_cpu_profile_task_time.clear();
 			print_frame_profile_ticks_from = OS::get_singleton()->get_ticks_usec();
 			print_frame_profile_frame_count = 0;
 		}

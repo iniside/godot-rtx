@@ -4,6 +4,7 @@
 #include "servers/rendering/renderer_rd/storage_rd/mesh_storage.h"
 #include "servers/rendering/renderer_rd/storage_rd/texture_storage.h"
 #include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
+#include "servers/rendering/rendering_server_globals.h"
 
 using namespace RendererSceneRenderImplementation;
 
@@ -159,6 +160,8 @@ void MicroGeometrySelection::_dispatch(Pass *p_pass, uint32_t p_mode, uint32_t p
 
 void MicroGeometrySelection::select(Pass *p_pass, RID p_hzb) {
 	ERR_FAIL_NULL(p_pass);
+	const bool rt = (p_pass->data.flags & 32) != 0;
+	RENDER_TIMESTAMP(rt ? "Microgeometry RT Selection Reset" : "Microgeometry Raster Selection Reset");
 	p_pass->requests = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage()->feedback_begin(p_pass->feedback);
 	p_pass->feedback_active = p_pass->requests.is_valid();
 	if (!p_pass->feedback_active) {
@@ -171,26 +174,35 @@ void MicroGeometrySelection::select(Pass *p_pass, RID p_hzb) {
 	RD::get_singleton()->buffer_clear(p_pass->counts, 0, MAX(16u, p_pass->data.bin_count * 4));
 	RD::get_singleton()->buffer_clear(p_pass->initial_counts, 0, MAX(16u, p_pass->data.bin_count * 4));
 	RD::get_singleton()->buffer_clear(p_pass->capacity_state, 0, 16);
+	RENDER_TIMESTAMP(rt ? "Microgeometry RT Task Init" : "Microgeometry Raster Task Init");
 	_dispatch(p_pass, 0, p_pass->data.task_count, p_hzb);
 	if (!(p_pass->data.flags & 8)) {
+		RENDER_TIMESTAMP(rt ? "Microgeometry RT Group Evaluate" : "Microgeometry Raster Group Evaluate");
 		_dispatch(p_pass, 1, p_pass->data.group_work, p_hzb);
+		RENDER_TIMESTAMP(rt ? "Microgeometry RT DAG Resolve" : "Microgeometry Raster DAG Resolve");
 		for (uint32_t depth = p_pass->levels; depth > 0; depth--) {
 			p_pass->data.level = depth - 1;
 			_dispatch(p_pass, 2, p_pass->data.group_work, p_hzb);
 		}
+		RENDER_TIMESTAMP(rt ? "Microgeometry RT Cluster Count" : "Microgeometry Raster Cluster Count");
 		_dispatch(p_pass, 3, p_pass->data.cluster_work, p_hzb);
+		RENDER_TIMESTAMP(rt ? "Microgeometry RT Capacity Check" : "Microgeometry Raster Capacity Check");
 		_dispatch(p_pass, 4, p_pass->data.bin_count, p_hzb);
 	}
+	RENDER_TIMESTAMP(rt ? "Microgeometry RT Cluster Emit" : "Microgeometry Raster Cluster Emit");
 	RD::get_singleton()->buffer_clear(p_pass->counts, 0, MAX(16u, p_pass->data.bin_count * 4));
 	_dispatch(p_pass, 5, p_pass->data.flags & 8 ? p_pass->data.coarse_work : p_pass->data.cluster_work, p_hzb);
 	RD::get_singleton()->draw_command_end_label();
+	RENDER_TIMESTAMP(rt ? "Microgeometry RT Selection Complete" : "Microgeometry Raster Selection Complete");
 }
 
 void MicroGeometrySelection::recover(Pass *p_pass, RID p_hzb) {
 	ERR_FAIL_NULL(p_pass);
+	RENDER_TIMESTAMP("Microgeometry Raster Recovery Select");
 	p_pass->recovered = true;
 	RD::get_singleton()->buffer_clear(p_pass->counts, 0, MAX(16u, p_pass->data.bin_count * 4));
 	_dispatch(p_pass, 6, p_pass->data.flags & 8 ? p_pass->data.coarse_work : p_pass->data.cluster_work, p_hzb);
+	RENDER_TIMESTAMP("Microgeometry Raster Recovery Select Complete");
 }
 
 void MicroGeometrySelection::update_frozen(Pass *p_pass) {
@@ -201,12 +213,15 @@ void MicroGeometrySelection::update_frozen(Pass *p_pass) {
 
 bool MicroGeometrySelection::freeze(Pass *p_pass) {
 	ERR_FAIL_NULL_V(p_pass, false);
+	RENDER_TIMESTAMP("Microgeometry Freeze Prepare");
 	if (p_pass->recovered) {
 		_dispatch(p_pass, 7, p_pass->data.bin_count, RID());
 	}
 	_dispatch(p_pass, 8, p_pass->selected_capacity, RID());
+	RENDER_TIMESTAMP("Microgeometry Freeze Readback");
 	Vector<uint8_t> counts = RD::get_singleton()->buffer_get_data(p_pass->counts);
 	Vector<uint8_t> selected = RD::get_singleton()->buffer_get_data(p_pass->selected);
+	RENDER_TIMESTAMP("Microgeometry Freeze Pinning");
 	ERR_FAIL_COND_V(counts.size() < int64_t(p_pass->data.bin_count) * 4 || selected.size() < int64_t(p_pass->selected_capacity) * int64_t(sizeof(MicroGeometrySelectedCluster)), false);
 	auto *storage = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage();
 	HashMap<RID, HashSet<uint32_t>> used;
@@ -232,10 +247,12 @@ bool MicroGeometrySelection::freeze(Pass *p_pass) {
 		}
 	}
 	p_pass->frozen = true;
+	RENDER_TIMESTAMP("Microgeometry Freeze Complete");
 	return true;
 }
 
 void MicroGeometrySelection::build_depth_pyramid(DepthPyramid &r_pyramid, RID p_depth, const Size2i &p_size) {
+	RENDER_TIMESTAMP("Microgeometry HZB");
 	Size2i size(Math::nearest_power_of_2_templated(p_size.x), Math::nearest_power_of_2_templated(p_size.y));
 	if (r_pyramid.texture.is_valid() && r_pyramid.size != size) {
 		RD::get_singleton()->free_rid(r_pyramid.texture);
@@ -269,6 +286,7 @@ void MicroGeometrySelection::build_depth_pyramid(DepthPyramid &r_pyramid, RID p_
 		RD::get_singleton()->compute_list_end();
 	}
 	RD::get_singleton()->draw_command_end_label();
+	RENDER_TIMESTAMP("Microgeometry HZB Complete");
 }
 
 RID MicroGeometrySelection::get_raster_uniform_set(Pass *p_pass, RID p_shader) {
