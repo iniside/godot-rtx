@@ -194,3 +194,51 @@ An additional 600-frame moving baseline without
 and shutdown. Receipt: `repair-baseline-moving-no-profile.receipt.json` in the
 original evidence root above. This elapsed process duration is not a steady-state
 frame-time measurement or an isolated profiler-overhead attribution.
+
+The owner explicitly excludes split screen and XR/VR support. Subsequent manual
+performance validation uses one game viewport; internal shadow/raster/RT passes
+and ordinary editor operation remain in scope. Earlier two-view captures are
+historical evidence, not a requirement to expand supported configurations.
+
+## Step 2 parallel GPU preparation
+
+Commit `984dccbd32` replaces serial per-mesh scans with tiled GPU work and a
+hierarchical scan. Transform finalization reads retained active counts without
+scanning membership. Candidate membership and counts swap together after BLAS
+build recording. Ordinary/double builds and fourteen Slang/SPIR-V variants pass;
+fresh exact/cumulative source review passes. Build and shader receipts live in
+`C:/Users/lukas/AppData/Local/Temp/godot-rendering-repair-step2-20260909/`.
+
+The double executable SHA256 is
+`b029f299b2839bcd39885925a257c10d2fd1dac74354c82f9f92274edf116203`;
+both precision binaries and DLLs are retained in `step2-bin` under the repair
+evidence root. `step2-comparison.json` summarizes single-view Vulkan captures at
+unchanged controls, 1280x720 and timestamp budget 2048. Old shader captures use
+the retained pre-Step-1 instrumented binary `e39298f9...`: whole-frame comparisons
+therefore cover Steps 1 and 2 together, not an isolated incremental Step 2 effect.
+
+| Median of last ten reported values | Older still | New still | Older moving | New moving |
+| --- | ---: | ---: | ---: | ---: |
+| GPU total, last-frame observations (ms) | 38.822 | 2.957 | 39.445 | 4.906 |
+| Render wall, current-frame observations (ms) | 38.003 | 3.870 | 126.598 | 9.311 |
+| RT Prepare Cut, batch mean (ms GPU) | 12.246 | 0.0131 | 12.953 | 0.0120 |
+
+Old captures contain 600 frames; extended new captures contain 3000, providing
+15 still and 37 moving reporting windows. These are not individual-frame
+percentiles, and render wall is not main active CPU. The publish marker is
+absent in the new console output; absence is not a zero-time measurement.
+New moving transform observations have median 0.00268 ms among their last ten
+reported batches. No simultaneous build ran during these captures. Both short
+new runs and all table runs exit 0 without timeout or Godot `ERROR:` lines;
+existing shader-parser diagnostics and fixture material warning remain.
+
+The bounded native `step2-lifetime` capture also exits 0 without timeout or
+Godot `ERROR:` lines. Retained loaded/unloaded screenshots show 4079 versus one
+resident page and 707709 versus 58 KiB AS storage. Reload reconstructs geometry;
+freeze/unfreeze and maximize/restore complete. The already performed second-view
+portion is historical evidence only and is excluded from subsequent acceptance.
+Additional user window input occurred during this run; the later far-plane value
+is not attributed to automation. Events and screenshots are retained separately
+from profiling captures. This is resource-lifetime evidence, not appearance or
+an exact RID-generation-reuse claim. Step 3 dirty-input work is in progress;
+main/worker architecture changes remain pending.

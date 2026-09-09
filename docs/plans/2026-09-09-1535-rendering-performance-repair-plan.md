@@ -23,8 +23,10 @@ compute is a separate final, measured extension, not a prerequisite for CPU jobs
 Preserve imported meshlets/DAG and CLAS, nondeforming microgeometry, rigid and
 MultiMesh motion, existing deformables, simple RT error/offscreen controls,
 offscreen RT visibility, debug views and freeze semantics. No quality tuning,
-foliage, voxelization, new reflections, mesh format changes, replacement job
-system, new renderer, or automatic quality/importance algorithm. Appearance is
+foliage, voxelization, new reflections, split screen, XR/VR support, mesh format
+changes, replacement job system, new renderer, or automatic quality/importance
+algorithm. The owner explicitly excluded split screen and XR/VR during execution;
+manual validation uses one game viewport and normal editor operation. Appearance is
 the owner's decision. No automated tests are proposed or authorized.
 
 ## Evidence and existing authorities
@@ -291,6 +293,16 @@ matched before/after manual profiling at unchanged quality. Relevant failure
 classes: 1/4 for startup/settings/API compatibility, 2/3/7 for jobs/RID/GPU
 lifetimes, 5 for shader/backend/build closure, 6/8/9 for proof and scope.
 
+The owner additionally authorized a dense workload scene under
+`demos/rtxdi_manual` using `rawcontent/lucy.glb` and
+`rawcontent/thai_statuette.glb`, with at least 5000 instances of each mesh.
+Import both through the existing microgeometry importer and preserve the source
+files. Use shared imported mesh resources and separate static object instances,
+placed densely with a single camera, to exercise CPU preparation and GPU
+selection. Keep setup out of steady-state measurements. This fixture is a
+separate delegated task; its source, import evidence and measured instance count
+require build/source review and proof audit. Do not add automated tests.
+
 Use `demos/rtxdi_manual/microgeometry/scene.tscn` with still and moving cases,
 timestamp budget 2048 and recorded executable/source hashes. Add only needed
 native profiler counters: invalidations/rebuilds, helper dependency work, job
@@ -304,7 +316,7 @@ main active/transfer time separately from backpressure, render/worker CPU time,
 GPU time and frame latency. Aim for sub-ms main rendering transfer on this scene;
 do not promise an arbitrary total GPU target before fixes are measured.
 
-Exercise already available rigid/MultiMesh motion, two viewports, shadows,
+Exercise already available rigid/MultiMesh motion, a single viewport, shadows,
 deformable fallback, freeze, residency/reload, resize and shutdown as manual
 lifetime checks. Preserve corrected empty/nonempty and far-plane behavior.
 Do not restart the paused appearance/PCK/emissive quality verification matrix.

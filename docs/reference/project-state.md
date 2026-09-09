@@ -34,7 +34,10 @@ Earlier overall GPU/frame comparisons lack controlled workload conditions.
 Bounded native unload/reload, two-view, freeze and resize validation exits 0;
 Step 1 artifact-audit documentation corrections await a fresh check.
 Step 2 parallel GPU preparation is committed at `984dccbd32`; ordinary/double
-builds and fresh source review pass. Real Vulkan measurement is in progress.
+builds and fresh source review pass. Single-view Vulkan captures after Steps 1-2
+report GPU medians 2.96 ms still and 4.91 ms moving, versus 38.82/39.44 ms with
+the retained pre-repair shader binary; see timing semantics and receipt limits
+in the measurement document. Step 3 dirty-input work is in progress.
 Threading changes remain pending.
 Actual dragon import/reimport passed in 82.66/67.04 seconds, yielding 17 DAG
 levels and 9737 pages with byte-identical reused `.mgdata`; the diagnostic
@@ -42,7 +45,8 @@ reimport command had shutdown warnings. Import evidence uses an immutable
 intermediate binary, not final GPU runtime proof. Selected runtime checks and ordinary/double/template builds passed on dirty
 Step 6 sources; emissive publication, PCK runtime and final review remain open. Owner scope:
 nondeforming geometry including rigid movement/instancing; preserve existing
-deformations; exclude foliage/voxels and new reflections. RT simplification uses
+deformations; exclude foliage/voxels, new reflections, split screen and XR/VR
+support. Further manual performance validation uses one game viewport. RT simplification uses
 simple error control plus an offscreen multiplier, without light/receiver/probe
 importance algorithms. Implementation remains authorized and incomplete.
 
