@@ -592,3 +592,153 @@ RT gather CPU is 11.957 ms, raster preparation 4.041 ms and main admission wait
 35.751 ms. These are short-run reported means, not a matched speedup or a
 controlled regression against the longer Step 4 orbit. No performance acceptance
 is claimed; warm comparison and remaining preparation work are outstanding.
+
+
+### Existing page worker boundary, source inspection
+
+Read-only inspection at `51e3d39392` confirms `_read_page()` in
+`micro_geometry_storage.cpp:39` already executes as a native worker task (`:666`).
+`MicroGeometryData::read_page():411` performs decompression and index/identity
+validation there. `read_encoded_page():389` serializes shared FileAccess seek/read
+under the source mutex, with SHA validation/decompression outside that lock.
+The remaining host payload in `_build_page_clas():137` constructs per-cluster
+TriangleInfo and build totals on the owner. The Step 5 author received this
+concrete extension point; no replacement streaming scheduler is needed.
+
+ReadTask retains its source Ref independently of Asset lifetime. `release():425`
+invalidates the full Asset RID; update consumes or discards completed results
+and joins/deletes the task. The destructor at `:767` joins all reads before
+releasing assets/pool. Extended page payload must preserve these boundaries
+and keep worker jobs independent of GPU/shader resources. Navigation used
+clangd find/refs, actual sources and scoped history; no new runtime claim.
+
+
+Intermediate build04 passes ordinary editor/console compilation in 27.91 seconds.
+Its seven-source held snapshot (`step5-build04-source.json`, `step5-build04.patch`)
+includes additional RT host preparation and canvas batch payload jobs, before
+canvas tree-cull extraction. Pinned ordinary SHA256 is
+`49fa6e6653911f1ce297383624b90b5b99cfd4e4755a36c4a0f4e3fe370503db`.
+`step5-build04-gallery-smoke` runs 300 native Vulkan gallery iterations with
+hybrid NRD at 1280x720 and exits 0 without timeout or ERROR. No visual quality,
+final parallelism or speedup acceptance is claimed from this bounded run.
+
+
+Intermediate build07 passes ordinary editor/console compilation in 36.67 seconds.
+Its thirteen-source held snapshot is retained in `step5-build07-source.json`
+and `step5-build07.patch`; ordinary SHA256 is
+`37afc6293c10b4ccbea5471de8377c7f937d597fc0c6cd3c7005892182e48530`.
+`step5-build07-micro-smoke` runs 300 native moving microgeometry iterations and
+exits 0 without timeout or ERROR, exercising the new canvas/page payload paths.
+The existing warnings remain; no final Step 5 acceptance is claimed.
+
+The owner subsequently requested live dense-scene counters. The HUD now updates
+FPS/wall-frame milliseconds and completed viewport CPU/GPU milliseconds at 4 Hz,
+in still and orbit modes. CPU is labelled as rendering time including waits,
+not main active CPU. No population scan or new engine API is added. Source inputs
+and patch are `step5-dense-hud-inputs.json` and `step5-dense-hud.patch`.
+`step5-dense-hud-capture` uses pinned build07, 600 still iterations at fixed delta,
+and exits 0 without timeout or ERROR; PNG save returns 0. Actual PNG inspection
+confirms readable, non-overlapping counters and the 5000+5000 population label.
+The visible 32.7 FPS / 30.54 ms frame / 28.80 ms CPU / 8.42 ms GPU is an
+illustrative intermediate sample, not final performance acceptance.
+
+`step5-baseline-fixed-dense` completed 1500 orbit iterations on final Step 4
+without ERROR or timeout, using `--fixed-fps 60 --print-fps --gpu-profile`.
+This controls the trajectory's simulation delta but predates the new HUD;
+final matched comparison must use the same HUD inputs on both pinned versions.
+
+
+HUD checkpoint is `1f339891f9`. The refreshed same-HUD Step 4 baseline
+`step5-baseline-hud-fixed-dense` completes 1500 fixed-delta orbit iterations,
+exit 0 without ERROR/timeout. Its last-ten medians are main transfer 0.037 ms,
+admission/callback active 0.012 ms, admission wait 28.753 ms, current render wall
+26.9185 ms, RT gather window mean 7.1057 ms, raster preparation window mean
+4.4077 ms, GPU last-frame sample 9.7725 ms and reported FPS 34. The metrics JSON
+keeps these differing timing semantics separate. The final comparison below
+supersedes the pending status of this baseline.
+
+Build10 ordinary SHA256
+`7196104c64918d1e5fb9b34b6326615ea82b867ff5848ef32802855dfa1b2023`
+and its thirteen-source manifest/patch retain the initial camera/RT/shadow
+scheduling boundary. `step5-build10-dense-concurrency` completes 300 fixed-delta
+orbit iterations, exit 0 without ERROR/timeout. All 10000 instances remain
+admitted, with two assets, 2-3 shared cuts/BLAS and zero page-build delta at the
+last reports. This is bounded execution, not measured cross-pass overlap.
+
+Build12 adds sampled native worker rows; ordinary SHA256 is
+`67f16c34df3211c64a0c512415939734e3a5fae76fc6506e61c6a106efa16a57`.
+`step5-build12-worker-windows` completes 600 fixed-delta orbit iterations with
+profiling, exit 0 without ERROR/timeout. Its 855 sampled rows show worker IDs
+different from coordinator 7 throughout. Peak overlapping elapsed job intervals
+are 40 for RT discovery, 40 for RT assembly, 19 for raster lists and 22 for cull.
+These are elapsed intervals including possible preemption, not counts of cores
+continuously executing or summed active CPU. The tiny HUD has single-interval
+canvas batches. `step5-build12-worker-windows-observations.json` retains stage
+counts and worker identities. Same-frame sampled camera-list versus RT discovery/
+assembly intervals do not overlap; source scheduling alone does not close this
+runtime observation. Dirty-record, viewport canvas and selector host preparation
+subsequently landed in the candidate below; performance acceptance remains open.
+
+
+## Step 5 candidate: performance regression and source correction required
+
+Frozen engine candidate is `8563b9a8e759e4469df0ed67b6de7716b688b8cd`,
+with cumulative baseline `9f42b239e3e28267470a263b201d9b3b42f00435`.
+Ordinary build18, double build01 and template-debug build01 complete successfully
+(30.62, 63.21 and 55.49 seconds). The retained `step5-final-source.json` records
+raw built-source hashes; `step5-final-commit-map.json` maps all sixteen files to
+Git blobs after LF normalization. Final ordinary/double/template binary SHA256:
+
+- `55f54824bbe6395ac5ee64d4d3858a435b4b7e7ce11fff48ed976a7fcf69dd83`
+- `39ee649f7535ab34af90426a021742a9f896a914ff1997098fb8b6e6ef92a00c`
+- `f883b851d53c80c562890251734a01271b3e0d93fb93002d4c2599a2ad0b52e9`
+
+`step5-final-hud-fixed-dense` completes 1500 native Vulkan orbit iterations,
+exit 0 without ERROR or timeout. It uses the same HUD, 1280x720 resolution,
+no-vsync, fixed simulation delta 60 and profiling arguments as the retained
+Step 4 baseline. Reported last-ten medians are:
+
+| Measurement | Step 4 baseline | Step 5 candidate |
+| --- | ---: | ---: |
+| Main transfer window mean, ms | 0.037 | 0.024 |
+| Admission/callback active window mean, ms | 0.012 | 0.0095 |
+| Admission wait window mean, ms | 28.753 | 35.968 |
+| Main process/navigation window mean, ms | 0.1495 | 0.1215 |
+| RT gather window mean, ms | 7.1057 | 11.3081 |
+| Raster preparation window mean, ms | 4.4077 | 4.2709 |
+| Current render wall sample, ms | 26.9185 | 34.6465 |
+| GPU last-frame sample, ms | 9.7725 | 7.1445 |
+| Reported FPS window | 34 | 27.5 |
+
+These are not frame percentiles or summed active worker CPU. GPU samples do
+not establish an isolated GPU gain. The CPU/frame regression prevents accepting
+Step 5 merely because preparation now executes on workers.
+
+A matched second pair removes only `--gpu-profile`, retaining the HUD viewport
+timestamps, `--print-fps`, fixed delta and all other scene/run arguments.
+`step5-baseline-hud-fixed-dense-no-profile` and
+`step5-final-hud-fixed-dense-no-profile` both exit 0 without ERROR or timeout.
+Median of their last ten reported FPS windows is **40 versus 29**. Thus detailed
+profiling overhead alone does not explain the regression. Exact samples and
+receipt outcomes are retained in `step5-no-profile-comparison.json`, alongside
+both logs and receipts. This pair does not provide unprofiled stage CPU timings.
+
+Fresh source review round 1 by `repair_step5_review1` returns **REJECT** on the
+frozen exact/cumulative range. Conventional light/decal gathering, sorting and
+host packing remain on the render coordinator: the active camera call at
+`render_forward_clustered.cpp:2759` reaches `_pre_opaque_render` and synchronous
+storage helpers at `:2340-2341`; `light_storage.cpp:768,986,1003` and
+`texture_storage.cpp:4270` contain the preparation loops. Move their CPU work to
+workers while retaining resource resolution, publication and uploads at their
+owner. No separate concrete race/lifetime defect was established by that review.
+This omission and the measured regression remain unresolved; they are not
+asserted to have the same cause.
+
+The HUD itself is committed at `1f339891f9` and has the native visual evidence
+above. Its independent named proof audit, Step 4 proof audit and final Step 5
+proof audit remain pending. The harness rejects both resuming the implementation
+author and spawning a fresh correction context with `agent thread limit reached`,
+even after source review completes. No inline threading rewrite bypasses the
+required separate-context implementation rule. No automated tests ran.
+Step 6 worker command recording has not started; Step 7 async compute remains
+conditional on measured useful overlap after Step 6.
