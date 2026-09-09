@@ -392,7 +392,17 @@ Error MicroGeometryData::save(const String &p_path) const {
 	if (FileAccess::exists(p_path)) {
 		Ref<MicroGeometryData> existing;
 		if (load(p_path, existing) == OK && existing->get_content_id() == get_content_id()) {
-			return OK;
+			bool valid = true;
+			for (int i = 0; i < metadata.pages.size(); i++) {
+				Vector<uint8_t> encoded;
+				if (existing->read_encoded_page(i, encoded) != OK) {
+					valid = false;
+					break;
+				}
+			}
+			if (valid) {
+				return OK;
+			}
 		}
 	}
 	Vector<uint8_t> manifest = encode_manifest();
