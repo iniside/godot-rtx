@@ -4503,6 +4503,7 @@ void RenderForwardClustered::GeometryInstanceForwardClustered::set_rt_procedural
 	} else if (rt_procedural) {
 		_free_procedural_state();
 	}
+	_mark_instance_data_dirty();
 }
 
 void RenderForwardClustered::GeometryInstanceForwardClustered::set_rt_procedural_bounds(const Vector<float> &p_aabb_data, bool p_expose_bounds) {
@@ -4512,6 +4513,7 @@ void RenderForwardClustered::GeometryInstanceForwardClustered::set_rt_procedural
 	}
 	s->aabb_data = p_aabb_data;
 	s->expose_bounds = p_expose_bounds;
+	_mark_instance_data_dirty();
 }
 
 void RenderForwardClustered::GeometryInstanceForwardClustered::_free_procedural_state() {

@@ -1565,6 +1565,10 @@ void RenderRaytracing::update_procedural_blas(RTProceduralState *p_state, LocalV
 }
 
 RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t p_material_invalidation_counter) {
+	if (!bindless_block->is_initialized()) {
+		bindless_block->initialize(RD::get_singleton());
+	}
+
 	// Static default material for invalid/null materials
 	static RTMaterialData s_default_mat;
 	static bool s_default_mat_initialized = false;
