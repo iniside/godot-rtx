@@ -552,7 +552,7 @@ struct RTMicroGeometryBuild {
 	Vector<RTMicroGeometryTask> task_data;
 	Vector<ScanLevel> scan_levels;
 	uint32_t tile_work = 0;
-	uint32_t selected_work = 0;
+	uint32_t group_work = 0;
 	Vector<RID> assets;
 	Vector<RTMicroGeometryPin> pins;
 	Vector<RTMicroGeometryPin> candidate_pins;

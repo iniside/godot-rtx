@@ -450,11 +450,8 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 	const bool camera_pass = p_pass == PASS_MODE_RTXDI_SURFACE && p_render_data->render_buffers.is_valid();
 	MicroGeometryRasterPass *pass = memnew(MicroGeometryRasterPass);
 	Vector<MicroGeometrySelection::Task> tasks;
-	Vector<uint64_t> coarse_counts;
-	Vector<uint64_t> possible_counts;
 	Vector<uint64_t> snapshot_key;
 	MicroGeometrySelection::Parameters parameters;
-	uint64_t group_work = 0, cluster_work = 0, coarse_work = 0;
 	uint32_t levels = 0;
 	auto *storage = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage();
 	auto append_surface = [&](GeometryInstanceSurfaceDataCache *surface) {
@@ -500,8 +497,6 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 		}
 		if (bin_index == pass->bins.size()) {
 			pass->bins.push_back(bin);
-			coarse_counts.push_back(0);
-			possible_counts.push_back(0);
 		}
 		const uint64_t coarse = metadata.coarse_cluster_count;
 		uint32_t instances = record.multimesh_address != 0 ? record.multimesh_count : 1;
@@ -517,9 +512,6 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 			task.indirect_command = RD::get_singleton()->buffer_get_device_address(commands) + uint64_t(surface->surface_index) * sizeof(uint32_t) * RendererRD::MeshStorage::INDIRECT_MULTIMESH_COMMAND_STRIDE;
 			pass->task_dependencies.push_back(commands);
 		}
-		task.group_offset = group_work;
-		task.cluster_offset = cluster_work;
-		task.coarse_offset = coarse_work;
 		task.group_count = metadata.groups.size();
 		task.cluster_count = metadata.clusters.size();
 		task.coarse_count = coarse;
@@ -548,11 +540,6 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 			task.gi_offset = probes[0] | (probes[1] << 16);
 			task.flags |= INSTANCE_DATA_FLAG_USE_VOXEL_GI;
 		}
-		group_work += uint64_t(task.group_count) * instances;
-		cluster_work += uint64_t(task.cluster_count) * instances;
-		coarse_work += coarse * instances;
-		coarse_counts.write[bin_index] += coarse * instances;
-		possible_counts.write[bin_index] += uint64_t(task.cluster_count) * instances;
 		levels = MAX(levels, uint32_t(metadata.roots.size()));
 		tasks.push_back(task);
 		const auto &surface_record = raytracing->persistent_surfaces[uint32_t(task.surface) - 1].data;
@@ -584,37 +571,16 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 		memdelete(pass->render_buffers->camera_micro_geometry);
 		pass->render_buffers->camera_micro_geometry = nullptr;
 	}
-	if (tasks.is_empty() || group_work > UINT32_MAX || cluster_work > UINT32_MAX || coarse_work > UINT32_MAX) {
+	if (tasks.is_empty()) {
 		if (pass->render_buffers) {
 			pass->render_buffers->micro_geometry_clusters = 0;
 			pass->render_buffers->micro_geometry_triangles = 0;
 			pass->render_buffers->micro_geometry_stats_epoch++;
 			pass->render_buffers->micro_geometry_stats_pending = false;
 		}
-		if (!tasks.is_empty()) {
-			ERR_PRINT("Microgeometry traversal address range exhausted.");
-		}
 		memdelete(pass);
 		return nullptr;
 	}
-	Vector<MicroGeometrySelection::Bin> bins;
-	uint64_t offset = 0;
-	for (uint32_t index = 0; index < pass->bins.size(); index++) {
-		uint64_t extra = MIN(possible_counts[index] - coarse_counts[index], uint64_t(MicroGeometrySelection::EXTRA_SELECTED_CLUSTERS) * possible_counts[index] / MAX(uint64_t(1), cluster_work));
-		MicroGeometrySelection::Bin bin;
-		bin.offset = offset;
-		bin.capacity = coarse_counts[index] + extra;
-		bins.push_back(bin);
-		offset += bin.capacity;
-	}
-	if (offset > UINT32_MAX / sizeof(MicroGeometrySelectedCluster)) {
-		ERR_PRINT("Microgeometry resident coarse cut exceeds the draw buffer limit.");
-		memdelete(pass);
-		return nullptr;
-	}
-	parameters.group_work = group_work;
-	parameters.cluster_work = cluster_work;
-	parameters.coarse_work = coarse_work;
 	if (p_render_data->scene_data->view_count == 1) {
 		parameters.flags |= 2;
 	}
@@ -669,7 +635,9 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 			pass->owns_gpu = false;
 			parameters.task_count = retained->data.task_count;
 			parameters.bin_count = retained->data.bin_count;
-			parameters.flags |= retained->data.flags & 8;
+			parameters.queue_work = retained->data.queue_work;
+			parameters.record_work = retained->data.record_work;
+			parameters.unit_count = retained->data.unit_count;
 			retained->data = parameters;
 			return pass;
 		}
@@ -677,7 +645,7 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 		pass->render_buffers->camera_micro_geometry = nullptr;
 	}
 	RENDER_TIMESTAMP("Microgeometry Raster Allocate");
-	pass->gpu = micro_geometry->create(tasks, bins, parameters, levels, sizeof(SceneState::InstanceData), raytracing->get_persistent_instance_buffer(), raytracing->get_persistent_surface_buffer(), dependencies);
+	pass->gpu = micro_geometry->create(tasks, pass->bins.size(), parameters, levels, sizeof(SceneState::InstanceData), raytracing->get_persistent_instance_buffer(), raytracing->get_persistent_surface_buffer(), dependencies);
 	if (pass->gpu && camera_pass) {
 		pass->gpu->freeze_requested = p_render_data->render_buffers->is_micro_geometry_debug_freeze();
 		pass->gpu->snapshot_key = snapshot_key;

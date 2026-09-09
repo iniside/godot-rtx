@@ -5,9 +5,6 @@
 struct SelectionTask {
 	uint64_t instance;
 	uint64_t surface;
-	uint group_offset;
-	uint cluster_offset;
-	uint coarse_offset;
 	uint group_count;
 	uint cluster_count;
 	uint coarse_count;
@@ -15,10 +12,29 @@ struct SelectionTask {
 	uint bin;
 	uint flags;
 	uint gi_offset;
+	uint pad;
 	uint64_t asset;
 	uint64_t indirect_command;
 };
 struct SelectionBin { uint offset; uint capacity; };
+struct SelectionUnit {
+	uint task;
+	uint ordinal;
+	uint queue_offset;
+	uint queue_capacity;
+	uint record_offset;
+	uint record_capacity;
+	uint hash_offset;
+	uint pad;
+};
+struct SelectionState {
+	uint queue_count;
+	uint candidate_count;
+	uint committed_count;
+	uint status;
+	uint rejected_count;
+	uint padding[3];
+};
 struct SelectionParameters {
 	float projection[16];
 	float previous_projection[16];
@@ -31,9 +47,9 @@ struct SelectionParameters {
 	uint64_t scenario;
 	uint layer_mask;
 	uint task_count;
-	uint group_work;
-	uint cluster_work;
-	uint coarse_work;
+	uint queue_work;
+	uint record_work;
+	uint unit_count;
 	uint bin_count;
 	uint level;
 	uint mode;
@@ -80,12 +96,12 @@ struct DrawCommand {
 [[vk::binding(2, 0)]] StructuredBuffer<SelectionBin> bins;
 [[vk::binding(3, 0)]] StructuredBuffer<MicroGeometryInstance> instances;
 [[vk::binding(4, 0)]] StructuredBuffer<MicroGeometryInstanceSurface> surfaces;
-[[vk::binding(5, 0)]] RWStructuredBuffer<uint> group_states;
-[[vk::binding(6, 0)]] RWStructuredBuffer<uint> rejected;
+[[vk::binding(5, 0)]] RWStructuredBuffer<uint2> sparse_states;
+[[vk::binding(6, 0)]] RWStructuredBuffer<uint2> rejected;
 [[vk::binding(7, 0)]] RWStructuredBuffer<uint> validity;
 [[vk::binding(8, 0)]] RWStructuredBuffer<uint> counts;
 [[vk::binding(9, 0)]] RWStructuredBuffer<uint> initial_counts;
-[[vk::binding(10, 0)]] RWStructuredBuffer<uint> capacity_state;
+[[vk::binding(10, 0)]] RWStructuredBuffer<SelectionState> unit_states;
 [[vk::binding(11, 0)]] RWStructuredBuffer<DrawCommand> commands;
 [[vk::binding(12, 0)]] RWStructuredBuffer<MicroGeometrySelectedCluster> selected;
 [[vk::binding(13, 0)]] RWStructuredBuffer<RasterInstance> raster_instances;
@@ -93,15 +109,55 @@ struct DrawCommand {
 [[vk::binding(15, 0)]] Texture2D<float> hzb;
 [[vk::binding(16, 0)]] RWStructuredBuffer<uint> statistics;
 
-uint task_for_work(uint p_index, uint p_kind) {
-	uint begin = 0, end = parameters.task_count;
+[[vk::binding(17, 0)]] StructuredBuffer<SelectionUnit> units;
+[[vk::binding(18, 0)]] RWStructuredBuffer<uint> frontier;
+[[vk::binding(19, 0)]] RWStructuredBuffer<uint2> candidate;
+[[vk::binding(20, 0)]] RWStructuredBuffer<uint2> committed;
+
+uint unit_for_work(uint p_index, bool p_queue) {
+	uint begin = 0, end = parameters.unit_count;
 	while (begin + 1 < end) {
 		uint middle = (begin + end) / 2;
-		SelectionTask task = tasks[middle];
-		uint offset = p_kind == 0 ? task.group_offset : (p_kind == 1 ? task.cluster_offset : task.coarse_offset);
+		SelectionUnit unit = units[middle];
+		uint offset = p_queue ? unit.queue_offset : unit.record_offset;
 		if (offset <= p_index) { begin = middle; } else { end = middle; }
 	}
 	return begin;
+}
+
+uint find_group(SelectionUnit p_unit, uint p_group) {
+	uint count = p_unit.queue_capacity * 2;
+	uint first = (p_group * 0x9e3779b9u) % count;
+	for (uint probe = 0; probe < count; probe++) {
+		uint slot = p_unit.hash_offset + (first + probe) % count;
+		uint key = sparse_states[slot].x;
+		if (key == p_group + 1) { return slot; }
+		if (key == 0) { break; }
+	}
+	return 0xffffffff;
+}
+
+void enqueue_group(uint p_unit_index, uint p_group) {
+	SelectionUnit unit = units[p_unit_index];
+	uint count = unit.queue_capacity * 2;
+	uint first = (p_group * 0x9e3779b9u) % count;
+	for (uint probe = 0; probe < count; probe++) {
+		uint slot = unit.hash_offset + (first + probe) % count;
+		uint previous;
+		InterlockedCompareExchange(sparse_states[slot].x, 0, p_group + 1, previous);
+		if (previous == p_group + 1) { return; }
+		if (previous != 0) { continue; }
+		uint index;
+		InterlockedAdd(unit_states[p_unit_index].queue_count, 1, index);
+		if (index < unit.queue_capacity) {
+			frontier[unit.queue_offset + index] = slot;
+		} else {
+			InterlockedOr(unit_states[p_unit_index].status, 1);
+		}
+		return;
+	}
+	InterlockedOr(unit_states[p_unit_index].status, 1);
+	InterlockedMax(unit_states[p_unit_index].queue_count, unit.queue_capacity + 1);
 }
 
 bool resolve_multimesh(SelectionTask p_task, uint p_ordinal, out uint r_instance) {
@@ -223,22 +279,15 @@ void request_group(uint64_t p_asset, uint p_group) {
 	}
 }
 
-bool cut_cluster(SelectionTask p_task, MicroGeometryAsset p_asset, MicroGeometryCluster p_cluster, uint p_multimesh, bool p_coarse) {
-	if ((parameters.flags & 32) != 0 && surfaces[uint(p_task.surface) - 1].force_finest != 0) { return p_cluster.refined_group == 0xffffffff; }
-	if (p_coarse) { return ((MicroGeometryGroup*)p_asset.groups)[p_cluster.group].parent_count == 0; }
-	uint base = p_task.group_offset + p_multimesh * p_task.group_count;
-	return group_states[base + p_cluster.group] != 0 && (p_cluster.refined_group == 0xffffffff || group_states[base + p_cluster.refined_group] == 0);
-}
-
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void main(uint3 id : SV_DispatchThreadID) {
 	uint index = id.x + id.y * 65536u;
-	if (parameters.mode == 7) {
+	if (parameters.mode == 12) {
 		if (index < parameters.bin_count) { counts[index] += initial_counts[index]; }
 		return;
 	}
-	if (parameters.mode == 8) {
+	if (parameters.mode == 13) {
 		uint bin_index = 0;
 		for (uint bin = 1; bin < parameters.bin_count; bin++) {
 			if (bins[bin].offset <= index) { bin_index = bin; }
@@ -267,13 +316,6 @@ void main(uint3 id : SV_DispatchThreadID) {
 		if (valid) {
 			MicroGeometryAsset asset = *((MicroGeometryAsset*)instance.asset_address);
 			valid = asset.identity == instance.asset && (asset.ready & 1) != 0 && asset.group_count == task.group_count && asset.cluster_count == task.cluster_count;
-			if ((parameters.flags & 32) != 0 && surface.force_finest != 0) {
-				for (uint group_id = 0; group_id < asset.group_count; group_id++) {
-					MicroGeometryGroup group = ((MicroGeometryGroup*)asset.groups)[group_id];
-					MicroGeometryCluster cluster = ((MicroGeometryCluster*)asset.clusters)[group.first_cluster];
-					if (cluster.refined_group == 0xffffffff && ((MicroGeometrySurface*)asset.surfaces)[cluster.surface].source_surface == surface.source_surface && ((((uint*)asset.group_states)[group_id] & 3) != 3)) { valid = false; request_group(asset.identity, group_id); }
-				}
-			}
 		}
 		validity[index] = valid ? 1 : 0;
 		RasterInstance raster = {};
@@ -311,23 +353,84 @@ void main(uint3 id : SV_DispatchThreadID) {
 		raster_instances[index] = raster;
 		return;
 	}
-	if (parameters.mode == 4) {
-		if (index < parameters.bin_count && counts[index] > bins[index].capacity) { InterlockedOr(capacity_state[0], 1); }
+	if (parameters.mode == 1) {
+		if (index >= parameters.unit_count) { return; }
+		uint previous_count = unit_states[index].committed_count;
+		SelectionState state = {};
+		state.committed_count = previous_count;
+		state.status = previous_count == 0 ? 8 : 0;
+		unit_states[index] = state;
 		return;
 	}
-	if (parameters.mode == 1 || parameters.mode == 2) {
-		if (index >= parameters.group_work) { return; }
-		uint task_index = task_for_work(index, 0);
-		SelectionTask task = tasks[task_index];
-		uint relative = index - task.group_offset;
-		uint group_id = relative % task.group_count;
-		uint multimesh = relative / task.group_count;
+	if (parameters.mode == 3 || parameters.mode == 9) {
+		if (index >= parameters.unit_count) { return; }
+		SelectionUnit unit = units[index];
+		SelectionTask task = tasks[unit.task];
 		uint source_multimesh;
-		if (validity[task_index] == 0 || !resolve_multimesh(task, multimesh, source_multimesh)) { group_states[index] = 0; return; }
+		if (validity[unit.task] == 0 || !resolve_multimesh(task, unit.ordinal, source_multimesh)) {
+			unit_states[index].committed_count = 0;
+			return;
+		}
+		if (parameters.mode == 9) {
+			if ((unit_states[index].status & 7) == 0) {
+				unit_states[index].committed_count = unit_states[index].candidate_count;
+			}
+			return;
+		}
 		MicroGeometryInstance instance = instances[uint(task.instance) - 1];
+		MicroGeometryInstanceSurface surface = surfaces[uint(task.surface) - 1];
 		MicroGeometryAsset asset = *((MicroGeometryAsset*)instance.asset_address);
+		bool bootstrap = (unit_states[index].status & 8) != 0;
+		bool finest = (parameters.flags & 32) != 0 && surface.force_finest != 0;
+		if (bootstrap) { unit_states[index].committed_count = 0; }
+		for (uint terminal = 0; terminal < asset.terminal_count; terminal++) {
+			uint group_id = ((uint*)asset.terminals)[terminal];
+			MicroGeometryGroup group = ((MicroGeometryGroup*)asset.groups)[group_id];
+			enqueue_group(index, group_id);
+			if (!bootstrap || finest) { continue; }
+			for (uint local = 0; local < group.cluster_count; local++) {
+				uint cluster_id = group.first_cluster + local;
+				MicroGeometryCluster cluster = ((MicroGeometryCluster*)asset.clusters)[cluster_id];
+				if (((MicroGeometrySurface*)asset.surfaces)[cluster.surface].source_surface != surface.source_surface) { continue; }
+				MicroGeometryPage page = ((MicroGeometryPage*)asset.pages)[cluster.page];
+				if ((page.ready & 1) == 0) { continue; }
+				uint destination = unit_states[index].committed_count++;
+				if (destination < unit.record_capacity) { committed[unit.record_offset + destination] = uint2(cluster_id, page.generation); }
+			}
+		}
+		return;
+	}
+	bool queue_work = parameters.mode == 4 || parameters.mode == 5;
+	if (index >= (queue_work ? parameters.queue_work : parameters.record_work)) { return; }
+	uint unit_index = unit_for_work(index, queue_work);
+	SelectionUnit unit = units[unit_index];
+	SelectionTask task = tasks[unit.task];
+	uint relative = index - (queue_work ? unit.queue_offset : unit.record_offset);
+	uint source_multimesh;
+	if (validity[unit.task] == 0 || !resolve_multimesh(task, unit.ordinal, source_multimesh)) { return; }
+	MicroGeometryInstance instance = instances[uint(task.instance) - 1];
+	MicroGeometryInstanceSurface surface = surfaces[uint(task.surface) - 1];
+	MicroGeometryAsset asset = *((MicroGeometryAsset*)instance.asset_address);
+	bool force_finest = surface.force_finest != 0;
+	bool finest = (parameters.flags & 32) != 0 && force_finest;
+	if (parameters.mode == 2) {
+		if (relative >= unit_states[unit_index].committed_count) { return; }
+		uint2 record = committed[index];
+		MicroGeometryCluster cluster = ((MicroGeometryCluster*)asset.clusters)[record.x];
+		MicroGeometryPage page = ((MicroGeometryPage*)asset.pages)[cluster.page];
+		uint ready_mask = (parameters.flags & 16) != 0 ? 3 : 1;
+		if (page.generation != record.y || ((page.ready & 1) == 0 || (((uint*)asset.group_states)[cluster.group] & ready_mask) != ready_mask)) {
+			InterlockedOr(unit_states[unit_index].status, 8);
+		}
+		return;
+	}
+	if (queue_work) {
+		if (relative >= min(unit_states[unit_index].queue_count, unit.queue_capacity)) { return; }
+		uint slot = frontier[index];
+		uint group_id = sparse_states[slot].x - 1;
 		MicroGeometryGroup group = ((MicroGeometryGroup*)asset.groups)[group_id];
-		if (parameters.mode == 1) {
+		if (parameters.mode == 4) {
+			if (group.depth != parameters.level) { return; }
 			float3 center;
 			float scale;
 			view_bounds(task, instance, source_multimesh, group.center, 1, false, center, scale);
@@ -339,60 +442,80 @@ void main(uint3 id : SV_DispatchThreadID) {
 			for (uint axis = 0; axis < 3; axis++) { instance_center[axis] = instance.aabb_position[axis] + instance.aabb_size[axis] * 0.5; }
 			float instance_radius = length(float3(instance.aabb_size[0], instance.aabb_size[1], instance.aabb_size[2])) * 0.5;
 			if ((parameters.flags & 32) != 0 && !frustum_visible(task, instance, source_multimesh, instance_center, instance_radius)) { target_error *= parameters.offscreen_multiplier; }
-			bool wanted = group.parent_count == 0 || (task.flags & 2) != 0 || surfaces[uint(task.surface) - 1].force_finest != 0 || error > target_error;
+			bool wanted = group.parent_count == 0 || (task.flags & 2) != 0 || force_finest || error > target_error;
 			uint ready_mask = (parameters.flags & 16) != 0 ? 3 : 1;
 			bool ready = (((uint*)asset.group_states)[group_id] & ready_mask) == ready_mask;
-			group_states[index] = wanted && ready ? 1 : 0;
-			if (wanted && !ready) {
-				bool parent_ready = true;
-				for (uint parent = 0; parent < group.parent_count; parent++) {
-					uint parent_id = ((uint*)asset.parent_groups)[group.first_parent + parent];
-					parent_ready = parent_ready && ((((uint*)asset.group_states)[parent_id] & ready_mask) == ready_mask);
-				}
-				if (parent_ready) { request_group(asset.identity, group_id); }
-			}
-		} else if (group.depth == parameters.level && group_states[index] != 0) {
-			uint base = task.group_offset + multimesh * task.group_count;
+			bool parents_active = true;
+			bool parents_ready = true;
 			for (uint parent = 0; parent < group.parent_count; parent++) {
-				if (group_states[base + ((uint*)asset.parent_groups)[group.first_parent + parent]] == 0) { group_states[index] = 0; break; }
+				uint parent_id = ((uint*)asset.parent_groups)[group.first_parent + parent];
+				uint parent_slot = find_group(unit, parent_id);
+				if (parent_slot == 0xffffffff) { parents_active = false; } else { parents_active = parents_active && sparse_states[parent_slot].y != 0; }
+				parents_ready = parents_ready && ((((uint*)asset.group_states)[parent_id] & ready_mask) == ready_mask);
+			}
+			bool active = wanted && ready && parents_active;
+			sparse_states[slot].y = active ? 1 : 0;
+			bool request = wanted && !ready && parents_ready;
+			if (finest) {
+				request = false;
+				for (uint local = 0; local < group.cluster_count; local++) {
+					MicroGeometryCluster cluster = ((MicroGeometryCluster*)asset.clusters)[group.first_cluster + local];
+					request = request || (!ready && cluster.refined_group == 0xffffffff && ((MicroGeometrySurface*)asset.surfaces)[cluster.surface].source_surface == surface.source_surface);
+				}
+			}
+			if (request) { request_group(asset.identity, group_id); }
+			if (active || finest) {
+				for (uint local = 0; local < group.cluster_count; local++) {
+					MicroGeometryCluster cluster = ((MicroGeometryCluster*)asset.clusters)[group.first_cluster + local];
+					if (cluster.refined_group != 0xffffffff) { enqueue_group(unit_index, cluster.refined_group); }
+				}
+			}
+			return;
+		}
+		if (!finest && sparse_states[slot].y == 0) { return; }
+		for (uint local = 0; local < group.cluster_count; local++) {
+			uint cluster_id = group.first_cluster + local;
+			MicroGeometryCluster cluster = ((MicroGeometryCluster*)asset.clusters)[cluster_id];
+			if (((MicroGeometrySurface*)asset.surfaces)[cluster.surface].source_surface != surface.source_surface) { continue; }
+			uint child_slot = cluster.refined_group == 0xffffffff ? 0xffffffff : find_group(unit, cluster.refined_group);
+			if (finest && cluster.refined_group != 0xffffffff) { continue; }
+			if (!finest && child_slot != 0xffffffff) {
+				if (sparse_states[child_slot].y != 0) { continue; }
+			}
+			MicroGeometryPage page = ((MicroGeometryPage*)asset.pages)[cluster.page];
+			uint ready_mask = (parameters.flags & 16) != 0 ? 3 : 1;
+			if (((page.ready & 1) == 0 || (((uint*)asset.group_states)[cluster.group] & ready_mask) != ready_mask)) { InterlockedOr(unit_states[unit_index].status, 4); continue; }
+			uint destination;
+			InterlockedAdd(unit_states[unit_index].candidate_count, 1, destination);
+			if (destination < unit.record_capacity) {
+				candidate[unit.record_offset + destination] = uint2(cluster_id, page.generation);
+			} else {
+				InterlockedOr(unit_states[unit_index].status, 2);
 			}
 		}
 		return;
 	}
-	bool coarse = (parameters.flags & 8) != 0 || capacity_state[0] != 0;
-	uint work_count = coarse ? parameters.coarse_work : parameters.cluster_work;
-	if (index >= work_count) { return; }
-	uint task_index = task_for_work(index, coarse ? 2 : 1);
-	SelectionTask task = tasks[task_index];
-	if (validity[task_index] == 0) { return; }
-	uint relative = index - (coarse ? task.coarse_offset : task.cluster_offset);
-	uint multimesh = relative / (coarse ? task.coarse_count : task.cluster_count);
-	uint cluster_id = relative % (coarse ? task.coarse_count : task.cluster_count);
-	uint source_multimesh;
-	if (!resolve_multimesh(task, multimesh, source_multimesh)) { return; }
-	MicroGeometryInstance instance = instances[uint(task.instance) - 1];
-	MicroGeometryInstanceSurface surface = surfaces[uint(task.surface) - 1];
-	MicroGeometryAsset asset = *((MicroGeometryAsset*)instance.asset_address);
-	if (coarse && !((parameters.flags & 32) != 0 && surface.force_finest != 0)) {
-		for (uint terminal = 0; terminal < asset.terminal_count; terminal++) {
-			MicroGeometryGroup group = ((MicroGeometryGroup*)asset.groups)[((uint*)asset.terminals)[terminal]];
-			if (cluster_id < group.cluster_count) { cluster_id += group.first_cluster; break; }
-			cluster_id -= group.cluster_count;
-		}
+	if (parameters.mode == 6) {
+		if ((unit_states[unit_index].status & 7) == 0 && relative < unit_states[unit_index].candidate_count) { committed[index] = candidate[index]; }
+		return;
 	}
+	bool recovery = parameters.mode == 11;
+	uint count = recovery ? unit_states[unit_index].rejected_count : unit_states[unit_index].committed_count;
+	if (relative >= min(count, unit.record_capacity)) { return; }
+	uint2 cut = recovery ? rejected[index] : committed[index];
+	uint cluster_id = cut.x;
 	MicroGeometryCluster cluster = ((MicroGeometryCluster*)asset.clusters)[cluster_id];
-	if (((MicroGeometrySurface*)asset.surfaces)[cluster.surface].source_surface != surface.source_surface || !cut_cluster(task, asset, cluster, multimesh, coarse)) { return; }
-	if (parameters.mode == 3) { InterlockedAdd(counts[task.bin], 1); return; }
-	bool recovery = parameters.mode == 6;
-	if (recovery && rejected[index] == 0) { return; }
-	if (!recovery) { rejected[index] = 0; }
 	if ((parameters.flags & 32) == 0 && !frustum_visible(task, instance, source_multimesh, cluster.center, cluster.radius)) { return; }
 	if (occluded(task, instance, source_multimesh, cluster, !recovery)) {
-		if (!recovery) { rejected[index] = 1; }
+		if (!recovery) {
+			uint rejected_index;
+			InterlockedAdd(unit_states[unit_index].rejected_count, 1, rejected_index);
+			rejected[unit.record_offset + rejected_index] = cut;
+		}
 		return;
 	}
 	MicroGeometryPage page = ((MicroGeometryPage*)asset.pages)[cluster.page];
-	if ((page.ready & 1) == 0) { return; }
+	if ((page.ready & 1) == 0 || page.generation != cut.y) { return; }
 	uint destination;
 	InterlockedAdd(counts[task.bin], 1, destination);
 	uint selected_offset = bins[task.bin].offset + destination + (recovery ? initial_counts[task.bin] : 0);
@@ -408,7 +531,7 @@ void main(uint3 id : SV_DispatchThreadID) {
 	record.multimesh_instance = source_multimesh;
 	record.bin = task.bin;
 	record.material_slot = surface.material_slot;
-	record.raster_instance = task_index;
+	record.raster_instance = unit.task;
 	selected[selected_offset] = record;
 	InterlockedAdd(statistics[0], 1);
 	InterlockedAdd(statistics[1], cluster.triangle_count);
