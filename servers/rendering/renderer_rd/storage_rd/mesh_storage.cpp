@@ -1076,7 +1076,7 @@ void MeshStorage::_mesh_surface_ensure_gpu_buffers(Mesh::Surface *p_surface) con
 void MeshStorage::mesh_set_micro_geometry(RID p_mesh, const Ref<MicroGeometryData> &p_data) {
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
-	if (mesh->micro_geometry == p_data) {
+	if (mesh->micro_geometry == p_data && mesh->pending_micro_geometry.is_null()) {
 		return;
 	}
 	RID asset;
@@ -1087,10 +1087,19 @@ void MeshStorage::mesh_set_micro_geometry(RID p_mesh, const Ref<MicroGeometryDat
 			const Mesh::Surface &source = *mesh->surfaces[surface.source_surface];
 			ERR_FAIL_COND(source.vertex_count != surface.source_vertex_count || (source.index_count ? source.index_count : source.vertex_count) / 3 != surface.source_triangle_count);
 		}
-		asset = micro_geometry_storage.acquire(p_data);
-		ERR_FAIL_COND(asset.is_null());
 	}
 	_invalidate_micro_geometry(mesh);
+	if (p_data.is_valid()) {
+		asset = micro_geometry_storage.acquire(p_data);
+		if (asset.is_null()) {
+			mesh->pending_micro_geometry = p_data;
+			mesh->pending_micro_geometry_id = p_mesh;
+			pending_micro_geometry.insert(p_mesh);
+			micro_geometry_admission_generation = micro_geometry_storage.get_admission_generation();
+			mesh->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MESH);
+			return;
+		}
+	}
 	mesh->micro_geometry = p_data;
 	mesh->micro_geometry_asset = asset;
 	MutexLock lock(exact_buffers_mutex);
@@ -1121,6 +1130,11 @@ void MeshStorage::mesh_set_micro_geometry(RID p_mesh, const Ref<MicroGeometryDat
 }
 
 void MeshStorage::_invalidate_micro_geometry(Mesh *p_mesh) {
+	if (p_mesh->pending_micro_geometry_id.is_valid()) {
+		pending_micro_geometry.erase(p_mesh->pending_micro_geometry_id);
+		p_mesh->pending_micro_geometry_id = RID();
+		p_mesh->pending_micro_geometry.unref();
+	}
 	{
 		MutexLock lock(exact_buffers_mutex);
 		for (uint32_t i = 0; i < p_mesh->surface_count; i++) {
@@ -2632,6 +2646,21 @@ MeshStorage::MultiMeshInterpolator *MeshStorage::_multimesh_get_interpolator(RID
 
 void MeshStorage::_update_dirty_multimeshes() {
 	micro_geometry_storage.update();
+	uint64_t admission_generation = micro_geometry_storage.get_admission_generation();
+	if (!pending_micro_geometry.is_empty() && micro_geometry_admission_generation != admission_generation) {
+		Vector<RID> retry;
+		for (RID mesh : pending_micro_geometry) {
+			retry.push_back(mesh);
+		}
+		micro_geometry_admission_generation = admission_generation;
+		for (RID id : retry) {
+			Mesh *mesh = mesh_owner.get_or_null(id);
+			if (mesh && mesh->pending_micro_geometry.is_valid()) {
+				Ref<MicroGeometryData> source = mesh->pending_micro_geometry;
+				mesh_set_micro_geometry(id, source);
+			}
+		}
+	}
 	_retire_unused_exact_buffers();
 	while (multimesh_dirty_list) {
 		MultiMesh *multimesh = multimesh_dirty_list;

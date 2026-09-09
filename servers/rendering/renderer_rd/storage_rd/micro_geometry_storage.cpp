@@ -204,6 +204,7 @@ bool MicroGeometryStorage::_build_page_clas(Asset &r_asset, uint32_t p_page, con
 		return false;
 	}
 	statistics.clas_builds += source_page.cluster_count;
+	statistics.clas_page_builds++;
 	page.clas_submission = rd->get_pending_submission_serial();
 	return true;
 }
@@ -323,6 +324,7 @@ RID MicroGeometryStorage::acquire(const Ref<MicroGeometryData> &p_source) {
 	}
 	statistics.metadata_bytes += required;
 	sources.insert(p_source.ptr(), id);
+	admission_generation++;
 	active_assets.push_back(id);
 	for (uint32_t group : metadata.terminals) {
 		for (uint32_t page : asset.group_pages[group]) {
@@ -474,6 +476,53 @@ bool MicroGeometryStorage::request_group(RID p_asset, uint32_t p_group) {
 	return valid;
 }
 
+bool MicroGeometryStorage::pin_page(const PagePin &p_pin) {
+	Asset *asset = assets.get_or_null(p_pin.asset);
+	if (!asset || p_pin.page >= asset->pages.size()) {
+		return false;
+	}
+	Page &page = asset->pages[p_pin.page];
+	if (page.status != RESIDENT || page.gpu.generation != p_pin.generation || (page.gpu.ready & 3) != 3) {
+		return false;
+	}
+	page.pins++;
+	return true;
+}
+
+void MicroGeometryStorage::unpin_page(const PagePin &p_pin) {
+	Asset *asset = assets.get_or_null(p_pin.asset);
+	if (!asset || p_pin.page >= asset->pages.size()) {
+		return;
+	}
+	Page &page = asset->pages[p_pin.page];
+	ERR_FAIL_COND(page.gpu.generation != p_pin.generation || page.pins == 0);
+	page.pins--;
+}
+
+void MicroGeometryStorage::lease_resident_pages(Vector<PagePin> &r_pages) {
+	ERR_FAIL_COND(!r_pages.is_empty());
+	for (const Slot &slot : slots) {
+		Asset *asset = assets.get_or_null(slot.asset);
+		if (!asset) {
+			continue;
+		}
+		Page &page = asset->pages[slot.page];
+		if (page.status == RESIDENT && (page.gpu.ready & 3) == 3) {
+			page.pins++;
+			r_pages.push_back({ slot.asset, slot.page, page.gpu.generation });
+		}
+	}
+}
+
+RID MicroGeometryStorage::get_page_clas(const PagePin &p_pin) const {
+	const Asset *asset = assets.get_or_null(p_pin.asset);
+	if (!asset || p_pin.page >= asset->pages.size()) {
+		return RID();
+	}
+	const Page &page = asset->pages[p_pin.page];
+	return page.status == RESIDENT && page.gpu.generation == p_pin.generation && (page.gpu.ready & 3) == 3 ? page.clas_storage : RID();
+}
+
 bool MicroGeometryStorage::pin_group(RID p_asset, uint32_t p_group) {
 	Asset *asset = assets.get_or_null(p_asset);
 	ERR_FAIL_NULL_V(asset, false);
@@ -543,6 +592,9 @@ void MicroGeometryStorage::update() {
 			RD::get_singleton()->free_rid(buffer);
 		}
 		statistics.retired_metadata_bytes -= retired.bytes;
+		if (retired.bytes != 0) {
+			admission_generation++;
+		}
 		statistics.acceleration_structure_bytes -= retired.rt_bytes;
 		retired_metadata.remove_at_unordered(i);
 	}
@@ -647,17 +699,6 @@ uint64_t MicroGeometryStorage::get_primitive_lookup(RID p_asset, uint32_t p_surf
 	return asset && asset->primitive_lookup.is_valid() && p_surface < uint32_t(asset->primitive_offsets.size()) ? RD::get_singleton()->buffer_get_device_address(asset->primitive_lookup) + uint64_t(asset->primitive_offsets[p_surface]) * 8 : 0;
 }
 
-void MicroGeometryStorage::get_clas_dependencies(RID p_asset, Vector<RID> &r_dependencies) const {
-	const Asset *asset = assets.get_or_null(p_asset);
-	if (asset) {
-		for (const Page &page : asset->pages) {
-			if (page.clas_storage.is_valid()) {
-				r_dependencies.push_back(page.clas_storage);
-			}
-		}
-	}
-}
-
 MicroGeometryStorage::GPUPage MicroGeometryStorage::get_page(RID p_asset, uint32_t p_page) const {
 	const Asset *asset = assets.get_or_null(p_asset);
 	return asset && p_page < asset->pages.size() ? asset->pages[p_page].gpu : GPUPage();
@@ -698,7 +739,12 @@ MicroGeometryStorage::Statistics MicroGeometryStorage::get_statistics() const {
 		result.retiring_pages += slot.asset.is_null() && slot.retirement > completed;
 	}
 	for (RID id : active_assets) {
-		for (const Page &page : assets.get_or_null(id)->pages) {
+		const Asset *asset = assets.get_or_null(id);
+		for (uint32_t index = 0; index < asset->pages.size(); index++) {
+			const Page &page = asset->pages[index];
+			if (page.status == RESIDENT && (page.gpu.ready & 3) == 3) {
+				result.resident_clas += asset->source->get_metadata().pages[index].cluster_count;
+			}
 			result.resident_pages += page.status == RESIDENT;
 			result.pending_pages += page.status == REQUESTED || page.status == READING || page.status == UPLOADING;
 		}

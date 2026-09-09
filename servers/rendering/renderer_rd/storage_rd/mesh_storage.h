@@ -81,6 +81,8 @@ private:
 	struct Mesh {
 		Ref<MicroGeometryData> micro_geometry;
 		RID micro_geometry_asset;
+		RID pending_micro_geometry_id;
+		Ref<MicroGeometryData> pending_micro_geometry;
 		struct Surface {
 			RenderingServerTypes::SurfaceData source_data;
 			bool keep_source_data = false;
@@ -195,6 +197,8 @@ private:
 	};
 
 	mutable RID_Owner<Mesh, true> mesh_owner;
+	HashSet<RID> pending_micro_geometry;
+	uint64_t micro_geometry_admission_generation = 0;
 	mutable Mutex exact_buffers_mutex;
 	mutable LocalVector<Mesh::Surface *> tracked_exact_buffers;
 	void _invalidate_micro_geometry(Mesh *p_mesh);

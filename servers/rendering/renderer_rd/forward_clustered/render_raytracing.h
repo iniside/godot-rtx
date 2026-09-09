@@ -479,113 +479,133 @@ struct RTMicroGeometryTask {
 	uint32_t motion_base = 0;
 	uint32_t instance_count = 0;
 	uint32_t cluster_count = 0;
-	uint32_t bitmap_offset = 0;
-	uint32_t group_offset = 0;
+	uint32_t source_surface = 0;
+	uint32_t force_finest = 0;
 	uint32_t group_count = 0;
 	uint32_t instance_flags = 0;
 	uint32_t instance_mask = 255;
-	uint32_t tile_offset = 0;
-	uint32_t mode = 0;
-	uint32_t scan_offset = 0;
-	uint32_t scan_stride = 0;
+	uint64_t indirect_command = 0;
 };
-static_assert(sizeof(RTMicroGeometryTask) == 80);
+static_assert(sizeof(RTMicroGeometryTask) == 72);
 
-struct RTMicroGeometryScanTask {
+struct RTMicroGeometrySegment {
 	uint32_t task = 0;
-	uint32_t group_offset = 0;
-	uint32_t element_count = 0;
-	uint32_t input_offset = 0;
-	uint32_t output_offset = 0;
+	uint32_t ordinal = 0;
+	uint32_t source_offset = 0;
+	uint32_t capacity = 0;
+	uint32_t offset = 0;
+	uint32_t geometry = 0;
+	uint32_t unit = 0;
+	uint32_t pad = 0;
 };
-static_assert(sizeof(RTMicroGeometryScanTask) == 20);
 
-struct RTMicroGeometryPin {
-	RID asset;
-	uint32_t group = 0;
-	bool operator==(const RTMicroGeometryPin &p_other) const { return asset == p_other.asset && group == p_other.group; }
+struct RTMicroGeometryCutDescriptor {
+	uint64_t asset = 0;
+	uint64_t records = 0;
+	uint64_t address = 0;
+	uint32_t count = 0;
+	uint32_t source_surface = 0;
+	uint32_t flags = 0;
+	uint32_t generation = 0;
+	uint32_t hash = 0;
+	uint32_t pad = 0;
 };
+static_assert(sizeof(RTMicroGeometryCutDescriptor) == 48);
 
 struct RTMicroGeometryBuild {
-	struct ScanLevel {
-		uint32_t task_offset = 0;
-		uint32_t task_count = 0;
-		uint32_t group_count = 0;
+	struct Cut {
+		RTMicroGeometryCutDescriptor descriptor;
+		RID blas;
+		RID records;
+		Vector<RendererRD::MicroGeometryStorage::PagePin> pins;
+		uint64_t memory_bytes = 0;
+		uint64_t as_bytes = 0;
+		uint64_t retirement = 0;
+		uint32_t users = 0;
 	};
-	struct RetiredPins {
-		Vector<RTMicroGeometryPin> pins;
-		uint64_t submission = 0;
+	struct Representative {
+		uint32_t unit = 0;
+		uint32_t count = 0;
+		uint32_t hash = 0;
+		uint32_t slot = UINT32_MAX;
+		uint32_t users = 0;
+		Vector<RendererRD::MicroGeometryStorage::PagePin> pages;
 	};
-	enum Mode {
-		PREPARE_CUT,
-		PUBLISH_CUT,
-		UPDATE_TRANSFORMS,
-		RESTORE_CUT,
-		INITIAL_CUT,
+	enum Epoch {
+		IDLE,
+		POOL_MATCH,
+		NEW_MATCH,
+		DESCRIPTORS,
+		PAGES,
+		PUBLISH,
 	};
 	uint64_t signature = 0;
 	uint64_t input_signature = 0;
 	uint64_t selected_input_signature = 0;
+	uint64_t producing_signature = 0;
 	uint64_t dependency_signature = 0;
 	uint64_t transform_signature = 0;
-	uint64_t address_signature = 0;
-	bool selection_retry = false;
-	bool conservative_updates = false;
-	uint64_t cut_generation = 0;
 	uint64_t memory_bytes = 0;
+	uint64_t as_memory_bytes = 0;
 	uint64_t retirement = 0;
+	uint64_t epoch_submission = 0;
+	uint64_t cut_generation = 0;
+	uint64_t completed_builds = 0;
+	uint64_t reported_page_builds = 0;
+	uint64_t report_usec = 0;
 	uint32_t pending_feedback = 0;
-	bool has_committed_cut = false;
-	bool restore_committed_cut = false;
-	bool candidate_pending = false;
-	bool candidate_changed = false;
-	bool frozen = false;
 	uint32_t selected_clusters = 0;
 	uint32_t selected_triangles = 0;
 	uint32_t candidate_clusters = 0;
 	uint32_t candidate_triangles = 0;
-	uint32_t candidate_builds = 0;
-	uint64_t completed_builds = 0;
-	uint64_t as_memory_bytes = 0;
+	uint32_t record_work = 0;
+	uint32_t max_capacity = 0;
+	uint32_t bucket_count = 0;
+	uint32_t feedback_offset = 0;
+	uint32_t feedback_items = 0;
+	uint32_t page_representative = 0;
+	uint32_t pool_count = 0;
+	bool has_committed_cut = false;
+	bool conservative_updates = false;
+	bool selection_retry = false;
+	bool frozen = false;
+	bool bootstrap = false;
+	bool feedback_ready = false;
+	bool dispatch_failed = false;
+	bool candidate_changed = false;
+	Epoch epoch = IDLE;
+	Vector<uint8_t> feedback_bytes;
 	MicroGeometrySelection::Pass *selection = nullptr;
 	Vector<MicroGeometrySelection::Task> selection_tasks;
 	Vector<RTMicroGeometryTask> task_data;
-	Vector<ScanLevel> scan_levels;
-	uint32_t tile_work = 0;
-	uint32_t group_work = 0;
+	Vector<RTMicroGeometrySegment> segment_data;
+	Vector<Cut> cuts;
+	Vector<Representative> representatives;
+	HashMap<uint32_t, uint32_t> representative_lookup;
+	Vector<uint32_t> candidate_users;
+	Vector<RendererRD::MicroGeometryStorage::PagePin> lease;
 	Vector<RID> assets;
-	Vector<RTMicroGeometryPin> pins;
-	Vector<RTMicroGeometryPin> candidate_pins;
-	Vector<RetiredPins> retired_pins;
-	Vector<RTMicroGeometryPin> finest_pins;
-	Vector<RID> blas;
+	Vector<MicroGeometrySelection::Pass::Pin> finest_pins;
 	Vector<RID> resources;
+	Vector<RID> epoch_resources;
 	Vector<RID> dependencies;
-	Vector<RID> clas_dependencies;
 	Vector<RID> blas_dependencies;
-	RD::ClusterBottomLevelBuildInput input;
 	RID tasks;
-	RID blas_addresses;
-	RID membership;
-	RID cached_membership;
-	RID candidate_state;
-	RID committed_state;
-	RID scan_data;
-	RID scan_tasks;
-	RID references;
-	RID dirty_infos;
-	RID dirty_destinations;
-	RID dirty_counts;
+	RID segments;
+	RID pool;
+	RID records;
+	RID pages;
+	RID states;
+	RID buckets;
+	RID links;
+	RID usage;
+	RID feedback;
+	RID geometry_slots;
+	RID representative_slots;
 	RID tlas_instances;
-	RID group_usage;
 	RID scratch;
-};
-
-struct RTMicroGeometryFeedback {
-	RTMicroGeometryBuild *build = nullptr;
-	uint64_t cut_generation = 0;
-	bool published = false;
-	Vector<RTMicroGeometryPin> pins;
+	uint64_t scratch_bytes = 0;
+	uint64_t epoch_bytes = 0;
 };
 
 static_assert(sizeof(RTPersistentInstanceData) == 472);
@@ -669,17 +689,7 @@ class RenderRaytracing {
 	MicroGeometrySelection *micro_selection = nullptr;
 	MicroGeometryRtShaderRD micro_rt_shader;
 	RID micro_rt_version;
-	enum MicroRTPhase {
-		MICRO_RT_RESET,
-		MICRO_RT_SCATTER,
-		MICRO_RT_COMPARE,
-		MICRO_RT_SCAN,
-		MICRO_RT_ADD_OFFSETS,
-		MICRO_RT_EMIT,
-		MICRO_RT_FINALIZE,
-		MICRO_RT_PHASE_COUNT,
-	};
-	RID micro_rt_pipelines[MICRO_RT_PHASE_COUNT];
+	RID micro_rt_pipeline;
 	GeometryPositionsShaderRD geometry_positions_shader;
 	RID geometry_positions_version;
 	RID geometry_positions_pipeline;
@@ -691,8 +701,11 @@ class RenderRaytracing {
 	LocalVector<RetiredTLASMemory> retired_tlas_memory;
 	void _retire_micro_geometry(RTMicroGeometryBuild *p_build);
 	void _free_micro_geometry(RTMicroGeometryBuild *p_build);
-	static void _micro_group_feedback(const Vector<uint8_t> &p_bytes, uint64_t p_feedback);
-	static void _micro_cut_feedback(const Vector<uint8_t> &p_bytes, uint64_t p_build, uint64_t p_generation, bool p_restore);
+	static void _micro_cut_feedback(const Vector<uint8_t> &p_bytes, uint64_t p_build);
+	void _cancel_micro_epoch(RTMicroGeometryBuild *p_build);
+	void _free_micro_cut(RTMicroGeometryBuild *p_build, uint32_t p_slot);
+	bool _micro_dispatch(RTViewportState *p_state, uint32_t p_mode, uint32_t p_count, bool p_groups = false, uint32_t p_step = 0, uint32_t p_width = 0);
+	bool _micro_feedback(RTMicroGeometryBuild *p_build, uint32_t p_bytes);
 	bool _prepare_micro_geometry(RTViewportState *p_state, const RenderDataRD *p_render_data, const Vector<MicroGeometrySelection::Task> &p_tasks, const Vector<RTMicroGeometryTask> &p_rt_tasks, uint32_t p_levels);
 	bool _build_micro_geometry(RTViewportState *p_state);
 	RendererRD::DDGIEffect *ddgi_effect = nullptr;

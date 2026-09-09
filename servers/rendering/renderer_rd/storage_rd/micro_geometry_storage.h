@@ -128,6 +128,11 @@ public:
 		uint64_t residency_generation = 0;
 		uint64_t parent_groups = 0;
 	};
+	struct PagePin {
+		RID asset;
+		uint32_t page = 0;
+		uint32_t generation = 0;
+	};
 	struct Statistics {
 		uint64_t acceleration_structure_bytes = 0;
 		uint64_t pool_bytes = 0;
@@ -142,6 +147,8 @@ public:
 		uint64_t pressure = 0;
 		uint64_t failed_reads = 0;
 		uint64_t clas_builds = 0;
+		uint64_t clas_page_builds = 0;
+		uint64_t resident_clas = 0;
 		uint64_t raster_selection_bytes = 0;
 	};
 
@@ -228,6 +235,7 @@ private:
 	RID pool;
 	uint32_t page_count = DEFAULT_PAGE_COUNT;
 	uint64_t clock = 0;
+	uint64_t admission_generation = 1;
 	Statistics statistics;
 	MicroGeometryPageShaderRD page_shader;
 	RID page_shader_version;
@@ -251,6 +259,10 @@ public:
 	void release(RID p_asset);
 	void update();
 	bool request_group(RID p_asset, uint32_t p_group);
+	bool pin_page(const PagePin &p_pin);
+	void unpin_page(const PagePin &p_pin);
+	void lease_resident_pages(Vector<PagePin> &r_pages);
+	RID get_page_clas(const PagePin &p_pin) const;
 	bool pin_group(RID p_asset, uint32_t p_group);
 	void unpin_group(RID p_asset, uint32_t p_group);
 	bool is_group_ready(RID p_asset, uint32_t p_group, bool p_require_clas = false) const;
@@ -259,12 +271,12 @@ public:
 	RID get_asset_buffer(RID p_asset) const;
 	RID get_clas_addresses(RID p_asset) const;
 	uint64_t get_primitive_lookup(RID p_asset, uint32_t p_surface) const;
-	void get_clas_dependencies(RID p_asset, Vector<RID> &r_dependencies) const;
 	GPUPage get_page(RID p_asset, uint32_t p_page) const;
 	Ref<MicroGeometryData> get_source(RID p_asset) const;
 	RID get_pool() const { return pool; }
 	void get_dependencies(RID p_asset, Vector<RID> &r_dependencies) const;
 	Statistics get_statistics() const;
+	uint64_t get_admission_generation() const { return admission_generation; }
 	void add_raster_selection_memory(uint64_t p_bytes) { statistics.raster_selection_bytes += p_bytes; }
 	void remove_raster_selection_memory(uint64_t p_bytes) { statistics.raster_selection_bytes -= p_bytes; }
 	bool set_page_count(uint32_t p_count);
