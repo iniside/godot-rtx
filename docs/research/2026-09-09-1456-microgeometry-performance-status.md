@@ -470,7 +470,9 @@ independent proof audit is pending. Step 5 implementation is active. The bounded
 and [RT gather inspection](2026-09-09-1919-rt-worker-preparation-summary.md)
 and [3D cull/raster inspection](2026-09-09-1945-raster-worker-preparation-summary.md)
 identify cull, batch, cache and upload ownership for Step 5. They do not claim
-worker dispatch. RD recording remains Step 6.
+worker dispatch. RD recording remains Step 6; a bounded
+[graph/driver handoff](2026-09-09-2021-graph-worker-recording-summary.md) identifies
+shared instruction/resource state and the existing draw-only secondary contract.
 
 ## Step 4 frame ownership: final source review and bounded native evidence
 
@@ -570,3 +572,23 @@ The named independent Step 4 proof-auditor could not be spawned because the
 harness reports `agent thread limit reached`; its verdict remains pending.
 This does not block independent Step 5 implementation. No automated tests were
 run or added. Steps 5-6 and conditional async compute remain incomplete.
+
+
+## Step 5 intermediate preparation build
+
+Incomplete build02 compiles ordinary editor/console successfully
+(`step5-editor-build02.log`, 34.72 seconds). Its five held source files and exact
+working patch are retained in `step5-build02-source.json` and `step5-build02.patch`
+at base `999bbd18cc`. Ordinary pinned binary SHA256 is
+`1095cdbdb568b818132423e41502d77e92d7b05a24c2a1eacff652fac72fd16c`.
+This snapshot includes FC lists/host payload, cull intents and initial RT
+resource discovery/parallel assembly. It does not complete Step 5.
+
+`step5-build02-dense-smoke` runs 300 orbit iterations on the real Vulkan dense
+fixture and exits 0 without timeout or ERROR. Last telemetry confirms 10000
+instances, two assets, three shared cuts/BLAS, eight resident pages and zero
+pending pages/build delta. Shader caches are cold at startup. The last reported
+RT gather CPU is 11.957 ms, raster preparation 4.041 ms and main admission wait
+35.751 ms. These are short-run reported means, not a matched speedup or a
+controlled regression against the longer Step 4 orbit. No performance acceptance
+is claimed; warm comparison and remaining preparation work are outstanding.
