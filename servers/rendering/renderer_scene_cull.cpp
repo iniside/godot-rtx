@@ -795,6 +795,7 @@ void RendererSceneCull::instance_set_base(RID p_instance, RID p_base) {
 	}
 
 	_instance_queue_update(instance, true, true);
+	_instance_update_scene_membership(instance);
 }
 
 void RendererSceneCull::instance_set_scenario(RID p_instance, RID p_scenario) {
@@ -857,6 +858,7 @@ void RendererSceneCull::instance_set_scenario(RID p_instance, RID p_scenario) {
 		}
 
 		instance->scenario = nullptr;
+		_instance_update_scene_membership(instance);
 	}
 
 	if (p_scenario.is_valid()) {
@@ -884,6 +886,7 @@ void RendererSceneCull::instance_set_scenario(RID p_instance, RID p_scenario) {
 
 		_instance_queue_update(instance, true, true);
 	}
+	_instance_update_scene_membership(instance);
 }
 
 void RendererSceneCull::instance_set_layer_mask(RID p_instance, uint32_t p_mask) {
@@ -1053,6 +1056,7 @@ void RendererSceneCull::instance_set_visible(RID p_instance, bool p_visible) {
 			RendererSceneOcclusionCull::get_singleton()->scenario_set_instance(instance->scenario->self, p_instance, instance->base, instance->transform, p_visible);
 		}
 	}
+	_instance_update_scene_membership(instance);
 }
 
 void RendererSceneCull::instance_teleport(RID p_instance) {
@@ -1337,6 +1341,7 @@ void RendererSceneCull::instance_geometry_set_cast_shadows_setting(RID p_instanc
 	}
 
 	_instance_queue_update(instance, false, true);
+	_instance_update_scene_membership(instance);
 }
 
 void RendererSceneCull::instance_geometry_set_material_override(RID p_instance, RID p_material) {
@@ -4219,5 +4224,14 @@ RendererSceneCull::~RendererSceneCull() {
 	if (light_culler) {
 		memdelete(light_culler);
 		light_culler = nullptr;
+	}
+}
+
+void RendererSceneCull::_instance_update_scene_membership(Instance *p_instance) {
+	if (((1 << p_instance->base_type) & RSE::INSTANCE_GEOMETRY_MASK) && p_instance->base_data) {
+		InstanceGeometryData *geometry = static_cast<InstanceGeometryData *>(p_instance->base_data);
+		if (geometry->geometry_instance) {
+			geometry->geometry_instance->set_scene_membership(p_instance->scenario ? p_instance->scenario->self : RID(), p_instance->visible, p_instance->cast_shadows);
+		}
 	}
 }

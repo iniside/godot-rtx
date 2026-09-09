@@ -79,6 +79,7 @@ RenderRaytracing::~RenderRaytracing() {
 		memdelete(pathtracing);
 	}
 
+	_free_persistent_buffers();
 	cleanup_caches();
 
 	if (mat_ubo_pool_buffer.is_valid()) {
@@ -1903,6 +1904,7 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 	if (mat_data->uniform_buffer.is_valid()) {
 		geometry_buffer_dependencies.insert(mat_data->uniform_buffer);
 	}
+	_update_persistent_material(p_material_rid, mat_data, content_generation);
 	return mat_data;
 }
 
@@ -3641,4 +3643,278 @@ bool RenderRaytracing::trace_material_rays(RTViewportState *p_state, RID p_scene
 	rd->raytracing_list_end();
 	rd->free_rid(uniform_set);
 	return true;
+}
+
+void RenderRaytracing::_upload_persistent_record(RID &r_buffer, uint32_t &r_capacity, uint32_t p_stride, uint32_t p_index, const void *p_data) {
+	if (p_index >= r_capacity || r_buffer.is_null()) {
+		uint32_t capacity = 64;
+		while (capacity <= p_index) {
+			ERR_FAIL_COND(capacity > UINT32_MAX / 2);
+			capacity *= 2;
+		}
+		ERR_FAIL_COND(uint64_t(capacity) * p_stride > UINT32_MAX);
+		Vector<uint8_t> initial;
+		initial.resize(capacity * p_stride);
+		memset(initial.ptrw(), 0, initial.size());
+		RID buffer = RD::get_singleton()->storage_buffer_create(initial.size(), initial, 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
+		ERR_FAIL_COND(buffer.is_null());
+		if (r_buffer.is_valid()) {
+			RD::get_singleton()->buffer_copy(r_buffer, buffer, 0, 0, r_capacity * p_stride);
+			RD::get_singleton()->free_rid(r_buffer);
+		}
+		r_buffer = buffer;
+		r_capacity = capacity;
+	}
+	RD::get_singleton()->buffer_update(r_buffer, p_index * p_stride, p_stride, p_data);
+}
+
+void RenderRaytracing::_update_persistent_material(RID p_material, RTMaterialData *p_data, uint64_t p_generation) {
+	if (p_data->global_buffer_index == UINT32_MAX) {
+		p_data->global_buffer_index = allocate_material_slot();
+	}
+	const uint32_t index = p_data->global_buffer_index;
+	if (index >= persistent_materials.size()) {
+		persistent_materials.resize(index + 1);
+		persistent_material_uniform_buffers.resize(index + 1);
+	}
+	_reference_persistent_buffer(persistent_material_uniform_buffers[index], false);
+	persistent_material_uniform_buffers[index] = p_data->uniform_buffer;
+	_reference_persistent_buffer(p_data->uniform_buffer, true);
+	RTPersistentMaterialData &material = persistent_materials[index];
+	material.identity = p_material.get_id();
+	material.generation = p_generation;
+	material.data = p_data->data;
+	_upload_persistent_record(persistent_material_buffer, persistent_material_capacity, sizeof(RTPersistentMaterialData), index, &material);
+	persistent_scene_generation++;
+}
+
+void RenderRaytracing::update_persistent_instance(RenderGeometryInstance *p_instance) {
+	RenderForwardClustered::GeometryInstanceForwardClustered *instance = static_cast<RenderForwardClustered::GeometryInstanceForwardClustered *>(p_instance);
+	if (!instance->data) {
+		return;
+	}
+	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
+	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
+	const uint64_t completed = RD::get_singleton()->get_completed_submission_serial();
+	auto allocate = [&](auto &r_slots, LocalVector<uint32_t> &r_free_slots) -> uint64_t {
+		uint32_t index = r_slots.size();
+		for (uint32_t i = 0; i < r_free_slots.size(); i++) {
+			if (r_slots[r_free_slots[i]].retirement <= completed) {
+				index = r_free_slots[i];
+				r_free_slots.remove_at_unordered(i);
+				break;
+			}
+		}
+		if (index == r_slots.size()) {
+			r_slots.resize(index + 1);
+		}
+		r_slots[index].generation++;
+		r_slots[index].retirement = 0;
+		return (uint64_t(r_slots[index].generation) << 32) | uint64_t(index + 1);
+	};
+	if (instance->persistent_instance == 0) {
+		instance->persistent_instance = allocate(persistent_instances, persistent_instance_free_slots);
+	}
+	const uint32_t instance_index = uint32_t(instance->persistent_instance) - 1;
+	RTPersistentInstanceData data;
+	data.handle = instance->persistent_instance;
+	data.identity = instance->instance_rid.get_id();
+	data.scenario = instance->scenario_rid.get_id();
+	RID mesh;
+	if (instance->data->base_type == RSE::INSTANCE_MESH) {
+		mesh = instance->data->base;
+	} else if (instance->data->base_type == RSE::INSTANCE_MULTIMESH) {
+		mesh = mesh_storage->multimesh_get_mesh(instance->data->base);
+		RID buffer = mesh_storage->multimesh_get_gpu_buffer(instance->data->base);
+		if (buffer.is_valid()) {
+			data.multimesh_address = RD::get_singleton()->buffer_get_device_address(buffer);
+		}
+		data.multimesh_generation = mesh_storage->multimesh_get_rt_generation(instance->data->base);
+		data.multimesh_stride = mesh_storage->multimesh_get_stride(instance->data->base);
+		data.multimesh_current_offset = mesh_storage->multimesh_get_current_instance_offset(instance->data->base);
+		data.multimesh_previous_offset = mesh_storage->multimesh_get_previous_instance_offset(instance->data->base);
+		data.multimesh_count = mesh_storage->multimesh_get_instances_to_draw(instance->data->base);
+	}
+	PersistentInstanceSlot &instance_slot = persistent_instances[instance_index];
+	for (RID buffer : instance_slot.dependencies) {
+		_reference_persistent_buffer(buffer, false);
+	}
+	instance_slot.dependencies.clear();
+	if (instance->data->base_type == RSE::INSTANCE_MULTIMESH) {
+		RID buffer = mesh_storage->multimesh_get_gpu_buffer(instance->data->base);
+		if (buffer.is_valid()) {
+			instance_slot.dependencies.push_back(buffer);
+		}
+	}
+	RID asset = mesh_storage->mesh_get_micro_geometry_asset(mesh);
+	data.asset = asset.get_id();
+	if (asset.is_valid()) {
+		RID descriptor = mesh_storage->get_micro_geometry_storage()->get_asset_buffer(asset);
+		data.asset_address = RD::get_singleton()->buffer_get_device_address(descriptor);
+		mesh_storage->get_micro_geometry_storage()->get_dependencies(asset, instance_slot.dependencies);
+	}
+	for (RID buffer : instance_slot.dependencies) {
+		_reference_persistent_buffer(buffer, true);
+	}
+	const Transform3D &previous = instance->transform_status == RenderForwardClustered::GeometryInstanceForwardClustered::TELEPORTED ? instance->transform : instance->prev_transform;
+	RendererRD::MaterialStorage::store_transform_transposed_3x4(instance->transform, data.transform);
+	RendererRD::MaterialStorage::store_transform_transposed_3x4(previous, data.previous_transform);
+#ifdef REAL_T_IS_DOUBLE
+	for (int axis = 0; axis < 3; axis++) {
+		RendererRD::MaterialStorage::split_double(instance->transform.origin[axis], &data.transform[axis * 4 + 3], &data.origin_low[axis]);
+		RendererRD::MaterialStorage::split_double(previous.origin[axis], &data.previous_transform[axis * 4 + 3], &data.previous_origin_low[axis]);
+	}
+#endif
+	for (int axis = 0; axis < 3; axis++) {
+		data.aabb_position[axis] = instance->data->aabb.position[axis];
+		data.aabb_size[axis] = instance->data->aabb.size[axis];
+	}
+	data.flags = instance->base_flags;
+	data.layer_mask = instance->layer_mask;
+	data.instance_uniforms_offset = uint32_t(instance->shader_uniforms_offset);
+	data.visible = instance->scene_visible && instance->scenario_rid.is_valid();
+	data.shadows = instance->scene_shadows;
+	data.deformed = instance->mesh_instance.is_valid() || instance->rt_procedural != nullptr;
+	data.fade_near_begin = instance->fade_near ? instance->fade_near_begin : 0;
+	data.fade_near_end = instance->fade_near ? instance->fade_near_end : 0;
+	data.fade_far_begin = instance->fade_far ? instance->fade_far_begin : 0;
+	data.fade_far_end = instance->fade_far ? instance->fade_far_end : 0;
+	data.force_alpha = instance->force_alpha;
+	data.parent_fade_alpha = instance->parent_fade_alpha;
+	data.lod_bias = instance->lod_bias;
+	data.model_scale = instance->lod_model_scale;
+	data.lightmap = instance->lightmap_instance.get_id();
+	data.lightmap_slice = instance->lightmap_slice_index;
+	data.lightmap_uv_scale[0] = instance->lightmap_uv_scale.position.x;
+	data.lightmap_uv_scale[1] = instance->lightmap_uv_scale.position.y;
+	data.lightmap_uv_scale[2] = instance->lightmap_uv_scale.size.x;
+	data.lightmap_uv_scale[3] = instance->lightmap_uv_scale.size.y;
+	if (instance->lightmap_sh) {
+		memcpy(data.lightmap_sh, instance->lightmap_sh->sh, sizeof(data.lightmap_sh));
+	}
+	if (instance->persistent_surfaces_dirty) {
+		Vector<uint64_t> previous_handles = instance->persistent_surfaces;
+		LocalVector<bool> used;
+		used.resize_initialized(previous_handles.size());
+		Vector<uint64_t> handles;
+		LocalVector<uint32_t> pass_indices;
+		HashMap<uint32_t, uint32_t> passes;
+		for (auto *surface = instance->surface_caches; surface; surface = surface->next) {
+			const uint32_t pass = passes[surface->surface_index]++;
+			uint64_t handle = 0;
+			for (uint32_t i = 0; i < previous_handles.size(); i++) {
+				const RTPersistentSurfaceData &record = persistent_surfaces[uint32_t(previous_handles[i]) - 1].data;
+				if (!used[i] && record.source_surface == surface->surface_index && record.pass_index == pass) {
+					handle = previous_handles[i];
+					used[i] = true;
+					break;
+				}
+			}
+			if (handle == 0) {
+				handle = allocate(persistent_surfaces, persistent_surface_free_slots);
+			}
+			handles.push_back(handle);
+			pass_indices.push_back(pass);
+		}
+		for (uint32_t i = 0; i < previous_handles.size(); i++) {
+			if (!used[i]) {
+				release_persistent_instance(0, Vector<uint64_t>({ previous_handles[i] }));
+			}
+		}
+		instance->persistent_surfaces = handles;
+		const uint32_t surface_count = handles.size();
+		uint32_t ordinal = 0;
+		for (auto *surface = instance->surface_caches; surface; surface = surface->next, ordinal++) {
+			RTPersistentSurfaceData record;
+			record.handle = instance->persistent_surfaces[ordinal];
+			record.instance = data.handle;
+			record.next_surface = ordinal + 1 < surface_count ? instance->persistent_surfaces[ordinal + 1] : 0;
+			RID material = surface->material_rid.is_valid() ? surface->material_rid : owner->scene_shader.default_material;
+			RTMaterialData *native_material = process_material(material, material_storage->material_get_rt_invalidation_counter(material));
+			record.material = material.get_id();
+			record.material_generation = material_storage->material_get_rt_content_generation(material);
+			record.material_slot = native_material->global_buffer_index;
+			record.source_surface = surface->surface_index;
+			record.pass_index = pass_indices[ordinal];
+			record.flags = surface->flags;
+			record.rt_pass_flags = surface->rt_pass_flags;
+			record.material_flags = surface->rtxdi_material_flags;
+			record.force_finest = native_material->is_custom_shader || (surface->shader && surface->shader->uses_emission);
+			surface->persistent_surface = record.handle;
+			const uint32_t index = uint32_t(record.handle) - 1;
+			if (memcmp(&persistent_surfaces[index].data, &record, sizeof(record)) != 0) {
+				persistent_surfaces[index].data = record;
+				_upload_persistent_record(persistent_surface_buffer, persistent_surface_capacity, sizeof(record), index, &record);
+			}
+		}
+		instance->persistent_surfaces_dirty = false;
+	}
+	data.first_surface = instance->persistent_surfaces.is_empty() ? 0 : instance->persistent_surfaces[0];
+	data.surface_count = instance->persistent_surfaces.size();
+	persistent_instances[instance_index].data = data;
+	_upload_persistent_record(persistent_instance_buffer, persistent_instance_capacity, sizeof(data), instance_index, &data);
+	persistent_scene_generation++;
+}
+
+void RenderRaytracing::release_persistent_instance(uint64_t p_handle, const Vector<uint64_t> &p_surfaces) {
+	for (uint64_t handle : p_surfaces) {
+		const uint32_t index = uint32_t(handle) - 1;
+		ERR_CONTINUE(index >= persistent_surfaces.size() || persistent_surfaces[index].data.handle != handle);
+		auto &slot = persistent_surfaces[index];
+		slot.data = RTPersistentSurfaceData();
+		_upload_persistent_record(persistent_surface_buffer, persistent_surface_capacity, sizeof(slot.data), index, &slot.data);
+		slot.retirement = RD::get_singleton()->get_pending_submission_serial();
+		persistent_surface_free_slots.push_back(index);
+	}
+	if (p_handle != 0) {
+		const uint32_t index = uint32_t(p_handle) - 1;
+		ERR_FAIL_COND(index >= persistent_instances.size() || persistent_instances[index].data.handle != p_handle);
+		auto &slot = persistent_instances[index];
+		for (RID buffer : slot.dependencies) {
+			_reference_persistent_buffer(buffer, false);
+		}
+		slot.dependencies.clear();
+		slot.data = RTPersistentInstanceData();
+		_upload_persistent_record(persistent_instance_buffer, persistent_instance_capacity, sizeof(slot.data), index, &slot.data);
+		slot.retirement = RD::get_singleton()->get_pending_submission_serial();
+		persistent_instance_free_slots.push_back(index);
+	}
+	persistent_scene_generation++;
+}
+
+uint64_t RenderRaytracing::get_persistent_memory_bytes() const {
+	return uint64_t(persistent_instance_capacity) * sizeof(RTPersistentInstanceData) + uint64_t(persistent_surface_capacity) * sizeof(RTPersistentSurfaceData) + uint64_t(persistent_material_capacity) * sizeof(RTPersistentMaterialData);
+}
+
+void RenderRaytracing::_free_persistent_buffers() {
+	for (RID buffer : { persistent_instance_buffer, persistent_surface_buffer, persistent_material_buffer }) {
+		if (buffer.is_valid()) {
+			RD::get_singleton()->free_rid(buffer);
+		}
+	}
+}
+
+void RenderRaytracing::_reference_persistent_buffer(RID p_buffer, bool p_add) {
+	if (p_buffer.is_null()) {
+		return;
+	}
+	if (p_add) {
+		persistent_buffer_references[p_buffer]++;
+	} else {
+		uint32_t *count = persistent_buffer_references.getptr(p_buffer);
+		if (count && --*count == 0) {
+			persistent_buffer_references.erase(p_buffer);
+		}
+	}
+}
+
+void RenderRaytracing::get_persistent_buffer_dependencies(Vector<RID> &r_buffers) const {
+	for (RID buffer : { persistent_instance_buffer, persistent_surface_buffer, persistent_material_buffer, mat_ubo_pool_buffer }) {
+		if (buffer.is_valid()) {
+			r_buffers.push_back(buffer);
+		}
+	}
+	for (const KeyValue<RID, uint32_t> &entry : persistent_buffer_references) {
+		r_buffers.push_back(entry.key);
+	}
 }

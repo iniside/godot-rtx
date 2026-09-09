@@ -368,6 +368,7 @@ public:
 	static void _instance_unpair(Instance *p_A, Instance *p_B);
 
 	void _instance_update_mesh_instance(Instance *p_instance) const;
+	void _instance_update_scene_membership(Instance *p_instance);
 
 	virtual RID scenario_allocate();
 	virtual void scenario_initialize(RID p_rid);

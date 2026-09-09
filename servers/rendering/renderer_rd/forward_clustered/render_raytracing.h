@@ -30,6 +30,8 @@
 
 #pragma once
 
+#include "servers/rendering/renderer_rd/storage_rd/micro_geometry_storage.h"
+
 #include "core/math/projection.h"
 #include "core/math/transform_3d.h"
 #include "core/string/string_name.h"
@@ -44,6 +46,7 @@
 #include "servers/rendering/rendering_device.h"
 #include "servers/rendering/storage/environment_storage.h"
 
+class RenderGeometryInstance;
 class RenderDataRD;
 class RenderSceneBuffersRD;
 
@@ -422,6 +425,72 @@ struct alignas(16) RTFrameConstants {
 };
 static_assert(sizeof(RTFrameConstants) == 96);
 
+struct RTPersistentInstanceData {
+	uint64_t handle = 0;
+	uint64_t identity = 0;
+	uint64_t scenario = 0;
+	uint64_t asset = 0;
+	uint64_t asset_address = 0;
+	float transform[12] = {};
+	float previous_transform[12] = {};
+	float origin_low[4] = {};
+	float previous_origin_low[4] = {};
+	float aabb_position[4] = {};
+	float aabb_size[4] = {};
+	uint64_t multimesh_address = 0;
+	uint64_t multimesh_generation = 0;
+	uint64_t lightmap = 0;
+	float lightmap_uv_scale[4] = {};
+	float lightmap_sh[36] = {};
+	uint64_t first_surface = 0;
+	uint32_t surface_count = 0;
+	uint32_t flags = 0;
+	uint32_t layer_mask = 0;
+	uint32_t instance_uniforms_offset = 0;
+	uint32_t multimesh_stride = 0;
+	uint32_t multimesh_current_offset = 0;
+	uint32_t multimesh_previous_offset = 0;
+	uint32_t multimesh_count = 0;
+	uint32_t lightmap_slice = 0;
+	uint32_t visible = 0;
+	uint32_t shadows = 0;
+	uint32_t deformed = 0;
+	float fade_near_begin = 0;
+	float fade_near_end = 0;
+	float fade_far_begin = 0;
+	float fade_far_end = 0;
+	float force_alpha = 1;
+	float parent_fade_alpha = 1;
+	float lod_bias = 0;
+	float model_scale = 1;
+};
+
+struct RTPersistentSurfaceData {
+	uint64_t handle = 0;
+	uint64_t instance = 0;
+	uint64_t next_surface = 0;
+	uint64_t material = 0;
+	uint64_t material_generation = 0;
+	uint32_t material_slot = UINT32_MAX;
+	uint32_t source_surface = 0;
+	uint32_t pass_index = 0;
+	uint32_t flags = 0;
+	uint32_t rt_pass_flags = 0;
+	uint32_t material_flags = 0;
+	uint32_t force_finest = 0;
+	uint32_t pad = 0;
+};
+
+struct RTPersistentMaterialData {
+	uint64_t identity = 0;
+	uint64_t generation = 0;
+	RT_MaterialData data = {};
+};
+
+static_assert(sizeof(RTPersistentInstanceData) == 472);
+static_assert(sizeof(RTPersistentSurfaceData) == 72);
+static_assert(sizeof(RTPersistentMaterialData) == sizeof(RT_MaterialData) + 16);
+
 /// Per-viewport raytracing state.
 ///
 /// Each viewport has its own visibility set (frustum/LOD/visibility ranges), so
@@ -561,6 +630,34 @@ class RenderRaytracing {
 	LocalVector<RTEmissiveSource> emissive_sources;
 
 	HashMap<RenderSceneBuffersRD *, RTViewportState *> viewport_states;
+	template <typename T>
+	struct PersistentSlot {
+		T data;
+		uint32_t generation = 0;
+		uint64_t retirement = 0;
+	};
+	struct PersistentInstanceSlot : PersistentSlot<RTPersistentInstanceData> {
+		Vector<RID> dependencies;
+	};
+	LocalVector<PersistentInstanceSlot> persistent_instances;
+	LocalVector<PersistentSlot<RTPersistentSurfaceData>> persistent_surfaces;
+	LocalVector<RTPersistentMaterialData> persistent_materials;
+	LocalVector<RID> persistent_material_uniform_buffers;
+	HashMap<RID, uint32_t> persistent_buffer_references;
+	void _reference_persistent_buffer(RID p_buffer, bool p_add);
+	LocalVector<uint32_t> persistent_instance_free_slots;
+	LocalVector<uint32_t> persistent_surface_free_slots;
+	uint64_t persistent_scene_generation = 1;
+	RID persistent_instance_buffer;
+	RID persistent_surface_buffer;
+	RID persistent_material_buffer;
+	uint32_t persistent_instance_capacity = 0;
+	uint32_t persistent_surface_capacity = 0;
+	uint32_t persistent_material_capacity = 0;
+	void _upload_persistent_record(RID &r_buffer, uint32_t &r_capacity, uint32_t p_stride, uint32_t p_index, const void *p_data);
+	void _update_persistent_material(RID p_material, RTMaterialData *p_data, uint64_t p_generation);
+	void _free_persistent_buffers();
+
 
 	RTViewportState *_get_or_create_viewport_state(const RenderDataRD *p_render_data);
 	RTViewportState *_get_viewport_state(const RenderDataRD *p_render_data) const;
@@ -632,6 +729,17 @@ class RenderRaytracing {
 
 public:
 	void initialize(RenderForwardClustered *p_owner);
+	void update_persistent_instance(RenderGeometryInstance *p_instance);
+	void release_persistent_instance(uint64_t p_handle, const Vector<uint64_t> &p_surfaces);
+	RID get_persistent_instance_buffer() const { return persistent_instance_buffer; }
+	RID get_persistent_surface_buffer() const { return persistent_surface_buffer; }
+	RID get_persistent_material_buffer() const { return persistent_material_buffer; }
+	uint32_t get_persistent_instance_count() const { return persistent_instances.size(); }
+	uint32_t get_persistent_surface_count() const { return persistent_surfaces.size(); }
+	uint64_t get_persistent_scene_generation() const { return persistent_scene_generation; }
+	uint64_t get_persistent_memory_bytes() const;
+	void get_persistent_buffer_dependencies(Vector<RID> &r_buffers) const;
+
 
 	void cleanup_caches();
 

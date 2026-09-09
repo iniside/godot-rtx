@@ -3709,6 +3709,8 @@ uint32_t RenderForwardClustered::sdfgi_get_pending_region_cascade(const Ref<Rend
 }
 
 void RenderForwardClustered::GeometryInstanceForwardClustered::_mark_dirty() {
+	persistent_surfaces_dirty = true;
+	_mark_instance_data_dirty();
 	if (dirty_list_element.in_list()) {
 		return;
 	}
@@ -3742,7 +3744,7 @@ void RenderForwardClustered::_update_global_pipeline_data_requirements_from_ligh
 	global_pipeline_data_required.use_shadow_dual_paraboloid = light_storage->get_shadow_dual_paraboloid_used();
 }
 
-void RenderForwardClustered::_geometry_instance_add_surface_with_material(GeometryInstanceForwardClustered *ginstance, uint32_t p_surface, SceneShaderForwardClustered::MaterialData *p_material, uint32_t p_material_id, uint32_t p_shader_id, RID p_mesh) {
+void RenderForwardClustered::_geometry_instance_add_surface_with_material(GeometryInstanceForwardClustered *ginstance, uint32_t p_surface, SceneShaderForwardClustered::MaterialData *p_material, RID p_material_rid, uint32_t p_shader_id, RID p_mesh) {
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
 	uint32_t flags = 0;
 
@@ -3847,6 +3849,7 @@ void RenderForwardClustered::_geometry_instance_add_surface_with_material(Geomet
 
 	sdcache->shader = p_material->shader_data;
 	sdcache->material = p_material;
+	sdcache->material_rid = p_material_rid;
 	sdcache->material_uniform_set = p_material->uniform_set;
 	sdcache->surface = mesh_storage->mesh_get_surface(p_mesh, p_surface);
 	sdcache->primitive = mesh_storage->mesh_surface_get_primitive(sdcache->surface);
@@ -3873,8 +3876,8 @@ void RenderForwardClustered::_geometry_instance_add_surface_with_material(Geomet
 	sdcache->sort.sort_key2 = 0;
 
 	sdcache->sort.surface_index = p_surface;
-	sdcache->sort.material_id_hi = (p_material_id & 0xFF000000) >> 24;
-	sdcache->sort.material_id_lo = (p_material_id & 0x00FFFFFF);
+	sdcache->sort.material_id_hi = (p_material_rid.get_local_index() & 0xFF000000) >> 24;
+	sdcache->sort.material_id_lo = (p_material_rid.get_local_index() & 0x00FFFFFF);
 	sdcache->sort.shader_id = p_shader_id;
 	sdcache->sort.geometry_id = p_mesh.get_local_index(); //only meshes can repeat anyway
 	sdcache->sort.uses_forward_gi = ginstance->can_sdfgi;
@@ -3904,7 +3907,7 @@ void RenderForwardClustered::_geometry_instance_add_surface_with_material_chain(
 	SceneShaderForwardClustered::MaterialData *material = p_material;
 	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
 
-	_geometry_instance_add_surface_with_material(ginstance, p_surface, material, p_mat_src.get_local_index(), material_storage->material_get_shader_id(p_mat_src), p_mesh);
+	_geometry_instance_add_surface_with_material(ginstance, p_surface, material, p_mat_src, material_storage->material_get_shader_id(p_mat_src), p_mesh);
 
 	while (material->next_pass.is_valid()) {
 		RID next_pass = material->next_pass;
@@ -3915,7 +3918,7 @@ void RenderForwardClustered::_geometry_instance_add_surface_with_material_chain(
 		if (ginstance->data->dirty_dependencies) {
 			material_storage->material_update_dependency(next_pass, &ginstance->data->dependency_tracker);
 		}
-		_geometry_instance_add_surface_with_material(ginstance, p_surface, material, next_pass.get_local_index(), material_storage->material_get_shader_id(next_pass), p_mesh);
+		_geometry_instance_add_surface_with_material(ginstance, p_surface, material, next_pass, material_storage->material_get_shader_id(next_pass), p_mesh);
 	}
 }
 
@@ -4119,6 +4122,7 @@ void RenderForwardClustered::_geometry_instance_update(RenderGeometryInstance *p
 	}
 
 	ginstance->dirty_list_element.remove_from_list();
+	ginstance->_mark_instance_data_dirty();
 }
 
 static RD::FramebufferFormatID _get_rtxdi_surface_framebuffer_format_for_pipeline(bool p_can_be_storage) {
@@ -4323,6 +4327,29 @@ void RenderForwardClustered::_update_dirty_geometry_instances() {
 		_geometry_instance_update(geometry_instance_dirty_list.first()->self());
 	}
 
+	const uint64_t frame = RSG::rasterizer->get_frame_number();
+	for (auto *entry = instance_motion_update_list.first(); entry;) {
+		auto *next = entry->next();
+		GeometryInstanceForwardClustered *instance = entry->self();
+		if (instance->last_aged_frame == frame) {
+			entry = next;
+			continue;
+		}
+		instance->age_out_motion(frame);
+		instance->_mark_instance_data_dirty();
+		const bool mm_moving = instance->data->base_type == RSE::INSTANCE_MULTIMESH && RendererRD::MeshStorage::get_singleton()->multimesh_get_last_change(instance->data->base) + 1 >= frame;
+		if (instance->transform_status == GeometryInstanceForwardClustered::NONE && !mm_moving) {
+			instance->motion_update_element.remove_from_list();
+		}
+		entry = next;
+	}
+	while (instance_data_dirty_list.first()) {
+		GeometryInstanceForwardClustered *instance = instance_data_dirty_list.first()->self();
+		instance->instance_data_dirty_element.remove_from_list();
+		if (raytracing) {
+			raytracing->update_persistent_instance(instance);
+		}
+	}
 	_update_dirty_geometry_pipelines();
 }
 
@@ -4368,10 +4395,12 @@ void RenderForwardClustered::_geometry_instance_dependency_changed(Dependency::D
 			static_cast<RenderGeometryInstance *>(p_tracker->userdata)->_mark_dirty();
 			static_cast<GeometryInstanceForwardClustered *>(p_tracker->userdata)->data->dirty_dependencies = true;
 		} break;
+		case Dependency::DEPENDENCY_CHANGED_MULTIMESH_DATA:
 		case Dependency::DEPENDENCY_CHANGED_MULTIMESH_VISIBLE_INSTANCES: {
 			GeometryInstanceForwardClustered *ginstance = static_cast<GeometryInstanceForwardClustered *>(p_tracker->userdata);
 			if (ginstance->data->base_type == RSE::INSTANCE_MULTIMESH) {
 				ginstance->instance_count = RendererRD::MeshStorage::get_singleton()->multimesh_get_instances_to_draw(ginstance->data->base);
+				ginstance->_mark_instance_data_dirty();
 			}
 		} break;
 		default: {
@@ -4416,6 +4445,7 @@ void RenderForwardClustered::GeometryInstanceForwardClustered::set_transform(con
 }
 
 void RenderForwardClustered::GeometryInstanceForwardClustered::reset_motion_vectors() {
+	_mark_instance_data_dirty();
 	prev_transform = transform;
 	transform_status = TransformStatus::TELEPORTED;
 }
@@ -4428,6 +4458,7 @@ void RenderForwardClustered::GeometryInstanceForwardClustered::age_out_motion(ui
 	if (transform_status != TransformStatus::NONE && p_frame > prev_transform_change_frame + 1 && prev_transform_change_frame) {
 		prev_transform = transform;
 		transform_status = TransformStatus::NONE;
+		_mark_instance_data_dirty();
 	}
 }
 
@@ -4500,6 +4531,9 @@ void RenderForwardClustered::GeometryInstanceForwardClustered::_free_procedural_
 void RenderForwardClustered::geometry_instance_free(RenderGeometryInstance *p_geometry_instance) {
 	GeometryInstanceForwardClustered *ginstance = static_cast<GeometryInstanceForwardClustered *>(p_geometry_instance);
 	ERR_FAIL_NULL(ginstance);
+	if (raytracing) {
+		raytracing->release_persistent_instance(ginstance->persistent_instance, ginstance->persistent_surfaces);
+	}
 	if (ginstance->lightmap_sh != nullptr) {
 		geometry_instance_lightmap_sh.free(ginstance->lightmap_sh);
 	}
@@ -4871,5 +4905,15 @@ RenderForwardClustered::~RenderForwardClustered() {
 	while (sdfgi_framebuffer_size_cache.begin()) {
 		RD::get_singleton()->free_rid(sdfgi_framebuffer_size_cache.begin()->value);
 		sdfgi_framebuffer_size_cache.remove(sdfgi_framebuffer_size_cache.begin());
+	}
+}
+
+void RenderForwardClustered::GeometryInstanceForwardClustered::_mark_instance_data_dirty() {
+	RenderForwardClustered *renderer = RenderForwardClustered::get_singleton();
+	if (!instance_data_dirty_element.in_list()) {
+		renderer->instance_data_dirty_list.add(&instance_data_dirty_element);
+	}
+	if (data && (transform_status != NONE || data->base_type == RSE::INSTANCE_MULTIMESH) && !motion_update_element.in_list()) {
+		renderer->instance_motion_update_list.add(&motion_update_element);
 	}
 }

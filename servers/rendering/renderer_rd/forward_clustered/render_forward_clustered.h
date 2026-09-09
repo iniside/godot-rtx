@@ -616,8 +616,10 @@ protected:
 		uint32_t rt_pass_flags = 0;
 		uint32_t surface_index = 0;
 		uint32_t rtxdi_material_flags = 0;
+		uint64_t persistent_surface = 0;
 
 		void *surface = nullptr;
+		RID material_rid;
 		RID material_uniform_set;
 		SceneShaderForwardClustered::ShaderData *shader = nullptr;
 		SceneShaderForwardClustered::MaterialData *material = nullptr;
@@ -674,11 +676,17 @@ protected:
 		RID voxel_gi_instances[MAX_VOXEL_GI_INSTANCESS_PER_INSTANCE];
 		GeometryInstanceSurfaceDataCache *surface_caches = nullptr;
 		SelfList<GeometryInstanceForwardClustered> dirty_list_element;
+		SelfList<GeometryInstanceForwardClustered> instance_data_dirty_element;
+		SelfList<GeometryInstanceForwardClustered> motion_update_element;
+		uint64_t persistent_instance = 0;
+		bool persistent_surfaces_dirty = true;
+		Vector<uint64_t> persistent_surfaces;
 
 		GeometryInstanceForwardClustered() :
-				dirty_list_element(this) {}
+				dirty_list_element(this), instance_data_dirty_element(this), motion_update_element(this) {}
 
 		virtual void _mark_dirty() override;
+		virtual void _mark_instance_data_dirty() override;
 
 		virtual void set_transform(const Transform3D &p_transform, const AABB &p_aabb, const AABB &p_transformed_aabb) override;
 		virtual void reset_motion_vectors() override;
@@ -710,6 +718,8 @@ protected:
 	static void _geometry_instance_dependency_deleted(const RID &p_dependency, DependencyTracker *p_tracker);
 
 	SelfList<GeometryInstanceForwardClustered>::List geometry_instance_dirty_list;
+	SelfList<GeometryInstanceForwardClustered>::List instance_data_dirty_list;
+	SelfList<GeometryInstanceForwardClustered>::List instance_motion_update_list;
 	SelfList<GeometryInstanceSurfaceDataCache>::List geometry_surface_compilation_dirty_list;
 	SelfList<GeometryInstanceSurfaceDataCache>::List geometry_surface_compilation_all_list;
 
@@ -755,7 +765,7 @@ protected:
 
 	void _update_global_pipeline_data_requirements_from_project();
 	void _update_global_pipeline_data_requirements_from_light_storage();
-	void _geometry_instance_add_surface_with_material(GeometryInstanceForwardClustered *ginstance, uint32_t p_surface, SceneShaderForwardClustered::MaterialData *p_material, uint32_t p_material_id, uint32_t p_shader_id, RID p_mesh);
+	void _geometry_instance_add_surface_with_material(GeometryInstanceForwardClustered *ginstance, uint32_t p_surface, SceneShaderForwardClustered::MaterialData *p_material, RID p_material_rid, uint32_t p_shader_id, RID p_mesh);
 	void _geometry_instance_add_surface_with_material_chain(GeometryInstanceForwardClustered *ginstance, uint32_t p_surface, SceneShaderForwardClustered::MaterialData *p_material, RID p_mat_src, RID p_mesh);
 	void _geometry_instance_add_surface(GeometryInstanceForwardClustered *ginstance, uint32_t p_surface, RID p_material, RID p_mesh);
 	void _geometry_instance_update(RenderGeometryInstance *p_geometry_instance);

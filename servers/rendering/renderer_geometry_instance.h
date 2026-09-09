@@ -42,6 +42,8 @@ public:
 	virtual ~RenderGeometryInstance() {}
 
 	virtual void _mark_dirty() = 0;
+	virtual void _mark_instance_data_dirty() {}
+	virtual void set_scene_membership(RID p_scenario, bool p_visible, RSE::ShadowCastingSetting p_shadows) {}
 
 	virtual void set_skeleton(RID p_skeleton) = 0;
 	virtual void set_material_override(RID p_override) = 0;
@@ -94,6 +96,9 @@ public:
 
 	RID mesh_instance;
 	RID instance_rid;
+	RID scenario_rid;
+	bool scene_visible = false;
+	RSE::ShadowCastingSetting scene_shadows = RSE::SHADOW_CASTING_SETTING_ON;
 	bool rt_visible_receiver = false;
 	bool rt_casts_shadows = false;
 	bool rt_shadows_only = false;
@@ -147,7 +152,11 @@ public:
 	virtual void set_material_overlay(RID p_overlay) override;
 	virtual void set_surface_materials(const Vector<RID> &p_materials) override;
 	virtual void set_mesh_instance(RID p_mesh_instance) override;
-	virtual void set_instance_rid(RID p_instance) override { instance_rid = p_instance; }
+	virtual void set_instance_rid(RID p_instance) override {
+		instance_rid = p_instance;
+		_mark_instance_data_dirty();
+	}
+	virtual void set_scene_membership(RID p_scenario, bool p_visible, RSE::ShadowCastingSetting p_shadows) override;
 	virtual RID get_instance_rid() const override { return instance_rid; }
 	virtual void set_rt_visibility(bool p_visible_receiver, bool p_casts_shadows, bool p_shadows_only) override {
 		rt_visible_receiver = p_visible_receiver;

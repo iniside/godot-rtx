@@ -255,7 +255,7 @@ void MeshStorage::mesh_set_blend_shape_count(RID p_mesh, int p_blend_shape_count
 
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
-	mesh->micro_geometry.unref();
+	_invalidate_micro_geometry(mesh);
 
 	ERR_FAIL_COND(mesh->surface_count > 0); //surfaces already exist
 
@@ -266,7 +266,7 @@ void MeshStorage::mesh_set_blend_shape_count(RID p_mesh, int p_blend_shape_count
 void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::SurfaceData &p_surface) {
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
-	mesh->micro_geometry.unref();
+	_invalidate_micro_geometry(mesh);
 
 	ERR_FAIL_COND(mesh->surface_count == RSE::MAX_MESH_SURFACES);
 
@@ -375,6 +375,7 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 
 	static uint32_t s_next_rt_invalidation_counter = 1; // Monotonic counter is required so that new surfaces are also invalidated.
 	Mesh::Surface *s = memnew(Mesh::Surface);
+	s->source_data = new_surface;
 	s->rt_invalidation_counter = s_next_rt_invalidation_counter++;
 
 	s->format = new_surface.format;
@@ -597,9 +598,13 @@ void MeshStorage::mesh_surface_update_vertex_region(RID p_mesh, int p_surface, i
 	ERR_FAIL_COND(p_data.is_empty());
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
-	mesh->micro_geometry.unref();
 	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_surface, mesh->surface_count);
 	ERR_FAIL_COND(mesh->surfaces[p_surface]->vertex_buffer.is_null());
+
+	Vector<uint8_t> &source = mesh->surfaces[p_surface]->source_data.vertex_data;
+	ERR_FAIL_COND(p_offset < 0 || uint64_t(p_offset) + uint64_t(p_data.size()) > uint64_t(source.size()));
+	_invalidate_micro_geometry(mesh);
+	memcpy(source.ptrw() + p_offset, p_data.ptr(), p_data.size());
 
 	uint64_t data_size = p_data.size();
 	const uint8_t *r = p_data.ptr();
@@ -614,9 +619,13 @@ void MeshStorage::mesh_surface_update_attribute_region(RID p_mesh, int p_surface
 	ERR_FAIL_COND(p_data.is_empty());
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
-	mesh->micro_geometry.unref();
 	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_surface, mesh->surface_count);
 	ERR_FAIL_COND(mesh->surfaces[p_surface]->attribute_buffer.is_null());
+
+	Vector<uint8_t> &source = mesh->surfaces[p_surface]->source_data.attribute_data;
+	ERR_FAIL_COND(p_offset < 0 || uint64_t(p_offset) + uint64_t(p_data.size()) > uint64_t(source.size()));
+	_invalidate_micro_geometry(mesh);
+	memcpy(source.ptrw() + p_offset, p_data.ptr(), p_data.size());
 
 	uint64_t data_size = p_data.size();
 	const uint8_t *r = p_data.ptr();
@@ -631,9 +640,13 @@ void MeshStorage::mesh_surface_update_skin_region(RID p_mesh, int p_surface, int
 	ERR_FAIL_COND(p_data.is_empty());
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
-	mesh->micro_geometry.unref();
 	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_surface, mesh->surface_count);
 	ERR_FAIL_COND(mesh->surfaces[p_surface]->skin_buffer.is_null());
+
+	Vector<uint8_t> &source = mesh->surfaces[p_surface]->source_data.skin_data;
+	ERR_FAIL_COND(p_offset < 0 || uint64_t(p_offset) + uint64_t(p_data.size()) > uint64_t(source.size()));
+	_invalidate_micro_geometry(mesh);
+	memcpy(source.ptrw() + p_offset, p_data.ptr(), p_data.size());
 
 	uint64_t data_size = p_data.size();
 	const uint8_t *r = p_data.ptr();
@@ -648,9 +661,13 @@ void RendererRD::MeshStorage::mesh_surface_update_index_region(RID p_mesh, int p
 	ERR_FAIL_COND(p_data.is_empty());
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
-	mesh->micro_geometry.unref();
 	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_surface, mesh->surface_count);
 	ERR_FAIL_COND(mesh->surfaces[p_surface]->index_buffer.is_null());
+
+	Vector<uint8_t> &source = mesh->surfaces[p_surface]->source_data.index_data;
+	ERR_FAIL_COND(p_offset < 0 || uint64_t(p_offset) + uint64_t(p_data.size()) > uint64_t(source.size()));
+	_invalidate_micro_geometry(mesh);
+	memcpy(source.ptrw() + p_offset, p_data.ptr(), p_data.size());
 
 	uint64_t data_size = p_data.size();
 	const uint8_t *r = p_data.ptr();
@@ -713,6 +730,11 @@ RenderingServerTypes::SurfaceData MeshStorage::mesh_get_surface(RID p_mesh, int 
 	ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_surface, mesh->surface_count, RenderingServerTypes::SurfaceData());
 
 	Mesh::Surface &s = *mesh->surfaces[p_surface];
+	if (s.keep_source_data) {
+		RenderingServerTypes::SurfaceData source = s.source_data;
+		source.material = s.material;
+		return source;
+	}
 
 	RenderingServerTypes::SurfaceData sd;
 	sd.format = s.format;
@@ -913,8 +935,43 @@ String MeshStorage::mesh_get_path(RID p_mesh) const {
 void MeshStorage::mesh_set_micro_geometry(RID p_mesh, const Ref<MicroGeometryData> &p_data) {
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
+	if (mesh->micro_geometry == p_data) {
+		return;
+	}
+	RID asset;
+	if (p_data.is_valid()) {
+		ERR_FAIL_COND(mesh->blend_shape_count != 0 || mesh->has_bone_weights);
+		for (const MicroGeometryData::Surface &surface : p_data->get_metadata().surfaces) {
+			ERR_FAIL_UNSIGNED_INDEX(surface.source_surface, mesh->surface_count);
+			const Mesh::Surface &source = *mesh->surfaces[surface.source_surface];
+			ERR_FAIL_COND(source.vertex_count != surface.source_vertex_count || (source.index_count ? source.index_count : source.vertex_count) / 3 != surface.source_triangle_count);
+		}
+		asset = micro_geometry_storage.acquire(p_data);
+		ERR_FAIL_COND(asset.is_null());
+	}
+	_invalidate_micro_geometry(mesh);
 	mesh->micro_geometry = p_data;
+	mesh->micro_geometry_asset = asset;
+	if (asset.is_valid()) {
+		for (uint32_t i = 0; i < mesh->surface_count; i++) {
+			mesh->surfaces[i]->keep_source_data = true;
+		}
+	}
 	mesh->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MESH);
+}
+
+void MeshStorage::_invalidate_micro_geometry(Mesh *p_mesh) {
+	if (p_mesh->micro_geometry_asset.is_valid()) {
+		micro_geometry_storage.release(p_mesh->micro_geometry_asset);
+		p_mesh->micro_geometry_asset = RID();
+		p_mesh->micro_geometry.unref();
+		p_mesh->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MESH);
+	}
+}
+
+RID MeshStorage::mesh_get_micro_geometry_asset(RID p_mesh) const {
+	const Mesh *mesh = mesh_owner.get_or_null(p_mesh);
+	return mesh ? mesh->micro_geometry_asset : RID();
 }
 
 void MeshStorage::mesh_set_shadow_mesh(RID p_mesh, RID p_shadow_mesh) {
@@ -940,7 +997,7 @@ void MeshStorage::mesh_set_shadow_mesh(RID p_mesh, RID p_shadow_mesh) {
 void MeshStorage::mesh_clear(RID p_mesh) {
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
-	mesh->micro_geometry.unref();
+	_invalidate_micro_geometry(mesh);
 
 	// Clear instance data before mesh data.
 	for (MeshInstance *mi : mesh->instances) {
@@ -971,7 +1028,7 @@ void MeshStorage::mesh_clear(RID p_mesh) {
 void MeshStorage::mesh_surface_remove(RID p_mesh, int p_surface) {
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
-	mesh->micro_geometry.unref();
+	_invalidate_micro_geometry(mesh);
 	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_surface, mesh->surface_count);
 
 	// Clear instance data before mesh data.
@@ -2296,6 +2353,7 @@ void MeshStorage::_multimesh_set_buffer(RID p_multimesh, const Vector<float> &p_
 			multimesh->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_AABB);
 		}
 	}
+	multimesh->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MULTIMESH_DATA);
 }
 
 RID MeshStorage::_multimesh_get_command_buffer_rd_rid(RID p_multimesh) const {
@@ -2403,6 +2461,7 @@ MeshStorage::MultiMeshInterpolator *MeshStorage::_multimesh_get_interpolator(RID
 }
 
 void MeshStorage::_update_dirty_multimeshes() {
+	micro_geometry_storage.update();
 	while (multimesh_dirty_list) {
 		MultiMesh *multimesh = multimesh_dirty_list;
 
@@ -2450,6 +2509,7 @@ void MeshStorage::_update_dirty_multimeshes() {
 			}
 		}
 
+		multimesh->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MULTIMESH_DATA);
 		multimesh_dirty_list = multimesh->dirty_list;
 
 		multimesh->dirty_list = nullptr;

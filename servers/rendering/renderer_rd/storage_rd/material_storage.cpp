@@ -2638,10 +2638,10 @@ void MaterialStorage::_update_queued_materials() {
 	while (SelfList<Material> *E = copy.first()) {
 		Material *material = E->self();
 		copy.remove(E);
-		bool uniforms_changed = false;
+		bool uniforms_changed = material->shader_type == SHADER_TYPE_3D && (material->uniform_dirty || material->texture_dirty);
 
 		if (material->data) {
-			uniforms_changed = material->data->update_parameters(material->params, material->uniform_dirty, material->texture_dirty);
+			uniforms_changed |= material->data->update_parameters(material->params, material->uniform_dirty, material->texture_dirty);
 		}
 		material->texture_dirty = false;
 		material->uniform_dirty = false;

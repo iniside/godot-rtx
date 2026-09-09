@@ -78,6 +78,7 @@ void RenderGeometryInstanceBase::set_transform(const Transform3D &p_transform, c
 	non_uniform_scale = max_scale >= 0.0 && (min_scale / max_scale) < 0.999;
 
 	lod_model_scale = max_scale;
+	_mark_instance_data_dirty();
 }
 
 void RenderGeometryInstanceBase::set_pivot_data(float p_sorting_offset, bool p_use_aabb_center) {
@@ -87,10 +88,12 @@ void RenderGeometryInstanceBase::set_pivot_data(float p_sorting_offset, bool p_u
 
 void RenderGeometryInstanceBase::set_lod_bias(float p_lod_bias) {
 	lod_bias = p_lod_bias;
+	_mark_instance_data_dirty();
 }
 
 void RenderGeometryInstanceBase::set_layer_mask(uint32_t p_layer_mask) {
 	layer_mask = p_layer_mask;
+	_mark_instance_data_dirty();
 }
 
 void RenderGeometryInstanceBase::set_fade_range(bool p_enable_near, float p_near_begin, float p_near_end, bool p_enable_far, float p_far_begin, float p_far_end) {
@@ -100,14 +103,17 @@ void RenderGeometryInstanceBase::set_fade_range(bool p_enable_near, float p_near
 	fade_far = p_enable_far;
 	fade_far_begin = p_far_begin;
 	fade_far_end = p_far_end;
+	_mark_instance_data_dirty();
 }
 
 void RenderGeometryInstanceBase::set_parent_fade_alpha(float p_alpha) {
 	parent_fade_alpha = p_alpha;
+	_mark_instance_data_dirty();
 }
 
 void RenderGeometryInstanceBase::set_transparency(float p_transparency) {
 	force_alpha = CLAMP(1.0 - p_transparency, 0, 1);
+	_mark_instance_data_dirty();
 }
 
 void RenderGeometryInstanceBase::set_use_baked_light(bool p_enable) {
@@ -143,4 +149,14 @@ Transform3D RenderGeometryInstanceBase::get_transform() {
 
 AABB RenderGeometryInstanceBase::get_aabb() {
 	return data->aabb;
+}
+
+void RenderGeometryInstanceBase::set_scene_membership(RID p_scenario, bool p_visible, RSE::ShadowCastingSetting p_shadows) {
+	if (scenario_rid == p_scenario && scene_visible == p_visible && scene_shadows == p_shadows) {
+		return;
+	}
+	scenario_rid = p_scenario;
+	scene_visible = p_visible;
+	scene_shadows = p_shadows;
+	_mark_instance_data_dirty();
 }
