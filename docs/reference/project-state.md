@@ -1,14 +1,19 @@
 # Project State
 
-GPU-driven microgeometry research (2026-09-08, source `4c0f7f97b5`):
-[the research](../research/2026-09-08-2005-gpu-microgeometry-research-summary.md)
-maps import/flat CLUS, missing DAG/pages, CPU raster submission, static CLAS
-assembly, GPU indirect support and shared hit/emitter contracts. Owner scope:
+GPU-driven microgeometry implementation (2026-09-09, `fd74e8ca4f`):
+[authorized plan](../plans/2026-09-09-0900-gpu-microgeometry-plan.md) and
+[execution evidence](../research/2026-09-09-0900-gpu-microgeometry-implementation-status.md).
+Paged native resource/importer and pinned meshoptimizer DAG builder are committed;
+16 affected C++ objects compiled; final importer review passed at `0f3f9757c2`.
+RD indirect-count
+and GPU AS APIs passed final source review at `57fa1e2e07`. Runtime integration
+is incomplete: old RT callers prevent the full link; dragon import and GPU
+validation have not run. Owner scope:
 nondeforming geometry including rigid movement/instancing; preserve existing
 deformations; exclude foliage/voxels and new reflections. RT simplification uses
 simple error control plus an offscreen multiplier, without light/receiver/probe
-importance algorithms. Source/external research only, no build or GPU claims;
-this is preparation for a plan, not implementation approval.
+importance algorithms. Implementation is authorized; these intermediate commits
+do not establish a working GPU microgeometry renderer.
 
 Owner renderer scope correction (2026-09-08): DLSS/RR, path tracing and
 camera-following DDGI only; no VR/XR work or validation and no requirement for
