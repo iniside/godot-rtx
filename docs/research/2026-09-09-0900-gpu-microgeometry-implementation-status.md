@@ -60,16 +60,23 @@ RT calls (now render_raytracing.cpp:1419/1422). Evidence logs are
 `C:/Users/lukas/AppData/Local/Temp/godot-micro-step2-owned-build.log` and
 `C:/Users/lukas/AppData/Local/Temp/godot-micro-step2-final-build.log`.
 
-Fresh Step 2 review is BLOCKED: two spawn attempts returned
-`agent thread limit reached`, including a retry after the writer completed.
-No review verdict exists for this step. Repository planning-dispatch requires
-a fresh reviewer, so dependent Step 4/5 edits have not been released. Their
-read-only consumer maps are complete; Step 6 is pending. No implementation or
-validation success is claimed for Steps 4–6.
+Fresh Step 2 review resumed on 2026-09-09 after the owner retried. Earlier spawn
+attempts returned `agent thread limit reached`; the latest fresh reviewer started
+successfully. Round 1 returned REJECT for two defects: material ingestion before
+BindlessBlock initialization cached zero texture indices, and procedural RT state
+transitions did not dirty persistent deformation eligibility. Fix commit
+`f97a605510271cb1f7cc0d0a3033837e49074732` initializes the existing BindlessBlock
+at material ingestion and dirties both procedural setters. The ForwardClustered
+object compiled; RT retains only the two deferred old-call errors. Fresh final
+round 2 returned PASS at `f97a605510271cb1f7cc0d0a3033837e49074732`, including the
+original step and cumulative diff. Step 4 implementation has started from that
+baseline, including native shader variants, GPU selection and all static native
+pass consumers. Step 5's read-only consumer map is complete; it awaits stable
+selected-cut contracts. Step 6 is pending. No implementation or validation
+success is claimed for Steps 4–6.
 
-Resume with a fresh Step 2 review of exact `0f4733e65e` and cumulative
-`0f3f9757c2..0f4733e65e`, then fix/review if needed and release Step 4. Step 5
-needs stable shared storage and selected-cut shader contracts. All prior owner
+Continue Step 4 and its fresh review; Step 5 needs stable shared storage and
+selected-cut shader contracts. All prior owner
 authorization remains in effect. The final linked editor, dragon import/reimport,
 export/PCK, double/template and real GPU checks remain outstanding.
 
