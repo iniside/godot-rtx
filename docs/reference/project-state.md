@@ -5,8 +5,10 @@ GPU-driven microgeometry implementation (2026-09-09, `fd74e8ca4f`):
 [execution evidence](../research/2026-09-09-0900-gpu-microgeometry-implementation-status.md).
 Paged native resource/importer and pinned meshoptimizer DAG builder are committed;
 16 affected C++ objects compiled; final importer review passed at `0f3f9757c2`.
-RD indirect-count
-and GPU AS APIs passed final source review at `57fa1e2e07`. Runtime integration
+RD indirect-count and GPU AS APIs passed final source review at `57fa1e2e07`.
+Page residency/persistent scene records are committed at `0f4733e65e`; seven
+owned objects compiled, but mandatory fresh review is blocked by the agent
+thread limit. Runtime integration
 is incomplete: old RT callers prevent the full link; dragon import and GPU
 validation have not run. Owner scope:
 nondeforming geometry including rigid movement/instancing; preserve existing
