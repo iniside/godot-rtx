@@ -22,8 +22,12 @@ updates, while native TLAS construction is small. Moving-scene RTXDI CPU
 intervals are about 19 ms each versus 0.7-0.9 ms still; main profiling reports
 render threading disabled. Two earlier moving profiles exhausted timestamp
 capacity and are invalid; replacement profiles exit 0 without errors. The owner
-requires minimal main work, worker-based rendering preparation and a central
-sync/submission point; GPU async compute is a separate scheduling direction.
+requires no renderer execution on main, worker-based preparation/recording and
+render thread as the synchronization/submission point. The
+[approved corrective plan](../plans/2026-09-09-1535-rendering-performance-repair-plan.md)
+orders CPU/GPU redundant-work removal before frame ownership and worker dispatch;
+GPU async compute is a separate final extension. The owner approved execution;
+the plan is committed at `02e21acb92` and Step 1 is next.
 No threading or shader performance fix has landed yet.
 Actual dragon import/reimport passed in 82.66/67.04 seconds, yielding 17 DAG
 levels and 9737 pages with byte-identical reused `.mgdata`; the diagnostic

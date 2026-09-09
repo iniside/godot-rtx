@@ -128,3 +128,19 @@ buffers, but their active configuration was not verified. Async compute would
 require graph scheduling and explicit dependencies/resource lifetime handling;
 it is not an existing switch. No threading, scheduling or shader optimization
 has been implemented in this instrumentation task.
+
+## Approved repair execution
+
+The owner approved the corrective plan, committed separately at `02e21acb92`.
+Step 1 implementation dispatch is blocked by repeated runtime
+`agent thread limit reached` responses, including a follow-up to the prior
+implementer. No repair source edits or builds have occurred. A requested owner
+exception to mandatory separate-context implementation is pending.
+
+The source-matched instrumented binary and adjacent DLLs are preserved in
+`C:/Users/lukas/AppData/Local/Temp/godot-render-repair-20260909/baseline-bin`,
+with `baseline-binaries.json`. An additional 600-frame moving baseline without
+`--gpu-profile` exited 0 without ERROR output in 57.84 seconds including startup
+and shutdown. Receipt: `repair-baseline-moving-no-profile.receipt.json` in the
+original evidence root above. This elapsed process duration is not a steady-state
+frame-time measurement or an isolated profiler-overhead attribution.
