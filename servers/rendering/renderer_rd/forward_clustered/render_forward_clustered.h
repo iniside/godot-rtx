@@ -154,7 +154,7 @@ public:
 		ClusterBuilderRD *cluster_builder = nullptr;
 		RendererRD::NRDEffect::Context *nrd_context = nullptr;
 		MicroGeometrySelection::DepthPyramid micro_geometry_depth;
-		MicroGeometrySelection::Pass *frozen_micro_geometry = nullptr;
+		MicroGeometrySelection::Pass *camera_micro_geometry = nullptr;
 		uint32_t micro_geometry_clusters = 0;
 		uint32_t micro_geometry_triangles = 0;
 		uint64_t micro_geometry_stats_epoch = 0;

@@ -1866,6 +1866,7 @@ void MeshStorage::_multimesh_allocate_data(RID p_multimesh, int p_instances, RSE
 	if (multimesh->buffer.is_valid()) {
 		RD::get_singleton()->free_rid(multimesh->buffer);
 		multimesh->buffer = RID();
+		multimesh->buffer_exposed = false;
 		multimesh->uniform_set_2d = RID(); //cleared by dependency
 		multimesh->uniform_set_3d = RID(); //cleared by dependency
 	}
@@ -1956,6 +1957,7 @@ void MeshStorage::_multimesh_enable_motion_vectors(MultiMesh *multimesh) {
 	}
 
 	multimesh->buffer = new_buffer;
+	multimesh->buffer_exposed = false;
 	multimesh->uniform_set_3d = RID(); // Cleared by dependency.
 
 	// Invalidate any references to the buffer that was released and the uniform set that was pointing to it.
@@ -2532,6 +2534,7 @@ RID MeshStorage::_multimesh_get_command_buffer_rd_rid(RID p_multimesh) const {
 RID MeshStorage::_multimesh_get_buffer_rd_rid(RID p_multimesh) const {
 	MultiMesh *multimesh = multimesh_owner.get_or_null(p_multimesh);
 	ERR_FAIL_NULL_V(multimesh, RID());
+	multimesh->buffer_exposed = multimesh->buffer.is_valid();
 	return multimesh->buffer;
 }
 

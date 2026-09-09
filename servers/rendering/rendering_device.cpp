@@ -596,6 +596,12 @@ bool RenderingDevice::acceleration_structure_is_valid(RID p_acceleration_structu
 	return acceleration_structure_owner.owns(p_acceleration_structure);
 }
 
+bool RenderingDevice::acceleration_structure_needs_rebuild(RID p_acceleration_structure) {
+	ERR_RENDER_THREAD_GUARD_V(true);
+	const AccelerationStructure *structure = acceleration_structure_owner.get_or_null(p_acceleration_structure);
+	return !structure || structure->invalidated;
+}
+
 Error RenderingDevice::blas_build(RID p_blas) {
 	ERR_RENDER_THREAD_GUARD_V(ERR_UNAVAILABLE);
 

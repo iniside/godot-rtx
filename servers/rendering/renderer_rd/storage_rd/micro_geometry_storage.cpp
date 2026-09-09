@@ -763,8 +763,14 @@ RID MicroGeometryStorage::feedback_begin(RID p_feedback) {
 	}
 	FeedbackHeader header;
 	header.capacity = feedback->capacity;
+	feedback->retry = false;
 	RD::get_singleton()->buffer_update(feedback->buffer, 0, sizeof(header), &header);
 	return feedback->buffer;
+}
+
+bool MicroGeometryStorage::feedback_needs_retry(RID p_feedback) const {
+	const Feedback *feedback = feedbacks.get_or_null(p_feedback);
+	return feedback && feedback->retry;
 }
 
 void MicroGeometryStorage::feedback_submit(RID p_feedback) {
@@ -779,6 +785,7 @@ void MicroGeometryStorage::feedback_submit(RID p_feedback) {
 	if (error != OK) {
 		pending_feedback_count--;
 		feedback->pending = false;
+		feedback->retry = true;
 	}
 	RENDER_TIMESTAMP("Microgeometry Request Readback Complete");
 }
@@ -790,10 +797,12 @@ void MicroGeometryStorage::_feedback_received(const Vector<uint8_t> &p_bytes, RI
 		return;
 	}
 	feedback->pending = false;
+	feedback->retry = p_bytes.size() != int64_t(sizeof(FeedbackHeader)) + int64_t(feedback->capacity) * sizeof(GPURequest);
 	ERR_FAIL_COND(p_bytes.size() != int64_t(sizeof(FeedbackHeader)) + int64_t(feedback->capacity) * sizeof(GPURequest));
 	FeedbackHeader header;
 	memcpy(&header, p_bytes.ptr(), sizeof(header));
 	statistics.pressure += header.overflow != 0 || header.count > feedback->capacity;
+	feedback->retry = header.overflow != 0 || header.count > feedback->capacity;
 	for (uint32_t i = 0; i < MIN(header.count, feedback->capacity); i++) {
 		GPURequest request;
 		memcpy(&request, p_bytes.ptr() + sizeof(header) + i * sizeof(request), sizeof(request));

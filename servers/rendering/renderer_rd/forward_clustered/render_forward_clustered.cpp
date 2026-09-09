@@ -222,9 +222,9 @@ void RenderForwardClustered::RenderBufferDataForwardClustered::micro_geometry_st
 }
 
 void RenderForwardClustered::RenderBufferDataForwardClustered::free_data() {
-	if (frozen_micro_geometry) {
-		memdelete(frozen_micro_geometry);
-		frozen_micro_geometry = nullptr;
+	if (camera_micro_geometry) {
+		memdelete(camera_micro_geometry);
+		camera_micro_geometry = nullptr;
 	}
 	micro_geometry_stats_epoch++;
 	micro_geometry_stats_pending = false;
@@ -580,9 +580,9 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 			}
 		}
 	}
-	if (pass->render_buffers && pass->render_buffers->frozen_micro_geometry && (!p_render_data->render_buffers->is_micro_geometry_debug_freeze() || tasks.is_empty())) {
-		memdelete(pass->render_buffers->frozen_micro_geometry);
-		pass->render_buffers->frozen_micro_geometry = nullptr;
+	if (pass->render_buffers && pass->render_buffers->camera_micro_geometry && (pass->render_buffers->camera_micro_geometry->freeze_requested != p_render_data->render_buffers->is_micro_geometry_debug_freeze() || tasks.is_empty())) {
+		memdelete(pass->render_buffers->camera_micro_geometry);
+		pass->render_buffers->camera_micro_geometry = nullptr;
 	}
 	if (tasks.is_empty() || group_work > UINT32_MAX || cluster_work > UINT32_MAX || coarse_work > UINT32_MAX) {
 		if (pass->render_buffers) {
@@ -662,23 +662,24 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 	raytracing->get_persistent_buffer_dependencies(dependencies);
 	snapshot_key.push_back(parameters.scenario);
 	snapshot_key.push_back(parameters.layer_mask);
-	if (pass->render_buffers && pass->render_buffers->frozen_micro_geometry) {
-		auto *frozen = pass->render_buffers->frozen_micro_geometry;
-		if (frozen->snapshot_key == snapshot_key) {
-			pass->gpu = frozen;
+	if (pass->render_buffers && pass->render_buffers->camera_micro_geometry) {
+		auto *retained = pass->render_buffers->camera_micro_geometry;
+		if (retained->snapshot_key == snapshot_key) {
+			pass->gpu = retained;
 			pass->owns_gpu = false;
-			parameters.task_count = frozen->data.task_count;
-			parameters.bin_count = frozen->data.bin_count;
-			parameters.flags |= frozen->data.flags & 8;
-			frozen->data = parameters;
+			parameters.task_count = retained->data.task_count;
+			parameters.bin_count = retained->data.bin_count;
+			parameters.flags |= retained->data.flags & 8;
+			retained->data = parameters;
 			return pass;
 		}
-		memdelete(frozen);
-		pass->render_buffers->frozen_micro_geometry = nullptr;
+		memdelete(retained);
+		pass->render_buffers->camera_micro_geometry = nullptr;
 	}
 	RENDER_TIMESTAMP("Microgeometry Raster Allocate");
 	pass->gpu = micro_geometry->create(tasks, bins, parameters, levels, sizeof(SceneState::InstanceData), raytracing->get_persistent_instance_buffer(), raytracing->get_persistent_surface_buffer(), dependencies);
-	if (pass->gpu && camera_pass && p_render_data->render_buffers->is_micro_geometry_debug_freeze()) {
+	if (pass->gpu && camera_pass) {
+		pass->gpu->freeze_requested = p_render_data->render_buffers->is_micro_geometry_debug_freeze();
 		pass->gpu->snapshot_key = snapshot_key;
 		for (const auto &task : tasks) {
 			RID asset = RID::from_uint64(task.asset);
@@ -687,14 +688,14 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 			}
 			storage->acquire(storage->get_source(asset));
 			pass->gpu->assets.push_back(asset);
-			for (uint32_t group = 0; group < task.group_count; group++) {
+			for (uint32_t group = 0; pass->gpu->freeze_requested && group < task.group_count; group++) {
 				if (storage->is_group_ready(asset, group)) {
 					storage->pin_group(asset, group);
 					pass->gpu->pins.push_back({ asset, group });
 				}
 			}
 		}
-		pass->render_buffers->frozen_micro_geometry = pass->gpu;
+		pass->render_buffers->camera_micro_geometry = pass->gpu;
 		pass->owns_gpu = false;
 	}
 	if (!pass->gpu) {
@@ -717,7 +718,10 @@ void RenderForwardClustered::_select_micro_geometry(MicroGeometryRasterPass *p_p
 	MicroGeometryRasterParameters raster;
 	raster.page_pool = RD::get_singleton()->buffer_get_device_address(RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage()->get_pool());
 	raster.selected_cluster_color = get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_MICRO_GEOMETRY_RASTER;
-	RD::get_singleton()->buffer_update(p_pass->gpu->raster_parameters, 0, sizeof(raster), &raster);
+	if (memcmp(&p_pass->gpu->raster_data, &raster, sizeof(raster)) != 0) {
+		RD::get_singleton()->buffer_update(p_pass->gpu->raster_parameters, 0, sizeof(raster), &raster);
+		p_pass->gpu->raster_data = raster;
+	}
 	if (p_pass->gpu->frozen) {
 		micro_geometry->update_frozen(p_pass->gpu);
 		p_pass->dispatched = true;
@@ -1170,9 +1174,9 @@ void RenderForwardClustered::_render_list_with_draw_list(RenderListParameters *p
 	}
 	if (pass) {
 		micro_geometry->submit_feedback(pass->gpu);
-		if (!pass->owns_gpu && !pass->gpu->frozen) {
+		if (pass->gpu->freeze_requested && !pass->gpu->frozen) {
 			if (!micro_geometry->freeze(pass->gpu)) {
-				pass->render_buffers->frozen_micro_geometry = nullptr;
+				pass->render_buffers->camera_micro_geometry = nullptr;
 				pass->owns_gpu = true;
 			}
 		}

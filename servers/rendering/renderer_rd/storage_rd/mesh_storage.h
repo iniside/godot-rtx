@@ -253,6 +253,7 @@ private:
 
 	struct MultiMesh {
 		uint64_t rt_generation = 0;
+		bool buffer_exposed = false;
 		RID mesh;
 		int instances = 0;
 		RSE::MultimeshTransformFormat xform_format = RSE::MULTIMESH_TRANSFORM_3D;
@@ -885,6 +886,11 @@ public:
 	_FORCE_INLINE_ uint64_t multimesh_get_rt_generation(RID p_multimesh) const {
 		MultiMesh *mm = multimesh_owner.get_or_null(p_multimesh);
 		return mm ? mm->rt_generation : 0;
+	}
+
+	_FORCE_INLINE_ bool multimesh_has_gpu_updates(RID p_multimesh) const {
+		MultiMesh *mm = multimesh_owner.get_or_null(p_multimesh);
+		return mm && (mm->buffer_exposed || mm->indirect);
 	}
 
 	_FORCE_INLINE_ uint32_t multimesh_get_previous_instance_offset(RID p_multimesh) const {

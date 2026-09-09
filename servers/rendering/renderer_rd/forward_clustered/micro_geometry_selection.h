@@ -94,6 +94,8 @@ public:
 		Vector<RID> assets;
 		Vector<uint64_t> snapshot_key;
 		bool frozen = false;
+		bool freeze_requested = false;
+		MicroGeometryRasterParameters raster_data;
 		bool recovered = false;
 		bool raster_memory_accounted = false;
 		RID statistics;

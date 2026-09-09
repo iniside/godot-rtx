@@ -122,6 +122,7 @@ MicroGeometrySelection::Pass *MicroGeometrySelection::create(const Vector<Task> 
 	MicroGeometryRasterParameters raster;
 	raster.page_pool = RD::get_singleton()->buffer_get_device_address(storage->get_pool());
 	RD::get_singleton()->buffer_update(pass->raster_parameters, 0, sizeof(raster), &raster);
+	pass->raster_data = raster;
 	if ((pass->data.flags & 32) == 0) {
 		storage->add_raster_selection_memory(pass->memory_bytes);
 		pass->raster_memory_accounted = true;

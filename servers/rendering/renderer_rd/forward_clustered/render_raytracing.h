@@ -524,6 +524,13 @@ struct RTMicroGeometryBuild {
 		INITIAL_CUT,
 	};
 	uint64_t signature = 0;
+	uint64_t input_signature = 0;
+	uint64_t selected_input_signature = 0;
+	uint64_t dependency_signature = 0;
+	uint64_t transform_signature = 0;
+	uint64_t address_signature = 0;
+	bool selection_retry = false;
+	bool conservative_updates = false;
 	uint64_t cut_generation = 0;
 	uint64_t memory_bytes = 0;
 	uint64_t retirement = 0;
@@ -555,6 +562,7 @@ struct RTMicroGeometryBuild {
 	Vector<RID> resources;
 	Vector<RID> dependencies;
 	Vector<RID> clas_dependencies;
+	Vector<RID> blas_dependencies;
 	RD::ClusterBottomLevelBuildInput input;
 	RID tasks;
 	RID blas_addresses;
@@ -597,6 +605,13 @@ static_assert(sizeof(RTPersistentMaterialData) == sizeof(RT_MaterialData) + 16);
 /// from `RenderBufferDataForwardClustered::free_data()`.
 struct RTViewportState {
 	RTMicroGeometryBuild *micro_geometry = nullptr;
+	uint64_t tlas_signature = 0;
+	bool tlas_inputs_valid = false;
+	Vector<uint8_t> geometry_upload;
+	Vector<uint8_t> material_upload;
+	Vector<uint8_t> motion_index_upload;
+	Vector<uint8_t> motion_transform_upload;
+	bool micro_geometry_transforms_dirty = false;
 	RendererEnvironmentStorage::RaytracingSettings settings;
 	RID settings_environment;
 	RID settings_camera;

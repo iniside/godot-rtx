@@ -212,6 +212,7 @@ private:
 		RID buffer;
 		uint32_t capacity = 0;
 		bool pending = false;
+		bool retry = false;
 	};
 	mutable RID_Owner<Feedback> feedbacks;
 	LocalVector<RID> active_feedbacks;
@@ -243,6 +244,7 @@ private:
 public:
 	RID feedback_create(uint32_t p_capacity = 4096);
 	RID feedback_begin(RID p_feedback);
+	bool feedback_needs_retry(RID p_feedback) const;
 	void feedback_submit(RID p_feedback);
 	void feedback_free(RID p_feedback);
 	RID acquire(const Ref<MicroGeometryData> &p_source);
