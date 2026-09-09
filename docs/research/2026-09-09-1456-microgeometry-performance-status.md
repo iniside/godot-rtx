@@ -289,3 +289,71 @@ in the corrective plan: sparse shared selection, then compact GPU-interned cuts
 and shared BLAS with exact page ownership. Existing asset/page streaming remains
 the authority. Fresh independent extension-plan review passes against `0d1ed0abe9`; Step 3A
 implementation follows, with Step 3B and threading still pending.
+
+## Dense fixture import and population
+
+Fixture `c4633542e7` in `demos/rtxdi_manual/microgeometry_stress` passes fresh
+source review and separate proof audit. Normal import, native resource inspection,
+and three-frame headless population/teardown exit 0 with empty stderr. Actual
+population is 5000 Lucy plus 5000 Thai MeshInstance3D nodes, 10000 valid API
+instance RIDs and two shared ArrayMesh resources. Startup placement/counting
+observed 93.133 ms after resource loading; it is not a steady-state measurement.
+No GPU launch has been performed for this fixture.
+
+Real import took 436.188 seconds. Lucy has 634477 clusters, 316198 leaf clusters,
+38934 groups, 19 levels and 37918 pages; Thai has 229774 clusters, 114600 leaf
+clusters, 14091 groups, 18 levels and 13505 pages. At 5000 instances each the
+old full-DAG RT layout requires 4321255000 work items and at least 69140080000
+bytes for membership/cached membership/references (64.39 GiB). These actual
+counts supersede the conservative leaf-only bound above. File metadata totals
+are not GPU metadata admission sizes. The native storage formula at `0d1ed0abe9`
+requires 45803180 B for Lucy and 16572108 B for Thai: 62375288 B (59.486 MiB)
+combined, leaving 4733576 B under the 64 MiB admission cap in fresh storage.
+Existing active/retired metadata also consumes this cap. This is source/ABI
+arithmetic, not a driver-memory measurement; it does not require a budget increase
+for the two shared resources in the isolated fixture.
+
+Evidence: `C:/Users/lukas/AppData/Local/Temp/godot-dense-microgeometry-20260909/`,
+including import/inspect/population receipts, exact asset/output hashes and
+`fixture.diff`. The copied GLBs remain local untracked dependencies; originals
+are unchanged. The same pinned Step 3 executable produced these artifacts.
+A later `runtime-inputs` snapshot retains the exact still-matching project.godot,
+profiling override and scene/script contents for subsequent real-device runs.
+The review boundary remains importer/resource/Node/API allocation and teardown;
+headless configured Vulkan labels do not establish an initialized Vulkan device.
+
+Step 3A first implementation `c02a8db660` builds in ordinary/double and passes
+both selector shader compilations/SPIR-V validation. The pinned `step3a-bin`
+double hash is `ac937cd8251b6858341a6aeaf0288ac0731942ea10a016b5e698f01a38f6330d`.
+Its 3000-frame still Vulkan run exits 0 without Godot `ERROR:` lines. Fresh
+source review nevertheless rejects an intra-dispatch frontier-publication race
+and capacity-history exhaustion across retired surface generations. Those
+findings require fixes and a fresh second review; successful execution does not
+disprove either defect. Step 3B remains held until the selector contract closes.
+
+Step 3A correction `571816b9f4` passes fresh final round 2 source review,
+ordinary/double builds and both selector Slang/SPIR-V variants. The immutable
+per-depth frontier snapshot closes publication ordering; live/recent capacity
+ownership replaces lifetime accumulation. The double executable is retained in
+`step3a-fixed-bin`, SHA256
+`5de9b317eb1b90f4090eb7825d77e75113bab7273fd66e1c2862334e582bb81e`.
+Both `step3a-fixed-still` and `step3a-fixed-moving` complete 3000 single-view
+Vulkan frames with exit 0, unchanged hashes, no timeout and no Godot ERROR lines.
+Last-ten reported GPU medians are 3.910/7.731 ms, render-wall medians
+3.967/14.033 ms; these runs do not claim an incremental performance improvement.
+Still dependency builds remain zero; moving helper cost is 2.828 ms. Evidence
+is in `step3a-fixed-comparison.json` under the same root capture directory.
+
+The bounded `step3a-fixed-lifetime` run exits 0 without timeout after native
+unload/reload observations: resident pages 541 to 1, then 3340 with 597 pending,
+and later 4092 with 364 pending. Four screenshots and an event log are retained.
+Owner input was detected during the reload action; motion and RT error changed
+from still/4 to moving/16, so reload/settings attribution is explicitly mixed.
+One native save/load diagnostic reports no imported ArrayMesh available; this
+interactive run is not claimed error-free. Long history saturation and targeted
+HZB-rejection outcomes remain unverified. Step 3B implementation now follows.
+
+The dragon HUD CLAS statistic is cumulative successful cluster builds, incremented
+at page CLAS creation in `micro_geometry_storage.cpp:206`; it is not a live CLAS
+count. Rigid transform changes alone must preserve CLAS. New resident pages may
+require new builds; the Step 3B telemetry distinguishes sharing and residency.

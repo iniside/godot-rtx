@@ -43,7 +43,12 @@ union builds. Moving capture is not an incremental performance-win claim.
 The owner additionally requires real instancing/streaming for 5000 Lucy plus
 5000 Thai instances. Current full-DAG-per-instance buffers cannot admit that
 workload; the sparse selection/shared-cut extension passes plan review before
-the threading steps. SceneTree scalability fixes remain outside this task.
+the threading steps. Dense fixture `c4633542e7` passes source/proof reviews,
+normal import and headless population (5000+5000 nodes sharing two meshes).
+Full dense GPU admission remains pending. SceneTree scalability fixes remain
+outside this task. Step 3A sparse selection correction `571816b9f4` passes final
+source review, both builds and single-view still/moving Vulkan captures. Step 3B
+shared RT cuts/BLAS and exact streaming ownership are being implemented.
 Threading changes remain pending.
 Actual dragon import/reimport passed in 82.66/67.04 seconds, yielding 17 DAG
 levels and 9737 pages with byte-identical reused `.mgdata`; the diagnostic
