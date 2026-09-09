@@ -56,7 +56,13 @@ normal-exit proof. Gather-local material reuse `e319cca724` builds in both
 precisions and lowers measured RT gather CPU from 50.269 to 6.809 ms on the dense
 scene; fresh source review passes. These are reported window medians, not
 main active time or isolated whole-GPU gains. Step 4 bounded main/render frame
-ownership is being implemented; worker preparation/recording remain pending.
+ownership passes final source review and ordinary/double/template builds at
+`9f42b239e3`. Final native editor, dense, SR/RR, bare-editor and no-draw runs
+exit 0 without ERROR. Dense main transfer is 0.0225 ms and admission/callback
+active work 0.0115 ms; admission wait is separately 27.1335 ms. These are
+medians of reported window means. Independent proof audit remains pending
+because of the harness agent limit. Step 5 worker preparation is active;
+worker recording and conditional async compute remain pending.
 Actual dragon import/reimport passed in 82.66/67.04 seconds, yielding 17 DAG
 levels and 9737 pages with byte-identical reused `.mgdata`; the diagnostic
 reimport command had shutdown warnings. Import evidence uses an immutable

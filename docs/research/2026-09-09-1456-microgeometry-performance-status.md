@@ -464,8 +464,109 @@ transform-only invariance or the remaining threading steps.
 
 ## Remaining worker preparation
 
-Step 4 frame ownership is in implementation. The bounded
+Step 4 frame ownership passes final source review at `9f42b239e3`; its
+independent proof audit is pending. Step 5 implementation is active. The bounded
 [canvas preparation inspection](2026-09-09-1919-canvas-worker-preparation-summary.md)
 and [RT gather inspection](2026-09-09-1919-rt-worker-preparation-summary.md)
+and [3D cull/raster inspection](2026-09-09-1945-raster-worker-preparation-summary.md)
 identify cull, batch, cache and upload ownership for Step 5. They do not claim
 worker dispatch. RD recording remains Step 6.
+
+## Step 4 frame ownership: final source review and bounded native evidence
+
+Step 4 candidate `42ec20f6c3` builds in ordinary, double and template-debug
+configurations; source review round 1 rejects editor admission reentrancy.
+The correction and final evidence follow below. Retained earlier ordinary
+build02 SHA256 `a5266e7afd74c790420e5c8568dd851938cea5a47419029f158b227d8696b8bb`
+uses separate rendering by default, bounded iteration admission and captured
+frame inputs. Its exact source manifest and patch are retained as
+`step4-build02-source.json` and `step4-build02.patch` beside the previous receipts.
+
+`step4-dense-orbit` completes 1500 frames on the 10000-instance Vulkan workload
+with exit 0 and no ERROR. Last-ten MAIN reported frame-mean medians are render
+transfer 0.010 ms, admission/callback active 0.010 ms, simulation 0.4285 ms,
+process/navigation 0.048 ms and admission wait 26.8395 ms. Waiting for an older
+occupied slot is reported separately from main active work. Rendering remains
+serial behind this boundary; these results do not establish worker preparation
+or recording. `step4-dense-orbit-metrics.json` records these exact labels.
+The render-start overlap counter can miss main work begun during an already
+running draw and is not evidence that dense execution never overlaps.
+
+The initial build01 SR fixed-60 callback run exits 0 without ERROR and captures
+frame 301. Build02 RR fixed-60 callback also exits 0 without ERROR, reports
+feature 1001 evaluation with `sl::eOk`, and captures frame 301. Both images visibly
+contain the gallery and HUD; no appearance acceptance is claimed. Build02
+reports render thread 7 versus main thread 1. The build02 no-draw command uses
+`--disable-render-loop --fixed-fps 60 --quit-after 120` and exits 0 without ERROR.
+Source changes after these pinned binaries are not covered by those observations.
+
+Bare `-e --verbose --quit-after 30` on build02 exits 0 but reports one empty-image
+ERROR in `TextureStorage::_texture_2d_update()`. The retained pre-Step4 material
+binary completes the same command without ERROR. Queued image snapshots in `42ec20f6c3`
+close the traced font-atlas producer mutation; build03 bare-editor replay exits
+0 without ERROR. Candidate final ordinary SHA256
+`bb31c83f05a0647238dc622bfce783bdf09da76057b9254a7364d23b20616b3c`
+then passes both SR/RR fixed-60 callbacks with captures and clean exit.
+
+The candidate project-editor run times out at 120 seconds without ERROR. An
+unchanged retry with a 240-second limit exits 0 in 42.24 seconds, but reports
+four begin/end-frame ownership errors. The latter is a concrete defect:
+ProgressDialog and editor thumbnail generation call nested Main iterations;
+rejected nested admission still reaches unconditional end-frame and consumes
+the outer owner. Round 1 source review independently confirms this finding.
+The correction makes only outer entry/exit acquire/release admission; nested
+iterations retain the outer token and cannot consume its slot. No debugger was
+attached; the first timeout cause is unproven. Runtime text input hashes are
+retained in `step4-runtime-inputs.json`. The ordinary editor automatically
+removed the existing Double Precision feature marker from `project.godot`;
+only that metadata delta was restored, reproducing the original SHA256 exactly.
+`step4-editor-project-feature-change.patch` retains the delta. All eight text
+inputs match the retained manifest after the final runs; no quality setting
+was changed.
+
+
+### Final nesting correction and pinned runtime
+
+`9f42b239e3` makes admission depth explicit and drains completed main callbacks
+on nested entries. Fresh final source review round 2 passes against exact and
+cumulative `e319cca724..9f42b239` changes. Ordinary, double and template-debug
+builds pass (`step4-editor-build06.log`, `step4-double-build06.log`,
+`step4-template-build04.log`). The 22-file final source manifest is
+`step4-nesting-complete-source.json`; pinned binaries are in
+`step4-nesting-complete-bin`, with hashes in the corresponding binaries JSON:
+
+- Ordinary: `b7cd64375ccf1d3aa3b7a3b717f45e57f481eb9efdac93e170f3eeea2b77ac0e`.
+- Double: `67aed4ca531c5bfd0512efceeb283f1e7b8f43f7de33a41d197aa62d3e27539e`.
+- Template: `3cb00f4a5340c456eee82d4165a652b4b783a8b7988ce509387fdfeff5648e68`.
+
+The final `step4-nesting-complete-project-editor` run exits 0 without ERROR
+in 21.292 seconds. Final `step4-nesting-complete-dense-orbit` completes 1500
+iterations without concurrent compilation and exits 0 without ERROR. Last-ten
+reported window medians are main render transfer 0.0225 ms, admission/callback
+active 0.0115 ms, simulation 0.038 ms, process/navigation 0.067 ms and admission
+wait 27.1335 ms. Render queue delay is 27.261 ms. These are window means summarized
+by a median, not individual-frame percentiles. Admission wait and queue delay
+are not active CPU work and must not be added together as independent costs.
+The time-driven orbit prevents an isolated whole-GPU gain claim.
+
+Final `step4-verified-sr` and `step4-verified-rr` fixed-60 runs capture frame 301
+and exit 0 without ERROR. These final PNGs have not been visually evaluated;
+this establishes the capture callback and bounded native execution only.
+Final `step4-verified-bare-editor` and `step4-verified-no-draw` also exit 0
+without timeout or ERROR. Existing shader/material warnings remain outside
+these narrow zero-ERROR claims. All evidence is retained beside earlier failed
+runs; successful replacements do not explain every earlier timeout.
+
+The exact Streamline source at commit
+`e8aaa6eaac968711fb62473d4ae8256dde20919b`, `source/core/sl.api/sl.cpp:1125`,
+was refreshed and retained as `streamline-e8aaa6-sl-api.cpp` (SHA256
+`665bb44d9f41b00609c26a9cb5117abb85a803033e417509cf97efcb945d9f1b`).
+`slGetNewFrameToken` advances the six-slot ring at line 1141; supplying an old
+counter does not pin a token. Step 4 limits admitted outer CPU iteration owners
+to two, with FIFO retirement after their queued draws. This is separate from
+GPU resource retirement and does not establish worker recording.
+
+The named independent Step 4 proof-auditor could not be spawned because the
+harness reports `agent thread limit reached`; its verdict remains pending.
+This does not block independent Step 5 implementation. No automated tests were
+run or added. Steps 5-6 and conditional async compute remain incomplete.
