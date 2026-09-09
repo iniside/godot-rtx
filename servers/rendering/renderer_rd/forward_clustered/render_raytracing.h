@@ -366,16 +366,16 @@ struct RTDeformedCacheEntry {
 
 /// Cache entry for a per-(MultiMesh, surface) merged BLAS.
 /// All vertex data (positions, normals, tangents, UVs, colors) is fully baked per-instance
-/// so the hit shader uses the standard code path â€” no special per-instance lookups.
+/// so the hit shader uses the standard code path — no special per-instance lookups.
 struct RTMergedMMEntry {
-	// Merged vertex buffer: [float3 pos Ã— N*V] + [packed TBN Ã— N*V] (if mesh has normals).
+	// Merged vertex buffer: [float3 pos × N*V] + [packed TBN × N*V] (if mesh has normals).
 	// The BLAS reads only the position section; the hit shader reads TBN via normal_byte_offset.
 	RID merged_vtx_buffer;
 	RID previous_position_buffer;
 	uint32_t previous_position_capacity_bytes = 0;
 	uint32_t vtx_capacity_bytes = 0;
 
-	// Merged attribute buffer: [UV + color Ã— N*V] replicated per instance.
+	// Merged attribute buffer: [UV + color × N*V] replicated per instance.
 	RID merged_attr_buffer;
 	uint32_t attr_capacity_bytes = 0;
 

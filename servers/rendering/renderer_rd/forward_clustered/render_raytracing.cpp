@@ -1119,7 +1119,7 @@ static void _fill_surface_geometry_data(
 	geom.uv_scale_packed = (uint32_t(Math::make_half_float(uv_scale.y)) << 16) | Math::make_half_float(uv_scale.x);
 	geom.uv2_scale_packed = (uint32_t(Math::make_half_float(uv_scale.w)) << 16) | Math::make_half_float(uv_scale.z);
 
-	// Index format (no device address â€” caller fills those in)
+	// Index format (no device address — caller fills those in)
 	if (index_buffer.is_valid() && index_count > 0) {
 		bool is_16bit = vertex_count <= 65536 && vertex_count > 0;
 		geom.index_format = is_16bit ? RT_INDEX_FORMAT_UINT16 : RT_INDEX_FORMAT_UINT32;
@@ -2356,21 +2356,21 @@ bool RenderRaytracing::_build_merged_mm_blas(
 	bool has_tangent = surface_format & RSE::ARRAY_FORMAT_TANGENT;
 	bool has_tbn = has_normal;
 
-	// Layout of uncompressed vertex buffer: [float3 positions Ã— V] + [packed TBN Ã— V].
+	// Layout of uncompressed vertex buffer: [float3 positions × V] + [packed TBN × V].
 	// normal_stride = 8 when both normal+tangent present (two uint16x2 packed), 4 with normal only.
 	uint32_t tbn_stride = 0;
 	if (has_normal && has_tangent) {
-		tbn_stride = 8; // 2 Ã— uint32 (normal oct, tangent oct+sign)
+		tbn_stride = 8; // 2 × uint32 (normal oct, tangent oct+sign)
 	} else if (has_normal) {
-		tbn_stride = 4; // 1 Ã— uint32 (normal oct only)
+		tbn_stride = 4; // 1 × uint32 (normal oct only)
 	}
 	// Byte offset of the TBN block in the source vertex buffer.
 	uint32_t src_tbn_byte_offset = vertex_count * 12; // after all float3 positions
 
-	// Merged vertex buffer: [float3 pos Ã— N*V] + [packed TBN Ã— N*V] (if TBN present).
+	// Merged vertex buffer: [float3 pos × N*V] + [packed TBN × N*V] (if TBN present).
 	uint32_t merged_vtx_bytes = p_mm_count * vertex_count * 12 + (has_tbn ? p_mm_count * vertex_count * tbn_stride : 0);
 
-	// Attribute buffer: attribute_stride bytes Ã— V, replicated N times.
+	// Attribute buffer: attribute_stride bytes × V, replicated N times.
 	RTSurfaceData meta_sd;
 	_fill_surface_geometry_data(p_mesh_surface, false, &meta_sd);
 	uint32_t attrib_stride = meta_sd.geometry.attribute_stride;
@@ -3006,7 +3006,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			}
 
 			RID mm_gpu_buffer = mesh_storage->multimesh_get_gpu_buffer(mm_rid);
-			// Populate data cache now â€” first access triggers GPU readback, safe here.
+			// Populate data cache now — first access triggers GPU readback, safe here.
 			mesh_storage->multimesh_get_local_data_ptr(mm_rid);
 
 			bool transform_moved = (inst->transform_status ==
@@ -3258,7 +3258,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 	}
 
 	// -----------------------------------------------------------------------
-	// Phase 2: GPU compute â€” merged MultiMesh BLAS dispatches.
+	// Phase 2: GPU compute — merged MultiMesh BLAS dispatches.
 	// -----------------------------------------------------------------------
 	RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();
 
@@ -3308,7 +3308,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			}
 #endif
 		} else {
-			// Fallback: expanded TLAS â€” one entry per instance, shared BLAS.
+			// Fallback: expanded TLAS — one entry per instance, shared BLAS.
 			const float *mm_data = mesh_storage->multimesh_get_local_data_ptr(pending.mm_rid);
 			if (!mm_data) {
 				continue;

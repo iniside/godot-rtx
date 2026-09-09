@@ -1268,7 +1268,7 @@
 			<description>
 				Generates and returns an [Image] containing the radiance map for the specified [param environment] RID's sky. This supports built-in sky material and custom sky shaders. If [param bake_irradiance] is [code]true[/code], the irradiance map is saved instead of the radiance map. The radiance map is used to render reflected light, while the irradiance map is used to render ambient light. See also [method sky_bake_panorama].
 				[b]Note:[/b] The image is saved using linear encoding without any tonemapping performed, which means it will look too dark if viewed directly in an image editor.
-				[b]Note:[/b] [param size] should be a 2:1 aspect ratio for the generated panorama to have square pixels. For radiance maps, there is no point in using a height greater than [member Sky.radiance_size], as it won't increase detail. Irradiance maps only contain low-frequency data, so there is usually no point in going past a size of 128Ã—64 pixels when saving an irradiance map.
+				[b]Note:[/b] [param size] should be a 2:1 aspect ratio for the generated panorama to have square pixels. For radiance maps, there is no point in using a height greater than [member Sky.radiance_size], as it won't increase detail. Irradiance maps only contain low-frequency data, so there is usually no point in going past a size of 128×64 pixels when saving an irradiance map.
 			</description>
 		</method>
 		<method name="environment_create">
@@ -1756,7 +1756,7 @@
 		<method name="get_test_texture">
 			<return type="RID" />
 			<description>
-				Returns the RID of a 256Ã—256 texture with a testing pattern on it (in [constant Image.FORMAT_RGB8] format). This texture will be created and returned on the first call to [method get_test_texture], then it will be cached for subsequent calls. See also [method get_white_texture].
+				Returns the RID of a 256×256 texture with a testing pattern on it (in [constant Image.FORMAT_RGB8] format). This texture will be created and returned on the first call to [method get_test_texture], then it will be cached for subsequent calls. See also [method get_white_texture].
 				[b]Example:[/b] Get the test texture and apply it to a [Sprite2D] node:
 				[codeblock]
 				var texture_rid = RenderingServer.get_test_texture()
@@ -1797,7 +1797,7 @@
 		<method name="get_white_texture">
 			<return type="RID" />
 			<description>
-				Returns the ID of a 4Ã—4 white texture (in [constant Image.FORMAT_RGB8] format). This texture will be created and returned on the first call to [method get_white_texture], then it will be cached for subsequent calls. See also [method get_test_texture].
+				Returns the ID of a 4×4 white texture (in [constant Image.FORMAT_RGB8] format). This texture will be created and returned on the first call to [method get_white_texture], then it will be cached for subsequent calls. See also [method get_test_texture].
 				[b]Example:[/b] Get the white texture and apply it to a [Sprite2D] node:
 				[codeblock]
 				var texture_rid = RenderingServer.get_white_texture()
@@ -1810,7 +1810,7 @@
 			<return type="void" />
 			<param index="0" name="half_resolution" type="bool" />
 			<description>
-				If [param half_resolution] is [code]true[/code], renders [VoxelGI] and SDFGI ([member Environment.sdfgi_enabled]) buffers at halved resolution on each axis (e.g. 960Ã—540 when the viewport size is 1920Ã—1080). This improves performance significantly when VoxelGI or SDFGI is enabled, at the cost of artifacts that may be visible on polygon edges. The loss in quality becomes less noticeable as the viewport resolution increases. [LightmapGI] rendering is not affected by this setting. Equivalent to [member ProjectSettings.rendering/global_illumination/gi/use_half_resolution].
+				If [param half_resolution] is [code]true[/code], renders [VoxelGI] and SDFGI ([member Environment.sdfgi_enabled]) buffers at halved resolution on each axis (e.g. 960×540 when the viewport size is 1920×1080). This improves performance significantly when VoxelGI or SDFGI is enabled, at the cost of artifacts that may be visible on polygon edges. The loss in quality becomes less noticeable as the viewport resolution increases. [LightmapGI] rendering is not affected by this setting. Equivalent to [member ProjectSettings.rendering/global_illumination/gi/use_half_resolution].
 			</description>
 		</method>
 		<method name="global_shader_parameter_add">
@@ -3864,7 +3864,7 @@
 			<description>
 				Generates and returns an [Image] containing the radiance map for the specified [param sky] RID. This supports built-in sky material and custom sky shaders. If [param bake_irradiance] is [code]true[/code], the irradiance map is saved instead of the radiance map. The radiance map is used to render reflected light, while the irradiance map is used to render ambient light. See also [method environment_bake_panorama].
 				[b]Note:[/b] The image is saved using linear encoding without any tonemapping performed, which means it will look too dark if viewed directly in an image editor. [param energy] values above [code]1.0[/code] can be used to brighten the resulting image.
-				[b]Note:[/b] [param size] should be a 2:1 aspect ratio for the generated panorama to have square pixels. For radiance maps, there is no point in using a height greater than [member Sky.radiance_size], as it won't increase detail. Irradiance maps only contain low-frequency data, so there is usually no point in going past a size of 128Ã—64 pixels when saving an irradiance map.
+				[b]Note:[/b] [param size] should be a 2:1 aspect ratio for the generated panorama to have square pixels. For radiance maps, there is no point in using a height greater than [member Sky.radiance_size], as it won't increase detail. Irradiance maps only contain low-frequency data, so there is usually no point in going past a size of 128×64 pixels when saving an irradiance map.
 			</description>
 		</method>
 		<method name="sky_create">
@@ -5319,7 +5319,7 @@
 			[b]Note:[/b] The variable shadow blur performed by [member Light3D.light_size] and [member Light3D.light_angular_distance] is still effective when using hard shadow filtering. In this case, [member Light3D.shadow_blur] [i]is[/i] taken into account. However, the results will not be blurred, instead the blur amount is treated as a maximum radius for the penumbra.
 		</constant>
 		<constant name="SHADOW_QUALITY_SOFT_VERY_LOW" value="1" enum="ShadowQuality">
-			Very low shadow filtering quality (faster). When using this quality setting, [member Light3D.shadow_blur] is automatically multiplied by 0.75Ã— to avoid introducing too much noise. This division only applies to lights whose [member Light3D.light_size] or [member Light3D.light_angular_distance] is [code]0.0[/code]).
+			Very low shadow filtering quality (faster). When using this quality setting, [member Light3D.shadow_blur] is automatically multiplied by 0.75× to avoid introducing too much noise. This division only applies to lights whose [member Light3D.light_size] or [member Light3D.light_angular_distance] is [code]0.0[/code]).
 		</constant>
 		<constant name="SHADOW_QUALITY_SOFT_LOW" value="2" enum="ShadowQuality">
 			Low shadow filtering quality (fast).
@@ -5328,10 +5328,10 @@
 			Medium low shadow filtering quality (average).
 		</constant>
 		<constant name="SHADOW_QUALITY_SOFT_HIGH" value="4" enum="ShadowQuality">
-			High low shadow filtering quality (slow). When using this quality setting, [member Light3D.shadow_blur] is automatically multiplied by 1.5Ã— to better make use of the high sample count. This increased blur also improves the stability of dynamic object shadows. This multiplier only applies to lights whose [member Light3D.light_size] or [member Light3D.light_angular_distance] is [code]0.0[/code]).
+			High low shadow filtering quality (slow). When using this quality setting, [member Light3D.shadow_blur] is automatically multiplied by 1.5× to better make use of the high sample count. This increased blur also improves the stability of dynamic object shadows. This multiplier only applies to lights whose [member Light3D.light_size] or [member Light3D.light_angular_distance] is [code]0.0[/code]).
 		</constant>
 		<constant name="SHADOW_QUALITY_SOFT_ULTRA" value="5" enum="ShadowQuality">
-			Highest low shadow filtering quality (slowest). When using this quality setting, [member Light3D.shadow_blur] is automatically multiplied by 2Ã— to better make use of the high sample count. This increased blur also improves the stability of dynamic object shadows. This multiplier only applies to lights whose [member Light3D.light_size] or [member Light3D.light_angular_distance] is [code]0.0[/code]).
+			Highest low shadow filtering quality (slowest). When using this quality setting, [member Light3D.shadow_blur] is automatically multiplied by 2× to better make use of the high sample count. This increased blur also improves the stability of dynamic object shadows. This multiplier only applies to lights whose [member Light3D.light_size] or [member Light3D.light_angular_distance] is [code]0.0[/code]).
 		</constant>
 		<constant name="SHADOW_QUALITY_MAX" value="6" enum="ShadowQuality">
 			Represents the size of the [enum ShadowQuality] enum.
@@ -5481,22 +5481,22 @@
 			Heightfield collision type for [GPUParticles3D] (see [GPUParticlesCollisionHeightField3D]).
 		</constant>
 		<constant name="PARTICLES_COLLISION_HEIGHTFIELD_RESOLUTION_256" value="0" enum="ParticlesCollisionHeightfieldResolution">
-			256Ã—256 heightfield resolution for [GPUParticlesCollisionHeightField3D].
+			256×256 heightfield resolution for [GPUParticlesCollisionHeightField3D].
 		</constant>
 		<constant name="PARTICLES_COLLISION_HEIGHTFIELD_RESOLUTION_512" value="1" enum="ParticlesCollisionHeightfieldResolution">
-			512Ã—512 heightfield resolution for [GPUParticlesCollisionHeightField3D].
+			512×512 heightfield resolution for [GPUParticlesCollisionHeightField3D].
 		</constant>
 		<constant name="PARTICLES_COLLISION_HEIGHTFIELD_RESOLUTION_1024" value="2" enum="ParticlesCollisionHeightfieldResolution">
-			1024Ã—1024 heightfield resolution for [GPUParticlesCollisionHeightField3D].
+			1024×1024 heightfield resolution for [GPUParticlesCollisionHeightField3D].
 		</constant>
 		<constant name="PARTICLES_COLLISION_HEIGHTFIELD_RESOLUTION_2048" value="3" enum="ParticlesCollisionHeightfieldResolution">
-			2048Ã—2048 heightfield resolution for [GPUParticlesCollisionHeightField3D].
+			2048×2048 heightfield resolution for [GPUParticlesCollisionHeightField3D].
 		</constant>
 		<constant name="PARTICLES_COLLISION_HEIGHTFIELD_RESOLUTION_4096" value="4" enum="ParticlesCollisionHeightfieldResolution">
-			4096Ã—4096 heightfield resolution for [GPUParticlesCollisionHeightField3D].
+			4096×4096 heightfield resolution for [GPUParticlesCollisionHeightField3D].
 		</constant>
 		<constant name="PARTICLES_COLLISION_HEIGHTFIELD_RESOLUTION_8192" value="5" enum="ParticlesCollisionHeightfieldResolution">
-			8192Ã—8192 heightfield resolution for [GPUParticlesCollisionHeightField3D].
+			8192×8192 heightfield resolution for [GPUParticlesCollisionHeightField3D].
 		</constant>
 		<constant name="PARTICLES_COLLISION_HEIGHTFIELD_RESOLUTION_MAX" value="6" enum="ParticlesCollisionHeightfieldResolution">
 			Represents the size of the [enum ParticlesCollisionHeightfieldResolution] enum.
@@ -5628,16 +5628,16 @@
 			Anisotropic filtering is disabled.
 		</constant>
 		<constant name="VIEWPORT_ANISOTROPY_2X" value="1" enum="ViewportAnisotropicFiltering">
-			Use 2Ã— anisotropic filtering.
+			Use 2× anisotropic filtering.
 		</constant>
 		<constant name="VIEWPORT_ANISOTROPY_4X" value="2" enum="ViewportAnisotropicFiltering">
-			Use 4Ã— anisotropic filtering. This is the default value.
+			Use 4× anisotropic filtering. This is the default value.
 		</constant>
 		<constant name="VIEWPORT_ANISOTROPY_8X" value="3" enum="ViewportAnisotropicFiltering">
-			Use 8Ã— anisotropic filtering.
+			Use 8× anisotropic filtering.
 		</constant>
 		<constant name="VIEWPORT_ANISOTROPY_16X" value="4" enum="ViewportAnisotropicFiltering">
-			Use 16Ã— anisotropic filtering.
+			Use 16× anisotropic filtering.
 		</constant>
 		<constant name="VIEWPORT_ANISOTROPY_MAX" value="5" enum="ViewportAnisotropicFiltering">
 			Represents the size of the [enum ViewportAnisotropicFiltering] enum.
@@ -5781,7 +5781,7 @@
 			The last cascade shows all frustum slices to illustrate the coverage of all slices.
 		</constant>
 		<constant name="VIEWPORT_DEBUG_DRAW_SCENE_LUMINANCE" value="11" enum="ViewportDebugDraw">
-			Draws the estimated scene luminance. This is a 1Ã—1 texture that is generated when autoexposure is enabled to control the scene's exposure.
+			Draws the estimated scene luminance. This is a 1×1 texture that is generated when autoexposure is enabled to control the scene's exposure.
 			[b]Note:[/b] Only supported when using the Forward+ or Mobile rendering methods.
 		</constant>
 		<constant name="VIEWPORT_DEBUG_DRAW_SSAO" value="12" enum="ViewportDebugDraw">
@@ -5898,7 +5898,7 @@
 		</constant>
 		<constant name="SKY_MODE_REALTIME" value="3" enum="SkyMode">
 			Uses the fast filtering algorithm to process the radiance map. In general this results in lower quality, but substantially faster run times. If you need better quality, but still need to update the sky every frame, consider turning on [member ProjectSettings.rendering/reflections/sky_reflections/fast_filter_high_quality].
-			[b]Note:[/b] The fast filtering algorithm is limited to 256Ã—256 cubemaps, so [method sky_set_radiance_size] must be set to [code]256[/code]. Otherwise, a warning is printed and the overridden radiance size is ignored.
+			[b]Note:[/b] The fast filtering algorithm is limited to 256×256 cubemaps, so [method sky_set_radiance_size] must be set to [code]256[/code]. Otherwise, a warning is printed and the overridden radiance size is ignored.
 		</constant>
 		<constant name="COMPOSITOR_EFFECT_FLAG_ACCESS_RESOLVED_COLOR" value="1" enum="CompositorEffectFlags">
 			The rendering effect requires the color buffer to be resolved if MSAA is enabled.
@@ -6421,13 +6421,13 @@
 			2-dimensional floating-point rectangle global shader parameter ([code]global uniform vec4 ...[/code]). Equivalent to [constant GLOBAL_VAR_TYPE_VEC4] in shader code, but exposed as a [Rect2] in the editor UI.
 		</constant>
 		<constant name="GLOBAL_VAR_TYPE_MAT2" value="19" enum="GlobalShaderParameterType">
-			2Ã—2 matrix global shader parameter ([code]global uniform mat2 ...[/code]). Exposed as a [PackedInt32Array] in the editor UI.
+			2×2 matrix global shader parameter ([code]global uniform mat2 ...[/code]). Exposed as a [PackedInt32Array] in the editor UI.
 		</constant>
 		<constant name="GLOBAL_VAR_TYPE_MAT3" value="20" enum="GlobalShaderParameterType">
-			3Ã—3 matrix global shader parameter ([code]global uniform mat3 ...[/code]). Exposed as a [Basis] in the editor UI.
+			3×3 matrix global shader parameter ([code]global uniform mat3 ...[/code]). Exposed as a [Basis] in the editor UI.
 		</constant>
 		<constant name="GLOBAL_VAR_TYPE_MAT4" value="21" enum="GlobalShaderParameterType">
-			4Ã—4 matrix global shader parameter ([code]global uniform mat4 ...[/code]). Exposed as a [Projection] in the editor UI.
+			4×4 matrix global shader parameter ([code]global uniform mat4 ...[/code]). Exposed as a [Projection] in the editor UI.
 		</constant>
 		<constant name="GLOBAL_VAR_TYPE_TRANSFORM_2D" value="22" enum="GlobalShaderParameterType">
 			2-dimensional transform global shader parameter ([code]global uniform mat2x3 ...[/code]). Exposed as a [Transform2D] in the editor UI.
