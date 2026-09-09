@@ -510,8 +510,8 @@ Pair<ShaderRD *, RID> SceneShaderForwardClustered::ShaderData::get_native_shader
 	}
 }
 
-uint16_t SceneShaderForwardClustered::ShaderData::_get_shader_version(PipelineVersion p_pipeline_version, bool p_ubershader) const {
-	uint32_t ubershader_base = p_ubershader ? ShaderVersion::SHADER_VERSION_COUNT : 0;
+uint16_t SceneShaderForwardClustered::ShaderData::_get_shader_version(PipelineVersion p_pipeline_version, bool p_ubershader, bool p_micro_geometry) const {
+	uint32_t ubershader_base = (uint32_t(p_ubershader) + 2 * uint32_t(p_micro_geometry)) * ShaderVersion::SHADER_VERSION_COUNT;
 	switch (p_pipeline_version) {
 		case PIPELINE_VERSION_DEPTH_PASS:
 			return ShaderVersion::SHADER_VERSION_DEPTH_PASS + ubershader_base;
@@ -638,7 +638,7 @@ void SceneShaderForwardClustered::ShaderData::_create_pipeline(PipelineKey p_pip
 	sc.type = RD::PIPELINE_SPECIALIZATION_CONSTANT_TYPE_BOOL;
 	specialization_constants.push_back(sc);
 
-	RID shader_rid = get_shader_variant(p_pipeline_key.version, p_pipeline_key.ubershader);
+	RID shader_rid = get_shader_variant(p_pipeline_key.version, p_pipeline_key.ubershader, p_pipeline_key.micro_geometry);
 	ERR_FAIL_COND(shader_rid.is_null());
 
 	RID pipeline = RD::get_singleton()->render_pipeline_create(shader_rid, p_pipeline_key.framebuffer_format_id, p_pipeline_key.vertex_format_id, primitive_rd, raster_state, multisample_state, depth_stencil_state, blend_state, 0, 0, specialization_constants);
@@ -672,13 +672,16 @@ void SceneShaderForwardClustered::ShaderData::_clear_vertex_input_mask_cache() {
 	}
 }
 
-RID SceneShaderForwardClustered::ShaderData::get_shader_variant(PipelineVersion p_pipeline_version, bool p_ubershader) const {
-	return _get_shader_variant(_get_shader_version(p_pipeline_version, p_ubershader));
+RID SceneShaderForwardClustered::ShaderData::get_shader_variant(PipelineVersion p_pipeline_version, bool p_ubershader, bool p_micro_geometry) const {
+	return _get_shader_variant(_get_shader_version(p_pipeline_version, p_ubershader, p_micro_geometry));
 }
 
-uint64_t SceneShaderForwardClustered::ShaderData::get_vertex_input_mask(PipelineVersion p_pipeline_version, bool p_ubershader) {
+uint64_t SceneShaderForwardClustered::ShaderData::get_vertex_input_mask(PipelineVersion p_pipeline_version, bool p_ubershader, bool p_micro_geometry) {
+	if (p_micro_geometry) {
+		return 0;
+	}
 	// Vertex input masks require knowledge of the shader. Since querying the shader can be expensive due to high contention and the necessary mutex, we cache the result instead.
-	uint16_t shader_version = _get_shader_version(p_pipeline_version, p_ubershader);
+	uint16_t shader_version = _get_shader_version(p_pipeline_version, p_ubershader, p_micro_geometry);
 	uint64_t input_mask = vertex_input_masks[shader_version].load(std::memory_order_relaxed);
 	if (input_mask == 0) {
 		RID shader_rid = _get_shader_variant(shader_version);
@@ -790,8 +793,11 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 
 	{
 		Vector<ShaderRD::VariantDefine> shader_versions;
-		for (uint32_t ubershader = 0; ubershader < 2; ubershader++) {
-			const String base_define = ubershader ? "\n#define UBERSHADER\n" : "";
+		for (uint32_t variant = 0; variant < 4; variant++) {
+			String base_define = (variant & 1) ? "\n#define UBERSHADER\n" : "";
+			if (variant & 2) {
+				base_define += "\n#define MICRO_GEOMETRY_RASTER\n";
+			}
 			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_BASE, base_define + "\n#define MODE_RENDER_DEPTH\n", true)); // SHADER_VERSION_DEPTH_PASS
 			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_BASE, base_define + "\n#define MODE_RENDER_DEPTH\n#define MODE_DUAL_PARABOLOID\n", true)); // SHADER_VERSION_DEPTH_PASS_DP
 			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_BASE, base_define + "\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_NORMAL_ROUGHNESS\n", true)); // SHADER_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS

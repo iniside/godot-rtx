@@ -12,6 +12,9 @@
 #include "../oct_inc.slang"
 #include "../scene_data_inc.slang"
 #include "../surface_data_inc.slang"
+#ifdef MICRO_GEOMETRY_RASTER
+#include "micro_geometry_inc.slang"
+#endif
 
 #if !defined(MODE_RENDER_DEPTH) || defined(MODE_RENDER_MATERIAL) || defined(MODE_RENDER_SDF) || defined(MODE_RENDER_NORMAL_ROUGHNESS) || defined(MODE_RENDER_VOXEL_GI) || defined(TANGENT_USED) || defined(NORMAL_MAP_USED) || defined(BENT_NORMAL_MAP_USED) || defined(LIGHT_ANISOTROPY_USED)
 #ifndef NORMAL_USED
@@ -197,7 +200,16 @@ struct InstanceData {
 #endif
 };
 
+#ifdef MICRO_GEOMETRY_RASTER
+[[vk::binding(2, 1)]] StructuredBuffer<InstanceData> native_instances;
+[[vk::binding(0, 4)]] StructuredBuffer<MicroGeometrySelectedCluster> micro_geometry_selected;
+[[vk::binding(1, 4)]] StructuredBuffer<MicroGeometryInstance> micro_geometry_instances;
+[[vk::binding(2, 4)]] StructuredBuffer<MicroGeometryInstanceSurface> micro_geometry_surfaces;
+[[vk::binding(3, 4)]] ConstantBuffer<MicroGeometryRasterParameters> micro_geometry_parameters;
+[[vk::binding(4, 4)]] StructuredBuffer<InstanceData> instances;
+#else
 [[vk::binding(2, 1)]] StructuredBuffer<InstanceData> instances;
+#endif
 
 [[vk::binding(5, 1)]] Texture2D<float4> shadow_atlas;
 

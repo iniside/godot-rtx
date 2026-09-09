@@ -48,6 +48,7 @@ public:
 
 	// Members are publicly accessible within the render engine.
 	Ref<RenderSceneBuffersRD> render_buffers;
+	RID scenario;
 	RenderSceneDataRD *scene_data = nullptr;
 
 	const PagedArray<RenderGeometryInstance *> *instances = nullptr;

@@ -72,6 +72,125 @@ static float4 previous_normal_attrib;
 
 #endif
 
+#ifdef MICRO_GEOMETRY_RASTER
+static MicroGeometrySelectedCluster micro_geometry_selection;
+static MicroGeometryInstance micro_geometry_instance;
+static float3 micro_geometry_normal;
+static float3 micro_geometry_tangent;
+static float3 micro_geometry_binormal;
+
+bool micro_geometry_pull_vertex(uint p_selected, uint p_corner) {
+	uint count, stride;
+	micro_geometry_selected.GetDimensions(count, stride);
+	if (p_selected >= count) {
+		return false;
+	}
+	micro_geometry_selection = micro_geometry_selected[p_selected];
+	uint instance_slot = uint(micro_geometry_selection.instance);
+	uint surface_slot = uint(micro_geometry_selection.surface);
+	micro_geometry_instances.GetDimensions(count, stride);
+	if (instance_slot == 0 || instance_slot > count) {
+		return false;
+	}
+	micro_geometry_surfaces.GetDimensions(count, stride);
+	if (surface_slot == 0 || surface_slot > count) {
+		return false;
+	}
+	instances.GetDimensions(count, stride);
+	if (micro_geometry_selection.raster_instance >= count) {
+		return false;
+	}
+	micro_geometry_instance = micro_geometry_instances[instance_slot - 1];
+	MicroGeometryInstanceSurface surface_record = micro_geometry_surfaces[surface_slot - 1];
+	if (micro_geometry_instance.handle != micro_geometry_selection.instance || surface_record.handle != micro_geometry_selection.surface || surface_record.instance != micro_geometry_selection.instance || surface_record.material_generation != micro_geometry_selection.material_generation || surface_record.material_slot != micro_geometry_selection.material_slot || micro_geometry_instance.asset != micro_geometry_selection.asset || micro_geometry_instance.asset_address != micro_geometry_selection.asset_address || micro_geometry_selection.asset_address == 0) {
+		return false;
+	}
+	MicroGeometryAsset asset = *((MicroGeometryAsset*)micro_geometry_selection.asset_address);
+	if (asset.identity != micro_geometry_selection.asset || (asset.ready & 1) == 0 || micro_geometry_selection.cluster >= asset.cluster_count) {
+		return false;
+	}
+	MicroGeometryCluster cluster = ((MicroGeometryCluster*)asset.clusters)[micro_geometry_selection.cluster];
+	if (cluster.surface >= asset.surface_count || cluster.page >= asset.page_count || cluster.vertex_count == 0 || cluster.vertex_count > 128 || cluster.triangle_count == 0 || cluster.triangle_count > 128 || p_corner >= cluster.triangle_count * 3) {
+		return false;
+	}
+	MicroGeometrySurface surface = ((MicroGeometrySurface*)asset.surfaces)[cluster.surface];
+	MicroGeometryPage page = ((MicroGeometryPage*)asset.pages)[cluster.page];
+	if (surface.source_surface != surface_record.source_surface || (page.ready & 1) == 0 || page.slot == 0xffffffff || page.generation != micro_geometry_selection.page_generation || micro_geometry_parameters.page_pool == 0) {
+		return false;
+	}
+	uint64_t index_offset = uint64_t(cluster.vertex_count) * surface.vertex_stride;
+	uint64_t vertex_ids_offset = index_offset + uint64_t(cluster.triangle_count) * 7;
+	if (surface.vertex_stride == 0 || uint64_t(cluster.payload_offset) + vertex_ids_offset + uint64_t(cluster.vertex_count) * 4 > 65536) {
+		return false;
+	}
+	for (uint attribute = 0; attribute < 10; attribute++) {
+		uint offset = surface.attribute_offsets[attribute];
+		uint components = attribute < 2 ? 3 : (attribute < 4 ? 4 : 2);
+		uint bytes = components * 4;
+		if (attribute >= 6) {
+			uint format = uint(surface.format >> (13 + (attribute - 6) * 3)) & 7;
+			bytes = format < 3 ? 4 : (format == 3 ? 8 : (format - 3) * 4);
+		}
+		if (offset != 0xffffffff && uint64_t(offset) + bytes > surface.vertex_stride) {
+			return false;
+		}
+	}
+	if (surface.attribute_offsets[0] == 0xffffffff) {
+		return false;
+	}
+	uint64_t payload = micro_geometry_parameters.page_pool + uint64_t(page.slot) * 65536 + cluster.payload_offset;
+	uint local_vertex = micro_geometry_load_byte(payload + index_offset + p_corner);
+	if (local_vertex >= cluster.vertex_count) {
+		return false;
+	}
+	vertex_index = micro_geometry_load_word(payload + vertex_ids_offset + local_vertex * 4);
+	if (vertex_index >= surface.source_vertex_count) {
+		return false;
+	}
+	if (sc_multimesh() && (micro_geometry_instance.multimesh_address == 0 || micro_geometry_selection.multimesh_instance >= micro_geometry_instance.multimesh_count || micro_geometry_instance.multimesh_stride != 4 * ((sc_multimesh_format_2d() ? 2 : 3) + uint(sc_multimesh_has_color()) + uint(sc_multimesh_has_custom_data())))) {
+		return false;
+	}
+	instance_index_builtin = micro_geometry_selection.multimesh_instance;
+	uint64_t vertex = payload + uint64_t(local_vertex) * surface.vertex_stride;
+	vertex_angle_attrib = micro_geometry_attribute(vertex, surface, 0, 3, float4(0.0));
+#if defined(NORMAL_USED) || defined(TANGENT_USED)
+	axis_tangent_attrib = float4(0.0);
+#endif
+#ifdef MOTION_VECTORS
+	previous_vertex_attrib = vertex_angle_attrib;
+#if defined(NORMAL_USED) || defined(TANGENT_USED)
+	previous_normal_attrib = float4(0.0);
+#endif
+#endif
+	micro_geometry_normal = micro_geometry_attribute(vertex, surface, 1, 3, float4(0.0, 0.0, 1.0, 0.0)).xyz;
+	float4 tangent = micro_geometry_attribute(vertex, surface, 2, 4, float4(1.0, 0.0, 0.0, 1.0));
+	micro_geometry_tangent = tangent.xyz;
+	micro_geometry_binormal = normalize(cross(micro_geometry_normal, micro_geometry_tangent) * tangent.w);
+#ifdef COLOR_USED
+	color_attrib = micro_geometry_attribute(vertex, surface, 3, 4, float4(1.0));
+#endif
+#ifdef UV_USED
+	uv_attrib = micro_geometry_attribute(vertex, surface, 4, 2, float4(0.0)).xy;
+#endif
+#if defined(UV2_USED) || defined(USE_LIGHTMAP) || defined(MODE_RENDER_MATERIAL)
+	uv2_attrib = micro_geometry_attribute(vertex, surface, 5, 2, float4(0.0)).xy;
+#endif
+#ifdef CUSTOM0_USED
+	custom0_attrib = micro_geometry_custom(vertex, surface, 0);
+#endif
+#ifdef CUSTOM1_USED
+	custom1_attrib = micro_geometry_custom(vertex, surface, 1);
+#endif
+#ifdef CUSTOM2_USED
+	custom2_attrib = micro_geometry_custom(vertex, surface, 2);
+#endif
+#ifdef CUSTOM3_USED
+	custom3_attrib = micro_geometry_custom(vertex, surface, 3);
+#endif
+	return true;
+}
+#endif
+
 void axis_angle_to_tbn(float3 axis, float angle, out float3 tangent, out float3 binormal, out float3 normal) {
 	float c = cos(angle);
 	float s = sin(angle);
@@ -132,6 +251,9 @@ static float dp_clip;
 #endif
 
 static uint instance_index_interp;
+#ifdef MICRO_GEOMETRY_RASTER
+static uint micro_geometry_selected_interp;
+#endif
 
 #ifdef USE_MULTIVIEW
 #define ViewIndex view_index
@@ -288,27 +410,36 @@ void vertex_shader(float3 vertex_input,
 #endif
 
 #else
+#ifdef MICRO_GEOMETRY_RASTER
+		float4* instance_transforms = (float4*)micro_geometry_instance.multimesh_address;
+#else
+#define instance_transforms transforms
+#endif
 		uint stride = multimesh_stride();
 		uint offset = stride * (INSTANCE_INDEX + multimesh_offset);
 
 		if (sc_multimesh_format_2d()) {
-			matrix = float4x4(transforms[offset + 0], transforms[offset + 1], float4(0.0, 0.0, 1.0, 0.0), float4(0.0, 0.0, 0.0, 1.0));
+			matrix = float4x4(instance_transforms[offset + 0], instance_transforms[offset + 1], float4(0.0, 0.0, 1.0, 0.0), float4(0.0, 0.0, 0.0, 1.0));
 			offset += 2;
 		} else {
-			matrix = float4x4(transforms[offset + 0], transforms[offset + 1], transforms[offset + 2], float4(0.0, 0.0, 0.0, 1.0));
+			matrix = float4x4(instance_transforms[offset + 0], instance_transforms[offset + 1], instance_transforms[offset + 2], float4(0.0, 0.0, 0.0, 1.0));
 			offset += 3;
 		}
 
 		if (sc_multimesh_has_color()) {
 #ifdef COLOR_USED
-			color_interp *= transforms[offset];
+			color_interp *= instance_transforms[offset];
 #endif
 			offset += 1;
 		}
 
 		if (sc_multimesh_has_custom_data()) {
-			instance_custom = transforms[offset];
+			instance_custom = instance_transforms[offset];
 		}
+
+#ifndef MICRO_GEOMETRY_RASTER
+#undef instance_transforms
+#endif
 
 #endif
 
@@ -565,6 +696,17 @@ void _unpack_vertex_attributes(float4 p_vertex_in, float3 p_compressed_aabb_posi
 #endif
 		out float3 r_vertex) {
 
+#ifdef MICRO_GEOMETRY_RASTER
+	r_vertex = vertex_angle_attrib.xyz;
+#ifdef NORMAL_USED
+	r_normal = micro_geometry_normal;
+#endif
+#if defined(NORMAL_USED) || defined(TANGENT_USED)
+	r_tangent = micro_geometry_tangent;
+	r_binormal = micro_geometry_binormal;
+#endif
+#else
+
 	r_vertex = p_vertex_in.xyz * p_compressed_aabb_size + p_compressed_aabb_position;
 #ifdef NORMAL_USED
 	r_normal = oct_to_vec3(p_normal_in.xy * 2.0 - 1.0);
@@ -590,6 +732,7 @@ void _unpack_vertex_attributes(float4 p_vertex_in, float3 p_compressed_aabb_posi
 		r_binormal *= binormal_sign;
 	}
 #endif
+#endif
 }
 
 struct VertexInput {
@@ -598,6 +741,7 @@ struct VertexInput {
 #ifdef USE_MULTIVIEW
 	uint view_index : SV_ViewID;
 #endif
+#ifndef MICRO_GEOMETRY_RASTER
 	[[vk::location(0)]] float4 vertex_angle_attrib;
 #if (defined(NORMAL_USED) || defined(TANGENT_USED))
 	[[vk::location(1)]] float4 axis_tangent_attrib;
@@ -634,6 +778,7 @@ struct VertexInput {
 #endif
 #if (defined(MOTION_VECTORS)) && (defined(NORMAL_USED) || defined(TANGENT_USED))
 	[[vk::location(13)]] float4 previous_normal_attrib;
+#endif
 #endif
 };
 struct VertexOutput {
@@ -673,6 +818,9 @@ struct VertexOutput {
 	[[vk::location(9)]] float dp_clip;
 #endif
 	nointerpolation [[vk::location(10)]] uint instance_index_interp;
+#ifdef MICRO_GEOMETRY_RASTER
+	nointerpolation [[vk::location(12)]] uint micro_geometry_selected_interp;
+#endif
 #if (defined(USE_MULTIVIEW))
 	[[vk::location(11)]] float4 combined_projected;
 #endif
@@ -688,6 +836,16 @@ VertexOutput main(VertexInput stage_input) {
 #ifdef USE_MULTIVIEW
 	view_index = stage_input.view_index;
 #endif
+#ifdef MICRO_GEOMETRY_RASTER
+	if (!micro_geometry_pull_vertex(stage_input.instance_index, stage_input.vertex_index)) {
+		VertexOutput invalid = (VertexOutput)0;
+		invalid.position = float4(2.0, 2.0, 2.0, 1.0);
+		return invalid;
+	}
+	uint instance_index = micro_geometry_selection.raster_instance;
+	uint micro_geometry_previous_offset = micro_geometry_instance.multimesh_previous_offset;
+	uint micro_geometry_current_offset = micro_geometry_instance.multimesh_current_offset;
+#else
 	vertex_angle_attrib = stage_input.vertex_angle_attrib;
 #if (defined(NORMAL_USED) || defined(TANGENT_USED))
 	axis_tangent_attrib = stage_input.axis_tangent_attrib;
@@ -731,6 +889,7 @@ VertexOutput main(VertexInput stage_input) {
 		instance_index += INSTANCE_INDEX;
 	}
 
+#endif
 	instance_index_interp = instance_index;
 
 #ifdef MOTION_VECTORS
@@ -769,7 +928,13 @@ VertexOutput main(VertexInput stage_input) {
 			prev_tangent,
 			prev_binormal,
 #endif
-			instance_index, draw_call.multimesh_motion_vectors_previous_offset, scene_data_block.prev_data, instances[instance_index].prev_transform,
+			instance_index,
+#ifdef MICRO_GEOMETRY_RASTER
+			micro_geometry_previous_offset,
+#else
+			draw_call.multimesh_motion_vectors_previous_offset,
+#endif
+			scene_data_block.prev_data, instances[instance_index].prev_transform,
 #ifdef USE_DOUBLE_PRECISION
 			instances[instance_index].prev_model_precision.xyz,
 #endif
@@ -816,7 +981,13 @@ VertexOutput main(VertexInput stage_input) {
 			tangent,
 			binormal,
 #endif
-			instance_index, draw_call.multimesh_motion_vectors_current_offset, scene_data_block.data, instances[instance_index].transform,
+			instance_index,
+#ifdef MICRO_GEOMETRY_RASTER
+			micro_geometry_current_offset,
+#else
+			draw_call.multimesh_motion_vectors_current_offset,
+#endif
+			scene_data_block.data, instances[instance_index].transform,
 #ifdef USE_DOUBLE_PRECISION
 			instances[instance_index].model_precision.xyz,
 #endif
@@ -862,6 +1033,9 @@ VertexOutput main(VertexInput stage_input) {
 	stage_output.dp_clip = dp_clip;
 #endif
 	stage_output.instance_index_interp = instance_index_interp;
+#ifdef MICRO_GEOMETRY_RASTER
+	stage_output.micro_geometry_selected_interp = stage_input.instance_index;
+#endif
 #if (defined(USE_MULTIVIEW))
 	stage_output.combined_projected = combined_projected;
 #endif
@@ -931,6 +1105,9 @@ static float dp_clip;
 #endif
 
 static uint instance_index_interp;
+#ifdef MICRO_GEOMETRY_RASTER
+static uint micro_geometry_selected_interp;
+#endif
 
 #ifdef USE_LIGHTMAP
 
@@ -1458,6 +1635,11 @@ void fragment_shader(in SceneData scene_data) {
 	surface.material.flags = instances[instance_index].rtxdi_material_flags;
 	SurfaceBufferData packed_surface = encode_surface_buffers(surface);
 	rtxdi_base_output = packed_surface.base;
+#ifdef MICRO_GEOMETRY_RASTER
+	if (micro_geometry_parameters.selected_cluster_color != 0) {
+		rtxdi_base_output.rgb = micro_geometry_cluster_color(micro_geometry_selected[micro_geometry_selected_interp]);
+	}
+#endif
 	rtxdi_shading_output = packed_surface.shading;
 	rtxdi_emission_output = packed_surface.emission;
 	rtxdi_motion_output = float4((prev_position_clip - position_clip) * 0.5 * scene_data.viewport_size, linear_depth_interp.y - linear_depth_interp.x, packed_surface.ambient_occlusion);
@@ -1652,6 +1834,9 @@ struct FragmentInput {
 	[[vk::location(9)]] float dp_clip;
 #endif
 	nointerpolation [[vk::location(10)]] uint instance_index_interp;
+#ifdef MICRO_GEOMETRY_RASTER
+	nointerpolation [[vk::location(12)]] uint micro_geometry_selected_interp;
+#endif
 #if (defined(USE_MULTIVIEW))
 	[[vk::location(11)]] float4 combined_projected;
 #endif
@@ -1751,6 +1936,9 @@ FragmentOutput main(FragmentInput stage_input) {
 	dp_clip = stage_input.dp_clip;
 #endif
 	instance_index_interp = stage_input.instance_index_interp;
+#ifdef MICRO_GEOMETRY_RASTER
+	micro_geometry_selected_interp = stage_input.micro_geometry_selected_interp;
+#endif
 #if (defined(USE_MULTIVIEW))
 	combined_projected = stage_input.combined_projected;
 #endif

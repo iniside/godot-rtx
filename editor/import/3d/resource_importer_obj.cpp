@@ -633,7 +633,7 @@ String ResourceImporterOBJ::get_resource_type() const {
 }
 
 int ResourceImporterOBJ::get_format_version() const {
-	return 2;
+	return 3;
 }
 
 int ResourceImporterOBJ::get_preset_count() const {

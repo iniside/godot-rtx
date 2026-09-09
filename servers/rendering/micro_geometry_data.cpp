@@ -115,6 +115,8 @@ Vector<uint8_t> MicroGeometryData::encode_manifest() const {
 	w.u32(metadata.pages.size());
 	w.u32(metadata.nodes.size());
 	w.u32(metadata.roots.size());
+	w.u32(metadata.parent_groups.size());
+	w.u32(metadata.coarse_cluster_count);
 	for (const Surface &s : metadata.surfaces) {
 		w.u32(s.source_surface);
 		w.u64(s.format);
@@ -139,6 +141,8 @@ Vector<uint8_t> MicroGeometryData::encode_manifest() const {
 		w.u32(g.first_cluster);
 		w.u32(g.cluster_count);
 		w.u32(g.depth);
+		w.u32(g.first_parent);
+		w.u32(g.parent_count);
 		w.bounds(g.bounds);
 	}
 	for (uint32_t terminal : metadata.terminals) {
@@ -163,19 +167,24 @@ Vector<uint8_t> MicroGeometryData::encode_manifest() const {
 	for (uint32_t root : metadata.roots) {
 		w.u32(root);
 	}
+	for (uint32_t parent : metadata.parent_groups) {
+		w.u32(parent);
+	}
 	return w.data;
 }
 
 Error MicroGeometryData::decode_manifest(const Vector<uint8_t> &p_manifest) {
-	ERR_FAIL_COND_V(p_manifest.size() < 28, ERR_FILE_CORRUPT);
+	ERR_FAIL_COND_V(p_manifest.size() < 36, ERR_FILE_CORRUPT);
 	ManifestReader r{ p_manifest.ptr() };
-	uint32_t sizes[7];
+	uint32_t sizes[8];
 	for (uint32_t &size : sizes) {
 		size = r.u32();
 	}
-	uint64_t expected = 28 + uint64_t(sizes[0]) * 64 + uint64_t(sizes[1]) * 48 + uint64_t(sizes[2]) * 32 + uint64_t(sizes[3]) * 4 + uint64_t(sizes[4]) * 56 + uint64_t(sizes[5]) * 32 + uint64_t(sizes[6]) * 4;
+	metadata.coarse_cluster_count = r.u32();
+	uint64_t expected = 36 + uint64_t(sizes[0]) * 64 + uint64_t(sizes[1]) * 48 + uint64_t(sizes[2]) * 40 + uint64_t(sizes[3]) * 4 + uint64_t(sizes[4]) * 56 + uint64_t(sizes[5]) * 32 + uint64_t(sizes[6]) * 4 + uint64_t(sizes[7]) * 4;
 	ERR_FAIL_COND_V(expected != uint64_t(p_manifest.size()), ERR_FILE_CORRUPT);
 	ERR_FAIL_COND_V(metadata.surfaces.resize(sizes[0]) != OK || metadata.clusters.resize(sizes[1]) != OK || metadata.groups.resize(sizes[2]) != OK || metadata.terminals.resize(sizes[3]) != OK || metadata.pages.resize(sizes[4]) != OK || metadata.nodes.resize(sizes[5]) != OK || metadata.roots.resize(sizes[6]) != OK, ERR_OUT_OF_MEMORY);
+	ERR_FAIL_COND_V(metadata.parent_groups.resize(sizes[7]) != OK, ERR_OUT_OF_MEMORY);
 	for (Surface &s : metadata.surfaces) {
 		s.source_surface = r.u32();
 		s.format = r.u64();
@@ -200,6 +209,8 @@ Error MicroGeometryData::decode_manifest(const Vector<uint8_t> &p_manifest) {
 		g.first_cluster = r.u32();
 		g.cluster_count = r.u32();
 		g.depth = r.u32();
+		g.first_parent = r.u32();
+		g.parent_count = r.u32();
 		g.bounds = r.bounds();
 	}
 	for (uint32_t &terminal : metadata.terminals) {
@@ -224,6 +235,9 @@ Error MicroGeometryData::decode_manifest(const Vector<uint8_t> &p_manifest) {
 	for (uint32_t &root : metadata.roots) {
 		root = r.u32();
 	}
+	for (uint32_t &parent : metadata.parent_groups) {
+		parent = r.u32();
+	}
 	return validate();
 }
 
@@ -238,9 +252,33 @@ Error MicroGeometryData::validate() const {
 			ERR_FAIL_COND_V(offset != INVALID_ID && offset >= s.vertex_stride, ERR_INVALID_DATA);
 		}
 	}
+	uint64_t coarse_clusters = 0;
+	for (uint32_t terminal : metadata.terminals) {
+		ERR_FAIL_COND_V(terminal >= uint32_t(metadata.groups.size()), ERR_INVALID_DATA);
+		coarse_clusters += metadata.groups[terminal].cluster_count;
+	}
+	ERR_FAIL_COND_V(coarse_clusters != metadata.coarse_cluster_count, ERR_INVALID_DATA);
 	uint64_t cluster_end = 0;
+	uint64_t parent_end = 0;
 	for (int i = 0; i < metadata.groups.size(); i++) {
 		const Group &g = metadata.groups[i];
+		ERR_FAIL_COND_V(g.first_parent != parent_end || g.depth >= uint32_t(metadata.roots.size()), ERR_INVALID_DATA);
+		parent_end += g.parent_count;
+		ERR_FAIL_COND_V(parent_end > uint64_t(metadata.parent_groups.size()), ERR_INVALID_DATA);
+		for (uint64_t j = g.first_parent; j < parent_end; j++) {
+			uint32_t parent = metadata.parent_groups[j];
+			ERR_FAIL_COND_V(parent <= uint32_t(i) || parent >= uint32_t(metadata.groups.size()) || metadata.groups[parent].depth <= g.depth, ERR_INVALID_DATA);
+			for (uint64_t k = g.first_parent; k < j; k++) {
+				ERR_FAIL_COND_V(metadata.parent_groups[k] == parent, ERR_INVALID_DATA);
+			}
+			const Group &parent_group = metadata.groups[parent];
+			ERR_FAIL_COND_V(uint64_t(parent_group.first_cluster) + parent_group.cluster_count > uint64_t(metadata.clusters.size()), ERR_INVALID_DATA);
+			bool found = false;
+			for (uint32_t k = 0; k < parent_group.cluster_count; k++) {
+				found |= metadata.clusters[parent_group.first_cluster + k].refined_group == uint32_t(i);
+			}
+			ERR_FAIL_COND_V(!found, ERR_INVALID_DATA);
+		}
 		ERR_FAIL_COND_V(g.first_cluster != cluster_end || !g.cluster_count || !valid_bounds(g.bounds), ERR_INVALID_DATA);
 		cluster_end += g.cluster_count;
 		ERR_FAIL_COND_V(cluster_end > uint64_t(metadata.clusters.size()), ERR_INVALID_DATA);
@@ -248,15 +286,22 @@ Error MicroGeometryData::validate() const {
 			const Cluster &c = metadata.clusters[j];
 			ERR_FAIL_COND_V(c.group != uint32_t(i) || c.surface >= uint32_t(metadata.surfaces.size()) || c.page >= uint32_t(metadata.pages.size()) || !valid_bounds(c.bounds), ERR_INVALID_DATA);
 			ERR_FAIL_COND_V(!c.vertex_count || c.vertex_count > 128 || !c.triangle_count || c.triangle_count > 128, ERR_INVALID_DATA);
-			uint64_t end = uint64_t(c.payload_offset) + uint64_t(c.vertex_count) * metadata.surfaces[c.surface].vertex_stride + uint64_t(c.triangle_count) * 7;
+			uint64_t end = uint64_t(c.payload_offset) + uint64_t(c.vertex_count) * (metadata.surfaces[c.surface].vertex_stride + 4) + uint64_t(c.triangle_count) * 7;
 			ERR_FAIL_COND_V(end > metadata.pages[c.page].decoded_size, ERR_INVALID_DATA);
 			if (c.refined_group != INVALID_ID) {
 				ERR_FAIL_COND_V(c.refined_group >= uint32_t(i), ERR_INVALID_DATA);
+				const Group &child = metadata.groups[c.refined_group];
+				bool found = false;
+				for (uint32_t k = 0; k < child.parent_count; k++) {
+					found |= metadata.parent_groups[child.first_parent + k] == uint32_t(i);
+				}
+				ERR_FAIL_COND_V(!found, ERR_INVALID_DATA);
 				refined.write[c.refined_group] = 1;
 			}
 		}
 	}
 	ERR_FAIL_COND_V(cluster_end != uint64_t(metadata.clusters.size()), ERR_INVALID_DATA);
+	ERR_FAIL_COND_V(parent_end != uint64_t(metadata.parent_groups.size()), ERR_INVALID_DATA);
 	for (uint32_t terminal : metadata.terminals) {
 		ERR_FAIL_COND_V(terminal >= uint32_t(refined.size()) || refined[terminal] != 0 || metadata.groups[terminal].bounds.error != FLT_MAX, ERR_INVALID_DATA);
 		refined.write[terminal] = 2;
@@ -383,6 +428,9 @@ Error MicroGeometryData::read_page(uint32_t p_page, Vector<uint8_t> &r_data) con
 			uint32_t primitive = decode_uint32(identities + j * 4);
 			ERR_FAIL_COND_V(cluster.refined_group == INVALID_ID ? primitive >= surface.source_triangle_count : primitive != INVALID_ID, ERR_FILE_CORRUPT);
 		}
+		for (uint32_t j = 0; j < cluster.vertex_count; j++) {
+			ERR_FAIL_COND_V(decode_uint32(identities + cluster.triangle_count * 4 + j * 4) >= surface.source_vertex_count, ERR_FILE_CORRUPT);
+		}
 	}
 	r_data = decoded;
 	return OK;
@@ -444,7 +492,7 @@ Error MicroGeometryData::load(const String &p_path, Ref<MicroGeometryData> &r_da
 	uint8_t header[HEADER_SIZE];
 	ERR_FAIL_COND_V(file->get_buffer(header, HEADER_SIZE) != HEADER_SIZE || decode_uint32(header) != MAGIC || decode_uint32(header + 4) != FORMAT_VERSION || decode_uint32(header + 8) != BUILD_VERSION || memcmp(header + 48, BUILDER_COMMIT, 40), ERR_FILE_UNRECOGNIZED);
 	uint32_t manifest_size = decode_uint32(header + 12);
-	ERR_FAIL_COND_V(manifest_size < 28 || manifest_size > INT32_MAX || HEADER_SIZE + uint64_t(manifest_size) > file->get_length(), ERR_FILE_CORRUPT);
+	ERR_FAIL_COND_V(manifest_size < 36 || manifest_size > INT32_MAX || HEADER_SIZE + uint64_t(manifest_size) > file->get_length(), ERR_FILE_CORRUPT);
 	Vector<uint8_t> manifest;
 	ERR_FAIL_COND_V(manifest.resize(manifest_size) != OK, ERR_OUT_OF_MEMORY);
 	ERR_FAIL_COND_V(file->get_buffer(manifest.ptrw(), manifest_size) != manifest_size, ERR_FILE_CORRUPT);

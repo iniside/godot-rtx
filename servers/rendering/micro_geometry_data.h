@@ -37,8 +37,8 @@
 
 class MicroGeometryData : public RefCounted {
 public:
-	static constexpr uint32_t FORMAT_VERSION = 1;
-	static constexpr uint32_t BUILD_VERSION = 1;
+	static constexpr uint32_t FORMAT_VERSION = 2;
+	static constexpr uint32_t BUILD_VERSION = 2;
 	static constexpr uint32_t INVALID_ID = UINT32_MAX;
 	static constexpr uint32_t MAX_PAGE_SIZE = 65536;
 	static constexpr const char *BUILDER_COMMIT = "0870c3881655df9b7d22faa35c825393534416bc";
@@ -70,6 +70,8 @@ public:
 		uint32_t first_cluster = 0;
 		uint32_t cluster_count = 0;
 		uint32_t depth = 0;
+		uint32_t first_parent = 0;
+		uint32_t parent_count = 0;
 		Bounds bounds;
 	};
 	struct Node {
@@ -87,9 +89,11 @@ public:
 		uint8_t digest[32] = {};
 	};
 	struct Build {
+		uint32_t coarse_cluster_count = 0;
 		Vector<Surface> surfaces;
 		Vector<Cluster> clusters;
 		Vector<Group> groups;
+		Vector<uint32_t> parent_groups;
 		Vector<uint32_t> terminals;
 		Vector<Node> nodes;
 		Vector<uint32_t> roots;

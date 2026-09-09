@@ -81,11 +81,12 @@ public:
 		uint32_t first_cluster;
 		uint32_t cluster_count;
 		uint32_t depth;
-		uint32_t pad;
+		uint32_t first_parent;
 		float center[3];
 		float radius;
 		float error;
-		uint32_t padding[3];
+		uint32_t parent_count;
+		uint32_t padding[2];
 	};
 	struct GPUSurface {
 		uint64_t format;
@@ -124,6 +125,7 @@ public:
 		uint32_t page_count = 0;
 		uint32_t ready = 0;
 		uint64_t residency_generation = 0;
+		uint64_t parent_groups = 0;
 	};
 	struct Statistics {
 		uint64_t pool_bytes = 0;
@@ -186,6 +188,7 @@ private:
 		uint64_t submission = 0;
 	};
 	struct Feedback {
+		bool retired = false;
 		RID buffer;
 		uint32_t capacity = 0;
 		bool pending = false;
@@ -243,6 +246,6 @@ static_assert(sizeof(MicroGeometryStorage::GPUCluster) == 64);
 static_assert(sizeof(MicroGeometryStorage::GPUGroup) == 48);
 static_assert(sizeof(MicroGeometryStorage::GPUSurface) == 64);
 static_assert(sizeof(MicroGeometryStorage::GPUNode) == 48);
-static_assert(sizeof(MicroGeometryStorage::GPUAsset) == 112);
+static_assert(sizeof(MicroGeometryStorage::GPUAsset) == 120);
 
 } // namespace RendererRD

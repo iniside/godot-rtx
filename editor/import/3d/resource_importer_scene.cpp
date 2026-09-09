@@ -287,7 +287,7 @@ String ResourceImporterScene::get_resource_type() const {
 }
 
 int ResourceImporterScene::get_format_version() const {
-	return 2;
+	return 3;
 }
 
 bool ResourceImporterScene::get_option_visibility(const String &p_path, const String &p_option, const HashMap<StringName, Variant> &p_options) const {

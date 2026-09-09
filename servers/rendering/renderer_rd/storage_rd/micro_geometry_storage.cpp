@@ -70,7 +70,7 @@ RID MicroGeometryStorage::acquire(const Ref<MicroGeometryData> &p_source) {
 	const MicroGeometryData::Build &metadata = p_source->get_metadata();
 	const uint64_t required = sizeof(GPUAsset) + uint64_t(metadata.clusters.size()) * sizeof(GPUCluster) + uint64_t(metadata.groups.size()) * (sizeof(GPUGroup) + sizeof(uint32_t)) +
 			uint64_t(metadata.surfaces.size()) * sizeof(GPUSurface) + uint64_t(metadata.nodes.size()) * sizeof(GPUNode) +
-			uint64_t(metadata.terminals.size() + metadata.roots.size()) * sizeof(uint32_t) + uint64_t(metadata.pages.size()) * sizeof(GPUPage);
+			(uint64_t(metadata.terminals.size()) + metadata.roots.size() + metadata.parent_groups.size()) * sizeof(uint32_t) + uint64_t(metadata.pages.size()) * sizeof(GPUPage);
 	ERR_FAIL_COND_V_MSG(required > METADATA_BUDGET - MIN(METADATA_BUDGET, statistics.metadata_bytes + statistics.retired_metadata_bytes), RID(), "Microgeometry metadata budget exhausted.");
 	if (pool.is_null()) {
 		pool = RD::get_singleton()->storage_buffer_create(page_count * PAGE_SIZE, Vector<uint8_t>(), 0,
@@ -114,6 +114,8 @@ RID MicroGeometryStorage::acquire(const Ref<MicroGeometryData> &p_source) {
 		group.first_cluster = source.first_cluster;
 		group.cluster_count = source.cluster_count;
 		group.depth = source.depth;
+		group.first_parent = source.first_parent;
+		group.parent_count = source.parent_count;
 		memcpy(group.center, source.bounds.center, sizeof(group.center));
 		group.radius = source.bounds.radius;
 		group.error = source.bounds.error;
@@ -158,6 +160,7 @@ RID MicroGeometryStorage::acquire(const Ref<MicroGeometryData> &p_source) {
 	asset.gpu.nodes = create_address(nodes.ptr(), nodes.size() * sizeof(GPUNode));
 	asset.gpu.terminals = create_address(metadata.terminals.ptr(), metadata.terminals.size() * sizeof(uint32_t));
 	asset.gpu.roots = create_address(metadata.roots.ptr(), metadata.roots.size() * sizeof(uint32_t));
+	asset.gpu.parent_groups = create_address(metadata.parent_groups.ptr(), metadata.parent_groups.size() * sizeof(uint32_t));
 	asset.gpu.cluster_count = clusters.size();
 	asset.gpu.group_count = groups.size();
 	asset.gpu.surface_count = surfaces.size();
@@ -599,11 +602,18 @@ void MicroGeometryStorage::_feedback_received(const Vector<uint8_t> &p_bytes, RI
 			request_group(asset, request.group);
 		}
 	}
+	if (feedback->retired) {
+		feedback_free(p_feedback);
+	}
 }
 
 void MicroGeometryStorage::feedback_free(RID p_feedback) {
 	Feedback *feedback = feedbacks.get_or_null(p_feedback);
 	if (!feedback) {
+		return;
+	}
+	if (feedback->pending) {
+		feedback->retired = true;
 		return;
 	}
 	RD::get_singleton()->free_rid(feedback->buffer);

@@ -1844,7 +1844,7 @@ void MeshStorage::_multimesh_set_mesh(RID p_multimesh, RID p_mesh) {
 				newVector.set(i * sizeof(uint32_t) * INDIRECT_MULTIMESH_COMMAND_STRIDE + 3, static_cast<uint8_t>(count >> 24));
 			}
 
-			RID newBuffer = RD::get_singleton()->storage_buffer_create(sizeof(uint32_t) * INDIRECT_MULTIMESH_COMMAND_STRIDE * mesh->surface_count, newVector, RD::STORAGE_BUFFER_USAGE_DISPATCH_INDIRECT);
+			RID newBuffer = RD::get_singleton()->storage_buffer_create(sizeof(uint32_t) * INDIRECT_MULTIMESH_COMMAND_STRIDE * mesh->surface_count, newVector, RD::STORAGE_BUFFER_USAGE_DISPATCH_INDIRECT, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
 			multimesh->command_buffer = newBuffer;
 		}
 	}

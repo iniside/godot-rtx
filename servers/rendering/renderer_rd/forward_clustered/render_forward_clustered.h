@@ -40,6 +40,7 @@
 #include "servers/rendering/renderer_rd/effects/ss_effects.h"
 #include "servers/rendering/renderer_rd/effects/taa.h"
 #include "servers/rendering/renderer_rd/forward_clustered/render_raytracing.h"
+#include "servers/rendering/renderer_rd/forward_clustered/micro_geometry_selection.h"
 #include "servers/rendering/renderer_rd/forward_clustered/scene_shader_forward_clustered.h"
 #include "servers/rendering/renderer_rd/renderer_scene_render_rd.h"
 #include "servers/rendering/renderer_rd/shaders/forward_clustered/best_fit_normal.glsl.gen.h"
@@ -112,6 +113,10 @@ protected:
 	RenderRaytracing *raytracing = nullptr;
 	RenderRTXDI *rtxdi = nullptr;
 	RendererRD::NRDEffect *nrd_effect = nullptr;
+	MicroGeometrySelection *micro_geometry = nullptr;
+	RID micro_geometry_index_buffer;
+	RID micro_geometry_index_array;
+	Size2i micro_geometry_pass_size;
 
 public:
 	/* Framebuffer */
@@ -149,6 +154,7 @@ public:
 	public:
 		ClusterBuilderRD *cluster_builder = nullptr;
 		RendererRD::NRDEffect::Context *nrd_context = nullptr;
+		MicroGeometrySelection::DepthPyramid micro_geometry_depth;
 		enum RTXDISurfaceAttachment {
 			RTXDI_SURFACE_BASE,
 			RTXDI_SURFACE_SHADING,
@@ -253,6 +259,24 @@ protected:
 
 	struct RenderListParameters;
 	struct GeometryInstanceSurfaceDataCache;
+	struct MicroGeometryRasterPass {
+		struct Bin {
+			SceneShaderForwardClustered::ShaderData *shader = nullptr;
+			RID material;
+			uint32_t flags = 0;
+			bool mirror = false;
+			bool double_sided = false;
+		};
+		Vector<Bin> bins;
+		HashSet<uint64_t> surfaces;
+		Vector<RID> task_dependencies;
+		MicroGeometrySelection::Pass *gpu = nullptr;
+		RenderBufferDataForwardClustered *render_buffers = nullptr;
+		bool dispatched = false;
+		~MicroGeometryRasterPass() { if (gpu) { memdelete(gpu); } }
+	};
+	void _select_micro_geometry(MicroGeometryRasterPass *p_pass);
+	void _render_micro_geometry(RD::DrawListID p_list, RD::FramebufferFormatID p_framebuffer_format, RenderListParameters *p_parameters);
 
 	struct BestFitNormal {
 		BestFitNormalShaderRD shader;
@@ -284,10 +308,13 @@ protected:
 		PASS_MODE_RTXDI_SURFACE,
 		PASS_MODE_MAX
 	};
+	bool _micro_geometry_eligible(const GeometryInstanceSurfaceDataCache *p_surface, PassMode p_pass) const;
+	MicroGeometryRasterPass *_prepare_micro_geometry(const RenderDataRD *p_render_data, PassMode p_pass);
 
 	struct RenderElementInfo;
 
 	struct RenderListParameters {
+		MicroGeometryRasterPass *micro_geometry = nullptr;
 		GeometryInstanceSurfaceDataCache **elements = nullptr;
 		RenderElementInfo *element_info = nullptr;
 		int element_count = 0;
@@ -494,6 +521,7 @@ protected:
 		bool used_opaque_stencil = false;
 
 		struct ShadowPass {
+			MicroGeometryRasterPass *micro_geometry = nullptr;
 			uint32_t element_from;
 			uint32_t element_count;
 			PassMode pass_mode;
@@ -786,13 +814,21 @@ protected:
 	/* Render List */
 
 	struct RenderList {
+		LocalVector<MicroGeometryRasterPass *> micro_passes;
+		MicroGeometryRasterPass *last_micro_pass = nullptr;
 		LocalVector<GeometryInstanceSurfaceDataCache *> elements;
 		LocalVector<RenderElementInfo> element_info;
 
 		void clear() {
+			for (MicroGeometryRasterPass *pass : micro_passes) {
+				memdelete(pass);
+			}
+			micro_passes.clear();
+			last_micro_pass = nullptr;
 			elements.clear();
 			element_info.clear();
 		}
+		~RenderList() { clear(); }
 
 		//should eventually be replaced by radix
 

@@ -104,7 +104,7 @@ struct Builder {
 				return group_id;
 			}
 			uint32_t triangle_count = input.index_count / 3;
-			uint32_t size = vertex_count * stride + triangle_count * 7;
+			uint32_t size = vertex_count * (stride + 4) + triangle_count * 7;
 			uint32_t offset = (builder.page.size() + 3) & ~3u;
 			if (offset + size > Data::MAX_PAGE_SIZE) {
 				builder.error = Data::append_page(builder.data, builder.page);
@@ -137,6 +137,9 @@ struct Builder {
 					*head = builder.triangle_next[primitive];
 				}
 				encode_uint32(primitive, identities + j * 4);
+			}
+			for (uint32_t j = 0; j < vertex_count; j++) {
+				encode_uint32(local_vertices[j], identities + triangle_count * 4 + j * 4);
 			}
 			Data::Cluster cluster;
 			cluster.surface = builder.surface;
@@ -346,6 +349,22 @@ Error build_micro_geometry(const ImporterMesh &p_mesh, Ref<MicroGeometryData> &r
 		ERR_FAIL_COND_V(err != OK, err);
 	}
 	Vector<clodGroup> groups;
+	Vector<Vector<uint32_t>> parents;
+	parents.resize(builder.data.groups.size());
+	for (const Data::Cluster &cluster : builder.data.clusters) {
+		if (cluster.refined_group != Data::INVALID_ID && !parents[cluster.refined_group].has(cluster.group)) {
+			parents.write[cluster.refined_group].push_back(cluster.group);
+		}
+	}
+	for (int i = 0; i < builder.data.groups.size(); i++) {
+		Data::Group &group = builder.data.groups.write[i];
+		group.first_parent = builder.data.parent_groups.size();
+		group.parent_count = parents[i].size();
+		builder.data.parent_groups.append_array(parents[i]);
+	}
+	for (uint32_t terminal : builder.data.terminals) {
+		builder.data.coarse_cluster_count += builder.data.groups[terminal].cluster_count;
+	}
 	groups.resize(builder.data.groups.size());
 	uint32_t levels = 0;
 	for (int i = 0; i < groups.size(); i++) {

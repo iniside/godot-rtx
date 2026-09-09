@@ -180,6 +180,7 @@ public:
 			ShaderSpecialization shader_specialization = {};
 			uint32_t wireframe = false;
 			uint32_t ubershader = false;
+			bool micro_geometry = false;
 
 			uint32_t hash() const {
 				uint32_t h = hash_murmur3_one_64(vertex_format_id);
@@ -192,6 +193,7 @@ public:
 				h = hash_murmur3_one_32(shader_specialization.packed_2, h);
 				h = hash_murmur3_one_32(wireframe, h);
 				h = hash_murmur3_one_32(ubershader, h);
+				h = hash_murmur3_one_32(micro_geometry, h);
 				return hash_fmix32(h);
 			}
 		};
@@ -201,7 +203,7 @@ public:
 
 		RID version;
 
-		static const uint32_t VERTEX_INPUT_MASKS_SIZE = ShaderVersion::SHADER_VERSION_COUNT * 2;
+		static const uint32_t VERTEX_INPUT_MASKS_SIZE = ShaderVersion::SHADER_VERSION_COUNT * 4;
 		std::atomic<uint64_t> vertex_input_masks[VERTEX_INPUT_MASKS_SIZE] = {};
 
 		Vector<ShaderCompiler::GeneratedCode::Texture> texture_uniforms;
@@ -370,11 +372,11 @@ public:
 		virtual bool casts_shadows() const override;
 		virtual RenderingServerTypes::ShaderNativeSourceCode get_native_source_code() const override;
 		virtual Pair<ShaderRD *, RID> get_native_shader_and_version() const override;
-		uint16_t _get_shader_version(PipelineVersion p_pipeline_version, bool p_ubershader) const;
+		uint16_t _get_shader_version(PipelineVersion p_pipeline_version, bool p_ubershader, bool p_micro_geometry = false) const;
 		RID _get_shader_variant(uint16_t p_shader_version) const;
 		void _clear_vertex_input_mask_cache();
-		RID get_shader_variant(PipelineVersion p_pipeline_version, bool p_ubershader) const;
-		uint64_t get_vertex_input_mask(PipelineVersion p_pipeline_version, bool p_ubershader);
+		RID get_shader_variant(PipelineVersion p_pipeline_version, bool p_ubershader, bool p_micro_geometry = false) const;
+		uint64_t get_vertex_input_mask(PipelineVersion p_pipeline_version, bool p_ubershader, bool p_micro_geometry = false);
 		RD::PolygonCullMode get_cull_mode_from_cull_variant(CullVariant p_cull_variant);
 		bool is_valid() const;
 
