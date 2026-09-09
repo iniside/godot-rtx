@@ -3056,6 +3056,27 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
 	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
+	HashMap<RID, RTMaterialData *> resolved_materials;
+	HashMap<RID, HashMap<int32_t, uint64_t>> material_content_generations;
+	auto resolve_material = [&](RID p_material) -> RTMaterialData * {
+		RTMaterialData **resolved = resolved_materials.getptr(p_material);
+		if (resolved) {
+			return *resolved;
+		}
+		RTMaterialData *material = process_material(p_material, material_storage->material_get_rt_invalidation_counter(p_material));
+		resolved_materials.insert(p_material, material);
+		return material;
+	};
+	auto get_material_content_generation = [&](RID p_material, int32_t p_instance_uniform_offset) -> uint64_t {
+		HashMap<int32_t, uint64_t> &generations = material_content_generations[p_material];
+		const uint64_t *generation = generations.getptr(p_instance_uniform_offset);
+		if (generation) {
+			return *generation;
+		}
+		const uint64_t resolved = material_storage->material_get_rt_content_generation(p_material, p_instance_uniform_offset);
+		generations.insert(p_instance_uniform_offset, resolved);
+		return resolved;
+	};
 	LocalVector<RID> dirty_blas_list;
 	LocalVector<RID> dirty_blas_update_list;
 	Vector<MicroGeometrySelection::Task> micro_tasks;
@@ -3175,9 +3196,9 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			return true;
 		}
 		RID material = p_surface->material_rid.is_valid() ? p_surface->material_rid : owner->scene_shader.default_material;
-		RTMaterialData *native_material = process_material(material, material_storage->material_get_rt_invalidation_counter(material));
+		RTMaterialData *native_material = resolve_material(material);
 		hash_scene(material.get_id());
-		hash_scene(material_storage->material_get_rt_content_generation(material, instance->shader_uniforms_offset));
+		hash_scene(get_material_content_generation(material, instance->shader_uniforms_offset));
 		hash_scene(asset.get_id());
 		uint32_t flags = 0;
 		if (shader->cull_mode == RSE::CULL_MODE_DISABLED) {
@@ -3331,12 +3352,11 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 				}
 
 				// Material for procedural geometry (already validated above).
-				uint16_t proc_mat_counter = material_storage->material_get_rt_invalidation_counter(proc_material_rid);
 				hash_scene(proc_material_rid.get_id());
 				uses_time |= proc_material->shader_data->rt_uses_time();
 				uses_previous_time |= proc_material->shader_data->rt_uses_previous_time();
-				hash_scene(material_storage->material_get_rt_content_generation(proc_material_rid, inst->shader_uniforms_offset));
-				RTMaterialData *proc_mat_data = process_material(proc_material_rid, proc_mat_counter);
+				hash_scene(get_material_content_generation(proc_material_rid, inst->shader_uniforms_offset));
+				RTMaterialData *proc_mat_data = resolve_material(proc_material_rid);
 				material_data.push_back(proc_mat_data->data);
 				geometry_material_programs.push_back(proc_mat_data->hit_shader);
 
@@ -3404,10 +3424,9 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 					}
 				}
 
-				uint16_t material_counter = material_storage->material_get_rt_invalidation_counter(material_rid);
 				hash_scene(material_rid.get_id());
-				hash_scene(material_storage->material_get_rt_content_generation(material_rid, inst->shader_uniforms_offset));
-				RTMaterialData *mat_data = process_material(material_rid, material_counter);
+				hash_scene(get_material_content_generation(material_rid, inst->shader_uniforms_offset));
+				RTMaterialData *mat_data = resolve_material(material_rid);
 
 				uint32_t inst_flags = 0;
 				if (mm_surf->shader) {
@@ -3524,10 +3543,9 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 				}
 			}
 
-			uint16_t material_counter = material_storage->material_get_rt_invalidation_counter(material_rid);
 			hash_scene(material_rid.get_id());
-			hash_scene(material_storage->material_get_rt_content_generation(material_rid, inst->shader_uniforms_offset));
-			RTMaterialData *mat_data = process_material(material_rid, material_counter);
+			hash_scene(get_material_content_generation(material_rid, inst->shader_uniforms_offset));
+			RTMaterialData *mat_data = resolve_material(material_rid);
 
 			Transform3D final_transform;
 			if (instance_static && surf->cached_final_transform_valid) {
