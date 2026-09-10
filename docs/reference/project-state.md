@@ -134,8 +134,18 @@ and hashing with persistent membership and GPU-written geometry/material/motion/
 TLAS records. Ordinary build and dense/moving native runs pass. Same-route
 no-profile pair reports22.552 ->8.735ms wall,44.34 ->114.48FPS,
 20.298 ->6.303ms CPU and6.607 ->4.352ms GPU samples;10000instances,8pages,
-108CLAS remain. The owner observed approximately120FPS. Independent-job fan-out
-is the remaining active implementation step; no final performance claim yet.
+108CLAS remain. The owner observed approximately120FPS. Step4 `5620f4edc6`
+fans out independent preparation through the existing WorkerThreadPool with
+scoped consumer joins and private cluster inputs; no generic CPU task graph
+was introduced. Ordinary build and dense/moving native runs pass. Opposite-order
+pairs show approximately4% slower/3.1% faster, so no isolated fan-out speedup
+or regression is established; approximately120FPS is retained. All four planned
+implementation steps are committed. The single brief source check's light-
+history/cut-publication race is corrected by `16d933bc40`: history mapping
+consumes state captured after cut publication. Final ordinary build and dense/
+moving native runs pass without ERROR; final dense median117.53FPS,8.509ms wall,
+6.260ms CPU render sample and4.067ms GPU sample. The approved replacement is
+complete, without extra audit rounds or an isolated fan-out speedup claim.
 Actual dragon import/reimport passed in 82.66/67.04 seconds, yielding 17 DAG
 levels and 9737 pages with byte-identical reused `.mgdata`; the diagnostic
 reimport command had shutdown warnings. Import evidence uses an immutable

@@ -1334,3 +1334,63 @@ stage. The owner also observed approximately120FPS in the running scene.
 Short dense180 and existing moving300/orbit/freeze-after2 runs exit0 without
 Godot ERROR. No appearance/quality campaign or automated tests were run.
 The remaining independent-job fan-out is now implementing from this commit.
+
+## CPU removal Step4, `5620f4edc6`
+
+Existing Godot WorkerThreadPool group tasks now fan out independent RT decal,
+analytic-light and emissive preparation, and conventional light/decal CPU work.
+Scoped contexts retain inputs/results and join at publication/actual consumers
+or early returns. Each conventional branch owns its cluster additions until
+the owner merges them. The last RT payload worker merges light history using
+an atomic pending count; it does not block on child work. Guarded RD/resource
+operations remain on the owner. This is explicit local dependency scheduling,
+not a new pool or generic CPU task graph. RenderingDeviceGraph remains the
+separate GPU dependency/barrier authority.
+
+Ordinary builds pass39.22/29.14s. Same dense1500 no-profile comparison, common
+frames900-1500, followed once in reverse order because the first result was
+ambiguous:
+
+| Sample median | Step3 control | Step4 |
+| --- | ---: | ---: |
+| First pair FPS |126.80|121.755|
+| First pair wall ms |7.887|8.213|
+| First pair CPU sample ms |5.609|5.827|
+| First pair GPU sample ms |3.789|3.914|
+| Reverse pair FPS |119.305|123.14|
+| Reverse pair wall ms |8.382|8.121|
+| Reverse pair CPU sample ms |6.023|5.710|
+| Reverse pair GPU sample ms |3.757|3.633|
+
+Logs `micro-step4-{control,candidate}.log` and their `-repeat` counterparts
+contain18/20 and20/19 sampled windows. All four runs exit0 without Godot ERROR;
+moving300/orbit/freeze also exits0 without ERROR (`micro-step4-moving.log`).
+The opposing approximately4% regression and3.1% gain establish no reliable
+isolated fan-out speedup or regression. The preceding GPU RT improvement is
+retained at approximately120FPS. No more repeated runs or extra build/test
+matrix are justified by these observations. The single brief final source check
+finds one blocker: worker-side light-history mapping reads `light_history_valid`
+while owner-side changed-cut publication can clear it. In addition to the data
+race, publishing a mapping prepared before that invalidation could retain stale
+history. The correction must order final history mapping after cut publication
+while preserving independent payload fan-out. No other concrete blocker was
+found in the bounded check; no proof/acceptance audit or additional review round
+is scheduled.
+
+Correction `16d933bc40ecb969b6dd93b02fcc7a874c4a5316` preserves parallel payload
+preparation/merge, then starts history mapping after AS/cut publication using
+captured validity and snapshot index. Owner decal publication overlaps this
+worker; light publication joins it. This closes the reported shared-flag race
+and preserves cut invalidation ordering. Ordinary build passes33.39s. Final
+dense1500 (`micro-step4-history-final.log`) exits0 without ERROR:20 samples in
+frames900-1500,117.53FPS,8.509ms wall,6.260ms CPU render sample,4.067ms GPU
+sample. All10000 instances,8pages,108CLAS and3cuts remain. Final moving300/
+orbit/freeze (`micro-step4-history-moving.log`) also exits0 without ERROR.
+
+The four approved implementation steps and the one concrete source-check fix
+are complete. The main measured gain is removal of recurring CPU RT data work;
+fan-out has no separately established FPS gain. Final renderer CPU samples
+include waits and are not main-thread active time. No GPU async-compute queues,
+generic CPU task graph, SceneTree rewrite, unsupported view modes, automated
+tests, appearance campaign or extra audit rounds were added. Dedicated final
+unload/reload and non-Vulkan runs were not performed.
