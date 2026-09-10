@@ -46,7 +46,6 @@ public:
 	static constexpr uint32_t PAGE_SIZE = MicroGeometryData::MAX_PAGE_SIZE;
 	static constexpr uint32_t DEFAULT_PAGE_COUNT = 4096;
 	static constexpr uint32_t MAX_IO_TASKS = 16;
-	static constexpr uint64_t METADATA_BUDGET = 64 * 1024 * 1024;
 
 	struct GPURequest {
 		uint64_t asset = 0;
@@ -266,7 +265,7 @@ private:
 	RID page_pipeline;
 
 	static void _read_page(void *p_userdata);
-	RID _create_buffer(Asset &r_asset, const void *p_data, uint32_t p_size);
+	RID _create_buffer(Asset &r_asset, const void *p_data, uint64_t p_size);
 	void _publish(Asset &r_asset);
 	void _unpublish_page(Asset &r_asset, uint32_t p_page);
 	uint32_t _allocate_slot();

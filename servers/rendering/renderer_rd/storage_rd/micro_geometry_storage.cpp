@@ -69,12 +69,13 @@ void MicroGeometryStorage::_read_page(void *p_userdata) {
 	}
 }
 
-RID MicroGeometryStorage::_create_buffer(Asset &r_asset, const void *p_data, uint32_t p_size) {
+RID MicroGeometryStorage::_create_buffer(Asset &r_asset, const void *p_data, uint64_t p_size) {
 	if (p_size == 0) {
 		return RID();
 	}
-	Span<uint8_t> bytes(static_cast<const uint8_t *>(p_data), p_size);
-	RID buffer = RD::get_singleton()->storage_buffer_create(p_size, bytes, 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
+	ERR_FAIL_COND_V_MSG(p_size > UINT32_MAX, RID(), "Microgeometry metadata buffer exceeds the RenderingDevice size limit.");
+	Span<uint8_t> bytes(static_cast<const uint8_t *>(p_data), uint32_t(p_size));
+	RID buffer = RD::get_singleton()->storage_buffer_create(uint32_t(p_size), bytes, 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
 	if (buffer.is_valid()) {
 		r_asset.buffers.push_back(buffer);
 		r_asset.metadata_bytes += p_size;
@@ -205,7 +206,6 @@ RID MicroGeometryStorage::acquire(const Ref<MicroGeometryData> &p_source) {
 	const uint64_t required = sizeof(GPUAsset) + uint64_t(metadata.clusters.size()) * sizeof(GPUCluster) + uint64_t(metadata.groups.size()) * (sizeof(GPUGroup) + sizeof(uint32_t)) +
 			uint64_t(metadata.surfaces.size()) * sizeof(GPUSurface) + uint64_t(metadata.nodes.size()) * sizeof(GPUNode) +
 			(uint64_t(metadata.terminals.size()) + metadata.roots.size() + metadata.parent_groups.size()) * sizeof(uint32_t) + uint64_t(metadata.pages.size()) * sizeof(GPUPage);
-	ERR_FAIL_COND_V_MSG(required > METADATA_BUDGET - MIN(METADATA_BUDGET, statistics.metadata_bytes + statistics.retired_metadata_bytes), RID(), "Microgeometry metadata budget exhausted.");
 	if (pool.is_null()) {
 		pool = RD::get_singleton()->storage_buffer_create(page_count * PAGE_SIZE, Vector<uint8_t>(), 0,
 				RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT | RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT);
@@ -306,21 +306,21 @@ RID MicroGeometryStorage::acquire(const Ref<MicroGeometryData> &p_source) {
 		assets.free(id);
 		return RID();
 	}
-	asset.page_buffer = _create_buffer(asset, pages.ptr(), pages.size() * sizeof(GPUPage));
-	asset.group_buffer = _create_buffer(asset, asset.group_states.ptr(), asset.group_states.size() * sizeof(uint32_t));
-	asset.gpu.pages = RD::get_singleton()->buffer_get_device_address(asset.page_buffer);
-	asset.gpu.group_states = RD::get_singleton()->buffer_get_device_address(asset.group_buffer);
-	auto create_address = [&](const void *p_data, uint32_t p_size) -> uint64_t {
+	asset.page_buffer = _create_buffer(asset, pages.ptr(), uint64_t(pages.size()) * sizeof(GPUPage));
+	asset.group_buffer = _create_buffer(asset, asset.group_states.ptr(), uint64_t(asset.group_states.size()) * sizeof(uint32_t));
+	asset.gpu.pages = asset.page_buffer.is_valid() ? RD::get_singleton()->buffer_get_device_address(asset.page_buffer) : 0;
+	asset.gpu.group_states = asset.group_buffer.is_valid() ? RD::get_singleton()->buffer_get_device_address(asset.group_buffer) : 0;
+	auto create_address = [&](const void *p_data, uint64_t p_size) -> uint64_t {
 		RID buffer = _create_buffer(asset, p_data, p_size);
 		return buffer.is_valid() ? RD::get_singleton()->buffer_get_device_address(buffer) : 0;
 	};
-	asset.gpu.clusters = create_address(clusters.ptr(), clusters.size() * sizeof(GPUCluster));
-	asset.gpu.groups = create_address(groups.ptr(), groups.size() * sizeof(GPUGroup));
-	asset.gpu.surfaces = create_address(surfaces.ptr(), surfaces.size() * sizeof(GPUSurface));
-	asset.gpu.nodes = create_address(nodes.ptr(), nodes.size() * sizeof(GPUNode));
-	asset.gpu.terminals = create_address(metadata.terminals.ptr(), metadata.terminals.size() * sizeof(uint32_t));
-	asset.gpu.roots = create_address(metadata.roots.ptr(), metadata.roots.size() * sizeof(uint32_t));
-	asset.gpu.parent_groups = create_address(metadata.parent_groups.ptr(), metadata.parent_groups.size() * sizeof(uint32_t));
+	asset.gpu.clusters = create_address(clusters.ptr(), uint64_t(clusters.size()) * sizeof(GPUCluster));
+	asset.gpu.groups = create_address(groups.ptr(), uint64_t(groups.size()) * sizeof(GPUGroup));
+	asset.gpu.surfaces = create_address(surfaces.ptr(), uint64_t(surfaces.size()) * sizeof(GPUSurface));
+	asset.gpu.nodes = create_address(nodes.ptr(), uint64_t(nodes.size()) * sizeof(GPUNode));
+	asset.gpu.terminals = create_address(metadata.terminals.ptr(), uint64_t(metadata.terminals.size()) * sizeof(uint32_t));
+	asset.gpu.roots = create_address(metadata.roots.ptr(), uint64_t(metadata.roots.size()) * sizeof(uint32_t));
+	asset.gpu.parent_groups = create_address(metadata.parent_groups.ptr(), uint64_t(metadata.parent_groups.size()) * sizeof(uint32_t));
 	asset.gpu.cluster_count = clusters.size();
 	asset.gpu.group_count = groups.size();
 	asset.gpu.surface_count = surfaces.size();
@@ -344,6 +344,7 @@ RID MicroGeometryStorage::acquire(const Ref<MicroGeometryData> &p_source) {
 		}
 		request_group(id, group);
 	}
+	print_verbose(vformat("Microgeometry metadata admitted: asset=%d bytes, live=%d bytes, retired=%d bytes.", asset.metadata_bytes, statistics.metadata_bytes, statistics.retired_metadata_bytes));
 	return id;
 }
 
