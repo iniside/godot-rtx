@@ -29,10 +29,38 @@ Large source GLBs remain at their existing owner-untracked paths. Their bytes
 are not duplicated in the migration commit; hashes and import configuration
 are retained. They must remain available to the later native import/export.
 
+## Step 2: native foundation accepted
+
+Committed at `8b645f23a7ac57c1124664cf7d715aaba055e5dc`: plain C++ EntityWorld,
+generational handles, durable identity catalog, typed component changes,
+Clang-generated native schemas/Flecs Meta, and pinned Flecs import recipe.
+No per-entity Object/Node/Resource wrapper was introduced.
+
+Final pre-review ordinary editor, double editor and template_debug builds pass.
+Commands use `platform=windows accesskit=no d3d12=no angle=no -j16`, with
+`target=editor`, `target=editor precision=double`, and `target=template_debug`.
+Local logs: `logs/entity-step2-editor-final02.log` (26.20s),
+`logs/entity-step2-double-final.log` (31.98s),
+`logs/entity-step2-template-final.log` (19.79s).
+Bootstrap without generated outputs and regeneration after generator/config
+changes passed. A semantic component-declaration edit was not separately
+exercised. No automated tests or native-world execution are claimed.
+
+Fresh source review rejected one asset-codec error: a `container::subresource`
+address sent directly to ResourceLoader depends on an existing cache entry.
+Correction `4e2db6d6ab11c8368545acafc5083bfb5d9b6062` loads the container and
+retains ownership while resolving the requested subresource. Fresh final source
+review PASS traced text, binary and imported resources through their existing
+cache/ownership contracts. Final correction builds pass in all three axes:
+`logs/entity-step2-asset-fix-editor.log` (30.03s),
+`logs/entity-step2-asset-fix-double.log` (27.97s),
+`logs/entity-step2-asset-fix-template.log` (26.12s).
+Actual cold-load and native-world execution remain unverified.
+
 ## Remaining work
 
-Step 2 (Flecs ownership, native component schema and Clang/SCons generation)
-is being implemented. Subsequent world lifecycle, document, renderer, editor,
+Step 3 world lifecycle/hierarchy/transform replacement is in progress from
+`4e2db6d6ab`. Document, renderer, editor,
 subsystems and native import/export steps have not landed. Existing Node-world
 operation is not evidence of the target entity model.
 

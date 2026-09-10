@@ -9,12 +9,14 @@ should be flat; editor/streaming grouping does not imply transform parenting.
 records pinned Flecs contracts and Godot runtime/editor replacement boundaries.
 The reviewed [implementation plan](../plans/2026-09-10-1023-flecs-native-scene-plan.md)
 is approved and committed at `e4f73a8286`. Fixture preservation `05996de60b`
-passes source review and independent data audit; native Flecs/schema foundation
-is in progress. See [execution evidence and limits](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
+passes source review and independent data audit. Flecs/schema foundation
+`8b645f23a7` plus cold-subresource fix `4e2db6d6ab` passes final source review
+and ordinary/double/template builds. Native world lifecycle replacement is in
+progress. See [execution evidence and limits](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
 Scripting, Node plugins, 2D and HTML/CSS
 game UI are excluded; old world scenes need no compatibility beyond the finite
 renderer migration. SoftBody/Generic6DOF and CSG/GridMap authoring are also
-excluded by the approved plan. No ECS build, runtime or performance result is
+excluded by the approved plan. No native-world runtime or performance result is
 claimed yet. Existing renderer GPU data ownership and change-only publication
 remain the integration baseline.
 
