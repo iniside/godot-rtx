@@ -265,6 +265,14 @@ not an implemented converter or successful native scene round trip. The
 converter writer will run after the renderer source freezes, with serialized
 source ownership and builds.
 
+Intermediate tool closure will also remove Node-based polygon/skeleton authoring
+and import-dialog animation playback. Shared mesh/material/static import
+previews and parsed Animation assets remain required. Retired playback controls
+must report unavailability rather than appear to play a frozen preview. Native
+animation playback/authoring returns with steps 7c and 8; step 5 must not add a
+second preview-only evaluator or retain the old Node tick as a bridge. This is
+an implementation sequencing boundary, not a final animation scope exclusion.
+
 ## Remaining work
 
 Renderer, editor, subsystems and
