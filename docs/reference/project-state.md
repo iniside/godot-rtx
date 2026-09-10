@@ -73,17 +73,21 @@ exit 0 without ERROR. Dense main transfer is 0.0225 ms and admission/callback
 active work 0.0115 ms; admission wait is separately 27.1335 ms. These are
 medians of reported window means. Fresh independent proof audit passes on
 2026-09-10, with double/template compile-only and no final appearance claim.
-Step 5 worker-preparation candidate
-`8563b9a8e7` passes ordinary/double/template builds and the bounded dense native
-run, but is not accepted: fresh source round 1 rejects conventional light/decal
-CPU packing left on the coordinator. Matched dense runs without detailed
-profiling regress from 40 to 29 FPS (medians of the last ten reported windows).
-The regression needs diagnosis independently of that scope omission. Dense HUD
-`1f339891f9` displays wall FPS/frame, CPU rendering including waits, and completed
-GPU time; native PNG inspection confirms readable counters. Step 5 proof audit
-remains pending. Correction-agent dispatch resumed on 2026-09-10; diagnosis
-is measuring repeated shared geometry reference-count operations, with
-conventional light/decal worker preparation also outstanding.
+Step 5 correction `9f6512180c` passes ordinary/double/template builds and
+bounded dense/gallery Vulkan runs. Batch-local resource reuse reduces repeated
+mesh-owner locking; conventional light/decal host preparation runs on workers.
+Quiet matched dense FPS medians are 41 for Step 4 versus 37 for the correction;
+the earlier Step 5 candidate reported 29. Final profiled RT gather is 5.3382 ms;
+main transfer 0.020 ms, admission/callback active 0.0105 ms, wait 30.024 ms.
+An intervening 25-FPS baseline run is confounded by external compiler load.
+Final source round 2 REJECT finds synchronous RT decal snapshot preparation at
+`render_raytracing.cpp:4502` / `texture_storage.cpp:4314`. Move this CPU work to
+a joined worker before publication/uploads; it is separate from the corrected
+conventional decal path and is not blamed for the decal-free dense regression.
+The two-round cap is reached; source work stops pending owner continuation.
+Remaining performance diagnosis and named Step 5 proof audit are open.
+Dense HUD `1f339891f9` displays wall FPS/frame, CPU rendering including waits,
+and completed GPU time; native PNG inspection confirms readable counters.
 Worker recording and conditional async compute remain pending.
 Actual dragon import/reimport passed in 82.66/67.04 seconds, yielding 17 DAG
 levels and 9737 pages with byte-identical reused `.mgdata`; the diagnostic

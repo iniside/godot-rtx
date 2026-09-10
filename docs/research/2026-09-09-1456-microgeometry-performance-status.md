@@ -786,3 +786,105 @@ The SDK ring's exact size is unverified because its definition is absent from
 the retained external source; modulo recycling and the local two-owner bound
 are independently supported. This closes the previously harness-blocked Step 4
 proof audit, not Step 5/6 architecture or performance acceptance.
+
+
+## Step 5 focused regression experiments (2026-09-10)
+
+Retained timestamp-window comparison localizes the largest Step 5 changes to
+RT Scene Gather (+4.2024 ms), RT Decals and Lights (+1.0976 ms), CanvasItem tree
+cull (+0.6247 ms) and canvas rendering (+0.4855 ms). These are last-ten medians
+of reported CPU window means. `step5-stage-regression-comparison.json` retains
+all common stages. Sampled native worker rows show RT discovery median
+queue-to-join 6540 us, execution span 6333.5 us and longest chunk 6241.5 us;
+most of its elapsed interval is inside worker execution, not merely initial
+queueing. Elapsed intervals include preemption and do not prove a mutex cause.
+
+The first focused patch retains geometry sources/readiness once per distinct
+asset in each existing discovery batch and avoids copying the retained source
+Ref in assembly. It preserves task scheduling. Ordinary build passes in
+33.85 seconds; held-source manifest/patch are `step5-refcount-fix01-source.json`
+and `step5-refcount-fix01.patch`. Pinned ordinary SHA256:
+`2e13b2aae6335121fccaf2495f2c71d2705b9efdf8b65adef19983f72844e99a`.
+Native same-HUD fixed60/orbit1500 no-profile and profile runs both exit 0 without
+ERROR or timeout. No-profile last-ten reported FPS median remains 29. Profiled
+FPS is 23.5 and RT gather 13.6341 ms. This experiment does not demonstrate a
+performance improvement; the shared-Ref hypothesis alone is insufficient.
+A current-session baseline refresh is required before attributing variation
+against the prior profiled run. No automated tests ran.
+
+
+The current-session baseline refresh `step5-baseline-refresh-no-profile` exits
+0 without ERROR/timeout but falls to 25 FPS. A contemporaneous host sample finds
+many active external `cl.exe` processes; neither this task's author nor root was
+building then. This run is confounded and cannot establish an engine regression
+or gain. Reference-only experiment comparisons across that interval likewise
+cannot isolate shared-reference cost. No external process was stopped.
+
+Final correction `9f6512180c30254fa6482a7e407a02cb979cf0db` additionally resolves
+mesh/surface material once per existing discovery batch and reuses the merged
+result during assembly. `MeshStorage::owns_mesh` enters the thread-safe RID
+owner mutex; repeated per-instance calls were a concrete contention source in
+the parallel traversal. Conventional light/decal gather, sort, packing and
+native ClusterBuilder payload hooks now execute in existing sequential worker
+jobs; owner publication and GPU uploads follow their joins. No persistent cache,
+new storage authority or public API is added. These changes are only three
+source files; the full Step 5 cumulative range includes eighteen engine files.
+
+Final03 ordinary/double/template builds pass in 30.85/26.70/22.39 seconds.
+Pinned executables in `step5-resource-fix03-bin` have SHA256:
+
+- Ordinary: `32d7cffe49f6952d205c28588b0e87436e74d49a844f17e9fc3e0e159d92dc9c`
+- Double: `8671a0f37ff1c06293fbc373edba06fcd31ac7da895be372a173dd5b73f29662`
+- Template: `ddabe9f2701f0c0cb9622dab53873b410ea4b1c31f0e9b904ead24b627aa5632`
+
+`step5-resource-fix03-source.json`, `-additional-binaries.json`, `-commit-map.json`
+and the retained working patch establish all eighteen source identities against
+frozen `9f6512180c` after LF normalization. The eight runtime text inputs match
+previous Step 4 inputs plus the intentional HUD checkpoint; see
+`step5-fix02-runtime-inputs.json`. Intermediate fix02 compiled but was superseded
+by the native cluster-hook closure before its own runtime launch.
+
+After external compilers finish, a short CPU sample shows no busy compiler or
+clangd process. `step5-baseline-quiet-no-profile` and
+`step5-resource-fix03-quiet-no-profile` then run sequentially with identical HUD,
+fixed60/orbit1500, Vulkan1280x720 and no-vsync settings. Both exit 0 without ERROR
+or timeout. Last-ten reported FPS medians are **41 versus 37**. Start/mid/end
+checks find no `cl`/`link` processes; these observations do not guarantee continuous
+exclusive host use. The prior candidate reported 29 FPS, but this final pair
+still demonstrates remaining loss against Step 4, not completed performance
+acceptance. Samples are in `step5-resource-fix03-quiet-comparison.json`.
+
+Final03 detailed profile also exits 0 without ERROR/timeout. Last-ten medians:
+RT gather 5.3382 ms; RT decals/lights 1.2748 ms; canvas cull 0.6611 ms; canvas
+render 0.5179 ms; microgeometry raster preparation 4.2714 ms; reported FPS 33.
+Main simulation 0.042 ms, process/navigation 0.1045 ms, transfer 0.020 ms and
+admission/callback active 0.0105 ms remain small; admission wait is 30.024 ms.
+These are reported window means, not frame percentiles or summed active worker
+CPU. `step5-resource-fix03-profile-metrics.json` retains all stage medians.
+The final gallery run (300 fixed-delta native hybrid-NRD iterations) exits 0
+without ERROR/timeout, exercising existing Omni/Spot/Area lights. It overlaps
+read-only reviewer navigation and supplies execution evidence only, no performance
+or appearance claim. No nonempty decal workload was found in the existing manual
+text-scene inventory; that runtime branch remains unverified.
+
+
+Final source round 2 by `step5_review2` returns **REJECT** on frozen
+`9f6512180c`, original `8563b9a8e7`, cumulative `9f42b239e3..9f6512180c`.
+One concrete scope omission remains: `render_raytracing.cpp:4502` calls
+`TextureStorage::build_rt_decal_snapshot` synchronously; its body at
+`texture_storage.cpp:4314` gathers camera/resident decals, performs three sorts,
+packs data and hashes payload/texture generations on the render coordinator.
+The active caller is `render_forward_clustered.cpp:2749`. Move that snapshot
+preparation into a joined worker job before owner publication/uploads, preserving
+ordering, offscreen residency and generation semantics. The conventional decal
+buffer correction does not cover this separate RT path. No additional concrete
+race/lifetime defect was established. The dense fixture has no decals, so this
+omission is not asserted to cause the remaining 37-versus-41 FPS loss.
+
+The mandatory two-source-review-round cap is reached. Source work stops here;
+there is no third review or silent follow-up fix. Step 5 remains incomplete:
+RT decal worker preparation, remaining performance diagnosis and final named
+proof audit are outstanding. Step 6 recording and conditional Step 7 async
+compute have not started. The next authorized continuation should address the
+specific snapshot call above, retain the final18source/binary evidence and use
+the quiet matched baseline; do not rewrite SceneTree or add a new renderer layer.
