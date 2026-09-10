@@ -541,6 +541,8 @@ struct RTMicroGeometryBuild {
 	};
 	uint64_t signature = 0;
 	uint64_t input_signature = 0;
+	uint64_t record_signature = 0;
+	uint64_t record_scene_generation = 0;
 	uint64_t selected_input_signature = 0;
 	uint64_t producing_signature = 0;
 	uint64_t dependency_signature = 0;
@@ -566,6 +568,8 @@ struct RTMicroGeometryBuild {
 	uint32_t page_representative = 0;
 	uint32_t pool_count = 0;
 	bool has_committed_cut = false;
+	bool record_signature_valid = false;
+	bool record_conservative_updates = false;
 	bool conservative_updates = false;
 	bool selection_retry = false;
 	bool frozen = false;

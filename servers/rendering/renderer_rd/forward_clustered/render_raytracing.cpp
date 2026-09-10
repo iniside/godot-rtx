@@ -2019,6 +2019,8 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 	}
 	RTMicroGeometryBuild *build = p_state->micro_geometry;
 	const uint64_t previous_input_signature = profile_preparation ? build->input_signature : 0;
+	const uint64_t record_scene_generation = persistent_scene_generation;
+	const bool record_hash_reused = build->record_signature_valid && build->record_scene_generation == record_scene_generation;
 	build->frozen = p_render_data->render_buffers->is_micro_geometry_debug_freeze();
 	auto prepare_dependencies = [&](uint32_t) {
 		begin_job(2);
@@ -2055,17 +2057,24 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 		input_signature = _rt_scene_hash(&p_state->rt_origin, sizeof(p_state->rt_origin), input_signature);
 		input_signature = _rt_scene_hash(&build->frozen, sizeof(build->frozen), input_signature);
 		uint64_t dependency_signature = 0x9e3779b97f4a7c15ULL;
-		build->conservative_updates = false;
 		parameters_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-		for (const auto &task : p_tasks) {
-			const auto &instance = persistent_instances[uint32_t(task.instance) - 1].data;
-			const auto &surface = persistent_surfaces[uint32_t(task.surface) - 1].data;
-			input_signature = _rt_scene_hash(&instance, sizeof(instance), input_signature);
-			input_signature = _rt_scene_hash(&surface, sizeof(surface), input_signature);
-			if (task.indirect_command != 0 || instance.deformed != 0) {
-				build->conservative_updates = true;
+		if (!record_hash_reused) {
+			uint64_t record_signature = 0x9e3779b97f4a7c15ULL;
+			bool record_conservative_updates = false;
+			for (const auto &task : p_tasks) {
+				const auto &instance = persistent_instances[uint32_t(task.instance) - 1].data;
+				const auto &surface = persistent_surfaces[uint32_t(task.surface) - 1].data;
+				record_signature = _rt_scene_hash(&instance, sizeof(instance), record_signature);
+				record_signature = _rt_scene_hash(&surface, sizeof(surface), record_signature);
+				record_conservative_updates |= task.indirect_command != 0 || instance.deformed != 0;
 			}
+			build->record_signature = record_signature;
+			build->record_conservative_updates = record_conservative_updates;
+			build->record_scene_generation = record_scene_generation;
+			build->record_signature_valid = true;
 		}
+		input_signature = _rt_scene_hash(&build->record_signature, sizeof(build->record_signature), input_signature);
+		build->conservative_updates = build->record_conservative_updates;
 		instance_hash_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 		for (RID asset : build->assets) {
 			const auto descriptor = storage->get_asset(asset);
@@ -2119,7 +2128,7 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 			rows += vformat("RenderPrep stage=%s frame=%d coordinator=%d jobs=%d tasks=%d queued_usec=%d wait_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d timing=elapsed", names[index], profile_frame, coordinator, int(index != 1 || !valid), p_tasks.size(), timing.queued, timing.wait, timing.joined, timing.worker, timing.begin, timing.end) + "\n";
 		}
 		rows += vformat("RenderPrep stage=MicrogeometryRTInputs frame=%d coordinator=%d jobs=%d tasks=%d rt_tasks=%d assets=%d dependencies=%d reused=%d same_inputs=%d dependency_rebuild=%d conservative=%d frozen=%d begin_usec=%d end_usec=%d rebuild_owner_usec=%d timing=elapsed", profile_frame, coordinator, valid ? 2 : 3, p_tasks.size(), p_rt_tasks.size(), build->assets.size(), build->dependencies.size(), int(valid), int(previous_input_signature == build->input_signature), int(dependencies_changed), int(build->conservative_updates), int(build->frozen), owner_begin, owner_end, valid ? 0 : timings[1].queued - timings[0].joined + timings[2].queued - timings[1].joined) + "\n";
-		rows += vformat("RenderPrep stage=MicrogeometryRTHashPhases frame=%d task_bytes=%d signature_record_bytes=%d rt_task_bytes=%d dependency_record_bytes=%d task_hash_usec=%d signature_records_usec=%d rt_task_hash_usec=%d motion_usec=%d parameters_usec=%d instance_hash_usec=%d assets_usec=%d dependencies_usec=%d timing=elapsed", profile_frame, uint64_t(p_tasks.size()) * sizeof(MicroGeometrySelection::Task), uint64_t(p_tasks.size()) * 9 * sizeof(uint64_t), uint64_t(p_rt_tasks.size()) * sizeof(RTMicroGeometryTask), uint64_t(p_tasks.size()) * (sizeof(RTPersistentInstanceData) + sizeof(RTPersistentSurfaceData)), task_hash_end - timings[0].begin, persistent_hash_end - task_hash_end, timings[0].end - persistent_hash_end, motion_end - timings[2].begin, parameters_end - motion_end, instance_hash_end - parameters_end, assets_end - instance_hash_end, timings[2].end - assets_end);
+		rows += vformat("RenderPrep stage=MicrogeometryRTHashPhases frame=%d task_bytes=%d signature_record_bytes=%d rt_task_bytes=%d dependency_record_bytes=%d record_hash_hits=%d record_hash_misses=%d record_scene_generation=%d task_hash_usec=%d signature_records_usec=%d rt_task_hash_usec=%d motion_usec=%d parameters_usec=%d instance_hash_usec=%d assets_usec=%d dependencies_usec=%d timing=elapsed", profile_frame, uint64_t(p_tasks.size()) * sizeof(MicroGeometrySelection::Task), uint64_t(p_tasks.size()) * 9 * sizeof(uint64_t), uint64_t(p_rt_tasks.size()) * sizeof(RTMicroGeometryTask), record_hash_reused ? uint64_t(0) : uint64_t(p_tasks.size()) * (sizeof(RTPersistentInstanceData) + sizeof(RTPersistentSurfaceData)), int(record_hash_reused), int(!record_hash_reused), record_scene_generation, task_hash_end - timings[0].begin, persistent_hash_end - task_hash_end, timings[0].end - persistent_hash_end, motion_end - timings[2].begin, parameters_end - motion_end, instance_hash_end - parameters_end, assets_end - instance_hash_end, timings[2].end - assets_end);
 		print_line(rows);
 	}
 	return true;
@@ -5689,6 +5698,7 @@ void RenderRaytracing::update_persistent_instances(const LocalVector<RenderGeome
 }
 
 void RenderRaytracing::release_persistent_instance(uint64_t p_handle, const Vector<uint64_t> &p_surfaces) {
+	persistent_scene_generation++;
 	for (uint64_t handle : p_surfaces) {
 		const uint32_t index = uint32_t(handle) - 1;
 		ERR_CONTINUE(index >= persistent_surfaces.size() || persistent_surfaces[index].data.handle != handle);
@@ -5711,7 +5721,6 @@ void RenderRaytracing::release_persistent_instance(uint64_t p_handle, const Vect
 		slot.retirement = RD::get_singleton()->get_pending_submission_serial();
 		persistent_instance_free_slots.push_back(index);
 	}
-	persistent_scene_generation++;
 }
 
 uint64_t RenderRaytracing::get_persistent_memory_bytes() const {
