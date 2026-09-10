@@ -78,10 +78,14 @@ Error entity_decode_asset(const Variant &p_value, Ref<Resource> &r_asset) {
 		return ERR_FILE_NOT_FOUND;
 	}
 	Error error = OK;
-	String path = uids->get_id_path(uid) + (separator < 0 ? String() : address.substr(separator));
-	Ref<Resource> asset = ResourceLoader::load(path, "", ResourceFormatLoader::CACHE_MODE_REUSE, &error);
-	if (error != OK || asset.is_null()) {
+	String path = uids->get_id_path(uid);
+	Ref<Resource> container = ResourceLoader::load(path, "", ResourceFormatLoader::CACHE_MODE_REUSE, &error);
+	if (error != OK || container.is_null()) {
 		return error == OK ? ERR_FILE_CORRUPT : error;
+	}
+	Ref<Resource> asset = separator < 0 ? container : ResourceCache::get_ref(path + address.substr(separator));
+	if (asset.is_null()) {
+		return ERR_FILE_NOT_FOUND;
 	}
 	r_asset = asset;
 	return OK;
