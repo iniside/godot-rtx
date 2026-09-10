@@ -100,9 +100,27 @@ do not establish a durable whole-frame gain.
 Dense HUD `1f339891f9` displays wall FPS/frame, CPU rendering including waits,
 and completed GPU time; native PNG inspection and the independent HUD-specific
 proof audit pass with the recorded single-frame and diagnostic-log limits.
-Step 6 worker frontend/driver recording is delegated from `617a3abca7`;
-implementation and measured acceptance remain open. Conditional async compute
-has not started.
+Step 6 worker frontend/driver recording is delegated from `617a3abca7`.
+Held compile06 source passes ordinary build and native dense600 with normal
+shutdown after earlier crash/timeout corrections. Sampled frontend and driver
+recording overlap on distinct workers. Step 6 is committed at `caa122b651`; ordinary/double/template builds pass,
+while final source/proof acceptance is pending. Counter commit `bbf18999d0` passes source
+review: native samples isolate 3.466 ms full-record hashing inside 5.853 ms RT
+preparation and 4.222 ms raster preparation. These four sampled-frame medians
+are diagnostic observations, not a matched whole-frame gain. See the
+[preparation cost map](../research/2026-09-10-0706-microgeometry-prepare-cost-summary.md).
+Conditional async compute has not started. On 2026-09-10 the owner requests a
+replacement repair plan: remove recurring CPU microgeometry list/hash/task
+reconstruction using existing persistent GPU data, then fan out all ready
+independent CPU jobs with waits at consumers. No proof/auditor workflow; at most
+a short code review, and acceptance is compilation, working game and actual
+same-settings speedup. Latest diagnostic fixes `8c8833b87f` and limited RT hash
+reuse `2108bbedf1` pass a combined ordinary build but remain runtime/performance
+measured in one ordinary no-profile dense run: last-ten FPS median 43 versus
+38 in the preceding matched-route run (single pair, no durable gain claim).
+The owner approved the [replacement plan](../plans/2026-09-10-0807-gpu-microgeometry-cpu-removal-plan.md),
+committed at `8e316e180d`; Step1 changed-data ingestion is being implemented.
+Later raster/RT consumer replacement and final fan-out remain pending.
 Actual dragon import/reimport passed in 82.66/67.04 seconds, yielding 17 DAG
 levels and 9737 pages with byte-identical reused `.mgdata`; the diagnostic
 reimport command had shutdown warnings. Import evidence uses an immutable

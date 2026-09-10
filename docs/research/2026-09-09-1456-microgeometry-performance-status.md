@@ -1096,3 +1096,135 @@ recording is in progress and conditional Step 7 async compute has not started.
 The existing recording research is reused. A separate read-only source check
 maps the remaining coarse microgeometry prepare intervals to actual CPU work
 and missing counter boundaries; it does not reopen SceneTree or paging design.
+
+The [remaining preparation cost map](2026-09-10-0706-microgeometry-prepare-cost-summary.md)
+closes that source question at frozen `030fa486b5`: RT's retained path still
+hashes per-instance inputs in two immediately joined workers, while raster builds
+discovery/task/bin/snapshot data before its reuse branch. Neither quoted interval
+establishes driver recording or CLAS build cost. A separate instrumentation task
+from `6a797920ce` adds sampled phase/wait-entry/work-count rows in
+`render_raytracing.cpp` and `render_forward_clustered.cpp`; it does not yet replace
+hashes with generations or change preparation behavior. Step 6 owns disjoint
+RD/graph/driver source. Counter commit `bbf18999d0` passes fresh exact/cumulative
+source review; it is included in the combined ordinary editor build. Native
+counter overhead and normal performance results remain unverified.
+
+Step 6 frontend/graph/driver recording remains uncommitted. Combined02 ordinary
+build passes in 49.61 seconds, but pinned native dense600 exits with access
+violation `3221225477` before a sampled counter row. The same source relinked
+with a matching map under local CDB reaches frame 600 but times out at 150
+seconds without normal exit; no second-chance crash stack is obtained. The
+configured exception-command echo is not evidence of an executed exception.
+These are diagnostic failures, not performance acceptance. Retained evidence
+is `step6-combined02-source.json`, `-binaries.json`, `-dense.receipt.json`,
+`-map-build.log` and `-cdb02-receipt.json` under the existing evidence root.
+
+Debugger frame120 shows RT full-record hashing 3495 us for 5.44 MB, with retained
+RT and raster resources, raster discovery 1601 us and two source-cache misses
+for 10000 eligible surfaces. Debugger overhead and incomplete exit prevent
+native performance claims. The new rows separate these repeated CPU traversals
+from CLAS construction.
+
+The author corrects deferred CPU tracker lifetime, captured attachment state
+and dynamic offsets, owner swapchain acquisition, and shutdown task admission.
+WorkerThreadPool enters language-exit state before final renderer destruction;
+late posting through its existing blocking API can stall. A narrow internal
+atomic admission operation rejects such work before allocation, allowing the
+same graph callbacks to finish on the current render owner during teardown.
+Existing public task APIs retain their behavior. Compile06 holds eight files
+including WorkerThreadPool source/header; fresh native validation is pending.
+
+
+Combined04 ordinary06 editor/console build passes in 143.26 seconds. All eight
+author-held source hashes match the 27-file combined source manifest; executable
+SHA256 is `d6656ad9d1eb83f34ff9099b5f3aa51356d5fc32351f243e32bc3e03399dd3a9`.
+Pinned dense600 completes normally with native/wrapper exit 0, UTC
+2026-09-10 07:43:09.991 to 07:44:15.755. Zero Godot ERROR; SPIR-V diagnostics remain (32 explicit parsing-error
+lines and 50 unsupported-opcode messages, including six ForwardPointer messages). This replaces the earlier crashing/timed-out runtime
+boundary for the held source, not a matched whole-frame improvement claim.
+
+Four sampled frames 240/360/480/600 give medians: RT preparation 5853 us,
+full-record hashing 3466 us, earlier settings/record hashing 1381 us and nonempty camera raster
+preparation 4222 us (four camera rows; empty shadow rows are excluded). Resources are retained while input signatures change with
+the orbit. Graph compile payload median is 252 us; recording coordinator elapsed
+median is 783.5 us, including waits, not active owner CPU. Distinct-worker
+frontend and recording intervals overlap; device frame IDs remain separate from
+renderer frame IDs. `step6-combined04-counter-summary.json` retains extraction.
+The full-run host monitor has 63 in-run samples: four observed clangd processes
+show zero CPU delta; no compiler/linker process is observed during that interval.
+This does not measure other system/GPU load. Double/template builds pass in 131.14/75.61 seconds. Step 6 is committed as
+`caa122b6519b1108e7ac64504abd4152c116bece`, eight files, 1252 additions and
+340 deletions. All 27 held source LF hashes match that commit; the pin includes
+26 artifacts. Moving300 and gallery300 also finish normally. Fresh exact and
+cumulative source review and named proof audit are active; remaining native
+lifecycle coverage and matched performance acceptance remain open.
+
+
+Frozen04 freeze-after300 and bare `-e` startup120 also exit normally without
+Godot ERROR. All five receipts use the same pinned executable; ordinary startup
+uses default backend selection. Current fixture readback matches the prior
+eight-input map, but no separate at-launch fixture hash map was captured for04.
+These runs establish bounded execution and shutdown, not exhaustive resize,
+reload or cancellation coverage.
+
+Owner clarification on 2026-09-10: acceptance is actual game speed at unchanged
+scene/settings. Artifact and counter audits only bound measurement claims; PASS
+is never a speedup. Next measurement priority is profile-disabled before/after
+for the measured full-record traversal, keeping CPU/GPU/frame costs separate.
+A scoped implementation owns only RT source/header and retains live camera,
+residency and dependency checks. No gain is claimed before that comparison.
+
+
+Named `step6_recording_proof` returns bounded PASS for source/binary identity,
+actual overlapping worker recording, five native exits and sampled counters.
+It explicitly rejects using those observations as a speedup: a slower renderer
+could pass them. Matched no-profile game timing remains the performance gate.
+
+
+## Replacement direction, 2026-09-10 08:07 UTC
+
+The owner requests a new repair plan: eliminate recurring CPU microgeometry
+scene/task reconstruction rather than chiefly distributing its scans across
+workers. Reuse persistent instance/surface/material buffers, existing GPU
+selection, indirect raster work, page streaming and shared CLAS/BLAS. CPU owns
+changed-data ingestion, asynchronous I/O/uploads, resource lifetime and required
+command submission. Then fan out all ready independent remaining CPU jobs and
+wait only at actual consumers, avoiding serial enqueue-and-immediate-wait chains.
+
+Owner explicitly removes proof-auditor/acceptance-audit workflows and permits at
+most a brief code review. Build success, working native game and measured speed
+at identical settings are acceptance; worker placement alone is not. Existing
+scene is 5000 Lucy + 5000 Thai. No SceneTree/Flecs rewrite or unsupported modes.
+
+Current source is `2108bbedf1701f1a27ed59511c4a898e8ec6e856`. Diagnostic fixes
+`8c8833b87f` reserve breadcrumb slots per recording buffer in submission order
+and balance debug labels. `2108bbedf1` reuses the full-record hash under explicit
+generation validity. Combined ordinary build passes in 41.88 seconds; these
+last corrections have not been run or measured. Previous Step 6 reviewer found
+the two diagnostic issues; no follow-up audit is requested under the new owner
+workflow. Do not claim final runtime/performance acceptance.
+
+Bounded current-source research resolves the new plan's AS boundary: RT shader
+mode15 already produces TLAS descriptors; CPU still rebuilds their task/layout
+inputs. geometry_base/motion_base, TLAS custom_index/SBT offsets, materials and
+hit-program lookups must share a stable index contract. tlas_build_from_buffer
+accepts a GPU descriptor buffer but host instance count and BLAS dependency RIDs.
+The draft uses admitted slots updated on membership changes and GPU inactive
+descriptors; it does not assume GPU-count TLAS submission. Existing host cut
+allocation/retirement and exact page pins remain. A brief plan-only sanity
+review passes; the replacement plan is a draft pending owner approval.
+
+
+The owner approves the replacement plan with "zaczynaj"; it is committed as
+`8e316e180d` at [the new plan](../plans/2026-09-10-0807-gpu-microgeometry-cpu-removal-plan.md).
+Step1 implementation owns changed-data registration/publication and the first
+raster metadata consumer. No audit/proof agents are part of the new workflow.
+
+Current ordinary `988a9708ec` (combined diagnostic fixes and hash reuse) runs
+the same dense1500 orbit, Vulkan1280x720, no vsync and no detailed profiling.
+`micro-delta-baseline01.log` ends normally with zero Godot ERROR. Last-ten FPS
+window median is43, versus38 in `step6-baseline-noprofile01.log` on preceding
+`d6656ad9d1`. Reciprocal frame times are23.26 vs26.32ms. This is one comparison
+of the combined corrections, not isolation of one fix or a repeated steady-state
+result. Current shader variant cache misses occurred during startup and are
+excluded from the last-ten-window comparison. It is the new plan's baseline.
