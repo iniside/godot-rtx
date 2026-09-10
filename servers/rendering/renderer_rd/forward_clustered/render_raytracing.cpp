@@ -1850,16 +1850,52 @@ bool RenderRaytracing::_micro_dispatch(RTViewportState *p_state, uint32_t p_mode
 }
 
 bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const RenderDataRD *p_render_data, const Vector<MicroGeometrySelection::Task> &p_tasks, const Vector<RTMicroGeometryTask> &p_rt_tasks, uint32_t p_levels) {
+	const uint64_t profile_frame = RSG::rasterizer->get_frame_number();
+	const bool profile_preparation = RSG::utilities->capturing_timestamps && profile_frame % 120 == 0;
+	const uint64_t coordinator = profile_preparation ? Thread::get_caller_id() : 0;
+	const uint64_t owner_begin = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+	struct JobTiming {
+		uint64_t queued = 0;
+		uint64_t begin = 0;
+		uint64_t end = 0;
+		uint64_t wait = 0;
+		uint64_t joined = 0;
+		uint64_t worker = 0;
+	};
+	JobTiming timings[3];
+	uint64_t task_hash_end = 0;
+	uint64_t persistent_hash_end = 0;
+	uint64_t motion_end = 0;
+	uint64_t parameters_end = 0;
+	uint64_t instance_hash_end = 0;
+	uint64_t assets_end = 0;
+	bool dependencies_changed = false;
+	auto begin_job = [&](uint32_t p_index) {
+		if (profile_preparation) {
+			timings[p_index].worker = Thread::get_caller_id();
+			timings[p_index].begin = OS::get_singleton()->get_ticks_usec();
+		}
+	};
+	auto end_job = [&](uint32_t p_index) {
+		if (profile_preparation) {
+			timings[p_index].end = OS::get_singleton()->get_ticks_usec();
+		}
+	};
 	RD *rd = RD::get_singleton();
 	auto *storage = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage();
 	if (p_tasks.is_empty()) {
 		_retire_micro_geometry(p_state->micro_geometry);
 		p_state->micro_geometry = nullptr;
+		if (profile_preparation) {
+			print_line(vformat("RenderPrep stage=MicrogeometryRTInputs frame=%d coordinator=%d jobs=0 tasks=0 rt_tasks=%d reused=0 empty=1 begin_usec=%d end_usec=%d timing=elapsed", profile_frame, coordinator, p_rt_tasks.size(), owner_begin, OS::get_singleton()->get_ticks_usec()));
+		}
 		return true;
 	}
 	uint64_t signature = blass.size();
 	auto prepare_signature = [&](uint32_t) {
+		begin_job(0);
 		signature = _rt_scene_hash(p_tasks.ptr(), p_tasks.size() * sizeof(MicroGeometrySelection::Task), signature);
+		task_hash_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 		signature = _rt_scene_hash(&p_state->settings.mode_generation, sizeof(p_state->settings.mode_generation), signature);
 		const uint64_t environment = p_state->settings_environment.get_id();
 		signature = _rt_scene_hash(&environment, sizeof(environment), signature);
@@ -1875,18 +1911,23 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 			signature = _rt_scene_hash(&surface.material, sizeof(surface.material), signature);
 			signature = _rt_scene_hash(&surface.material_generation, sizeof(surface.material_generation), signature);
 		}
+		persistent_hash_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 		for (auto task : p_rt_tasks) {
 			task.motion_base = 0;
 			signature = _rt_scene_hash(&task, sizeof(task), signature);
 		}
+		end_job(0);
 	};
 	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+	timings[0].queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	WorkerThreadPool::GroupID signature_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
 		GodotProfileZone("MicrogeometryInputSignature");
 		(*static_cast<decltype(prepare_signature) *>(p_data))(p_index);
 	},
 			&prepare_signature, 1, 1, true, SNAME("MicrogeometryInputSignature"));
+	timings[0].wait = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	pool->wait_for_group_task_completion(signature_job);
+	timings[0].joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	bool valid = p_state->micro_geometry && p_state->micro_geometry->signature == signature;
 	if (!valid) {
 		_retire_micro_geometry(p_state->micro_geometry);
@@ -1905,6 +1946,7 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 		build->task_data = p_rt_tasks;
 		build->cuts.resize(1);
 		auto prepare_resources = [&](uint32_t) {
+			begin_job(1);
 			HashMap<RID, HashSet<uint32_t>> finest_surfaces;
 			for (const auto &task : p_tasks) {
 				RID asset = RID::from_uint64(task.asset);
@@ -1924,13 +1966,17 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 					}
 				}
 			}
+			end_job(1);
 		};
+		timings[1].queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 		auto resource_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
 			GodotProfileZone("MicrogeometryResourceInputs");
 			(*static_cast<decltype(prepare_resources) *>(p_data))(p_index);
 		},
 				&prepare_resources, 1, 1, true, SNAME("MicrogeometryResourceInputs"));
+		timings[1].wait = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 		pool->wait_for_group_task_completion(resource_job);
+		timings[1].joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 		for (RID asset : build->assets) {
 			storage->acquire(storage->get_source(asset));
 		}
@@ -1972,11 +2018,14 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 		p_state->micro_geometry = build;
 	}
 	RTMicroGeometryBuild *build = p_state->micro_geometry;
+	const uint64_t previous_input_signature = profile_preparation ? build->input_signature : 0;
 	build->frozen = p_render_data->render_buffers->is_micro_geometry_debug_freeze();
 	auto prepare_dependencies = [&](uint32_t) {
+		begin_job(2);
 		for (uint32_t index = 0; index < uint32_t(p_rt_tasks.size()); index++) {
 			build->task_data.write[index].motion_base = p_rt_tasks[index].motion_base;
 		}
+		motion_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 		auto &parameters = build->selection->data;
 		parameters.flags = 1 | 16 | 32;
 		if (p_render_data->scene_data->view_count == 1) {
@@ -2007,6 +2056,7 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 		input_signature = _rt_scene_hash(&build->frozen, sizeof(build->frozen), input_signature);
 		uint64_t dependency_signature = 0x9e3779b97f4a7c15ULL;
 		build->conservative_updates = false;
+		parameters_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 		for (const auto &task : p_tasks) {
 			const auto &instance = persistent_instances[uint32_t(task.instance) - 1].data;
 			const auto &surface = persistent_surfaces[uint32_t(task.surface) - 1].data;
@@ -2016,11 +2066,13 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 				build->conservative_updates = true;
 			}
 		}
+		instance_hash_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 		for (RID asset : build->assets) {
 			const auto descriptor = storage->get_asset(asset);
 			input_signature = _rt_scene_hash(&descriptor.residency_generation, sizeof(descriptor.residency_generation), input_signature);
 			dependency_signature = _rt_scene_hash(&descriptor, sizeof(descriptor), dependency_signature);
 		}
+		assets_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 		build->input_signature = input_signature;
 		Vector<RID> dependencies;
 		get_persistent_buffer_dependencies(dependencies);
@@ -2034,6 +2086,9 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 			dependencies.push_back(buffer);
 		}
 		if (build->dependency_signature != dependency_signature) {
+			if (profile_preparation) {
+				dependencies_changed = true;
+			}
 			build->dependencies = dependencies;
 			for (RID asset : build->assets) {
 				storage->get_dependencies(asset, build->dependencies);
@@ -2044,13 +2099,29 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 		for (RID buffer : build->dependencies) {
 			geometry_buffer_dependencies.insert(buffer);
 		}
+		end_job(2);
 	};
+	timings[2].queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	WorkerThreadPool::GroupID dependency_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
 		GodotProfileZone("MicrogeometryInputDependencies");
 		(*static_cast<decltype(prepare_dependencies) *>(p_data))(p_index);
 	},
 			&prepare_dependencies, 1, 1, true, SNAME("MicrogeometryInputDependencies"));
+	timings[2].wait = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	pool->wait_for_group_task_completion(dependency_job);
+	timings[2].joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+	if (profile_preparation) {
+		const uint64_t owner_end = OS::get_singleton()->get_ticks_usec();
+		const char *names[] = { "MicrogeometryInputSignature", "MicrogeometryResourceInputs", "MicrogeometryInputDependencies" };
+		String rows;
+		for (uint32_t index = 0; index < 3; index++) {
+			const JobTiming &timing = timings[index];
+			rows += vformat("RenderPrep stage=%s frame=%d coordinator=%d jobs=%d tasks=%d queued_usec=%d wait_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d timing=elapsed", names[index], profile_frame, coordinator, int(index != 1 || !valid), p_tasks.size(), timing.queued, timing.wait, timing.joined, timing.worker, timing.begin, timing.end) + "\n";
+		}
+		rows += vformat("RenderPrep stage=MicrogeometryRTInputs frame=%d coordinator=%d jobs=%d tasks=%d rt_tasks=%d assets=%d dependencies=%d reused=%d same_inputs=%d dependency_rebuild=%d conservative=%d frozen=%d begin_usec=%d end_usec=%d rebuild_owner_usec=%d timing=elapsed", profile_frame, coordinator, valid ? 2 : 3, p_tasks.size(), p_rt_tasks.size(), build->assets.size(), build->dependencies.size(), int(valid), int(previous_input_signature == build->input_signature), int(dependencies_changed), int(build->conservative_updates), int(build->frozen), owner_begin, owner_end, valid ? 0 : timings[1].queued - timings[0].joined + timings[2].queued - timings[1].joined) + "\n";
+		rows += vformat("RenderPrep stage=MicrogeometryRTHashPhases frame=%d task_bytes=%d signature_record_bytes=%d rt_task_bytes=%d dependency_record_bytes=%d task_hash_usec=%d signature_records_usec=%d rt_task_hash_usec=%d motion_usec=%d parameters_usec=%d instance_hash_usec=%d assets_usec=%d dependencies_usec=%d timing=elapsed", profile_frame, uint64_t(p_tasks.size()) * sizeof(MicroGeometrySelection::Task), uint64_t(p_tasks.size()) * 9 * sizeof(uint64_t), uint64_t(p_rt_tasks.size()) * sizeof(RTMicroGeometryTask), uint64_t(p_tasks.size()) * (sizeof(RTPersistentInstanceData) + sizeof(RTPersistentSurfaceData)), task_hash_end - timings[0].begin, persistent_hash_end - task_hash_end, timings[0].end - persistent_hash_end, motion_end - timings[2].begin, parameters_end - motion_end, instance_hash_end - parameters_end, assets_end - instance_hash_end, timings[2].end - assets_end);
+		print_line(rows);
+	}
 	return true;
 }
 
