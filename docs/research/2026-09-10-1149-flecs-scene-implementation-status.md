@@ -117,7 +117,7 @@ sun/environment to the Node scene. Their native replacements remain assigned
 to approved later steps; disabling old entry points does not complete them.
 GridMap authoring remains permanently excluded by the approved plan.
 
-## Step 4: native document committed, first review pending
+## Step 4: document correction committed, final review pending
 
 Implementation baseline: `2dd1bf401d93a724341355f9b55c5b9cc4f5e9da`.
 Frozen task commit: `c1927f7324946c489b3f3d213b0cd491a96cff81`.
@@ -125,7 +125,8 @@ The 18-file change introduces EntityScene catalog/resident-world ownership,
 addressable binary `.escn`, loader/saver and dependency metadata, native command
 history and prefab provenance/overrides. Runtime accepts native `.escn` paths
 and UID addresses; the old PackedScene ESCN importer is removed in this step.
-The implementation has not passed source review yet.
+Fresh round-one source review REJECT identified four concrete defects; the
+implementation has not passed source review yet.
 
 Final ordinary/editor, double/editor and template_debug builds pass in 24.84s,
 43.36s and 30.28s. Local evidence under `gpuprofile/ecs_step4_document/` includes
@@ -137,11 +138,45 @@ Named `editor`, `native-empty`, `missing-scene` and `wrong-type` receipts and
 stdout/stderr record those executions. Existing renderer diagnostics remain;
 no warning-free or visual correctness claim is made.
 
-After the frozen commit, the author identified a missing typed field-validation
-boundary in `EntityScene::_validate_fields`: unloaded-save validation can accept
-a valid Resource UID of the wrong subclass, or an incorrect nested field shape,
-until materialization. This is uncorrected in `c1927f7324` and is included in the
-ongoing first review. Source edits are held until the review's correction set.
+Round-one findings in `c1927f7324`:
+
+- Applying overrides from an older prefab instance stages an incomplete source
+  catalog, then can remove a newer source element from another user instance.
+- Lazy prefab catalog reconciliation can resurrect descendants of a locally
+  deleted hierarchy, leaving a live child under a deleted parent.
+- CREATE validates absence in a partial staging catalog rather than the
+  authoritative document, permitting replacement of an existing ID/tombstone.
+- Unloaded-save field validation skips the typed codec for asset/nested values,
+  accepting the wrong Resource subclass or nested shape until materialization.
+
+The fourth defect was independently identified by the author after committing
+and confirmed by review. Correction `22158a5585a2476c8cd87fc2a5a0f171f2139e10` addresses all four
+findings and is undergoing fresh final review. Complete source identity must be available without
+materializing all component records; fixes preserve that partial-read contract.
+
+The correction's real editor run also exposed malformed `EntityScene.xml`:
+its self-closing tutorials element is incompatible with the current DocTools
+parser's explicit closing-tag loop. The correction now includes the owning XML
+and regenerated editor documentation; final editor execution exits 0 without
+the malformed-document diagnostic.
+
+Correction evidence is local under `gpuprofile/ecs_step4_fixes/`, including
+`committed-source.patch`, four owned-source hashes, all 18 cumulative source
+hashes, executable hashes and named build/run receipts. Final ordinary/editor,
+double/editor and template checks pass in 40.76s, 37.43s and 15.09s; the fixed
+C++ template build previously passed in 23.17s. Refreshed `editor02` Vulkan
+RTX4090 execution exits 0. Native-empty/missing/legacy receipts exit 0/1/1 on
+identical corrected C++ before the XML-only rebuild, with their earlier binary
+hashes retained separately. Shader diagnostics and orphan StringNames remain.
+This does not execute the four nonempty document correction scenarios.
+
+Additional bounded source check (2026-09-10, `c1927f7324`): synchronous
+`ResourceLoader::load` selects `LOAD_THREAD_FROM_CURRENT` outside worker-pool
+tasks (`core/io/resource_loader.cpp:725`); EntityScene binds its owner lazily
+(`scene/resources/entity_scene.cpp:30`), and metadata loading does not bind the
+resident world. No additional ownership defect was established for current
+native startup. This is clang-nav/source/XML/history evidence, not execution
+of a successful native document load or a threaded streaming contract.
 
 Successful nonempty `.escn` load/save, prefab apply/revert, undo/redo and subset
 round trips have not been executed. Their production authoring UI is step 6;
