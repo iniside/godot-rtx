@@ -1305,3 +1305,32 @@ temporary RT-only microgeometry gather remains deliberately until Step3
 replaces its consumer. Step3 is now implementing persistent GPU RT inputs;
 the remaining fan-out step follows that ownership handoff. No tests or audit
 agents were run for this replacement workflow.
+
+## CPU removal Step3, `f60eafa5275`
+
+Persistent RT membership replaces recurring microgeometry gathering and full
+record/task hashing. GPU mode15 writes retained geometry/material/motion/TLAS
+prefix records; conventional geometry uploads only its suffix. Shared-cut
+segments and allocations persist until their layout/capacity changes. CPU
+publication handles actual changes, conventional records, cut representatives
+and resource dependencies. The temporary RT-only microgeometry culler scan is
+removed. Ordinary Windows editor/console build passes31.64s.
+
+Same dense1500 orbit, Vulkan1280x720, vsync off, detailed profiler off; common
+process frames900-1500:
+
+| Sample median | Step2 control | Step3 |
+| --- | ---: | ---: |
+| FPS |44.34|114.48|
+| Wall frame ms |22.552|8.735|
+| CPU render sample ms, includes waits |20.298|6.303|
+| Completed GPU sample ms |6.607|4.352|
+
+Logs `micro-step3-control.log`/`micro-step3-candidate.log` contain51/21 sampled
+windows respectively; both exit0 without Godot ERROR. Both retain10000 RT
+instances,8resident pages and108CLAS; shared cuts reach3. This is one matched
+route comparison, approximately61.3% less wall time, not isolation of each GPU
+stage. The owner also observed approximately120FPS in the running scene.
+Short dense180 and existing moving300/orbit/freeze-after2 runs exit0 without
+Godot ERROR. No appearance/quality campaign or automated tests were run.
+The remaining independent-job fan-out is now implementing from this commit.

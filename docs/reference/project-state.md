@@ -129,8 +129,13 @@ rejects invisible DAG work early; selector capacity maintenance is change-only.
 Ordinary build and dense/moving native runs pass. Same-route no-profile wall
 time24.343 ->22.227ms, CPU samples22.443 ->19.894ms in one comparison;
 GPU samples6.351 ->6.816ms. Intermediate shadow/admission regression was fixed
-before commit. RT gather/preparation remains measured CPU work; Step3 replacement
-is active, followed by the approved independent-job fan-out.
+before commit. Step3 `f60eafa5275` replaces recurring microgeometry RT gathering
+and hashing with persistent membership and GPU-written geometry/material/motion/
+TLAS records. Ordinary build and dense/moving native runs pass. Same-route
+no-profile pair reports22.552 ->8.735ms wall,44.34 ->114.48FPS,
+20.298 ->6.303ms CPU and6.607 ->4.352ms GPU samples;10000instances,8pages,
+108CLAS remain. The owner observed approximately120FPS. Independent-job fan-out
+is the remaining active implementation step; no final performance claim yet.
 Actual dragon import/reimport passed in 82.66/67.04 seconds, yielding 17 DAG
 levels and 9737 pages with byte-identical reused `.mgdata`; the diagnostic
 reimport command had shutdown warnings. Import evidence uses an immutable
