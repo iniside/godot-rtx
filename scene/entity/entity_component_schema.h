@@ -34,6 +34,7 @@ struct EntityFieldSchema {
 	Variant default_value;
 	Error (*read)(const void *, Variant &) = nullptr;
 	Error (*write)(void *, const Variant &) = nullptr;
+	Error (*validate)(const Variant &) = nullptr;
 };
 
 struct EntityComponentSchema {
@@ -47,6 +48,7 @@ struct EntityComponentSchema {
 	Error (*set_field)(flecs::world &, ecs_entity_t, uint64_t, const Variant &) = nullptr;
 	Error (*set_serialized)(flecs::world &, ecs_entity_t, const Variant &) = nullptr;
 	void (*add_default)(flecs::world &, ecs_entity_t) = nullptr;
+	void (*copy_to)(flecs::world &, ecs_entity_t, const void *) = nullptr;
 	const EntityFieldSchema *find_field(uint64_t p_id) const;
 };
 
@@ -288,6 +290,10 @@ EntityFieldSchema entity_make_field(uint64_t p_id, const char *p_name, const cha
 	result.variant_type = EntityCodec<T>::variant_type;
 	result.read = [](const void *p_component, Variant &r_value) { return EntityCodec<T>::encode(static_cast<const C *>(p_component)->*Member, r_value); };
 	result.write = [](void *p_component, const Variant &p_value) { return EntityCodec<T>::decode(p_value, static_cast<C *>(p_component)->*Member); };
+	result.validate = [](const Variant &p_value) {
+		T value;
+		return EntityCodec<T>::decode(p_value, value);
+	};
 	C defaults;
 	Error error = result.read(&defaults, result.default_value);
 	ERR_FAIL_COND_V(error != OK, EntityFieldSchema());
@@ -346,6 +352,7 @@ EntityComponentSchema entity_make_component(flecs::world &p_world) {
 	result.encode = [](const void *p_component, Variant &r_value) { return EntityCodec<T>::encode(*static_cast<const T *>(p_component), r_value); };
 	result.decode = [](void *p_component, const Variant &p_value) { return EntityCodec<T>::decode(p_value, *static_cast<T *>(p_component)); };
 	result.add_default = [](flecs::world &p_ecs, ecs_entity_t p_entity) { p_ecs.entity(p_entity).template set<T>(T()); };
+	result.copy_to = [](flecs::world &p_ecs, ecs_entity_t p_entity, const void *p_value) { p_ecs.entity(p_entity).template set<T>(*static_cast<const T *>(p_value)); };
 	result.set_serialized = [](flecs::world &p_ecs, ecs_entity_t p_entity, const Variant &p_value) -> Error {
 		T value;
 		Error error = EntityCodec<T>::decode(p_value, value);

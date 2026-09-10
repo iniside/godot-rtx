@@ -39,6 +39,7 @@
 #ifndef _3D_DISABLED
 #include "scene/entity/entity_component_schema.h"
 #include "scene/entity/entity_scene_runtime.h"
+#include "scene/entity/entity_scene_io.h"
 #endif
 #include "scene/animation/animation_blend_space_1d.h"
 #include "scene/animation/animation_blend_space_2d.h"
@@ -382,6 +383,10 @@
 
 static Ref<ResourceFormatLoaderMicroGeometry> resource_loader_micro_geometry;
 static Ref<ResourceFormatSaverMicroGeometry> resource_saver_micro_geometry;
+#ifndef _3D_DISABLED
+static Ref<ResourceFormatLoaderEntityScene> resource_loader_entity_scene;
+static Ref<ResourceFormatSaverEntityScene> resource_saver_entity_scene;
+#endif
 
 static Ref<ResourceFormatSaverText> resource_saver_text;
 static Ref<ResourceFormatLoaderText> resource_loader_text;
@@ -402,6 +407,11 @@ void register_scene_types() {
 
 #ifndef _3D_DISABLED
 	initialize_entity_types();
+	GDREGISTER_CLASS(EntityScene);
+	resource_loader_entity_scene.instantiate();
+	ResourceLoader::add_resource_format_loader(resource_loader_entity_scene, true);
+	resource_saver_entity_scene.instantiate();
+	ResourceSaver::add_resource_format_saver(resource_saver_entity_scene, true);
 #endif
 
 	SceneStringNames::create();
@@ -1363,6 +1373,12 @@ void unregister_scene_types() {
 	resource_loader_micro_geometry.unref();
 	ResourceSaver::remove_resource_format_saver(resource_saver_micro_geometry);
 	resource_saver_micro_geometry.unref();
+#ifndef _3D_DISABLED
+	ResourceLoader::remove_resource_format_loader(resource_loader_entity_scene);
+	resource_loader_entity_scene.unref();
+	ResourceSaver::remove_resource_format_saver(resource_saver_entity_scene);
+	resource_saver_entity_scene.unref();
+#endif
 
 	ResourceSaver::remove_resource_format_saver(resource_saver_text);
 	resource_saver_text.unref();

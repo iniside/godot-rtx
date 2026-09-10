@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="EntityScene" inherits="Resource" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>A native 3D entity document or prefab.</brief_description>
+	<description>
+		Stores a persistent entity catalog and addressable records in the native [code].escn[/code] format. Loading the resource reads its catalog; native document operations explicitly load component subsets into Flecs. Resident components belong to that world. Shared mesh, material, and texture assets retain ResourceUID references.
+		This format does not load legacy Node scenes. Native editor commands use persistent document, entity, component, and field identities. A separate document and world are used for play.
+	</description>
+	<tutorials />
+	<methods>
+		<method name="get_document_id" qualifiers="const">
+			<return type="String" />
+			<description>Returns the persistent 128-bit document identity as hexadecimal text.</description>
+		</method>
+		<method name="get_last_error" qualifiers="const">
+			<return type="String" />
+			<description>Returns the latest native record diagnostic, including entity and field addresses when available.</description>
+		</method>
+		<method name="get_record_count" qualifiers="const">
+			<return type="int" />
+			<description>Returns the catalog size, including unloaded records and deletion tombstones.</description>
+		</method>
+		<method name="get_resident_count" qualifiers="const">
+			<return type="int" />
+			<description>Returns the number of entities materialized in this document's native world.</description>
+		</method>
+	</methods>
+</class>

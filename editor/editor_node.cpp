@@ -8613,9 +8613,6 @@ EditorNode::EditorNode() {
 			import_obj2.instantiate();
 			ResourceImporterScene::add_scene_importer(import_obj2);
 
-			Ref<EditorSceneFormatImporterESCN> import_escn;
-			import_escn.instantiate();
-			ResourceImporterScene::add_scene_importer(import_escn);
 		}
 
 		Ref<ResourceImporterBitMap> import_bitmap;

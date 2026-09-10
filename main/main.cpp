@@ -4455,9 +4455,8 @@ int Main::start() {
 		local_game_path = ProjectSettings::get_singleton()->localize_path(local_game_path);
 	}
 	if (entity_runtime) {
-		Error error = entity_runtime->setup();
+		Error error = entity_runtime->setup(local_game_path);
 		ERR_FAIL_COND_V_MSG(error != OK, EXIT_FAILURE, "Cannot initialize native entity runtime.");
-		ERR_FAIL_COND_V_MSG(!local_game_path.is_empty(), EXIT_FAILURE, "Native EntityScene loading is not available yet: " + local_game_path);
 	}
 
 	if (!project_manager && !editor) { // game

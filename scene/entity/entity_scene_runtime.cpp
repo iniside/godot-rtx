@@ -13,9 +13,34 @@
 #include "servers/display/display_server.h"
 #include "servers/rendering/rendering_server.h"
 
-Error EntitySceneRuntime::setup() {
+Error EntitySceneRuntime::setup(const String &p_scene_path) {
 	ERR_FAIL_COND_V(world, ERR_ALREADY_IN_USE);
-	world = memnew(EntityWorld(catalog));
+	if (p_scene_path.is_empty()) {
+		document.instantiate();
+	} else {
+		String path = p_scene_path;
+		if (path.begins_with("uid://")) {
+			ResourceUID::ID uid = ResourceUID::get_singleton()->text_to_id(path);
+			ERR_FAIL_COND_V(!ResourceUID::get_singleton()->has_id(uid), ERR_FILE_NOT_FOUND);
+			path = ResourceUID::get_singleton()->get_id_path(uid);
+		}
+		ERR_FAIL_COND_V_MSG(path.get_extension().to_lower() != "escn", ERR_FILE_UNRECOGNIZED, "The native world requires an EntityScene .escn document: " + path);
+		Error error = OK;
+		document = ResourceLoader::load(path, "EntityScene", ResourceFormatLoader::CACHE_MODE_IGNORE, &error);
+		ERR_FAIL_COND_V_MSG(error != OK || document.is_null(), error == OK ? ERR_INVALID_DATA : error, "Cannot load native EntityScene: " + p_scene_path);
+		Vector<EntityId> initial;
+		for (EntityId id : document->get_catalog().get_ids()) {
+			if (document->get_catalog().get_state(id) != EntityReferenceState::DELETED) {
+				initial.push_back(id);
+			}
+		}
+		error = document->load_subset(initial);
+		if (error != OK) {
+			document.unref();
+			return error;
+		}
+	}
+	world = document->get_world();
 	Error error = world->initialize_services();
 	if (error != OK) {
 		_release();
@@ -203,9 +228,9 @@ void EntitySceneRuntime::_release() {
 		server->sync();
 	}
 	if (world) {
-		memdelete(world);
 		world = nullptr;
 	}
+	document.unref();
 	if (viewport.is_valid()) {
 		server->free_rid(viewport);
 		viewport = RID();

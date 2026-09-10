@@ -5,11 +5,12 @@
 #include "core/input/input_event.h"
 #include "core/os/main_loop.h"
 #include "scene/resources/texture.h"
+#include "scene/resources/entity_scene.h"
 
 class EntitySceneRuntime : public MainLoop {
 	GDCLASS(EntitySceneRuntime, MainLoop);
 
-	EntityCatalog catalog;
+	Ref<EntityScene> document;
 	EntityWorld *world = nullptr;
 	RID viewport;
 	Ref<Texture2D> vrs_texture;
@@ -28,9 +29,10 @@ protected:
 	void _notification(int p_what);
 
 public:
-	Error setup();
+	Error setup(const String &p_scene_path = String());
 	EntityWorld *get_world() { return world; }
-	EntityCatalog &get_catalog() { return catalog; }
+	const EntityCatalog &get_catalog() { return document->get_catalog(); }
+	Ref<EntityScene> get_document() const { return document; }
 	RID get_viewport() const { return viewport; }
 	Vector<Ref<InputEvent>> take_input_events();
 	void quit(int p_exit_code = 0);

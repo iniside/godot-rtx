@@ -4,11 +4,15 @@
 
 #include "core/templates/hash_map.h"
 #include "core/templates/hash_set.h"
+#include "core/templates/vector.h"
 
 class EntityWorld;
 
 class EntityCatalog {
 	friend class EntityWorld;
+	friend class EntityScene;
+	friend class EntitySceneCommands;
+	friend class EntitySceneIO;
 	struct Record {
 		bool deleted = false;
 		EntityRef parent;
@@ -36,6 +40,26 @@ class EntityCatalog {
 	}
 
 public:
+	Vector<EntityId> get_ids() const {
+		Vector<EntityId> result;
+		result.reserve(records.size());
+		for (const KeyValue<EntityId, Record> &entry : records) {
+			result.push_back(entry.key);
+		}
+		return result;
+	}
+
+	Vector<EntityId> get_children(EntityId p_id) const {
+		Vector<EntityId> result;
+		const auto *entries = children.getptr(p_id);
+		if (entries) {
+			for (EntityId id : *entries) {
+				result.push_back(id);
+			}
+		}
+		return result;
+	}
+
 	Error add_record(EntityId p_id, EntityRef p_parent = {}) {
 		ERR_FAIL_COND_V(!p_id.is_valid(), ERR_INVALID_PARAMETER);
 		ERR_FAIL_COND_V(records.has(p_id), ERR_ALREADY_EXISTS);

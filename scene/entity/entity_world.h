@@ -11,6 +11,8 @@
 
 class EntityWorld {
 	friend class EntityTransformSystem;
+	friend class EntityScene;
+	friend class EntitySceneCommands;
 	struct Identity {
 		EntityId id;
 	};

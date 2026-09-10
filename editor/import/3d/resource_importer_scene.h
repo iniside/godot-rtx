@@ -309,14 +309,6 @@ public:
 	static Transform3D get_collision_shapes_transform(const M &p_options);
 };
 
-class EditorSceneFormatImporterESCN : public EditorSceneFormatImporter {
-	GDCLASS(EditorSceneFormatImporterESCN, EditorSceneFormatImporter);
-
-public:
-	virtual void get_extensions(List<String> *r_extensions) const override;
-	virtual Node *import_scene(const String &p_path, uint32_t p_flags, const HashMap<StringName, Variant> &p_options, List<String> *r_missing_deps, Error *r_err = nullptr) override;
-};
-
 template <typename M>
 Vector<Ref<Shape3D>> ResourceImporterScene::get_collision_shapes(const Ref<ImporterMesh> &p_mesh, const M &p_options, float p_applied_root_scale) {
 	ERR_FAIL_COND_V(p_mesh.is_null(), Vector<Ref<Shape3D>>());
