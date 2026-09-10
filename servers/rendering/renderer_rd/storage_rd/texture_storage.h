@@ -847,6 +847,15 @@ public:
 	void free_decal_data();
 	void set_max_decals(const uint32_t p_max_decals);
 	RID get_decal_buffer() { return decal_buffer; }
+	struct DecalBufferPreparation {
+		struct ClusterDecal {
+			Transform3D transform;
+			Vector3 half_size;
+		};
+		LocalVector<ClusterDecal> cluster_decals;
+	};
+	void prepare_decal_buffer(const PagedArray<RID> &p_decals, const Transform3D &p_camera_xform, DecalBufferPreparation &r_preparation);
+	void publish_decal_buffer(const DecalBufferPreparation &p_preparation);
 	void update_decal_buffer(const PagedArray<RID> &p_decals, const Transform3D &p_camera_xform);
 
 	struct RTDecalSnapshot {

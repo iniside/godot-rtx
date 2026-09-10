@@ -1032,8 +1032,10 @@ protected:
 	void _process_ssil(Ref<RenderSceneBuffersRD> p_render_buffers, RID p_environment, const RID *p_normal_buffers, const Projection *p_projections, const Transform3D &p_transform);
 	void _process_ssr(Ref<RenderSceneBuffersRD> p_render_buffers, RID p_environment, const RID *p_normal_slices, const Projection *p_projections, const Vector3 *p_eye_offsets, const Transform3D &p_transform);
 	void _copy_framebuffer_to_ss_effects(Ref<RenderSceneBuffersRD> p_render_buffers, bool p_use_ssil, bool p_use_ssr);
-	void _setup_lights_cluster_decals(RenderDataRD *p_render_data, uint32_t &r_directional_light_count, uint32_t &r_positional_light_count);
-	void _pre_opaque_render(RenderDataRD *p_render_data);
+	struct LightClusterPreparation;
+	void _render_shadows(RenderDataRD *p_render_data);
+	void _setup_lights_cluster_decals(RenderDataRD *p_render_data, LightClusterPreparation &p_preparation, uint32_t &r_directional_light_count, uint32_t &r_positional_light_count);
+	void _pre_opaque_render(RenderDataRD *p_render_data, LightClusterPreparation &p_preparation);
 	void _process_sss(Ref<RenderSceneBuffersRD> p_render_buffers, const Projection &p_camera);
 
 	/* Debug */

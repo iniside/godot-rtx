@@ -888,7 +888,7 @@ class RenderRaytracing {
 	bool build_acceleration_structures(RTViewportState *p_state, const LocalVector<RID> &p_dirty_blas_list, const LocalVector<RID> &p_dirty_blas_update_list);
 	void finalize_buffers(RTViewportState *p_state);
 	bool update_material_pipeline(RTViewportState *p_state);
-	void build_light_registry(RTViewportState *p_state, const RenderDataRD *p_render_data, uint64_t &r_scene_signature);
+	struct LightingPreparation;
 	void prepare_frame();
 
 public:

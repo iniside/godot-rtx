@@ -3230,6 +3230,484 @@ _FORCE_INLINE_ static uint32_t _rt_indices_to_primitives(RSE::PrimitiveType p_pr
 	return (p_indices - subtractor[p_primitive]) / divisor[p_primitive];
 }
 
+struct RenderRaytracing::LightingPreparation {
+	RenderRaytracing *renderer;
+	RenderForwardClustered *owner;
+	RTViewportState *p_state;
+	const RenderDataRD *p_render_data;
+	RendererRD::LightStorage *ls = RendererRD::LightStorage::get_singleton();
+	RendererRD::TextureStorage *ts = RendererRD::TextureStorage::get_singleton();
+	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+
+	LocalVector<RTLightKey> local_keys;
+	LocalVector<RT_LightData> local_lights;
+	LocalVector<RTLightKey> emissive_keys;
+	LocalVector<RT_LightData> emissive_lights;
+	LocalVector<RTLightKey> infinite_keys;
+	LocalVector<RT_LightData> infinite_lights;
+	LocalVector<RTLightKey> environment_keys;
+	LocalVector<RT_LightData> environment_lights;
+
+	LocalVector<RTLightKey> current_keys;
+	LocalVector<RT_LightData> current_lights;
+	LocalVector<uint32_t> current_to_previous;
+	LocalVector<uint32_t> previous_to_current;
+	HashMap<RID, uint32_t> atlas_indices;
+	HashMap<RID, uint64_t> texture_generations;
+	RendererRD::TextureStorage::RTDecalSnapshot decals;
+	uint64_t signature = 0x9e3779b97f4a7c15ULL;
+	bool physical_light_units;
+	RID area_atlas;
+	RID projector_atlas;
+	uint32_t previous_index;
+	uint32_t current_index;
+	SafeNumeric<uint32_t> pending_payloads{ 2 };
+	const uint64_t profile_frame = RSG::rasterizer->get_frame_number();
+	const bool profile_preparation = RSG::utilities->capturing_timestamps && profile_frame % 120 == 0;
+	const uint64_t coordinator = profile_preparation ? Thread::get_caller_id() : 0;
+	struct JobTiming {
+		uint64_t queued = 0;
+		uint64_t begin = 0;
+		uint64_t end = 0;
+		uint64_t joined = 0;
+		uint64_t worker = 0;
+	};
+	JobTiming timings[6];
+	struct Task {
+		LightingPreparation *preparation = nullptr;
+		uint32_t index = 0;
+		WorkerThreadPool::GroupID id = -1;
+	} tasks[6];
+
+	void begin_job(uint32_t p_index) {
+		if (profile_preparation) {
+			timings[p_index].worker = Thread::get_caller_id();
+			timings[p_index].begin = OS::get_singleton()->get_ticks_usec();
+		}
+	}
+	void end_job(uint32_t p_index) {
+		if (profile_preparation) {
+			timings[p_index].end = OS::get_singleton()->get_ticks_usec();
+		}
+	}
+	void discover_atlases() {
+		if (!p_render_data->rt_lights) {
+			return;
+		}
+		for (uint32_t index = 0; index < p_render_data->rt_lights->size(); index++) {
+			RID instance = (*p_render_data->rt_lights)[index];
+			if (!ls->owns_light_instance(instance)) {
+				continue;
+			}
+			RID base = ls->light_instance_get_base_light(instance);
+			if (base.is_null()) {
+				continue;
+			}
+			const bool area = ls->light_get_type(base) == RSE::LIGHT_AREA;
+			RID texture = area ? ls->light_area_get_texture(base) : ls->light_get_projector(base);
+			RID atlas = area ? area_atlas : projector_atlas;
+			if (texture.is_valid()) {
+				texture_generations.insert(texture, 0);
+			}
+			if (texture.is_valid() && atlas.is_valid()) {
+				atlas_indices[atlas] = 0;
+			}
+		}
+	}
+	void prepare_analytic() {
+		GodotProfileZone("RTAnalyticPayload");
+		const auto &resolved_texture_generations = texture_generations;
+		auto compute_light_energy = [&](RID p_base, RSE::LightType p_type) {
+			float sign = ls->light_is_negative(p_base) ? -1.0f : 1.0f;
+			float e = sign * ls->light_get_param(p_base, RSE::LIGHT_PARAM_ENERGY);
+			if (physical_light_units) {
+				e *= ls->light_get_param(p_base, RSE::LIGHT_PARAM_INTENSITY);
+				if (p_type == RSE::LIGHT_OMNI) {
+					e *= 1.0f / (Math::PI * 4.0f);
+				} else if (p_type == RSE::LIGHT_AREA) {
+					e *= 1.0f / (Math::PI * 2.0f);
+				} else {
+					e *= 1.0f / Math::PI;
+				}
+			} else {
+				e *= Math::PI;
+			}
+			return e;
+		};
+		if (p_render_data->rt_lights) {
+			const PagedArray<RID> &lights = *p_render_data->rt_lights;
+			for (uint32_t li = 0; li < uint32_t(lights.size()); li++) {
+				RID light_instance = lights[li];
+				if (!ls->owns_light_instance(light_instance)) {
+					continue;
+				}
+				RID base = ls->light_instance_get_base_light(light_instance);
+				if (!base.is_valid()) {
+					continue;
+				}
+				RSE::LightType type = ls->light_get_type(base);
+				if (type == RSE::LIGHT_DIRECTIONAL && ls->light_directional_get_sky_mode(base) == RSE::LIGHT_DIRECTIONAL_SKY_MODE_SKY_ONLY) {
+					continue;
+				}
+				RT_LightData ld = {};
+				Transform3D xform = ls->light_instance_get_base_transform(light_instance);
+				const uint64_t light_generation = ls->light_get_rt_generation(base);
+				const uint64_t light_id = light_instance.get_id();
+				signature = _rt_scene_hash(&light_id, sizeof(light_id), signature);
+				signature = _rt_scene_hash(&light_generation, sizeof(light_generation), signature);
+				signature = _rt_scene_hash(&xform, sizeof(xform), signature);
+				xform.origin -= p_state->rt_origin;
+				Vector3 direction = -xform.basis.get_column(2).normalized();
+				ld.position[0] = xform.origin.x;
+				ld.position[1] = xform.origin.y;
+				ld.position[2] = xform.origin.z;
+				ld.direction[0] = direction.x;
+				ld.direction[1] = direction.y;
+				ld.direction[2] = direction.z;
+				switch (type) {
+					case RSE::LIGHT_DIRECTIONAL:
+						ld.type = RT_LIGHT_TYPE_DIRECTIONAL;
+						break;
+					case RSE::LIGHT_OMNI:
+						ld.type = RT_LIGHT_TYPE_OMNI;
+						break;
+					case RSE::LIGHT_SPOT:
+						ld.type = RT_LIGHT_TYPE_SPOT;
+						break;
+					case RSE::LIGHT_AREA:
+						ld.type = RT_LIGHT_TYPE_AREA;
+						break;
+				}
+
+				Color linear_col = ls->light_get_color(base).srgb_to_linear();
+				float energy = compute_light_energy(base, type);
+				ld.emission[0] = linear_col.r * energy;
+				ld.emission[1] = linear_col.g * energy;
+				ld.emission[2] = linear_col.b * energy;
+				ld.radius = type == RSE::LIGHT_DIRECTIONAL ? Math::deg_to_rad(ls->light_get_param(base, RSE::LIGHT_PARAM_SIZE) * 0.5f) : ls->light_get_param(base, RSE::LIGHT_PARAM_SIZE);
+				ld.attenuation = ls->light_get_param(base, RSE::LIGHT_PARAM_ATTENUATION);
+				ld.range = type == RSE::LIGHT_DIRECTIONAL ? 0.0f : ls->light_get_param(base, RSE::LIGHT_PARAM_RANGE);
+				ld.specular_amount = ls->light_get_param(base, RSE::LIGHT_PARAM_SPECULAR) * 2.0f;
+				ld.receiver_mask = ls->light_get_cull_mask(base);
+				ld.caster_mask = ls->light_get_shadow_caster_mask(base);
+				if (ls->light_has_shadow(base)) {
+					ld.flags |= RT_LIGHT_FLAG_CASTS_SHADOW;
+				}
+
+				if (type == RSE::LIGHT_SPOT) {
+					ld.inv_spot_attenuation = 1.0f / MAX(0.001f, ls->light_get_param(base, RSE::LIGHT_PARAM_SPOT_ATTENUATION));
+					ld.cos_spot_angle = Math::cos(Math::deg_to_rad(ls->light_get_param(base, RSE::LIGHT_PARAM_SPOT_ANGLE)));
+				}
+
+				if (type == RSE::LIGHT_AREA) {
+					Vector2 area_size = ls->light_area_get_size(base);
+					Vector3 axis_u = xform.basis.xform(Vector3(1.0f, 0.0f, 0.0f)).normalized() * area_size.x;
+					Vector3 axis_v = xform.basis.xform(Vector3(0.0f, 1.0f, 0.0f)).normalized() * area_size.y;
+					ld.axis_u[0] = axis_u.x;
+					ld.axis_u[1] = axis_u.y;
+					ld.axis_u[2] = axis_u.z;
+					ld.axis_v[0] = axis_v.x;
+					ld.axis_v[1] = axis_v.y;
+					ld.axis_v[2] = axis_v.z;
+					float area = axis_u.cross(axis_v).length();
+					ld.inv_area = area > 0.0f ? 1.0f / area : 0.0f;
+					if (ls->light_area_get_normalize_energy(base) && area > 0.0f) {
+						ld.emission[0] /= area;
+						ld.emission[1] /= area;
+						ld.emission[2] /= area;
+					}
+				}
+
+				RID projected_texture = type == RSE::LIGHT_AREA ? ls->light_area_get_texture(base) : ls->light_get_projector(base);
+				const uint64_t texture_generation = projected_texture.is_valid() ? resolved_texture_generations[projected_texture] : 0;
+				signature = _rt_scene_hash(&texture_generation, sizeof(texture_generation), signature);
+				if (projected_texture.is_valid()) {
+					Rect2 rect;
+					RID atlas_texture;
+					if (type == RSE::LIGHT_AREA) {
+						rect = ts->area_light_atlas_get_texture_rect(projected_texture);
+						atlas_texture = area_atlas;
+					} else {
+						rect = ts->decal_atlas_get_texture_rect(projected_texture);
+						atlas_texture = projector_atlas;
+						if (type == RSE::LIGHT_SPOT) {
+							rect.position.y += rect.size.y;
+							rect.size.y = -rect.size.y;
+						} else if (type == RSE::LIGHT_OMNI) {
+							rect.size.y *= 0.5f;
+						}
+					}
+					if (atlas_texture.is_valid()) {
+						ld.texture_index = atlas_indices[atlas_texture];
+						ld.flags |= RT_LIGHT_FLAG_TEXTURED;
+						ld.uv_rect[0] = rect.position.x;
+						ld.uv_rect[1] = rect.position.y;
+						ld.uv_rect[2] = rect.size.x;
+						ld.uv_rect[3] = rect.size.y;
+					}
+				}
+				RendererRD::MaterialStorage::store_transform_transposed_3x4(xform.affine_inverse(), ld.transform);
+
+				RTLightKey key;
+				key.instance_id = light_instance.get_id();
+				key.resource_id = base.get_id();
+				key.type = ld.type;
+				if (type == RSE::LIGHT_DIRECTIONAL) {
+					infinite_keys.push_back(key);
+					infinite_lights.push_back(ld);
+				} else {
+					local_keys.push_back(key);
+					local_lights.push_back(ld);
+				}
+			}
+		}
+	}
+	void prepare_emissive() {
+		GodotProfileZone("RTEmissivePayload");
+		for (const RTEmissiveSource &source : renderer->emissive_sources) {
+			for (uint32_t primitive = 0; primitive < source.primitive_count; primitive++) {
+				RTLightKey key;
+				key.instance_id = source.instance_id;
+				key.resource_id = source.resource_id;
+				key.surface_generation = source.surface_generation;
+				key.primitive_index = source.key_primitive_offset + primitive;
+				key.type = RT_LIGHT_TYPE_EMISSIVE_TRIANGLE;
+
+				RT_LightData light = {};
+				light.type = RT_LIGHT_TYPE_EMISSIVE_TRIANGLE;
+				light.flags = RT_LIGHT_FLAG_CASTS_SHADOW;
+				light.specular_amount = 1.0f;
+				light.geometry_index = source.geometry_index;
+				light.primitive_index = primitive;
+				light.receiver_mask = UINT32_MAX;
+				light.caster_mask = UINT32_MAX;
+				light.topology_generation = source.topology_generation;
+				light.texture_index = source.material->data.emission_texture_idx;
+				light.emission[0] = source.material->data.emission_color[0] * source.material->data.emission_strength;
+				light.emission[1] = source.material->data.emission_color[1] * source.material->data.emission_strength;
+				light.emission[2] = source.material->data.emission_color[2] * source.material->data.emission_strength;
+				if ((source.material->data.flags & RT_MAT_FLAG_HAS_EMISSION_TEX) != 0) {
+					light.flags |= RT_LIGHT_FLAG_TEXTURED;
+				}
+				light.uv_rect[0] = source.material->data.uv1_scale[0];
+				light.uv_rect[1] = source.material->data.uv1_scale[1];
+				light.uv_rect[2] = source.material->data.uv1_offset[0];
+				light.uv_rect[3] = source.material->data.uv1_offset[1];
+				Transform3D emitter_to_rt = source.transform;
+				emitter_to_rt.origin -= p_state->rt_origin;
+				RendererRD::MaterialStorage::store_transform_transposed_3x4(emitter_to_rt, light.transform);
+				emissive_keys.push_back(key);
+				emissive_lights.push_back(light);
+			}
+		}
+	}
+	void prepare_registry() {
+		GodotProfileZone("RTLightRegistryPayload");
+		begin_job(3);
+		for (uint32_t index = 0; index < emissive_keys.size(); index++) {
+			local_keys.push_back(emissive_keys[index]);
+			local_lights.push_back(emissive_lights[index]);
+		}
+		for (uint32_t i = 0; i < local_keys.size(); i++) {
+			current_keys.push_back(local_keys[i]);
+			current_lights.push_back(local_lights[i]);
+		}
+		for (uint32_t i = 0; i < infinite_keys.size(); i++) {
+			current_keys.push_back(infinite_keys[i]);
+			current_lights.push_back(infinite_lights[i]);
+		}
+		for (uint32_t i = 0; i < environment_keys.size(); i++) {
+			current_keys.push_back(environment_keys[i]);
+			current_lights.push_back(environment_lights[i]);
+		}
+		end_job(3);
+		if (current_lights.size() > 0x7FFFFFFFu || uint64_t(current_lights.size()) * sizeof(RT_LightData) > UINT32_MAX) {
+			return;
+		}
+		RTLightSnapshot &previous = p_state->light_snapshots[previous_index];
+		RTLightSnapshot &current = p_state->light_snapshots[current_index];
+		begin_job(4);
+		current_to_previous.resize(current_keys.size());
+		previous_to_current.resize(p_state->light_history_valid ? previous.keys.size() : 0);
+		for (uint32_t i = 0; i < current_to_previous.size(); i++) {
+			current_to_previous[i] = UINT32_MAX;
+		}
+		for (uint32_t i = 0; i < previous_to_current.size(); i++) {
+			previous_to_current[i] = UINT32_MAX;
+		}
+
+		if (p_state->light_history_valid) {
+			HashMap<RTLightKey, uint32_t> previous_indices;
+			for (uint32_t i = 0; i < previous.keys.size(); i++) {
+				previous_indices.insert(previous.keys[i], i);
+			}
+			for (uint32_t i = 0; i < current_keys.size(); i++) {
+				const uint32_t *previous_light = previous_indices.getptr(current_keys[i]);
+				if (previous_light) {
+					current_to_previous[i] = *previous_light;
+					previous_to_current[*previous_light] = i;
+				}
+			}
+		}
+
+		current.keys = current_keys;
+		current.lights = current_lights;
+		current.parameters.local_first = 0;
+		current.parameters.local_count = local_lights.size();
+		current.parameters.infinite_first = local_lights.size();
+		current.parameters.infinite_count = infinite_lights.size();
+		current.parameters.environment_index = local_lights.size() + infinite_lights.size();
+		current.parameters.environment_present = environment_lights.is_empty() ? 0 : 1;
+		current.parameters.total_count = current_lights.size();
+		current.parameters.previous_count = p_state->light_history_valid ? previous.keys.size() : 0;
+		end_job(4);
+	}
+	static void run(void *p_data, uint32_t) {
+		Task &task = *static_cast<Task *>(p_data);
+		LightingPreparation &preparation = *task.preparation;
+		preparation.begin_job(task.index);
+		switch (task.index) {
+			case 0:
+				preparation.discover_atlases();
+				break;
+			case 1:
+				preparation.prepare_analytic();
+				break;
+			case 2:
+				preparation.prepare_emissive();
+				break;
+			case 5:
+				if (preparation.p_render_data->rt_decals && preparation.p_render_data->decals) {
+					preparation.decals = preparation.ts->build_rt_decal_snapshot(*preparation.p_render_data->rt_decals, *preparation.p_render_data->decals, preparation.p_render_data->scene_data->cam_transform, preparation.p_state->rt_origin);
+				}
+				break;
+		}
+		preparation.end_job(task.index);
+		if ((task.index == 1 || task.index == 2) && preparation.pending_payloads.decrement() == 0) {
+			preparation.prepare_registry();
+		}
+	}
+	void start(uint32_t p_index, bool p_has_work, const StringName &p_name) {
+		Task &task = tasks[p_index];
+		task.preparation = this;
+		task.index = p_index;
+		timings[p_index].queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+		if (p_has_work) {
+			task.id = pool->try_add_native_group_task(run, &task, 1, 1, true, p_name);
+		}
+		if (task.id < 0) {
+			run(&task, 0);
+		}
+	}
+	void join(uint32_t p_index) {
+		if (tasks[p_index].id >= 0) {
+			pool->wait_for_group_task_completion(tasks[p_index].id);
+			tasks[p_index].id = -1;
+		}
+		timings[p_index].joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+	}
+	LightingPreparation(RenderRaytracing *p_renderer, RTViewportState *p_viewport_state, const RenderDataRD *p_data) :
+			renderer(p_renderer), owner(p_renderer->owner), p_state(p_viewport_state), p_render_data(p_data) {
+		physical_light_units = owner->is_using_physical_light_units();
+		area_atlas = ts->area_light_atlas_get_texture();
+		projector_atlas = ts->decal_atlas_get_texture_srgb();
+		previous_index = p_state->current_light_snapshot;
+		current_index = p_state->light_history_valid ? (previous_index ^ 1u) : previous_index;
+		start(0, p_render_data->rt_lights && p_render_data->rt_lights->size(), SNAME("RTLightResourceDiscovery"));
+		start(5, (p_render_data->rt_decals && p_render_data->rt_decals->size()) || (p_render_data->decals && p_render_data->decals->size()), SNAME("RTDecalSnapshot"));
+	}
+	~LightingPreparation() {
+		for (uint32_t i = 0; i < 6; i++) {
+			if (tasks[i].id >= 0) {
+				pool->wait_for_group_task_completion(tasks[i].id);
+			}
+		}
+	}
+	void resolve_resources() {
+		join(0);
+		for (auto &entry : atlas_indices) {
+			entry.value = renderer->bindless_block->add_texture(entry.key);
+		}
+		for (auto &entry : texture_generations) {
+			entry.value = ts->texture_get_content_generation(entry.key);
+		}
+		start(1, p_render_data->rt_lights && p_render_data->rt_lights->size(), SNAME("RTAnalyticPayload"));
+	}
+	void begin_emissive() {
+		p_state->environment_texture = RID();
+		if (p_render_data->environment.is_valid()) {
+			RID sky_rid = owner->environment_get_sky(p_render_data->environment);
+			if (sky_rid.is_valid()) {
+				RID environment_texture = owner->get_sky()->sky_get_radiance_texture_rd(sky_rid);
+				if (environment_texture.is_valid()) {
+					RTLightKey key;
+					key.instance_id = p_render_data->environment.get_id();
+					key.resource_id = sky_rid.get_id();
+					key.type = RT_LIGHT_TYPE_ENVIRONMENT;
+					RT_LightData light = {};
+					light.type = RT_LIGHT_TYPE_ENVIRONMENT;
+					const float environment_energy = owner->environment_get_bg_energy_multiplier(p_render_data->environment) * owner->environment_get_bg_intensity(p_render_data->environment);
+					light.emission[0] = environment_energy;
+					light.emission[1] = environment_energy;
+					light.emission[2] = environment_energy;
+					light.flags = RT_LIGHT_FLAG_CASTS_SHADOW;
+					light.specular_amount = 1.0f;
+					light.receiver_mask = UINT32_MAX;
+					light.caster_mask = UINT32_MAX;
+					environment_keys.push_back(key);
+					environment_lights.push_back(light);
+					p_state->environment_texture = environment_texture;
+				}
+			}
+		}
+
+		start(2, !renderer->emissive_sources.is_empty() || (p_render_data->rt_lights && p_render_data->rt_lights->size()) || !environment_keys.is_empty(), SNAME("RTEmissivePayload"));
+	}
+	void publish_lights(uint64_t &r_scene_signature) {
+		join(1);
+		join(2);
+		ERR_FAIL_COND_MSG(current_lights.size() > 0x7FFFFFFFu, "The RTXDI light registry exceeds the reservoir light-index range.");
+		RTLightSnapshot &current = p_state->light_snapshots[current_index];
+		ERR_FAIL_COND_MSG(uint64_t(current_lights.size()) * sizeof(RT_LightData) > UINT32_MAX, "The RTXDI light registry exceeds RenderingDevice buffer limits.");
+		auto update_or_grow = [](RID &p_buffer, uint32_t &p_capacity, const void *p_data, uint32_t p_size, const String &p_name) {
+			uint32_t required_size = MAX(p_size, 4u);
+			if (required_size > p_capacity) {
+				if (p_buffer.is_valid()) {
+					RD::get_singleton()->free_rid(p_buffer);
+				}
+				const uint32_t empty = UINT32_MAX;
+				p_buffer = RD::get_singleton()->storage_buffer_create(required_size, Span<uint8_t>(p_size ? static_cast<const uint8_t *>(p_data) : reinterpret_cast<const uint8_t *>(&empty), required_size));
+				p_capacity = required_size;
+				RD::get_singleton()->set_resource_name(p_buffer, p_name);
+			} else if (p_size > 0) {
+				RD::get_singleton()->buffer_update(p_buffer, 0, p_size, p_data);
+			}
+		};
+
+		update_or_grow(current.light_buffer, current.light_buffer_capacity, current_lights.ptr(), current_lights.size() * sizeof(RT_LightData), "RTXDI Light Snapshot");
+		update_or_grow(current.current_to_previous_buffer, current.current_to_previous_capacity, current_to_previous.ptr(), current_to_previous.size() * sizeof(uint32_t), "RTXDI Current To Previous Light Map");
+		update_or_grow(current.previous_to_current_buffer, current.previous_to_current_capacity, previous_to_current.ptr(), previous_to_current.size() * sizeof(uint32_t), "RTXDI Previous To Current Light Map");
+		if (!current.parameters_buffer.is_valid()) {
+			current.parameters_buffer = RD::get_singleton()->uniform_buffer_create(sizeof(RT_LightBufferParameters));
+			RD::get_singleton()->set_resource_name(current.parameters_buffer, "RTXDI Light Parameters");
+		}
+		RD::get_singleton()->buffer_update(current.parameters_buffer, 0, sizeof(RT_LightBufferParameters), &current.parameters);
+
+		p_state->current_light_snapshot = current_index;
+		p_state->light_history_valid = true;
+		r_scene_signature = _rt_scene_hash(&signature, sizeof(signature), r_scene_signature);
+		if (profile_preparation) {
+			const char *names[] = { "RTLightResourceDiscovery", "RTAnalyticPayload", "RTEmissivePayload", "RTLightMerge", "RTLightHistoryPayload", "RTDecalSnapshot" };
+			String rows;
+			for (uint32_t i = 0; i < 6; i++) {
+				const JobTiming &timing = timings[i];
+				rows += vformat("RenderPrep stage=%s frame=%d coordinator=%d queued_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d timing=elapsed", names[i], profile_frame, coordinator, timing.queued, timing.joined, timing.worker, timing.begin, timing.end) + "\n";
+			}
+			print_line(rows);
+		}
+	}
+};
+
 RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data) {
 	if (!p_render_data || !p_render_data->rt_instances) {
 		return nullptr;
@@ -3245,6 +3723,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 	RENDER_TIMESTAMP("Microgeometry RT Prepare");
 	ERR_FAIL_COND_V(!_prepare_micro_geometry(state, p_render_data), nullptr);
 	const uint32_t micro_count = state->micro_geometry ? state->micro_geometry->admitted_count : 0;
+	LightingPreparation lighting(this, state, p_render_data);
 	RENDER_TIMESTAMP("RT Scene Gather");
 
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
@@ -3421,6 +3900,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 		(*static_cast<decltype(discover) *>(p_data))(p_batch);
 	},
 			&discover, discovery.size(), -1, true, SNAME("RTResourceDiscovery"));
+	lighting.resolve_resources();
 	pool->wait_for_group_task_completion(discovery_job);
 	if (profile_preparation) {
 		const uint64_t joined = OS::get_singleton()->get_ticks_usec();
@@ -3544,10 +4024,10 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 		LocalVector<uint32_t> instance_flags;
 		LocalVector<uint8_t> instance_masks;
 		LocalVector<RTEmissiveSource> emissive_sources;
-				LocalVector<PendingMMSurface> pending_mm_surfaces;
+		LocalVector<PendingMMSurface> pending_mm_surfaces;
 		LocalVector<uint8_t> hash_bytes;
 		LocalVector<Pair<uint32_t, uint32_t>> hash_ranges;
-			bool uses_time = false;
+		bool uses_time = false;
 		bool uses_previous_time = false;
 		bool uses_gpu_instances = false;
 #ifdef TOOLS_ENABLED
@@ -4382,6 +4862,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			emissive_sources.push_back(source);
 		}
 	}
+	lighting.begin_emissive();
 	RENDER_TIMESTAMP("RT Material Pipeline");
 	ERR_FAIL_COND_V(!update_material_pipeline(state), nullptr);
 	RENDER_TIMESTAMP("RT Finalize Buffers");
@@ -4391,33 +4872,8 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 	state->decal_count = 0;
 	state->decal_generation = 0;
 	if (p_render_data->rt_decals && p_render_data->decals) {
-		RendererRD::TextureStorage::RTDecalSnapshot snapshot;
-		uint64_t decal_begin = 0;
-		uint64_t decal_end = 0;
-		uint64_t decal_worker = 0;
-		const bool decal_work = p_render_data->rt_decals->size() > 0 || p_render_data->decals->size() > 0;
-		auto prepare_decals = [&](uint32_t) {
-			if (profile_preparation) {
-				decal_worker = Thread::get_caller_id();
-				decal_begin = OS::get_singleton()->get_ticks_usec();
-			}
-			snapshot = RendererRD::TextureStorage::get_singleton()->build_rt_decal_snapshot(*p_render_data->rt_decals, *p_render_data->decals, p_render_data->scene_data->cam_transform, state->rt_origin);
-			if (profile_preparation) {
-				decal_end = OS::get_singleton()->get_ticks_usec();
-			}
-		};
-		const uint64_t decal_queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-		if (decal_work) {
-			auto decal_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
-				GodotProfileZone("RTDecalSnapshot");
-				(*static_cast<decltype(prepare_decals) *>(p_data))(p_index);
-			},
-					&prepare_decals, 1, 1, true, SNAME("RTDecalSnapshot"));
-			pool->wait_for_group_task_completion(decal_job);
-		} else {
-			prepare_decals(0);
-		}
-		const uint64_t decal_joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+		lighting.join(5);
+		const auto &snapshot = lighting.decals;
 		uint64_t decal_generation = snapshot.data_generation;
 		for (const auto &texture : snapshot.texture_generations) {
 			decal_generation = hash_djb2_one_64(RendererRD::TextureStorage::get_singleton()->texture_get_content_generation(texture.texture), decal_generation);
@@ -4438,12 +4894,8 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 		if (!snapshot.data.is_empty()) {
 			RD::get_singleton()->buffer_update(state->decal_buffer, 0, snapshot.data.size(), snapshot.data.ptr());
 		}
-		if (profile_preparation) {
-			const uint64_t published = OS::get_singleton()->get_ticks_usec();
-			print_line(vformat("RenderPrep stage=RTDecalSnapshot frame=%d coordinator=%d jobs=%d resident=%d camera=%d output=%d bytes=%d queued_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d published_usec=%d owner_publish_usec=%d timing=elapsed", profile_frame, coordinator, int(decal_work), p_render_data->rt_decals->size(), p_render_data->decals->size(), snapshot.count, snapshot.data.size(), decal_queued, decal_joined, decal_worker, decal_begin, decal_end, published, published - decal_joined));
-		}
 	}
-	build_light_registry(state, p_render_data, scene_signature);
+	lighting.publish_lights(scene_signature);
 	hash_scene(blass.size());
 	for (uint32_t index = 0; index < blass.size(); index++) {
 		if (!(geometry_data[index].flags & RT_GEOM_FLAG_CLUSTERED)) {
@@ -4473,466 +4925,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 // ---------------------------------------------------------------------------
 // Light registry
 // ---------------------------------------------------------------------------
-
-void RenderRaytracing::build_light_registry(RTViewportState *p_state, const RenderDataRD *p_render_data, uint64_t &r_scene_signature) {
-	ERR_FAIL_NULL(p_state);
-	ERR_FAIL_NULL(p_render_data);
-
-	LocalVector<RTLightKey> local_keys;
-	LocalVector<RT_LightData> local_lights;
-	LocalVector<RTLightKey> emissive_keys;
-	LocalVector<RT_LightData> emissive_lights;
-	LocalVector<RTLightKey> infinite_keys;
-	LocalVector<RT_LightData> infinite_lights;
-	LocalVector<RTLightKey> environment_keys;
-	LocalVector<RT_LightData> environment_lights;
-
-	RendererRD::LightStorage *ls = RendererRD::LightStorage::get_singleton();
-	RendererRD::TextureStorage *ts = RendererRD::TextureStorage::get_singleton();
-
-	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
-	const uint64_t profile_frame = RSG::rasterizer->get_frame_number();
-	const bool profile_preparation = RSG::utilities->capturing_timestamps && profile_frame % 120 == 0;
-	const uint64_t coordinator = profile_preparation ? Thread::get_caller_id() : 0;
-	const uint64_t owner_begin = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	struct JobTiming {
-		uint64_t queued = 0;
-		uint64_t begin = 0;
-		uint64_t end = 0;
-		uint64_t joined = 0;
-		uint64_t worker = 0;
-		uint64_t work = 0;
-	};
-	JobTiming timings[5];
-	auto begin_job = [&](uint32_t p_index) {
-		if (profile_preparation) {
-			timings[p_index].worker = Thread::get_caller_id();
-			timings[p_index].begin = OS::get_singleton()->get_ticks_usec();
-		}
-	};
-	auto end_job = [&](uint32_t p_index) {
-		if (profile_preparation) {
-			timings[p_index].end = OS::get_singleton()->get_ticks_usec();
-		}
-	};
-	const bool physical_light_units = owner->is_using_physical_light_units();
-	const RID area_atlas = ts->area_light_atlas_get_texture();
-	const RID projector_atlas = ts->decal_atlas_get_texture_srgb();
-	HashMap<RID, uint32_t> atlas_indices;
-	HashMap<RID, uint64_t> texture_generations;
-	auto discover_atlases = [&](uint32_t) {
-		begin_job(0);
-		if (!p_render_data->rt_lights) {
-			end_job(0);
-			return;
-		}
-		for (uint32_t index = 0; index < p_render_data->rt_lights->size(); index++) {
-			RID instance = (*p_render_data->rt_lights)[index];
-			if (!ls->owns_light_instance(instance)) {
-				continue;
-			}
-			RID base = ls->light_instance_get_base_light(instance);
-			if (base.is_null()) {
-				continue;
-			}
-			const bool area = ls->light_get_type(base) == RSE::LIGHT_AREA;
-			RID texture = area ? ls->light_area_get_texture(base) : ls->light_get_projector(base);
-			RID atlas = area ? area_atlas : projector_atlas;
-			if (texture.is_valid()) {
-				texture_generations.insert(texture, 0);
-			}
-			if (texture.is_valid() && atlas.is_valid()) {
-				atlas_indices[atlas] = 0;
-			}
-		}
-		end_job(0);
-	};
-	timings[0].queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	auto job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
-		GodotProfileZone("RTLightResourceDiscovery");
-		(*static_cast<decltype(discover_atlases) *>(p_data))(p_index);
-	},
-			&discover_atlases, 1, 1, true, SNAME("RTLightResourceDiscovery"));
-	pool->wait_for_group_task_completion(job);
-	timings[0].joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	for (auto &entry : atlas_indices) {
-		entry.value = bindless_block->add_texture(entry.key);
-	}
-	for (auto &entry : texture_generations) {
-		entry.value = ts->texture_get_content_generation(entry.key);
-	}
-	const auto &resolved_texture_generations = texture_generations;
-	const uint64_t resources_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	auto compute_light_energy = [&](RID p_base, RSE::LightType p_type) {
-		float sign = ls->light_is_negative(p_base) ? -1.0f : 1.0f;
-		float e = sign * ls->light_get_param(p_base, RSE::LIGHT_PARAM_ENERGY);
-		if (physical_light_units) {
-			e *= ls->light_get_param(p_base, RSE::LIGHT_PARAM_INTENSITY);
-			if (p_type == RSE::LIGHT_OMNI) {
-				e *= 1.0f / (Math::PI * 4.0f);
-			} else if (p_type == RSE::LIGHT_AREA) {
-				e *= 1.0f / (Math::PI * 2.0f);
-			} else {
-				e *= 1.0f / Math::PI;
-			}
-		} else {
-			e *= Math::PI;
-		}
-		return e;
-	};
-
-	auto prepare_analytic = [&]() {
-		if (p_render_data->rt_lights) {
-			const PagedArray<RID> &lights = *p_render_data->rt_lights;
-			for (uint32_t li = 0; li < uint32_t(lights.size()); li++) {
-				RID light_instance = lights[li];
-				if (!ls->owns_light_instance(light_instance)) {
-					continue;
-				}
-				RID base = ls->light_instance_get_base_light(light_instance);
-				if (!base.is_valid()) {
-					continue;
-				}
-				RSE::LightType type = ls->light_get_type(base);
-				if (type == RSE::LIGHT_DIRECTIONAL && ls->light_directional_get_sky_mode(base) == RSE::LIGHT_DIRECTIONAL_SKY_MODE_SKY_ONLY) {
-					continue;
-				}
-				RT_LightData ld = {};
-				Transform3D xform = ls->light_instance_get_base_transform(light_instance);
-				const uint64_t light_generation = ls->light_get_rt_generation(base);
-				const uint64_t light_id = light_instance.get_id();
-				r_scene_signature = _rt_scene_hash(&light_id, sizeof(light_id), r_scene_signature);
-				r_scene_signature = _rt_scene_hash(&light_generation, sizeof(light_generation), r_scene_signature);
-				r_scene_signature = _rt_scene_hash(&xform, sizeof(xform), r_scene_signature);
-				xform.origin -= p_state->rt_origin;
-				Vector3 direction = -xform.basis.get_column(2).normalized();
-				ld.position[0] = xform.origin.x;
-				ld.position[1] = xform.origin.y;
-				ld.position[2] = xform.origin.z;
-				ld.direction[0] = direction.x;
-				ld.direction[1] = direction.y;
-				ld.direction[2] = direction.z;
-				switch (type) {
-					case RSE::LIGHT_DIRECTIONAL:
-						ld.type = RT_LIGHT_TYPE_DIRECTIONAL;
-						break;
-					case RSE::LIGHT_OMNI:
-						ld.type = RT_LIGHT_TYPE_OMNI;
-						break;
-					case RSE::LIGHT_SPOT:
-						ld.type = RT_LIGHT_TYPE_SPOT;
-						break;
-					case RSE::LIGHT_AREA:
-						ld.type = RT_LIGHT_TYPE_AREA;
-						break;
-				}
-
-				Color linear_col = ls->light_get_color(base).srgb_to_linear();
-				float energy = compute_light_energy(base, type);
-				ld.emission[0] = linear_col.r * energy;
-				ld.emission[1] = linear_col.g * energy;
-				ld.emission[2] = linear_col.b * energy;
-				ld.radius = type == RSE::LIGHT_DIRECTIONAL ? Math::deg_to_rad(ls->light_get_param(base, RSE::LIGHT_PARAM_SIZE) * 0.5f) : ls->light_get_param(base, RSE::LIGHT_PARAM_SIZE);
-				ld.attenuation = ls->light_get_param(base, RSE::LIGHT_PARAM_ATTENUATION);
-				ld.range = type == RSE::LIGHT_DIRECTIONAL ? 0.0f : ls->light_get_param(base, RSE::LIGHT_PARAM_RANGE);
-				ld.specular_amount = ls->light_get_param(base, RSE::LIGHT_PARAM_SPECULAR) * 2.0f;
-				ld.receiver_mask = ls->light_get_cull_mask(base);
-				ld.caster_mask = ls->light_get_shadow_caster_mask(base);
-				if (ls->light_has_shadow(base)) {
-					ld.flags |= RT_LIGHT_FLAG_CASTS_SHADOW;
-				}
-
-				if (type == RSE::LIGHT_SPOT) {
-					ld.inv_spot_attenuation = 1.0f / MAX(0.001f, ls->light_get_param(base, RSE::LIGHT_PARAM_SPOT_ATTENUATION));
-					ld.cos_spot_angle = Math::cos(Math::deg_to_rad(ls->light_get_param(base, RSE::LIGHT_PARAM_SPOT_ANGLE)));
-				}
-
-				if (type == RSE::LIGHT_AREA) {
-					Vector2 area_size = ls->light_area_get_size(base);
-					Vector3 axis_u = xform.basis.xform(Vector3(1.0f, 0.0f, 0.0f)).normalized() * area_size.x;
-					Vector3 axis_v = xform.basis.xform(Vector3(0.0f, 1.0f, 0.0f)).normalized() * area_size.y;
-					ld.axis_u[0] = axis_u.x;
-					ld.axis_u[1] = axis_u.y;
-					ld.axis_u[2] = axis_u.z;
-					ld.axis_v[0] = axis_v.x;
-					ld.axis_v[1] = axis_v.y;
-					ld.axis_v[2] = axis_v.z;
-					float area = axis_u.cross(axis_v).length();
-					ld.inv_area = area > 0.0f ? 1.0f / area : 0.0f;
-					if (ls->light_area_get_normalize_energy(base) && area > 0.0f) {
-						ld.emission[0] /= area;
-						ld.emission[1] /= area;
-						ld.emission[2] /= area;
-					}
-				}
-
-				RID projected_texture = type == RSE::LIGHT_AREA ? ls->light_area_get_texture(base) : ls->light_get_projector(base);
-				const uint64_t texture_generation = projected_texture.is_valid() ? resolved_texture_generations[projected_texture] : 0;
-				r_scene_signature = _rt_scene_hash(&texture_generation, sizeof(texture_generation), r_scene_signature);
-				if (projected_texture.is_valid()) {
-					Rect2 rect;
-					RID atlas_texture;
-					if (type == RSE::LIGHT_AREA) {
-						rect = ts->area_light_atlas_get_texture_rect(projected_texture);
-						atlas_texture = area_atlas;
-					} else {
-						rect = ts->decal_atlas_get_texture_rect(projected_texture);
-						atlas_texture = projector_atlas;
-						if (type == RSE::LIGHT_SPOT) {
-							rect.position.y += rect.size.y;
-							rect.size.y = -rect.size.y;
-						} else if (type == RSE::LIGHT_OMNI) {
-							rect.size.y *= 0.5f;
-						}
-					}
-					if (atlas_texture.is_valid()) {
-						ld.texture_index = atlas_indices[atlas_texture];
-						ld.flags |= RT_LIGHT_FLAG_TEXTURED;
-						ld.uv_rect[0] = rect.position.x;
-						ld.uv_rect[1] = rect.position.y;
-						ld.uv_rect[2] = rect.size.x;
-						ld.uv_rect[3] = rect.size.y;
-					}
-				}
-				RendererRD::MaterialStorage::store_transform_transposed_3x4(xform.affine_inverse(), ld.transform);
-
-				RTLightKey key;
-				key.instance_id = light_instance.get_id();
-				key.resource_id = base.get_id();
-				key.type = ld.type;
-				if (type == RSE::LIGHT_DIRECTIONAL) {
-					infinite_keys.push_back(key);
-					infinite_lights.push_back(ld);
-				} else {
-					local_keys.push_back(key);
-					local_lights.push_back(ld);
-				}
-			}
-		}
-	};
-	auto prepare_emissive = [&]() {
-		for (const RTEmissiveSource &source : emissive_sources) {
-			for (uint32_t primitive = 0; primitive < source.primitive_count; primitive++) {
-				RTLightKey key;
-				key.instance_id = source.instance_id;
-				key.resource_id = source.resource_id;
-				key.surface_generation = source.surface_generation;
-				key.primitive_index = source.key_primitive_offset + primitive;
-				key.type = RT_LIGHT_TYPE_EMISSIVE_TRIANGLE;
-
-				RT_LightData light = {};
-				light.type = RT_LIGHT_TYPE_EMISSIVE_TRIANGLE;
-				light.flags = RT_LIGHT_FLAG_CASTS_SHADOW;
-				light.specular_amount = 1.0f;
-				light.geometry_index = source.geometry_index;
-				light.primitive_index = primitive;
-				light.receiver_mask = UINT32_MAX;
-				light.caster_mask = UINT32_MAX;
-				light.topology_generation = source.topology_generation;
-				light.texture_index = source.material->data.emission_texture_idx;
-				light.emission[0] = source.material->data.emission_color[0] * source.material->data.emission_strength;
-				light.emission[1] = source.material->data.emission_color[1] * source.material->data.emission_strength;
-				light.emission[2] = source.material->data.emission_color[2] * source.material->data.emission_strength;
-				if ((source.material->data.flags & RT_MAT_FLAG_HAS_EMISSION_TEX) != 0) {
-					light.flags |= RT_LIGHT_FLAG_TEXTURED;
-				}
-				light.uv_rect[0] = source.material->data.uv1_scale[0];
-				light.uv_rect[1] = source.material->data.uv1_scale[1];
-				light.uv_rect[2] = source.material->data.uv1_offset[0];
-				light.uv_rect[3] = source.material->data.uv1_offset[1];
-				Transform3D emitter_to_rt = source.transform;
-				emitter_to_rt.origin -= p_state->rt_origin;
-				RendererRD::MaterialStorage::store_transform_transposed_3x4(emitter_to_rt, light.transform);
-				emissive_keys.push_back(key);
-				emissive_lights.push_back(light);
-			}
-		}
-	};
-	auto prepare = [&](uint32_t p_index) {
-		begin_job(p_index + 1);
-		if (p_index == 0) {
-			prepare_analytic();
-		} else {
-			prepare_emissive();
-		}
-		end_job(p_index + 1);
-	};
-	const uint64_t environment_begin = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	p_state->environment_texture = RID();
-	if (p_render_data->environment.is_valid()) {
-		RID sky_rid = owner->environment_get_sky(p_render_data->environment);
-		if (sky_rid.is_valid()) {
-			RID environment_texture = owner->get_sky()->sky_get_radiance_texture_rd(sky_rid);
-			if (environment_texture.is_valid()) {
-				RTLightKey key;
-				key.instance_id = p_render_data->environment.get_id();
-				key.resource_id = sky_rid.get_id();
-				key.type = RT_LIGHT_TYPE_ENVIRONMENT;
-				RT_LightData light = {};
-				light.type = RT_LIGHT_TYPE_ENVIRONMENT;
-				const float environment_energy = owner->environment_get_bg_energy_multiplier(p_render_data->environment) * owner->environment_get_bg_intensity(p_render_data->environment);
-				light.emission[0] = environment_energy;
-				light.emission[1] = environment_energy;
-				light.emission[2] = environment_energy;
-				light.flags = RT_LIGHT_FLAG_CASTS_SHADOW;
-				light.specular_amount = 1.0f;
-				light.receiver_mask = UINT32_MAX;
-				light.caster_mask = UINT32_MAX;
-				environment_keys.push_back(key);
-				environment_lights.push_back(light);
-				p_state->environment_texture = environment_texture;
-			}
-		}
-	}
-
-	const uint64_t environment_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	LocalVector<RTLightKey> current_keys;
-	LocalVector<RT_LightData> current_lights;
-	auto merge = [&](uint32_t) {
-		begin_job(3);
-		for (uint32_t index = 0; index < emissive_keys.size(); index++) {
-			local_keys.push_back(emissive_keys[index]);
-			local_lights.push_back(emissive_lights[index]);
-		}
-		for (uint32_t i = 0; i < local_keys.size(); i++) {
-			current_keys.push_back(local_keys[i]);
-			current_lights.push_back(local_lights[i]);
-		}
-		for (uint32_t i = 0; i < infinite_keys.size(); i++) {
-			current_keys.push_back(infinite_keys[i]);
-			current_lights.push_back(infinite_lights[i]);
-		}
-		for (uint32_t i = 0; i < environment_keys.size(); i++) {
-			current_keys.push_back(environment_keys[i]);
-			current_lights.push_back(environment_lights[i]);
-		}
-		end_job(3);
-	};
-	const uint32_t previous_index = p_state->current_light_snapshot;
-	const uint32_t current_index = p_state->light_history_valid ? (previous_index ^ 1u) : previous_index;
-	RTLightSnapshot &previous = p_state->light_snapshots[previous_index];
-	RTLightSnapshot &current = p_state->light_snapshots[current_index];
-
-	LocalVector<uint32_t> current_to_previous;
-	LocalVector<uint32_t> previous_to_current;
-	auto prepare_history = [&](uint32_t) {
-		begin_job(4);
-		current_to_previous.resize(current_keys.size());
-		previous_to_current.resize(p_state->light_history_valid ? previous.keys.size() : 0);
-		for (uint32_t i = 0; i < current_to_previous.size(); i++) {
-			current_to_previous[i] = UINT32_MAX;
-		}
-		for (uint32_t i = 0; i < previous_to_current.size(); i++) {
-			previous_to_current[i] = UINT32_MAX;
-		}
-
-		if (p_state->light_history_valid) {
-			HashMap<RTLightKey, uint32_t> previous_indices;
-			for (uint32_t i = 0; i < previous.keys.size(); i++) {
-				previous_indices.insert(previous.keys[i], i);
-			}
-			for (uint32_t i = 0; i < current_keys.size(); i++) {
-				const uint32_t *previous_light = previous_indices.getptr(current_keys[i]);
-				if (previous_light) {
-					current_to_previous[i] = *previous_light;
-					previous_to_current[*previous_light] = i;
-				}
-			}
-		}
-
-		current.keys = current_keys;
-		current.lights = current_lights;
-		current.parameters.local_first = 0;
-		current.parameters.local_count = local_lights.size();
-		current.parameters.infinite_first = local_lights.size();
-		current.parameters.infinite_count = infinite_lights.size();
-		current.parameters.environment_index = local_lights.size() + infinite_lights.size();
-		current.parameters.environment_present = environment_lights.is_empty() ? 0 : 1;
-		current.parameters.total_count = current_lights.size();
-		current.parameters.previous_count = p_state->light_history_valid ? previous.keys.size() : 0;
-		end_job(4);
-	};
-	const bool parallel_payload = p_render_data->rt_lights && p_render_data->rt_lights->size() > 0 && !emissive_sources.is_empty();
-	if (parallel_payload) {
-		timings[1].queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-		timings[2].queued = timings[1].queued;
-		job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
-			GodotProfileZone("RTLightPayload");
-			(*static_cast<decltype(prepare) *>(p_data))(p_index);
-		},
-				&prepare, 2, -1, true, SNAME("RTLightPayload"));
-		pool->wait_for_group_task_completion(job);
-		timings[1].joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-		timings[2].joined = timings[1].joined;
-	}
-	auto prepare_registry = [&](uint32_t) {
-		if (!parallel_payload) {
-			prepare(0);
-			prepare(1);
-		}
-		merge(0);
-		if (current_lights.size() <= 0x7FFFFFFFu && uint64_t(current_lights.size()) * sizeof(RT_LightData) <= UINT32_MAX) {
-			prepare_history(0);
-		}
-	};
-	const uint64_t registry_queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
-		GodotProfileZone("RTLightRegistryPayload");
-		(*static_cast<decltype(prepare_registry) *>(p_data))(p_index);
-	},
-			&prepare_registry, 1, 1, true, SNAME("RTLightRegistryPayload"));
-	pool->wait_for_group_task_completion(job);
-	const uint64_t registry_joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	for (uint32_t index = parallel_payload ? 3 : 1; index < 5; index++) {
-		timings[index].queued = registry_queued;
-		timings[index].joined = registry_joined;
-	}
-	ERR_FAIL_COND_MSG(current_lights.size() > 0x7FFFFFFFu, "The RTXDI light registry exceeds the reservoir light-index range.");
-	ERR_FAIL_COND_MSG(uint64_t(current_lights.size()) * sizeof(RT_LightData) > UINT32_MAX, "The RTXDI light registry exceeds RenderingDevice buffer limits.");
-	auto update_or_grow = [](RID &p_buffer, uint32_t &p_capacity, const void *p_data, uint32_t p_size, const String &p_name) {
-		uint32_t required_size = MAX(p_size, 4u);
-		if (required_size > p_capacity) {
-			if (p_buffer.is_valid()) {
-				RD::get_singleton()->free_rid(p_buffer);
-			}
-			const uint32_t empty = UINT32_MAX;
-			p_buffer = RD::get_singleton()->storage_buffer_create(required_size, Span<uint8_t>(p_size ? static_cast<const uint8_t *>(p_data) : reinterpret_cast<const uint8_t *>(&empty), required_size));
-			p_capacity = required_size;
-			RD::get_singleton()->set_resource_name(p_buffer, p_name);
-		} else if (p_size > 0) {
-			RD::get_singleton()->buffer_update(p_buffer, 0, p_size, p_data);
-		}
-	};
-
-	update_or_grow(current.light_buffer, current.light_buffer_capacity, current_lights.ptr(), current_lights.size() * sizeof(RT_LightData), "RTXDI Light Snapshot");
-	update_or_grow(current.current_to_previous_buffer, current.current_to_previous_capacity, current_to_previous.ptr(), current_to_previous.size() * sizeof(uint32_t), "RTXDI Current To Previous Light Map");
-	update_or_grow(current.previous_to_current_buffer, current.previous_to_current_capacity, previous_to_current.ptr(), previous_to_current.size() * sizeof(uint32_t), "RTXDI Previous To Current Light Map");
-	if (!current.parameters_buffer.is_valid()) {
-		current.parameters_buffer = RD::get_singleton()->uniform_buffer_create(sizeof(RT_LightBufferParameters));
-		RD::get_singleton()->set_resource_name(current.parameters_buffer, "RTXDI Light Parameters");
-	}
-	RD::get_singleton()->buffer_update(current.parameters_buffer, 0, sizeof(RT_LightBufferParameters), &current.parameters);
-
-	p_state->current_light_snapshot = current_index;
-	p_state->light_history_valid = true;
-	if (profile_preparation) {
-		const uint64_t owner_end = OS::get_singleton()->get_ticks_usec();
-		timings[0].work = p_render_data->rt_lights ? p_render_data->rt_lights->size() : 0;
-		timings[1].work = timings[0].work;
-		timings[2].work = emissive_sources.size();
-		timings[3].work = current_keys.size();
-		timings[4].work = current_keys.size() + previous_to_current.size();
-		const char *names[] = { "RTLightResourceDiscovery", "RTAnalyticPayload", "RTEmissivePayload", "RTLightMerge", "RTLightHistoryPayload" };
-		String rows;
-		for (uint32_t index = 0; index < 5; index++) {
-			const JobTiming &timing = timings[index];
-			rows += vformat("RenderPrep stage=%s frame=%d coordinator=%d phase=1 separate_job=%d work=%d queued_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d timing=elapsed", names[index], profile_frame, coordinator, int(index == 0 || (parallel_payload && (index == 1 || index == 2))), timing.work, timing.queued, timing.joined, timing.worker, timing.begin, timing.end) + "\n";
-		}
-		rows += vformat("RenderPrep stage=RTLightRegistryPayload frame=%d coordinator=%d jobs=1 work=%d queued_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d timing=elapsed", profile_frame, coordinator, current_lights.size(), registry_queued, registry_joined, timings[3].worker, parallel_payload ? timings[3].begin : timings[1].begin, timings[4].end) + "\n";
-		rows += vformat("RenderPrep stage=RTLightOwner frame=%d coordinator=%d jobs=%d analytic=%d emissive_sources=%d emissive_lights=%d lights=%d previous=%d atlases=%d begin_usec=%d end_usec=%d resources_usec=%d environment_usec=%d upload_usec=%d payload_span_usec=%d payload_max_chunk_usec=%d timing=elapsed", profile_frame, coordinator, parallel_payload ? 4 : 2, timings[1].work, emissive_sources.size(), emissive_lights.size(), current_lights.size(), previous_to_current.size(), atlas_indices.size(), owner_begin, owner_end, resources_end - timings[0].joined, environment_end - environment_begin, owner_end - timings[4].joined, MAX(timings[1].end, timings[2].end) - MIN(timings[1].begin, timings[2].begin), MAX(timings[1].end - timings[1].begin, timings[2].end - timings[2].begin));
-		print_line(rows);
-	}
-}
 
 // ---------------------------------------------------------------------------
 // Trace-time buffer dependencies

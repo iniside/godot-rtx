@@ -854,6 +854,22 @@ public:
 		}
 		return false;
 	}
+	struct LightBufferPreparation {
+		struct ClusterLight {
+			RSE::LightType type;
+			Transform3D transform;
+			float radius;
+			float spot_angle;
+			Vector2 area_size;
+		};
+		LocalVector<LightInstance *> admitted_lights;
+		LocalVector<ClusterLight> cluster_lights;
+		uint32_t directional_light_count = 0;
+		uint32_t positional_light_count = 0;
+		bool directional_light_soft_shadows = false;
+	};
+	void prepare_light_buffers(RenderDataRD *p_render_data, const PagedArray<RID> &p_lights, const Transform3D &p_camera_transform, RID p_shadow_atlas, bool p_using_shadows, LightBufferPreparation &r_preparation);
+	void publish_light_buffers(const LightBufferPreparation &p_preparation);
 	void update_light_buffers(RenderDataRD *p_render_data, const PagedArray<RID> &p_lights, const Transform3D &p_camera_transform, RID p_shadow_atlas, bool p_using_shadows, uint32_t &r_directional_light_count, uint32_t &r_positional_light_count, bool &r_directional_light_soft_shadows);
 
 	/* REFLECTION PROBE */

@@ -752,7 +752,11 @@ void LightStorage::set_max_lights(const uint32_t p_max_lights) {
 	directional_light_buffer = RD::get_singleton()->uniform_buffer_create(directional_light_buffer_size);
 }
 
-void LightStorage::update_light_buffers(RenderDataRD *p_render_data, const PagedArray<RID> &p_lights, const Transform3D &p_camera_transform, RID p_shadow_atlas, bool p_using_shadows, uint32_t &r_directional_light_count, uint32_t &r_positional_light_count, bool &r_directional_light_soft_shadows) {
+void LightStorage::prepare_light_buffers(RenderDataRD *p_render_data, const PagedArray<RID> &p_lights, const Transform3D &p_camera_transform, RID p_shadow_atlas, bool p_using_shadows, LightBufferPreparation &r_preparation) {
+	uint32_t &r_directional_light_count = r_preparation.directional_light_count;
+	uint32_t &r_positional_light_count = r_preparation.positional_light_count;
+	bool &r_directional_light_soft_shadows = r_preparation.directional_light_soft_shadows;
+
 	RendererRD::TextureStorage *texture_storage = RendererRD::TextureStorage::get_singleton();
 
 	Transform3D inverse_transform = p_camera_transform.affine_inverse();
@@ -769,7 +773,7 @@ void LightStorage::update_light_buffers(RenderDataRD *p_render_data, const Paged
 	if (p_lights.size() == 0) {
 		return;
 	}
-	LocalVector<LightInstance *> admitted_lights;
+	LocalVector<LightInstance *> &admitted_lights = r_preparation.admitted_lights;
 	auto prepare = [&]() {
 		for (int i = 0; i < (int)p_lights.size(); i++) {
 			LightInstance *light_instance = light_instance_owner.get_or_null(p_lights[i]);
@@ -1273,20 +1277,22 @@ void LightStorage::update_light_buffers(RenderDataRD *p_render_data, const Paged
 				light_data.shadow_opacity = 0.0;
 			}
 
-			RendererSceneRenderRD::get_singleton()->setup_added_light(type, light_transform, radius, spot_angle, area_size);
+			r_preparation.cluster_lights.push_back({ type, light_transform, radius, spot_angle, area_size });
 			r_positional_light_count++;
 		}
 	};
-	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
-	WorkerThreadPool::GroupID preparation_task = pool->add_native_group_task([](void *p_data, uint32_t) {
-		GodotProfileZone("LightBufferPreparation");
-		(*static_cast<decltype(prepare) *>(p_data))();
-	},
-			&prepare, 1, 1, true, SNAME("LightBufferPreparation"));
-	pool->wait_for_group_task_completion(preparation_task);
+	prepare();
+}
+
+void LightStorage::publish_light_buffers(const LightBufferPreparation &p_preparation) {
+	const uint32_t r_directional_light_count = p_preparation.directional_light_count;
+	const uint32_t r_positional_light_count = p_preparation.positional_light_count;
+	for (const auto &light : p_preparation.cluster_lights) {
+		RendererSceneRenderRD::get_singleton()->setup_added_light(light.type, light.transform, light.radius, light.spot_angle, light.area_size);
+	}
 
 	const uint64_t frame = RSG::rasterizer->get_frame_number();
-	for (LightInstance *light_instance : admitted_lights) {
+	for (LightInstance *light_instance : p_preparation.admitted_lights) {
 		light_instance->last_pass = frame;
 	}
 	ForwardIDStorage *forward_id_storage = ForwardIDStorage::get_singleton();
@@ -1318,6 +1324,15 @@ void LightStorage::update_light_buffers(RenderDataRD *p_render_data, const Paged
 	if (r_directional_light_count) {
 		RD::get_singleton()->buffer_update(directional_light_buffer, 0, sizeof(DirectionalLightData) * r_directional_light_count, directional_lights);
 	}
+}
+
+void LightStorage::update_light_buffers(RenderDataRD *p_render_data, const PagedArray<RID> &p_lights, const Transform3D &p_camera_transform, RID p_shadow_atlas, bool p_using_shadows, uint32_t &r_directional_light_count, uint32_t &r_positional_light_count, bool &r_directional_light_soft_shadows) {
+	LightBufferPreparation preparation;
+	prepare_light_buffers(p_render_data, p_lights, p_camera_transform, p_shadow_atlas, p_using_shadows, preparation);
+	publish_light_buffers(preparation);
+	r_directional_light_count = preparation.directional_light_count;
+	r_positional_light_count = preparation.positional_light_count;
+	r_directional_light_soft_shadows = preparation.directional_light_soft_shadows;
 }
 
 /* REFLECTION PROBE */

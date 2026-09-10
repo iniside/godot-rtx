@@ -4269,12 +4269,11 @@ bool TextureStorage::_pack_decal(const DecalInstanceSort &p_sort, const Transfor
 	return true;
 }
 
-void TextureStorage::update_decal_buffer(const PagedArray<RID> &p_decals, const Transform3D &p_camera_xform) {
+void TextureStorage::prepare_decal_buffer(const PagedArray<RID> &p_decals, const Transform3D &p_camera_xform, DecalBufferPreparation &r_preparation) {
 	decal_count = 0;
 	if (p_decals.size() == 0) {
 		return;
 	}
-	auto prepare = [&]() {
 		for (uint32_t i = 0; i < p_decals.size() && decal_count < max_decals; i++) {
 			if (_get_decal_sort(p_decals[i], p_camera_xform, decal_sort[decal_count])) {
 				decal_count++;
@@ -4285,17 +4284,15 @@ void TextureStorage::update_decal_buffer(const PagedArray<RID> &p_decals, const 
 		}
 		for (uint32_t i = 0; i < decal_count; i++) {
 			if (_pack_decal(decal_sort[i], p_camera_xform, decals[i])) {
-				RendererSceneRenderRD::get_singleton()->setup_added_decal(decal_sort[i].decal_instance->transform, decal_sort[i].decal->size / 2);
+				r_preparation.cluster_decals.push_back({ decal_sort[i].decal_instance->transform, decal_sort[i].decal->size / 2 });
 			}
 		}
-	};
-	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
-	WorkerThreadPool::GroupID preparation_task = pool->add_native_group_task([](void *p_data, uint32_t) {
-		GodotProfileZone("DecalBufferPreparation");
-		(*static_cast<decltype(prepare) *>(p_data))();
-	},
-			&prepare, 1, 1, true, SNAME("DecalBufferPreparation"));
-	pool->wait_for_group_task_completion(preparation_task);
+}
+
+void TextureStorage::publish_decal_buffer(const DecalBufferPreparation &p_preparation) {
+	for (const auto &decal : p_preparation.cluster_decals) {
+		RendererSceneRenderRD::get_singleton()->setup_added_decal(decal.transform, decal.half_size);
+	}
 
 	ForwardIDStorage *forward_id_storage = ForwardIDStorage::get_singleton();
 	const bool using_forward_ids = forward_id_storage->uses_forward_ids();
@@ -4309,6 +4306,12 @@ void TextureStorage::update_decal_buffer(const PagedArray<RID> &p_decals, const 
 	if (decal_count > 0) {
 		RD::get_singleton()->buffer_update(decal_buffer, 0, sizeof(DecalData) * decal_count, decals);
 	}
+}
+
+void TextureStorage::update_decal_buffer(const PagedArray<RID> &p_decals, const Transform3D &p_camera_xform) {
+	DecalBufferPreparation preparation;
+	prepare_decal_buffer(p_decals, p_camera_xform, preparation);
+	publish_decal_buffer(preparation);
 }
 
 TextureStorage::RTDecalSnapshot TextureStorage::build_rt_decal_snapshot(const PagedArray<RID> &p_resident_decals, const PagedArray<RID> &p_camera_decals, const Transform3D &p_camera_xform, const Vector3 &p_rt_origin) {

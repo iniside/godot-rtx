@@ -2190,16 +2190,62 @@ uint32_t RenderForwardClustered::_count_directional_lights(const RenderDataRD *p
 	return count;
 }
 
-void RenderForwardClustered::_pre_opaque_render(RenderDataRD *p_render_data) {
+struct RenderForwardClustered::LightClusterPreparation {
+	RenderDataRD *render_data;
+	RendererRD::LightStorage::LightBufferPreparation lights;
+	RendererRD::TextureStorage::DecalBufferPreparation decals;
+	WorkerThreadPool::GroupID light_task = -1;
+	WorkerThreadPool::GroupID decal_task = -1;
+
+	static void prepare_lights(void *p_data, uint32_t) {
+		GodotProfileZone("LightBufferPreparation");
+		LightClusterPreparation &preparation = *static_cast<LightClusterPreparation *>(p_data);
+		RenderDataRD *data = preparation.render_data;
+		RendererRD::LightStorage::get_singleton()->prepare_light_buffers(data, *data->lights, data->scene_data->cam_transform, data->shadow_atlas, true, preparation.lights);
+	}
+	static void prepare_decals(void *p_data, uint32_t) {
+		GodotProfileZone("DecalBufferPreparation");
+		LightClusterPreparation &preparation = *static_cast<LightClusterPreparation *>(p_data);
+		RendererRD::TextureStorage::get_singleton()->prepare_decal_buffer(*preparation.render_data->decals, preparation.render_data->scene_data->cam_transform, preparation.decals);
+	}
+	LightClusterPreparation(RenderDataRD *p_render_data) : render_data(p_render_data) {
+		if (render_data->decals->size()) {
+			decal_task = WorkerThreadPool::get_singleton()->try_add_native_group_task(prepare_decals, this, 1, 1, true, SNAME("DecalBufferPreparation"));
+		}
+		if (decal_task < 0) {
+			prepare_decals(this, 0);
+		}
+	}
+	void begin_lights() {
+		if (render_data->lights->size()) {
+			light_task = WorkerThreadPool::get_singleton()->try_add_native_group_task(prepare_lights, this, 1, 1, true, SNAME("LightBufferPreparation"));
+		}
+		if (light_task < 0) {
+			prepare_lights(this, 0);
+		}
+	}
+	void join_lights() {
+		if (light_task >= 0) {
+			WorkerThreadPool::get_singleton()->wait_for_group_task_completion(light_task);
+			light_task = -1;
+		}
+	}
+	void join_decals() {
+		if (decal_task >= 0) {
+			WorkerThreadPool::get_singleton()->wait_for_group_task_completion(decal_task);
+			decal_task = -1;
+		}
+	}
+	~LightClusterPreparation() {
+		join_lights();
+		join_decals();
+	}
+};
+
+void RenderForwardClustered::_render_shadows(RenderDataRD *p_render_data) {
 	RendererRD::LightStorage *light_storage = RendererRD::LightStorage::get_singleton();
 
 	Ref<RenderSceneBuffersRD> rb = p_render_data->render_buffers;
-	Ref<RenderBufferDataForwardClustered> rb_data;
-	if (rb.is_valid() && rb->has_custom_data(RB_SCOPE_FORWARD_CLUSTERED)) {
-		// Our forward clustered custom data buffer will only be available when we're rendering our normal view.
-		// This will not be available when rendering reflection probes.
-		rb_data = rb->get_custom_data(RB_SCOPE_FORWARD_CLUSTERED);
-	}
 
 	RENDER_TIMESTAMP("Setup Shadows");
 
@@ -2269,12 +2315,22 @@ void RenderForwardClustered::_pre_opaque_render(RenderDataRD *p_render_data) {
 	if (render_shadows) {
 		_render_shadow_end();
 	}
+}
+
+void RenderForwardClustered::_pre_opaque_render(RenderDataRD *p_render_data, LightClusterPreparation &p_preparation) {
+	Ref<RenderSceneBuffersRD> rb = p_render_data->render_buffers;
+	Ref<RenderBufferDataForwardClustered> rb_data;
+	if (rb.is_valid() && rb->has_custom_data(RB_SCOPE_FORWARD_CLUSTERED)) {
+		// Our forward clustered custom data buffer will only be available when we're rendering our normal view.
+		// This will not be available when rendering reflection probes.
+		rb_data = rb->get_custom_data(RB_SCOPE_FORWARD_CLUSTERED);
+	}
 
 	RENDER_TIMESTAMP("Pre Opaque Render");
 
 	uint32_t directional_light_count = 0;
 	uint32_t positional_light_count = 0;
-	_setup_lights_cluster_decals(p_render_data, directional_light_count, positional_light_count);
+	_setup_lights_cluster_decals(p_render_data, p_preparation, directional_light_count, positional_light_count);
 
 	if (rb_data.is_valid()) {
 		RENDER_TIMESTAMP("Update Volumetric Fog");
@@ -2283,7 +2339,7 @@ void RenderForwardClustered::_pre_opaque_render(RenderDataRD *p_render_data) {
 	}
 }
 
-void RenderForwardClustered::_setup_lights_cluster_decals(RenderDataRD *p_render_data, uint32_t &r_directional_light_count, uint32_t &r_positional_light_count) {
+void RenderForwardClustered::_setup_lights_cluster_decals(RenderDataRD *p_render_data, LightClusterPreparation &p_preparation, uint32_t &r_directional_light_count, uint32_t &r_positional_light_count) {
 	RendererRD::LightStorage *light_storage = RendererRD::LightStorage::get_singleton();
 	RendererRD::TextureStorage *texture_storage = RendererRD::TextureStorage::get_singleton();
 
@@ -2296,10 +2352,13 @@ void RenderForwardClustered::_setup_lights_cluster_decals(RenderDataRD *p_render
 		current_cluster_builder->begin(p_render_data->scene_data->cam_transform, p_render_data->scene_data->cam_projection, !p_render_data->reflection_probe.is_valid());
 	}
 
-	r_directional_light_count = 0;
-	r_positional_light_count = 0;
-	light_storage->update_light_buffers(p_render_data, *p_render_data->lights, p_render_data->scene_data->cam_transform, p_render_data->shadow_atlas, true, r_directional_light_count, r_positional_light_count, p_render_data->directional_light_soft_shadows);
-	texture_storage->update_decal_buffer(*p_render_data->decals, p_render_data->scene_data->cam_transform);
+	p_preparation.join_lights();
+	light_storage->publish_light_buffers(p_preparation.lights);
+	r_directional_light_count = p_preparation.lights.directional_light_count;
+	r_positional_light_count = p_preparation.lights.positional_light_count;
+	p_render_data->directional_light_soft_shadows = p_preparation.lights.directional_light_soft_shadows;
+	p_preparation.join_decals();
+	texture_storage->publish_decal_buffer(p_preparation.decals);
 
 	p_render_data->directional_light_count = r_directional_light_count;
 
@@ -2591,6 +2650,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	p_render_data->scene_data->directional_light_count = 0;
 	p_render_data->scene_data->opaque_prepass_threshold = 0.0f;
 	p_render_data->scene_data->emissive_exposure_normalization = -1.0f;
+	LightClusterPreparation light_preparation(p_render_data);
 	const uint64_t engine_frame = RSG::rasterizer->get_frame_number();
 	auto prepare_camera_motion = [&](uint32_t) {
 		for (const PagedArray<RenderGeometryInstance *> *instances : { p_render_data->instances, p_render_data->rt_instances }) {
@@ -2601,14 +2661,22 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 			}
 		}
 	};
-	auto prepare_camera_motion_job = WorkerThreadPool::get_singleton()->add_native_group_task([](void *p_data, uint32_t p_index) {
-		GodotProfileZone("prepare_camera_motion");
-		(*static_cast<decltype(prepare_camera_motion) *>(p_data))(p_index);
-	},
-			&prepare_camera_motion, 1, 1, true, SNAME("prepare_camera_motion"));
-	WorkerThreadPool::get_singleton()->wait_for_group_task_completion(prepare_camera_motion_job);
+	WorkerThreadPool::GroupID prepare_camera_motion_job = -1;
+	if ((p_render_data->instances && p_render_data->instances->size()) || (p_render_data->rt_instances && p_render_data->rt_instances->size())) {
+		prepare_camera_motion_job = WorkerThreadPool::get_singleton()->try_add_native_group_task([](void *p_data, uint32_t p_index) {
+			GodotProfileZone("prepare_camera_motion");
+			(*static_cast<decltype(prepare_camera_motion) *>(p_data))(p_index);
+		},
+				&prepare_camera_motion, 1, 1, true, SNAME("prepare_camera_motion"));
+	}
+	if (prepare_camera_motion_job < 0) {
+		prepare_camera_motion(0);
+	}
 	_setup_environment(p_render_data, false, screen_size, screen_size, p_default_bg_color, false);
 	_update_render_base_uniform_set();
+	if (prepare_camera_motion_job >= 0) {
+		WorkerThreadPool::get_singleton()->wait_for_group_task_completion(prepare_camera_motion_job);
+	}
 	_update_dirty_geometry_instances();
 	bool invalid_deformation = false;
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
@@ -2624,13 +2692,17 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 			}
 		}
 	};
-	auto prepare_deformation_validity_job = WorkerThreadPool::get_singleton()->add_native_group_task([](void *p_data, uint32_t p_index) {
-		GodotProfileZone("prepare_deformation_validity");
-		(*static_cast<decltype(prepare_deformation_validity) *>(p_data))(p_index);
-	},
-			&prepare_deformation_validity, 1, 1, true, SNAME("prepare_deformation_validity"));
-	WorkerThreadPool::get_singleton()->wait_for_group_task_completion(prepare_deformation_validity_job);
-	color_framebuffer = rb_data->prepare_rtxdi_surface(p_render_data->scene_data, invalid_deformation);
+	WorkerThreadPool::GroupID prepare_deformation_validity_job = -1;
+	if (p_render_data->instances->size()) {
+		prepare_deformation_validity_job = WorkerThreadPool::get_singleton()->try_add_native_group_task([](void *p_data, uint32_t p_index) {
+			GodotProfileZone("prepare_deformation_validity");
+			(*static_cast<decltype(prepare_deformation_validity) *>(p_data))(p_index);
+		},
+				&prepare_deformation_validity, 1, 1, true, SNAME("prepare_deformation_validity"));
+	}
+	if (prepare_deformation_validity_job < 0) {
+		prepare_deformation_validity(0);
+	}
 
 	_update_dirty_geometry_pipelines();
 	RID radiance_texture;
@@ -2722,6 +2794,13 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		clear_color = p_default_bg_color.srgb_to_linear();
 	}
 
+	if (prepare_deformation_validity_job >= 0) {
+		WorkerThreadPool::get_singleton()->wait_for_group_task_completion(prepare_deformation_validity_job);
+	}
+	color_framebuffer = rb_data->prepare_rtxdi_surface(p_render_data->scene_data, invalid_deformation);
+	_render_shadows(p_render_data);
+	light_preparation.begin_lights();
+
 	const uint64_t camera_history_epoch = raytracing->_get_viewport_state(p_render_data)->camera_history_epoch;
 	RenderListPreparation *camera_preparation = _begin_render_list(RENDER_LIST_OPAQUE, p_render_data, PASS_MODE_RTXDI_SURFACE);
 	RTViewportState *rt_state = raytracing->build_tlas(p_render_data);
@@ -2732,7 +2811,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	ERR_FAIL_NULL(rt_state);
 	const bool geometry_history_changed = camera_history_epoch != rt_state->camera_history_epoch;
 	ERR_FAIL_COND_MSG(!raytracing->_prepare_ddgi(rt_state, rb->is_ddgi_debug_freeze_anchor()), "Camera-following DDGI state preparation failed.");
-	_pre_opaque_render(p_render_data);
+	_pre_opaque_render(p_render_data, light_preparation);
 	SceneShaderForwardClustered::ShaderSpecialization base_specialization = scene_shader.default_specialization;
 	base_specialization.cluster_has_area_light = current_cluster_builder->get_cluster_count_by_type(ClusterBuilderRD::ELEMENT_TYPE_AREA_LIGHT) != 0;
 	p_render_data->scene_data->directional_light_count = p_render_data->directional_light_count;
