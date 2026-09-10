@@ -84,11 +84,23 @@ Final source round 2 REJECT finds synchronous RT decal snapshot preparation at
 `render_raytracing.cpp:4502` / `texture_storage.cpp:4314`. Move this CPU work to
 a joined worker before publication/uploads; it is separate from the corrected
 conventional decal path and is not blamed for the decal-free dense regression.
-The two-round cap is reached; source work stops pending owner continuation.
-Remaining performance diagnosis and named Step 5 proof audit are open.
+The owner explicitly renews the closure on 2026-09-10 and requests finer
+instrumentation. Measured correction `617a3abca7` moves nonempty RT decal
+snapshot preparation to a joined worker, eliminates repeated motion traversal
+and empty canvas jobs, and batches dependent phases. Ordinary/double/template
+builds and dense/moving/gallery Vulkan runs pass. Local owner elapsed medians
+are 389.5 versus 90 us for the RT registry and 380 versus 212.5 us for canvas
+batching, but compiler overlap in the candidate profile prevents an isolated
+timing claim. Structural work/job reductions are verified. Dense no-profile
+medians of control 34, candidate 38 and repeat 34 FPS
+do not establish a durable whole-frame gain. Fresh source review and named
+Step 5 engine proof audit remain open; nonempty RT decal runtime is unverified.
 Dense HUD `1f339891f9` displays wall FPS/frame, CPU rendering including waits,
-and completed GPU time; native PNG inspection confirms readable counters.
-Worker recording and conditional async compute remain pending.
+and completed GPU time; native PNG inspection and the independent HUD-specific
+proof audit pass with the recorded single-frame and diagnostic-log limits.
+Step 6 worker frontend/driver recording is delegated from `617a3abca7`;
+implementation and measured acceptance remain open. Conditional async compute
+has not started.
 Actual dragon import/reimport passed in 82.66/67.04 seconds, yielding 17 DAG
 levels and 9737 pages with byte-identical reused `.mgdata`; the diagnostic
 reimport command had shutdown warnings. Import evidence uses an immutable

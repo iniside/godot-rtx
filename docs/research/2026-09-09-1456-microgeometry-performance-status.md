@@ -888,3 +888,133 @@ proof audit are outstanding. Step 6 recording and conditional Step 7 async
 compute have not started. The next authorized continuation should address the
 specific snapshot call above, retain the final18source/binary evidence and use
 the quiet matched baseline; do not rewrite SceneTree or add a new renderer layer.
+
+
+## Renewed measured closure (2026-09-10)
+
+The owner explicitly resumes after the two-round stop and requests more counters
+rather than repeated speculative optimizations. Renewed task baseline is
+`daa4003f7e71aec873e6f6c4e80f053b24f381b3`. The existing sampled RenderPrep
+mechanism is extended in four engine implementation files; no second profiler,
+public setting, per-instance printing or automated test is added. Records use
+frame numbers, work/job counts and queued/begin/end/join times, plus bounded
+resource-resolution/publication/upload intervals. Payload spans are elapsed
+including preemption, not summed active CPU. The only initial behavior change
+moves nonempty RT decal snapshot preparation to a joined worker; empty snapshot
+semantics remain on the existing constant-time path without dispatching a job.
+
+Initial detail01 build fails because PagedArray has size(), not is_empty(); the
+one-line API correction is verified against its actual header. Detail02 ordinary
+build passes in 35.33 seconds. Its held-source manifest and patch are
+`step5-detail02-source.json` and `step5-detail02.patch`; pinned ordinary SHA256
+is `c82a9e6276dfbd6f7a547af6e2efa1a7745289192a62101eca9301a5453abe12`.
+`step5-detail02-profile` completes 1500 fixed60/orbit native Vulkan iterations,
+exit 0 without Godot ERROR or timeout. A parallel one-second process telemetry
+capture (`step5-detail02-host.jsonl`) records 145 samples: no cl/link process,
+and zero cumulative CPU increase for the four observed clangd processes. This
+rules out those observed compiler processes as this run's confounder, not all
+possible host interference.
+
+Across twelve sampled frames, the detailed rows establish:
+
+| Measured stage | Work | Elapsed observation |
+| --- | --- | --- |
+| Geometry motion preparation | 3 jobs/frame, each scans 10001 instances, dirty=0 | Median payload 189 us; containing owner invocation 223 us |
+| RT light registry | 5 callback units in 4 group submissions; one analytic light, zero emissive sources, two resulting lights | Owner 389.5 us; analytic payload 7 us, empty emissive 0 us, merge 3 us, history 6.5 us |
+| Canvas tree preparation | 2 invocations/frame, one empty and one with two roots; 3 jobs each | Owner median 308.5 us, payload span 23.5 us |
+| Canvas batch preparation | 3 jobs for two items / 310 commands | Owner 380 us; payload 42.5 us and merge 36.5 us |
+| RT decal snapshot | Zero camera/resident decals | 0 jobs, 1 us, no upload |
+
+These are medians per invocation, not sums of overlapping work or frame
+percentiles. `step5-detail02-summary.json` retains sample counts and per-frame
+invocation counts. Root source inspection also corrects interpretation of the
+coarse RT Decals and Lights timestamp: it extends through the build_tlas tail,
+camera-list completion/sort/payload and DDGI preparation until Setup Shadows.
+Its entire 1.27 ms must not be attributed to the 389.5-us light-registry interval.
+
+The resulting bounded changes selected for implementation are one motion-list
+aging traversal per frame with same-frame insertion invalidation and independent
+dirty drains; skipping zero-root canvas tree jobs while retaining the downstream
+renderer call; merging one-chunk results on that existing owning worker; and
+coalescing dependent RT registry phases while retaining parallel payload workers
+when both independent inputs are nonempty. No SceneTree rewrite, threshold
+solver, DDGI redesign or unrelated optimization is selected. Final builds,
+matched measurements and a fresh review of this renewed closure remain pending.
+
+Named `dense_hud_proof` independently returns PASS for HUD commit `1f339891f9`
+and its exact three-file task range. It verifies actual population, binary/input
+identity, native receipt, metric semantics and readable PNG SHA256
+`8ce5d4a8519130f53f42ccaa7e60ae6b2dee0bb67dc3dc9ebdd9a535ada6372a`.
+The artifact proves one still sample; cadence/orbit behavior is source-backed,
+not established by a static PNG. The capture log has zero Godot ERROR lines but
+32 lowercase SPIR-V Parsing error diagnostics, so it is not warning/error-text
+clean. This closes the HUD-specific proof audit, not final Step 5 performance.
+
+The measured batched01 candidate builds ordinary editor in 34.16 seconds and
+double editor in 33.04 seconds. Its ordinary executable SHA256 is
+`b34644cb5cf374014fcc2d8abd3f10b9ff43d5b6b1315bf2cfaee726ee71660b`;
+`step5-batched01-source.json` and `step5-batched01.patch` retain its held source.
+The final profile completes 1500 fixed60/orbit Vulkan iterations, exit 0 without
+Godot ERROR or timeout. Twelve sampled frames confirm one actual 10001-instance
+motion traversal per frame instead of three; the other two invocations retain
+independent dirty processing. Empty canvas cull now dispatches zero jobs
+(median 0.5 us), while the two-root invocation uses two jobs (median 232 us).
+Canvas batching uses two jobs and has median owner elapsed 212.5 us, versus
+380 us previously, with unchanged 310 commands, 310 instances, eight batches
+and 39680 uploaded bytes. The fused payload span includes its merge; these
+nested spans must not be added together.
+
+RT light registry now uses two callback jobs for this input, with median owner
+elapsed 90 us versus 389.5 us. The actual registry callback spans 12.5 us;
+environment and upload remain owner work at medians 5 and 11 us. Phase rows
+inside the callback are nested intervals, not separate scheduler waits.
+Empty RT decal snapshot remains zero jobs (median 1.5 us). Nonempty RT decal
+snapshot worker execution is source-backed only: no existing bounded native
+fixture exercises a nonempty RT decal population. Counter aggregates are retained
+in `step5-detail02-summary.json` and `step5-batched01-summary.json`.
+
+All three matched no-profile dense runs finish normally without Godot ERROR or
+timeout. Last-ten FPS medians are 34 for `step5-detail02-control-no-profile`,
+38 for `step5-batched01-no-profile`, and 34 for the candidate repeat
+`step5-batched01-warm-no-profile`. The repeat does not establish a durable
+whole-frame gain. The first control/candidate runs contain isolated 13/3-FPS
+windows despite settled page/CLAS counts; their cause is unproven. Structural
+work reductions above are established, but total performance is not
+declared fixed and no stutter is attributed to SceneTree or shader compilation.
+
+The independent proof audit finds cl/link processes during the final candidate
+profile interval (06:25:53.732-06:27:29.187 UTC). The available profile monitor
+starts at 06:26:48.749, so it does not cover the entire run. Four compiler/linker
+processes appear only in the last in-run sample at 06:27:28.562; their combined
+cumulative CPU is 0.796875 seconds, but one sample cannot determine CPU earned
+inside the native interval. Final local elapsed numbers are observations with
+unexcluded host interference, not isolated speedup proof. Work counts and source
+identity remain valid. The later root double and
+template builds finish at 06:34:45 and 06:35:29 UTC and do not explain those
+earlier compiler processes. Their workload is unidentified. Control/candidate
+no-profile telemetry covers almost the full runs (88/85 samples) without compiler
+processes or observed clangd CPU increase; warm-repeat telemetry covers only its
+last approximately 43 seconds, which are quiet. The candidate profile contains
+32 lowercase SPIR-V Parsing error diagnostics and zero Godot ERROR lines; normal
+exit is not a claim that all diagnostics are absent.
+
+The five-file candidate is committed at
+`617a3abca7b27832ef2e791a0949a8017658402c`. All eighteen held Step 5 source hashes
+match the commit after LF normalization and the built working bytes exactly;
+`step5-batched01-commit-map.json` records both comparisons. Template build passes
+in 26.02 seconds. Pinned double/template executable SHA256 values are
+`87add8709fdbd8257d5e67eda90d89323657f182707e985f74bf7e3addc08c5b` and
+`4cd181ac8277ed386818271b979eee07e9175d60a052d21d6b0170d3b892f50d`;
+`step5-batched01-binaries.json` records the retained binary/DLL set. Double and
+template are build-only evidence. Ordinary native `step5-batched01-moving` and
+`step5-batched01-gallery` each complete 300 fixed60 iterations on the existing
+microgeometry orbit and hybrid-NRD gallery scenes, exit 0 without Godot ERROR
+or timeout. No appearance or nonempty-decal execution claim follows from these
+launches. Fresh `step5_measured_review1` and named `step5_measured_proof` are
+reviewing the frozen source and evidence independently.
+
+Step 6 is delegated from the same source revision, reusing the existing graph
+recording research. Its scope remains actual isolated frontend production,
+worker graph compilation and draw/compute/RT driver recording, with one graph
+barrier authority and joined CPU jobs before command-pool reuse. No Step 6
+implementation, build, overlap or performance acceptance is claimed yet.
