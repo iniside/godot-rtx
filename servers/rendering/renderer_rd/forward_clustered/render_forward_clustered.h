@@ -765,6 +765,7 @@ protected:
 	SelfList<GeometryInstanceForwardClustered>::List geometry_instance_dirty_list;
 	SelfList<GeometryInstanceForwardClustered>::List instance_data_dirty_list;
 	SelfList<GeometryInstanceForwardClustered>::List instance_motion_update_list;
+	uint64_t instance_motion_update_frame = UINT64_MAX;
 	SelfList<GeometryInstanceSurfaceDataCache>::List geometry_surface_compilation_dirty_list;
 	SelfList<GeometryInstanceSurfaceDataCache>::List geometry_surface_compilation_all_list;
 

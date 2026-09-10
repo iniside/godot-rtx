@@ -5240,14 +5240,37 @@ void RenderForwardClustered::_mesh_generate_all_pipelines_for_surface_cache(Geom
 
 void RenderForwardClustered::_update_dirty_geometry_instances() {
 	RENDER_TIMESTAMP("Geometry Dirty Instances");
+	const uint64_t profile_frame = RSG::rasterizer->get_frame_number();
+	const bool profile_preparation = RSG::utilities->capturing_timestamps && profile_frame % 120 == 0;
+	const uint64_t coordinator = profile_preparation ? Thread::get_caller_id() : 0;
+	const uint64_t owner_begin = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+	uint64_t geometry_count = 0;
+	uint64_t motion_count = 0;
+	uint64_t worker = 0;
+	uint64_t job_begin = 0;
+	uint64_t job_end = 0;
+	uint64_t queued = 0;
+	uint64_t joined = 0;
+	uint32_t jobs = 0;
 	while (geometry_instance_dirty_list.first()) {
 		_geometry_instance_update(geometry_instance_dirty_list.first()->self());
+		if (profile_preparation) {
+			geometry_count++;
+		}
 	}
 
+	const uint64_t geometry_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	const uint64_t frame = RSG::rasterizer->get_frame_number();
 	LocalVector<RenderGeometryInstance *> dirty_instances;
 	auto collect = [&](uint32_t) {
-		for (auto *entry = instance_motion_update_list.first(); entry;) {
+		if (profile_preparation) {
+			worker = Thread::get_caller_id();
+			job_begin = OS::get_singleton()->get_ticks_usec();
+		}
+		for (auto *entry = instance_motion_update_frame != frame ? instance_motion_update_list.first() : nullptr; entry;) {
+			if (profile_preparation) {
+				motion_count++;
+			}
 			auto *next = entry->next();
 			GeometryInstanceForwardClustered *instance = entry->self();
 			if (instance->last_aged_frame == frame) {
@@ -5263,28 +5286,54 @@ void RenderForwardClustered::_update_dirty_geometry_instances() {
 			entry = next;
 		}
 
+		instance_motion_update_frame = frame;
+
 		while (instance_data_dirty_list.first()) {
 			GeometryInstanceForwardClustered *instance = instance_data_dirty_list.first()->self();
 			instance->instance_data_dirty_element.remove_from_list();
 			dirty_instances.push_back(instance);
 		}
+		if (profile_preparation) {
+			job_end = OS::get_singleton()->get_ticks_usec();
+		}
 	};
 	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
-	if (instance_motion_update_list.first() || instance_data_dirty_list.first()) {
+	if ((instance_motion_update_frame != frame && instance_motion_update_list.first()) || instance_data_dirty_list.first()) {
+		jobs = 1;
+		queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 		auto job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
 			GodotProfileZone("GeometryMotionPreparation");
 			(*static_cast<decltype(collect) *>(p_data))(p_index);
 		},
 				&collect, 1, 1, true, SNAME("GeometryMotionPreparation"));
 		pool->wait_for_group_task_completion(job);
+		joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	}
 	RENDER_TIMESTAMP("Geometry Persistent Upload");
+	const uint64_t persistent_begin = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	if (raytracing) {
 		raytracing->update_persistent_instances(dirty_instances);
 	}
+	const uint64_t persistent_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	RENDER_TIMESTAMP("Geometry Pipeline Update");
+	uint32_t pipeline_count = 0;
+	const bool all_pipelines = global_pipeline_data_required.key != global_pipeline_data_compiled.key;
+	if (profile_preparation) {
+		auto *entry = all_pipelines ? geometry_surface_compilation_all_list.first() : geometry_surface_compilation_dirty_list.first();
+		while (entry) {
+			pipeline_count++;
+			entry = entry->next();
+		}
+	}
+	const uint64_t pipeline_begin = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	_update_dirty_geometry_pipelines();
 	RENDER_TIMESTAMP("Geometry Dirty Update Complete");
+	if (profile_preparation) {
+		const uint64_t owner_end = OS::get_singleton()->get_ticks_usec();
+		String rows = vformat("RenderPrep stage=GeometryMotionPreparation frame=%d coordinator=%d jobs=%d motion=%d dirty=%d queued_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d timing=elapsed", profile_frame, coordinator, jobs, motion_count, dirty_instances.size(), queued, joined, worker, job_begin, job_end) + "\n";
+		rows += vformat("RenderPrep stage=GeometryDirtyOwner frame=%d coordinator=%d geometry=%d dirty=%d pipelines=%d all_pipelines=%d begin_usec=%d end_usec=%d geometry_usec=%d persistent_usec=%d pipeline_usec=%d timing=elapsed", profile_frame, coordinator, geometry_count, dirty_instances.size(), pipeline_count, int(all_pipelines), owner_begin, owner_end, geometry_end - owner_begin, persistent_end - persistent_begin, owner_end - pipeline_begin);
+		print_line(rows);
+	}
 }
 
 void RenderForwardClustered::_update_dirty_geometry_pipelines() {
@@ -5861,5 +5910,6 @@ void RenderForwardClustered::GeometryInstanceForwardClustered::_mark_instance_da
 	}
 	if (data && (transform_status != NONE || data->base_type == RSE::INSTANCE_MULTIMESH) && !motion_update_element.in_list()) {
 		renderer->instance_motion_update_list.add(&motion_update_element);
+		renderer->instance_motion_update_frame = UINT64_MAX;
 	}
 }

@@ -516,6 +516,19 @@ void RendererCanvasRenderRD::canvas_render_items(RID p_to_render_target, Item *p
 
 	r_sdf_used = false;
 	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+	const uint64_t profile_frame = RSG::rasterizer->get_frame_number();
+	const bool profile_preparation = RSG::utilities->capturing_timestamps && profile_frame % 120 == 0;
+	const uint64_t coordinator = profile_preparation ? Thread::get_caller_id() : 0;
+	const uint64_t owner_begin = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+	struct JobTiming {
+		uint64_t queued = 0;
+		uint64_t begin = 0;
+		uint64_t end = 0;
+		uint64_t joined = 0;
+		uint64_t worker = 0;
+	};
+	JobTiming timings[2];
+	uint64_t visited_items = 0;
 
 	//setup canvas state uniforms if needed
 
@@ -539,6 +552,10 @@ void RendererCanvasRenderRD::canvas_render_items(RID p_to_render_target, Item *p
 	};
 	HashMap<RID, MaterialFlags> material_flags;
 	auto prepare_lights = [&](uint32_t) {
+		if (profile_preparation) {
+			timings[0].worker = Thread::get_caller_id();
+			timings[0].begin = OS::get_singleton()->get_ticks_usec();
+		}
 		{
 			Light *l = p_directional_light_list;
 			uint32_t index = 0;
@@ -740,18 +757,26 @@ void RendererCanvasRenderRD::canvas_render_items(RID p_to_render_target, Item *p
 		}
 
 		for (const Item *item = p_item_list; item; item = item->next) {
+			if (profile_preparation) {
+				visited_items++;
+			}
 			RID material = item->material_owner == nullptr ? item->material : item->material_owner->material;
 			if (material.is_valid()) {
 				material_flags.insert(material, MaterialFlags());
 			}
 		}
+		if (profile_preparation) {
+			timings[0].end = OS::get_singleton()->get_ticks_usec();
+		}
 	};
+	timings[0].queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	auto job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
 		GodotProfileZone("CanvasLightPayload");
 		(*static_cast<decltype(prepare_lights) *>(p_data))(p_index);
 	},
 			&prepare_lights, 1, 1, true, SNAME("CanvasLightPayload"));
 	pool->wait_for_group_task_completion(job);
+	timings[0].joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	if (light_count > 0) {
 		RD::get_singleton()->buffer_update(state.lights_storage_buffer, 0, sizeof(LightUniform) * light_count, &state.light_uniforms[0]);
 	}
@@ -789,6 +814,10 @@ void RendererCanvasRenderRD::canvas_render_items(RID p_to_render_target, Item *p
 	LocalVector<Item *> clear_group_owners;
 	bool time_used = false;
 	auto prepare_segments = [&](uint32_t) {
+		if (profile_preparation) {
+			timings[1].worker = Thread::get_caller_id();
+			timings[1].begin = OS::get_singleton()->get_ticks_usec();
+		}
 		int item_count = 0;
 		bool use_canvas_group = false;
 		LocalVector<PreparedItem> pending_items;
@@ -978,13 +1007,28 @@ void RendererCanvasRenderRD::canvas_render_items(RID p_to_render_target, Item *p
 
 			ci = ci->next;
 		}
+		if (profile_preparation) {
+			timings[1].end = OS::get_singleton()->get_ticks_usec();
+		}
 	};
+	timings[1].queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
 		GodotProfileZone("CanvasSegments");
 		(*static_cast<decltype(prepare_segments) *>(p_data))(p_index);
 	},
 			&prepare_segments, 1, 1, true, SNAME("CanvasSegments"));
 	pool->wait_for_group_task_completion(job);
+	timings[1].joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+	if (profile_preparation) {
+		const char *names[] = { "CanvasLightPayload", "CanvasSegments" };
+		String rows;
+		for (uint32_t index = 0; index < 2; index++) {
+			const JobTiming &timing = timings[index];
+			rows += vformat("RenderPrep stage=%s frame=%d coordinator=%d jobs=1 items=%d lights=%d directional=%d materials=%d operations=%d queued_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d timing=elapsed", names[index], profile_frame, coordinator, visited_items, light_count, directional_light_count, material_flags.size(), operations.size(), timing.queued, timing.joined, timing.worker, timing.begin, timing.end) + "\n";
+		}
+		rows += vformat("RenderPrep stage=CanvasSegmentOwner frame=%d coordinator=%d jobs=2 begin_usec=%d end_usec=%d resources_upload_usec=%d timing=elapsed", profile_frame, coordinator, owner_begin, timings[1].joined, timings[1].queued - timings[0].joined);
+		print_line(rows);
+	}
 	for (Item *item : clear_group_owners) {
 		item->canvas_group_owner = nullptr;
 	}
@@ -2278,6 +2322,21 @@ uint32_t RendererCanvasRenderRD::get_pipeline_compilations(RSE::PipelineSource p
 
 void RendererCanvasRenderRD::_render_batch_items(RenderTarget p_to_render_target, const LocalVector<PreparedItem> &p_items, const Transform2D &p_canvas_transform_inverse, Light *p_lights, bool &r_sdf_used, bool p_to_backbuffer, RenderingServerTypes::RenderInfo *r_render_info) {
 	const int p_item_count = p_items.size();
+	const uint64_t profile_frame = RSG::rasterizer->get_frame_number();
+	const bool profile_preparation = RSG::utilities->capturing_timestamps && profile_frame % 120 == 0;
+	const uint64_t coordinator = profile_preparation ? Thread::get_caller_id() : 0;
+	const uint64_t owner_begin = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+	struct JobTiming {
+		uint64_t queued = 0;
+		uint64_t begin = 0;
+		uint64_t end = 0;
+		uint64_t joined = 0;
+		uint64_t worker = 0;
+	};
+	JobTiming timings[2];
+	uint64_t visited_items = 0;
+	uint64_t commands = 0;
+
 	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
 	HashSet<TextureState> textures;
 	HashMap<RID, CanvasMaterialData *> materials;
@@ -2295,12 +2354,22 @@ void RendererCanvasRenderRD::_render_batch_items(RenderTarget p_to_render_target
 	};
 	bool particles_used = false;
 	auto discover = [&](uint32_t) {
+		if (profile_preparation) {
+			timings[0].worker = Thread::get_caller_id();
+			timings[0].begin = OS::get_singleton()->get_ticks_usec();
+		}
 		for (int i = 0; i < p_item_count; i++) {
 			const Item *item = p_items[i].item;
+			if (profile_preparation) {
+				visited_items++;
+			}
 			materials.insert(item_material(p_items[i]), nullptr);
 			const auto filter = item->texture_filter == RSE::CANVAS_ITEM_TEXTURE_FILTER_DEFAULT ? default_filter : item->texture_filter;
 			const auto repeat = item->texture_repeat == RSE::CANVAS_ITEM_TEXTURE_REPEAT_DEFAULT ? default_repeat : item->texture_repeat;
 			for (const Item::Command *command = item->commands; command; command = command->next) {
+				if (profile_preparation) {
+					commands++;
+				}
 				RID texture;
 				auto command_repeat = repeat;
 				bool is_data = false;
@@ -2343,13 +2412,18 @@ void RendererCanvasRenderRD::_render_batch_items(RenderTarget p_to_render_target
 			}
 #endif
 		}
+		if (profile_preparation) {
+			timings[0].end = OS::get_singleton()->get_ticks_usec();
+		}
 	};
+	timings[0].queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	auto job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
 		GodotProfileZone("CanvasResourceDiscovery");
 		(*static_cast<decltype(discover) *>(p_data))(p_index);
 	},
 			&discover, 1, 1, true, SNAME("CanvasResourceDiscovery"));
 	pool->wait_for_group_task_completion(job);
+	timings[0].joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	for (TextureState texture : textures) {
 		if (!texture_info_map.has(texture)) {
 			TextureInfo *info = &texture_info_map.insert(texture, TextureInfo())->value;
@@ -2371,13 +2445,49 @@ void RendererCanvasRenderRD::_render_batch_items(RenderTarget p_to_render_target
 			p_to_render_target.sdf_to_screen.position = -rect.position * p_to_render_target.sdf_to_screen.size;
 		}
 	}
-	const uint64_t profile_frame = RSG::rasterizer->get_frame_number();
-	const bool profile_preparation = RSG::utilities->capturing_timestamps && profile_frame % 120 == 0;
-	const uint64_t coordinator = profile_preparation ? Thread::get_caller_id() : 0;
+	const uint64_t resources_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	LocalVector<BatchPreparation> preparations;
 	preparations.resize((p_item_count + 127) / 128);
 	const double total_time = RSG::rasterizer->get_total_time();
 	const double frame_delta = RSG::rasterizer->get_frame_delta_time();
+	BatchPreparation combined;
+	auto merge = [&](uint32_t) {
+		if (profile_preparation) {
+			timings[1].worker = Thread::get_caller_id();
+			timings[1].begin = OS::get_singleton()->get_ticks_usec();
+		}
+		for (const BatchPreparation &preparation : preparations) {
+			uint32_t base = combined.instances.size();
+			for (const InstanceData &instance : preparation.instances) {
+				combined.instances.push_back(instance);
+			}
+			for (Batch batch : preparation.batches) {
+				if (!batch.instance_count) {
+					continue;
+				}
+				batch.start += base;
+				if (batch.instance_count & PUSH_DATA_INSTANCE_COUNT) {
+					combined.batches.push_back(batch);
+					continue;
+				}
+				while (batch.instance_count) {
+					Batch part = batch;
+					part.instance_count = MIN(batch.instance_count, state.max_instances_per_buffer - batch.start % state.max_instances_per_buffer);
+					combined.batches.push_back(part);
+					batch.start += part.instance_count;
+					batch.instance_count -= part.instance_count;
+				}
+			}
+			for (const auto &collision : preparation.particle_collisions) {
+				combined.particle_collisions.push_back(collision);
+			}
+			combined.sdf_used |= preparation.sdf_used;
+			combined.redraw |= preparation.redraw;
+		}
+		if (profile_preparation) {
+			timings[1].end = OS::get_singleton()->get_ticks_usec();
+		}
+	};
 	auto prepare = [&](uint32_t p_chunk) {
 		BatchPreparation &preparation = preparations[p_chunk];
 		if (profile_preparation) {
@@ -2433,6 +2543,9 @@ void RendererCanvasRenderRD::_render_batch_items(RenderTarget p_to_render_target
 				}
 			}
 		}
+		if (preparations.size() == 1) {
+			merge(0);
+		}
 		if (profile_preparation) {
 			preparation.end_usec = OS::get_singleton()->get_ticks_usec();
 		}
@@ -2444,52 +2557,21 @@ void RendererCanvasRenderRD::_render_batch_items(RenderTarget p_to_render_target
 	},
 			&prepare, preparations.size(), -1, true, SNAME("CanvasBatchPayload"));
 	pool->wait_for_group_task_completion(job);
-	if (profile_preparation) {
-		const uint64_t joined = OS::get_singleton()->get_ticks_usec();
-		String rows;
-		for (uint32_t index = 0; index < preparations.size(); index++) {
-			const auto &result = preparations[index];
-			rows += vformat("RenderPrep stage=CanvasBatchPayload frame=%d chunk=%d coordinator=%d queued_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d work=%d", profile_frame, index, coordinator, queued, joined, result.worker, result.begin_usec, result.end_usec, MIN(128, p_item_count - int(index * 128))) + "\n";
-		}
-		print_line(rows);
+	const uint64_t joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+
+	if (preparations.size() > 1) {
+		timings[1].queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+		job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+			GodotProfileZone("CanvasBatchMerge");
+			(*static_cast<decltype(merge) *>(p_data))(p_index);
+		},
+				&merge, 1, 1, true, SNAME("CanvasBatchMerge"));
+		pool->wait_for_group_task_completion(job);
+		timings[1].joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+	} else {
+		timings[1].queued = queued;
+		timings[1].joined = joined;
 	}
-	BatchPreparation combined;
-	auto merge = [&](uint32_t) {
-		for (const BatchPreparation &preparation : preparations) {
-			uint32_t base = combined.instances.size();
-			for (const InstanceData &instance : preparation.instances) {
-				combined.instances.push_back(instance);
-			}
-			for (Batch batch : preparation.batches) {
-				if (!batch.instance_count) {
-					continue;
-				}
-				batch.start += base;
-				if (batch.instance_count & PUSH_DATA_INSTANCE_COUNT) {
-					combined.batches.push_back(batch);
-					continue;
-				}
-				while (batch.instance_count) {
-					Batch part = batch;
-					part.instance_count = MIN(batch.instance_count, state.max_instances_per_buffer - batch.start % state.max_instances_per_buffer);
-					combined.batches.push_back(part);
-					batch.start += part.instance_count;
-					batch.instance_count -= part.instance_count;
-				}
-			}
-			for (const auto &collision : preparation.particle_collisions) {
-				combined.particle_collisions.push_back(collision);
-			}
-			combined.sdf_used |= preparation.sdf_used;
-			combined.redraw |= preparation.redraw;
-		}
-	};
-	job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
-		GodotProfileZone("CanvasBatchMerge");
-		(*static_cast<decltype(merge) *>(p_data))(p_index);
-	},
-			&merge, 1, 1, true, SNAME("CanvasBatchMerge"));
-	pool->wait_for_group_task_completion(job);
 	r_sdf_used |= combined.sdf_used;
 	if (combined.redraw) {
 		RenderingServerDefault::redraw_request();
@@ -2511,6 +2593,28 @@ void RendererCanvasRenderRD::_render_batch_items(RenderTarget p_to_render_target
 			batch.instance_buffer = buffers[batch.start / state.max_instances_per_buffer];
 			batch.start %= state.max_instances_per_buffer;
 		}
+	}
+
+	if (profile_preparation) {
+		const uint64_t owner_end = OS::get_singleton()->get_ticks_usec();
+		uint64_t first_begin = UINT64_MAX;
+		uint64_t last_end = 0;
+		uint64_t max_chunk = 0;
+		String rows;
+		for (uint32_t index = 0; index < preparations.size(); index++) {
+			const auto &result = preparations[index];
+			first_begin = MIN(first_begin, result.begin_usec);
+			last_end = MAX(last_end, result.end_usec);
+			max_chunk = MAX(max_chunk, result.end_usec - result.begin_usec);
+			rows += vformat("RenderPrep stage=CanvasBatchPayload frame=%d chunk=%d coordinator=%d queued_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d work=%d timing=elapsed", profile_frame, index, coordinator, queued, joined, result.worker, result.begin_usec, result.end_usec, MIN(128, p_item_count - int(index * 128))) + "\n";
+		}
+		const char *names[] = { "CanvasResourceDiscovery", "CanvasBatchMerge" };
+		for (uint32_t index = 0; index < 2; index++) {
+			const JobTiming &timing = timings[index];
+			rows += vformat("RenderPrep stage=%s frame=%d coordinator=%d jobs=%d work=%d queued_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d timing=elapsed", names[index], profile_frame, coordinator, int(index == 0 || preparations.size() > 1), p_item_count, timing.queued, timing.joined, timing.worker, timing.begin, timing.end) + "\n";
+		}
+		rows += vformat("RenderPrep stage=CanvasBatchOwner frame=%d coordinator=%d jobs=%d roots=%d visited=%d commands=%d textures=%d materials=%d instances=%d batches=%d upload_bytes=%d begin_usec=%d end_usec=%d resources_usec=%d publish_usec=%d payload_span_usec=%d payload_max_chunk_usec=%d timing=elapsed", profile_frame, coordinator, preparations.size() + 1 + int(preparations.size() > 1), p_item_count, visited_items, commands, textures.size(), materials.size(), combined.instances.size(), combined.batches.size(), uint64_t(combined.instances.size()) * sizeof(InstanceData), owner_begin, owner_end, resources_end - timings[0].joined, owner_end - timings[1].joined, preparations.size() ? last_end - first_begin : 0, max_chunk) + "\n";
+		print_line(rows);
 	}
 
 	// Render batches

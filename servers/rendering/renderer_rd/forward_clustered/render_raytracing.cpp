@@ -4499,7 +4499,33 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 	state->decal_count = 0;
 	state->decal_generation = 0;
 	if (p_render_data->rt_decals && p_render_data->decals) {
-		RendererRD::TextureStorage::RTDecalSnapshot snapshot = RendererRD::TextureStorage::get_singleton()->build_rt_decal_snapshot(*p_render_data->rt_decals, *p_render_data->decals, p_render_data->scene_data->cam_transform, state->rt_origin);
+		RendererRD::TextureStorage::RTDecalSnapshot snapshot;
+		uint64_t decal_begin = 0;
+		uint64_t decal_end = 0;
+		uint64_t decal_worker = 0;
+		const bool decal_work = p_render_data->rt_decals->size() > 0 || p_render_data->decals->size() > 0;
+		auto prepare_decals = [&](uint32_t) {
+			if (profile_preparation) {
+				decal_worker = Thread::get_caller_id();
+				decal_begin = OS::get_singleton()->get_ticks_usec();
+			}
+			snapshot = RendererRD::TextureStorage::get_singleton()->build_rt_decal_snapshot(*p_render_data->rt_decals, *p_render_data->decals, p_render_data->scene_data->cam_transform, state->rt_origin);
+			if (profile_preparation) {
+				decal_end = OS::get_singleton()->get_ticks_usec();
+			}
+		};
+		const uint64_t decal_queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+		if (decal_work) {
+			auto decal_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+				GodotProfileZone("RTDecalSnapshot");
+				(*static_cast<decltype(prepare_decals) *>(p_data))(p_index);
+			},
+					&prepare_decals, 1, 1, true, SNAME("RTDecalSnapshot"));
+			pool->wait_for_group_task_completion(decal_job);
+		} else {
+			prepare_decals(0);
+		}
+		const uint64_t decal_joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 		state->decal_count = snapshot.count;
 		state->decal_generation = snapshot.generation;
 		hash_scene(snapshot.generation);
@@ -4514,6 +4540,10 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 		}
 		if (!snapshot.data.is_empty()) {
 			RD::get_singleton()->buffer_update(state->decal_buffer, 0, snapshot.data.size(), snapshot.data.ptr());
+		}
+		if (profile_preparation) {
+			const uint64_t published = OS::get_singleton()->get_ticks_usec();
+			print_line(vformat("RenderPrep stage=RTDecalSnapshot frame=%d coordinator=%d jobs=%d resident=%d camera=%d output=%d bytes=%d queued_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d published_usec=%d owner_publish_usec=%d timing=elapsed", profile_frame, coordinator, int(decal_work), p_render_data->rt_decals->size(), p_render_data->decals->size(), snapshot.count, snapshot.data.size(), decal_queued, decal_joined, decal_worker, decal_begin, decal_end, published, published - decal_joined));
 		}
 	}
 	build_light_registry(state, p_render_data, scene_signature);
@@ -4564,12 +4594,38 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 	RendererRD::TextureStorage *ts = RendererRD::TextureStorage::get_singleton();
 
 	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+	const uint64_t profile_frame = RSG::rasterizer->get_frame_number();
+	const bool profile_preparation = RSG::utilities->capturing_timestamps && profile_frame % 120 == 0;
+	const uint64_t coordinator = profile_preparation ? Thread::get_caller_id() : 0;
+	const uint64_t owner_begin = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+	struct JobTiming {
+		uint64_t queued = 0;
+		uint64_t begin = 0;
+		uint64_t end = 0;
+		uint64_t joined = 0;
+		uint64_t worker = 0;
+		uint64_t work = 0;
+	};
+	JobTiming timings[5];
+	auto begin_job = [&](uint32_t p_index) {
+		if (profile_preparation) {
+			timings[p_index].worker = Thread::get_caller_id();
+			timings[p_index].begin = OS::get_singleton()->get_ticks_usec();
+		}
+	};
+	auto end_job = [&](uint32_t p_index) {
+		if (profile_preparation) {
+			timings[p_index].end = OS::get_singleton()->get_ticks_usec();
+		}
+	};
 	const bool physical_light_units = owner->is_using_physical_light_units();
 	const RID area_atlas = ts->area_light_atlas_get_texture();
 	const RID projector_atlas = ts->decal_atlas_get_texture_srgb();
 	HashMap<RID, uint32_t> atlas_indices;
 	auto discover_atlases = [&](uint32_t) {
+		begin_job(0);
 		if (!p_render_data->rt_lights) {
+			end_job(0);
 			return;
 		}
 		for (uint32_t index = 0; index < p_render_data->rt_lights->size(); index++) {
@@ -4588,16 +4644,20 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 				atlas_indices[atlas] = 0;
 			}
 		}
+		end_job(0);
 	};
+	timings[0].queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	auto job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
 		GodotProfileZone("RTLightResourceDiscovery");
 		(*static_cast<decltype(discover_atlases) *>(p_data))(p_index);
 	},
 			&discover_atlases, 1, 1, true, SNAME("RTLightResourceDiscovery"));
 	pool->wait_for_group_task_completion(job);
+	timings[0].joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	for (auto &entry : atlas_indices) {
 		entry.value = bindless_block->add_texture(entry.key);
 	}
+	const uint64_t resources_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	auto compute_light_energy = [&](RID p_base, RSE::LightType p_type) {
 		float sign = ls->light_is_negative(p_base) ? -1.0f : 1.0f;
 		float e = sign * ls->light_get_param(p_base, RSE::LIGHT_PARAM_ENERGY);
@@ -4784,17 +4844,15 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 		}
 	};
 	auto prepare = [&](uint32_t p_index) {
+		begin_job(p_index + 1);
 		if (p_index == 0) {
 			prepare_analytic();
 		} else {
 			prepare_emissive();
 		}
+		end_job(p_index + 1);
 	};
-	job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
-		GodotProfileZone("RTLightPayload");
-		(*static_cast<decltype(prepare) *>(p_data))(p_index);
-	},
-			&prepare, 2, -1, true, SNAME("RTLightPayload"));
+	const uint64_t environment_begin = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	p_state->environment_texture = RID();
 	if (p_render_data->environment.is_valid()) {
 		RID sky_rid = owner->environment_get_sky(p_render_data->environment);
@@ -4822,10 +4880,11 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 		}
 	}
 
-	pool->wait_for_group_task_completion(job);
+	const uint64_t environment_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	LocalVector<RTLightKey> current_keys;
 	LocalVector<RT_LightData> current_lights;
 	auto merge = [&](uint32_t) {
+		begin_job(3);
 		for (uint32_t index = 0; index < emissive_keys.size(); index++) {
 			local_keys.push_back(emissive_keys[index]);
 			local_lights.push_back(emissive_lights[index]);
@@ -4842,16 +4901,8 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 			current_keys.push_back(environment_keys[i]);
 			current_lights.push_back(environment_lights[i]);
 		}
+		end_job(3);
 	};
-	job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
-		GodotProfileZone("RTLightMerge");
-		(*static_cast<decltype(merge) *>(p_data))(p_index);
-	},
-			&merge, 1, 1, true, SNAME("RTLightMerge"));
-	pool->wait_for_group_task_completion(job);
-	ERR_FAIL_COND_MSG(current_lights.size() > 0x7FFFFFFFu, "The RTXDI light registry exceeds the reservoir light-index range.");
-	ERR_FAIL_COND_MSG(uint64_t(current_lights.size()) * sizeof(RT_LightData) > UINT32_MAX, "The RTXDI light registry exceeds RenderingDevice buffer limits.");
-
 	const uint32_t previous_index = p_state->current_light_snapshot;
 	const uint32_t current_index = p_state->light_history_valid ? (previous_index ^ 1u) : previous_index;
 	RTLightSnapshot &previous = p_state->light_snapshots[previous_index];
@@ -4860,6 +4911,7 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 	LocalVector<uint32_t> current_to_previous;
 	LocalVector<uint32_t> previous_to_current;
 	auto prepare_history = [&](uint32_t) {
+		begin_job(4);
 		current_to_previous.resize(current_keys.size());
 		previous_to_current.resize(p_state->light_history_valid ? previous.keys.size() : 0);
 		for (uint32_t i = 0; i < current_to_previous.size(); i++) {
@@ -4893,13 +4945,45 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 		current.parameters.environment_present = environment_lights.is_empty() ? 0 : 1;
 		current.parameters.total_count = current_lights.size();
 		current.parameters.previous_count = p_state->light_history_valid ? previous.keys.size() : 0;
+		end_job(4);
 	};
+	const bool parallel_payload = p_render_data->rt_lights && p_render_data->rt_lights->size() > 0 && !emissive_sources.is_empty();
+	if (parallel_payload) {
+		timings[1].queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+		timings[2].queued = timings[1].queued;
+		job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+			GodotProfileZone("RTLightPayload");
+			(*static_cast<decltype(prepare) *>(p_data))(p_index);
+		},
+				&prepare, 2, -1, true, SNAME("RTLightPayload"));
+		pool->wait_for_group_task_completion(job);
+		timings[1].joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+		timings[2].joined = timings[1].joined;
+	}
+	auto prepare_registry = [&](uint32_t) {
+		if (!parallel_payload) {
+			prepare(0);
+			prepare(1);
+		}
+		merge(0);
+		if (current_lights.size() <= 0x7FFFFFFFu && uint64_t(current_lights.size()) * sizeof(RT_LightData) <= UINT32_MAX) {
+			prepare_history(0);
+		}
+	};
+	const uint64_t registry_queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
-		GodotProfileZone("RTLightHistoryPayload");
-		(*static_cast<decltype(prepare_history) *>(p_data))(p_index);
+		GodotProfileZone("RTLightRegistryPayload");
+		(*static_cast<decltype(prepare_registry) *>(p_data))(p_index);
 	},
-			&prepare_history, 1, 1, true, SNAME("RTLightHistoryPayload"));
+			&prepare_registry, 1, 1, true, SNAME("RTLightRegistryPayload"));
 	pool->wait_for_group_task_completion(job);
+	const uint64_t registry_joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+	for (uint32_t index = parallel_payload ? 3 : 1; index < 5; index++) {
+		timings[index].queued = registry_queued;
+		timings[index].joined = registry_joined;
+	}
+	ERR_FAIL_COND_MSG(current_lights.size() > 0x7FFFFFFFu, "The RTXDI light registry exceeds the reservoir light-index range.");
+	ERR_FAIL_COND_MSG(uint64_t(current_lights.size()) * sizeof(RT_LightData) > UINT32_MAX, "The RTXDI light registry exceeds RenderingDevice buffer limits.");
 	auto update_or_grow = [](RID &p_buffer, uint32_t &p_capacity, const void *p_data, uint32_t p_size, const String &p_name) {
 		uint32_t required_size = MAX(p_size, 4u);
 		if (required_size > p_capacity) {
@@ -4926,6 +5010,23 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 
 	p_state->current_light_snapshot = current_index;
 	p_state->light_history_valid = true;
+	if (profile_preparation) {
+		const uint64_t owner_end = OS::get_singleton()->get_ticks_usec();
+		timings[0].work = p_render_data->rt_lights ? p_render_data->rt_lights->size() : 0;
+		timings[1].work = timings[0].work;
+		timings[2].work = emissive_sources.size();
+		timings[3].work = current_keys.size();
+		timings[4].work = current_keys.size() + previous_to_current.size();
+		const char *names[] = { "RTLightResourceDiscovery", "RTAnalyticPayload", "RTEmissivePayload", "RTLightMerge", "RTLightHistoryPayload" };
+		String rows;
+		for (uint32_t index = 0; index < 5; index++) {
+			const JobTiming &timing = timings[index];
+			rows += vformat("RenderPrep stage=%s frame=%d coordinator=%d phase=1 separate_job=%d work=%d queued_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d timing=elapsed", names[index], profile_frame, coordinator, int(index == 0 || (parallel_payload && (index == 1 || index == 2))), timing.work, timing.queued, timing.joined, timing.worker, timing.begin, timing.end) + "\n";
+		}
+		rows += vformat("RenderPrep stage=RTLightRegistryPayload frame=%d coordinator=%d jobs=1 work=%d queued_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d timing=elapsed", profile_frame, coordinator, current_lights.size(), registry_queued, registry_joined, timings[3].worker, parallel_payload ? timings[3].begin : timings[1].begin, timings[4].end) + "\n";
+		rows += vformat("RenderPrep stage=RTLightOwner frame=%d coordinator=%d jobs=%d analytic=%d emissive_sources=%d emissive_lights=%d lights=%d previous=%d atlases=%d begin_usec=%d end_usec=%d resources_usec=%d environment_usec=%d upload_usec=%d payload_span_usec=%d payload_max_chunk_usec=%d timing=elapsed", profile_frame, coordinator, parallel_payload ? 4 : 2, timings[1].work, emissive_sources.size(), emissive_lights.size(), current_lights.size(), previous_to_current.size(), atlas_indices.size(), owner_begin, owner_end, resources_end - timings[0].joined, environment_end - environment_begin, owner_end - timings[4].joined, MAX(timings[1].end, timings[2].end) - MIN(timings[1].begin, timings[2].begin), MAX(timings[1].end - timings[1].begin, timings[2].end - timings[2].begin));
+		print_line(rows);
+	}
 }
 
 // ---------------------------------------------------------------------------

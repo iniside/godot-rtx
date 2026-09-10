@@ -74,6 +74,21 @@ void RendererCanvasCull::_dependency_deleted(const RID &p_dependency, Dependency
 void RendererCanvasCull::_render_canvas_item_tree(RID p_to_render_target, Canvas::ChildItem *p_child_items, int p_child_item_count, const Transform2D &p_transform, const Rect2 &p_clip_rect, const Color &p_modulate, RendererCanvasRender::Light *p_lights, RendererCanvasRender::Light *p_directional_lights, RSE::CanvasItemTextureFilter p_default_filter, RSE::CanvasItemTextureRepeat p_default_repeat, bool p_snap_2d_vertices_to_pixel, uint32_t p_canvas_cull_mask, RenderingServerTypes::RenderInfo *r_render_info) {
 	RENDER_TIMESTAMP("Cull CanvasItem Tree");
 
+	const uint64_t profile_frame = RSG::rasterizer->get_frame_number();
+	const bool profile_preparation = RSG::utilities->capturing_timestamps && profile_frame % 120 == 0;
+	const uint64_t coordinator = profile_preparation ? Thread::get_caller_id() : 0;
+	const uint64_t owner_begin = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+	struct JobTiming {
+		uint64_t queued = 0;
+		uint64_t begin = 0;
+		uint64_t end = 0;
+		uint64_t joined = 0;
+		uint64_t worker = 0;
+	};
+	JobTiming timings[2];
+	uint64_t visited_items = 0;
+	uint64_t commands = 0;
+
 	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
 	CullInput input;
 	input.camera_transform = p_transform;
@@ -81,12 +96,19 @@ void RendererCanvasCull::_render_canvas_item_tree(RID p_to_render_target, Canvas
 	input.interpolate = _interpolation_data.interpolation_enabled;
 	input.snap_transforms = snapping_2d_transforms_to_pixel;
 	auto discover = [&](uint32_t) {
+		if (profile_preparation) {
+			timings[0].worker = Thread::get_caller_id();
+			timings[0].begin = OS::get_singleton()->get_ticks_usec();
+		}
 		LocalVector<Item *> pending;
 		for (int i = 0; i < p_child_item_count; i++) {
 			pending.push_back(p_child_items[i].item);
 		}
 		while (!pending.is_empty()) {
 			Item *item = pending[pending.size() - 1];
+			if (profile_preparation) {
+				visited_items++;
+			}
 			pending.resize(pending.size() - 1);
 			if (!item->visible || !(item->visibility_layer & p_canvas_cull_mask)) {
 				continue;
@@ -98,6 +120,9 @@ void RendererCanvasCull::_render_canvas_item_tree(RID p_to_render_target, Canvas
 				continue;
 			}
 			for (const Item::Command *command = item->commands; command; command = command->next) {
+				if (profile_preparation) {
+					commands++;
+				}
 				switch (command->type) {
 					case Item::Command::TYPE_MESH: {
 						const auto *mesh = static_cast<const Item::CommandMesh *>(command);
@@ -117,13 +142,21 @@ void RendererCanvasCull::_render_canvas_item_tree(RID p_to_render_target, Canvas
 				}
 			}
 		}
+		if (profile_preparation) {
+			timings[0].end = OS::get_singleton()->get_ticks_usec();
+		}
 	};
-	auto job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
-		GodotProfileZone("CanvasBoundsDiscovery");
-		(*static_cast<decltype(discover) *>(p_data))(p_index);
-	},
-			&discover, 1, 1, true, SNAME("CanvasBoundsDiscovery"));
-	pool->wait_for_group_task_completion(job);
+	timings[0].queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+	WorkerThreadPool::GroupID job = -1;
+	if (p_child_item_count > 0) {
+		job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+			GodotProfileZone("CanvasBoundsDiscovery");
+			(*static_cast<decltype(discover) *>(p_data))(p_index);
+		},
+				&discover, 1, 1, true, SNAME("CanvasBoundsDiscovery"));
+		pool->wait_for_group_task_completion(job);
+	}
+	timings[0].joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	for (auto &mesh : input.resources.meshes) {
 		for (auto &skeleton : mesh.value) {
 			skeleton.value = RSG::mesh_storage->mesh_get_aabb(mesh.key, skeleton.key);
@@ -135,46 +168,15 @@ void RendererCanvasCull::_render_canvas_item_tree(RID p_to_render_target, Canvas
 	for (auto &particles : input.resources.particles) {
 		particles.value = RSG::particles_storage->particles_get_aabb(particles.key);
 	}
-	const uint64_t profile_frame = RSG::rasterizer->get_frame_number();
-	const bool profile_preparation = RSG::utilities->capturing_timestamps && profile_frame % 120 == 0;
-	const uint64_t coordinator = profile_preparation ? Thread::get_caller_id() : 0;
+	const uint64_t resources_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	LocalVector<CullResult> results;
-	results.resize(MIN(MAX(1, pool->get_thread_count()), MAX(1, (p_child_item_count + 31) / 32)));
-	auto cull = [&](uint32_t p_index) {
-		CullResult &result = results[p_index];
-		if (profile_preparation) {
-			result.worker = Thread::get_caller_id();
-			result.begin_usec = OS::get_singleton()->get_ticks_usec();
-		}
-		result.z_list.resize(z_range);
-		result.z_last_list.resize(z_range);
-		memset(result.z_list.ptr(), 0, z_range * sizeof(RendererCanvasRender::Item *));
-		memset(result.z_last_list.ptr(), 0, z_range * sizeof(RendererCanvasRender::Item *));
-		for (uint32_t i = p_index * p_child_item_count / results.size(); i < (p_index + 1) * p_child_item_count / results.size(); i++) {
-			_cull_canvas_item(input, result, p_child_items[i].item, p_transform, p_clip_rect, Color(1, 1, 1, 1), 0, result.z_list.ptr(), result.z_last_list.ptr(), nullptr, nullptr, false, p_canvas_cull_mask, Point2(), 1, nullptr);
-		}
-		if (profile_preparation) {
-			result.end_usec = OS::get_singleton()->get_ticks_usec();
-		}
-	};
-	const uint64_t queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
-		GodotProfileZone("CanvasTreeCull");
-		(*static_cast<decltype(cull) *>(p_data))(p_index);
-	},
-			&cull, results.size(), -1, true, SNAME("CanvasTreeCull"));
-	pool->wait_for_group_task_completion(job);
-	if (profile_preparation) {
-		const uint64_t joined = OS::get_singleton()->get_ticks_usec();
-		String rows;
-		for (uint32_t index = 0; index < results.size(); index++) {
-			const auto &result = results[index];
-			rows += vformat("RenderPrep stage=CanvasTreeCull frame=%d chunk=%d coordinator=%d queued_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d work=%d", profile_frame, index, coordinator, queued, joined, result.worker, result.begin_usec, result.end_usec, (index + 1) * p_child_item_count / results.size() - index * p_child_item_count / results.size()) + "\n";
-		}
-		print_line(rows);
-	}
+	results.resize(MIN(MAX(1, pool->get_thread_count()), (p_child_item_count + 31) / 32));
 	RendererCanvasRender::Item *list = nullptr;
 	auto merge = [&](uint32_t) {
+		if (profile_preparation) {
+			timings[1].worker = Thread::get_caller_id();
+			timings[1].begin = OS::get_singleton()->get_ticks_usec();
+		}
 		RendererCanvasRender::Item *tail = nullptr;
 		for (int z = 0; z < z_range; z++) {
 			for (const CullResult &result : results) {
@@ -189,13 +191,54 @@ void RendererCanvasCull::_render_canvas_item_tree(RID p_to_render_target, Canvas
 				tail = result.z_last_list[z];
 			}
 		}
+		if (profile_preparation) {
+			timings[1].end = OS::get_singleton()->get_ticks_usec();
+		}
 	};
-	job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
-		GodotProfileZone("CanvasCullMerge");
-		(*static_cast<decltype(merge) *>(p_data))(p_index);
-	},
-			&merge, 1, 1, true, SNAME("CanvasCullMerge"));
-	pool->wait_for_group_task_completion(job);
+	auto cull = [&](uint32_t p_index) {
+		CullResult &result = results[p_index];
+		if (profile_preparation) {
+			result.worker = Thread::get_caller_id();
+			result.begin_usec = OS::get_singleton()->get_ticks_usec();
+		}
+		result.z_list.resize(z_range);
+		result.z_last_list.resize(z_range);
+		memset(result.z_list.ptr(), 0, z_range * sizeof(RendererCanvasRender::Item *));
+		memset(result.z_last_list.ptr(), 0, z_range * sizeof(RendererCanvasRender::Item *));
+		for (uint32_t i = p_index * p_child_item_count / results.size(); i < (p_index + 1) * p_child_item_count / results.size(); i++) {
+			_cull_canvas_item(input, result, p_child_items[i].item, p_transform, p_clip_rect, Color(1, 1, 1, 1), 0, result.z_list.ptr(), result.z_last_list.ptr(), nullptr, nullptr, false, p_canvas_cull_mask, Point2(), 1, nullptr);
+		}
+		if (results.size() == 1) {
+			merge(0);
+		}
+		if (profile_preparation) {
+			result.end_usec = OS::get_singleton()->get_ticks_usec();
+		}
+	};
+	const uint64_t queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+	if (!results.is_empty()) {
+		job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+			GodotProfileZone("CanvasTreeCull");
+			(*static_cast<decltype(cull) *>(p_data))(p_index);
+		},
+				&cull, results.size(), -1, true, SNAME("CanvasTreeCull"));
+		pool->wait_for_group_task_completion(job);
+	}
+	const uint64_t joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+
+	if (results.size() > 1) {
+		timings[1].queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+		job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
+			GodotProfileZone("CanvasCullMerge");
+			(*static_cast<decltype(merge) *>(p_data))(p_index);
+		},
+				&merge, 1, 1, true, SNAME("CanvasCullMerge"));
+		pool->wait_for_group_task_completion(job);
+		timings[1].joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+	} else {
+		timings[1].queued = queued;
+		timings[1].joined = joined;
+	}
 	for (const CullResult &result : results) {
 		for (const CullResult::GroupCommand &group : result.group_commands) {
 			group.item->clear();
@@ -214,6 +257,28 @@ void RendererCanvasCull::_render_canvas_item_tree(RID p_to_render_target, Canvas
 		if (result.redraw) {
 			RenderingServerDefault::redraw_request();
 		}
+	}
+
+	if (profile_preparation) {
+		const uint64_t owner_end = OS::get_singleton()->get_ticks_usec();
+		uint64_t first_begin = UINT64_MAX;
+		uint64_t last_end = 0;
+		uint64_t max_chunk = 0;
+		String rows;
+		for (uint32_t index = 0; index < results.size(); index++) {
+			const auto &result = results[index];
+			first_begin = MIN(first_begin, result.begin_usec);
+			last_end = MAX(last_end, result.end_usec);
+			max_chunk = MAX(max_chunk, result.end_usec - result.begin_usec);
+			rows += vformat("RenderPrep stage=CanvasTreeCull frame=%d chunk=%d coordinator=%d queued_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d work=%d timing=elapsed", profile_frame, index, coordinator, queued, joined, result.worker, result.begin_usec, result.end_usec, (index + 1) * p_child_item_count / results.size() - index * p_child_item_count / results.size()) + "\n";
+		}
+		const char *names[] = { "CanvasBoundsDiscovery", "CanvasCullMerge" };
+		for (uint32_t index = 0; index < 2; index++) {
+			const JobTiming &timing = timings[index];
+			rows += vformat("RenderPrep stage=%s frame=%d coordinator=%d jobs=%d work=%d queued_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d timing=elapsed", names[index], profile_frame, coordinator, int(index == 0 ? p_child_item_count > 0 : results.size() > 1), p_child_item_count, timing.queued, timing.joined, timing.worker, timing.begin, timing.end) + "\n";
+		}
+		rows += vformat("RenderPrep stage=CanvasCullOwner frame=%d coordinator=%d jobs=%d roots=%d visited=%d commands=%d meshes=%d multimeshes=%d particles=%d begin_usec=%d end_usec=%d resources_usec=%d publish_usec=%d payload_span_usec=%d payload_max_chunk_usec=%d timing=elapsed", profile_frame, coordinator, results.size() + int(p_child_item_count > 0) + int(results.size() > 1), p_child_item_count, visited_items, commands, input.resources.meshes.size(), input.resources.multimeshes.size(), input.resources.particles.size(), owner_begin, owner_end, resources_end - timings[0].joined, owner_end - timings[1].joined, results.size() ? last_end - first_begin : 0, max_chunk) + "\n";
+		print_line(rows);
 	}
 
 	RENDER_TIMESTAMP("Render CanvasItems");
