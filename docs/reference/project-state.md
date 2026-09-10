@@ -146,6 +146,11 @@ consumes state captured after cut publication. Final ordinary build and dense/
 moving native runs pass without ERROR; final dense median117.53FPS,8.509ms wall,
 6.260ms CPU render sample and4.067ms GPU sample. The approved replacement is
 complete, without extra audit rounds or an isolated fan-out speedup claim.
+Metadata admission correction (2026-09-10, `193ce66ab8`): removed the fixed64MiB
+aggregate limit, retaining checked RD buffer sizes and allocation rollback.
+Ordinary/double builds and editor launches pass; double editor admits70.76MiB
+with stress and dragon assets, without metadata/allocation errors. Both binaries
+are updated. See the [fix and validation limits](../research/2026-09-10-1025-microgeometry-metadata-admission-fix.md).
 Actual dragon import/reimport passed in 82.66/67.04 seconds, yielding 17 DAG
 levels and 9737 pages with byte-identical reused `.mgdata`; the diagnostic
 reimport command had shutdown warnings. Import evidence uses an immutable
