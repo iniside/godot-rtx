@@ -13,9 +13,13 @@ z trwałą tożsamością niezależną od rezydencji. Sceny 2D nie są wspierane
 UI gry będzie osobną warstwą HTML/CSS. Infrastruktura UI edytora i współdzielone
 assety mogą zachować typy Godota. Zastępuje to wcześniejszy otwarty wybór ECS.
 [Research źródeł i kontraktów](../research/2026-09-09-2023-flecs-scene-model-replacement-research.md)
-przy `999bbd18c` określa granice wymiany i decyzje przed planem. Brak
-implementacji, pomiarów i autoryzacji przebudowy; zgodność starego API oraz
-model skryptów wymagają doprecyzowania. Źródło kierunku: bieżąca rozmowa.
+przy `999bbd18c` określa granice wymiany. Właściciel zatwierdził implementację
+2026-09-10: [plan](../plans/2026-09-10-1023-flecs-native-scene-plan.md),
+commit `e4f73a8286`, task-start `3a6a695fc8`. Model skryptów i Node plugins są
+poza zakresem; stare sceny nie wymagają kompatybilności, zachowujemy skończony
+zestaw scen rendererowych. Plan wyłącza też SoftBody/Generic6DOF i authoring
+CSG/GridMap. Trwa zabezpieczenie danych scen i implementacja fundamentu Flecs;
+nie ma jeszcze dowodu działania ani wydajności nowego modelu.
 
 
 Zakres implementacji zatwierdzony 2026-09-09, plan `414a19fdef`:

@@ -1,14 +1,20 @@
 # Project State
 
-Entity scene model research (2026-09-09, source baseline `999bbd18c`): owner
+Entity scene model implementation authorized (2026-09-10, task-start `3a6a695fc8`): owner
 selects Flecs for the complete 3D world scene in editor/runtime, without
 per-entity Node/Object wrappers, before world streaming. Dense populations
 should be flat; editor/streaming grouping does not imply transform parenting.
 2D scenes are unsupported; game UI will use a separate HTML/CSS layer. The
 [research](../research/2026-09-09-2023-flecs-scene-model-replacement-research.md)
 records pinned Flecs contracts and Godot runtime/editor replacement boundaries.
-Research only: no implementation, builds or performance claims. Upstream
-compatibility and gameplay scripting contracts remain open before planning.
+The reviewed [implementation plan](../plans/2026-09-10-1023-flecs-native-scene-plan.md)
+is approved and committed at `e4f73a8286`; fixture preservation and the native
+Flecs/schema foundation are in progress. Scripting, Node plugins, 2D and HTML/CSS
+game UI are excluded; old world scenes need no compatibility beyond the finite
+renderer migration. SoftBody/Generic6DOF and CSG/GridMap authoring are also
+excluded by the approved plan. No ECS build, runtime or performance result is
+claimed yet. Existing renderer GPU data ownership and change-only publication
+remain the integration baseline.
 
 
 GPU-driven microgeometry implementation (2026-09-09, `bf2818e0ef`):
