@@ -184,7 +184,6 @@ public:
 		uint64_t retired_bytes = 0;
 		uint64_t dynamic_memory_bytes = 0;
 		uint64_t fixed_memory_bytes = 0;
-		uint64_t diagnostic_fixed_bytes = 0;
 		uint64_t requested_bytes = 0;
 		uint64_t replacement_peak_bytes = 0;
 		uint64_t profile_frame = UINT64_MAX;
