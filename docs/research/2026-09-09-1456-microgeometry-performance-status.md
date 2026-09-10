@@ -1228,3 +1228,32 @@ window median is43, versus38 in `step6-baseline-noprofile01.log` on preceding
 of the combined corrections, not isolation of one fix or a repeated steady-state
 result. Current shader variant cache misses occurred during startup and are
 excluded from the last-ten-window comparison. It is the new plan's baseline.
+
+
+## CPU removal Step1, `dc7b4b2320`
+
+Dirty publication retains eligible surface/task/bin/source metadata. Raster
+discovery uses registered surfaces, and RT append consumes retained metadata.
+The 19-word-per-task snapshot is removed in favor of structural publication
+generation and bounded pass state. Ordinary transforms/camera do not invalidate
+task structure. Asset readiness/deletion and existing GI pairing invalidate
+through their owning change paths. Per-pass task/bin union and full CPU culler
+inputs remain Step2; RT layout rebuilding remains Step3.
+
+Identical dense1500 orbit no-profile comparison, process frames900-1500:
+
+| Sample median | Previous | Step1 |
+| --- | ---: | ---: |
+| FPS |43.20|47.85|
+| Wall frame ms |23.147|20.900|
+| CPU render sample ms, includes waits |21.576|19.194|
+| Completed GPU sample ms |7.130|6.099|
+
+Logs `micro-step1-control.log`/`micro-step1-candidate.log`; both normal exit0 and
+zero Godot ERROR, 55/49 quarter-second timing samples in the common frame range.
+This is one paired result; GPU sample change is not attributed to a GPU
+algorithm optimization. Existing HUD timings are printed only in verbose mode
+by two-line scene change `cf07aa2993`; both runs use it. Moving300/freeze-after2
+also exits0. Final existing-GI pairing invalidation is included in commit
+`dc7b4b2320` and final ordinary build32.49s; that small final closure is compile
+validated, not part of those native captures. Step2 implementation is active.

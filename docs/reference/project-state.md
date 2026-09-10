@@ -119,8 +119,12 @@ reuse `2108bbedf1` pass a combined ordinary build but remain runtime/performance
 measured in one ordinary no-profile dense run: last-ten FPS median 43 versus
 38 in the preceding matched-route run (single pair, no durable gain claim).
 The owner approved the [replacement plan](../plans/2026-09-10-0807-gpu-microgeometry-cpu-removal-plan.md),
-committed at `8e316e180d`; Step1 changed-data ingestion is being implemented.
-Later raster/RT consumer replacement and final fan-out remain pending.
+committed at `8e316e180d`. Step1 `dc7b4b2320` retains changed surface/task metadata
+and removes per-task snapshots. One matched dense no-profile pair reports
+43.20 ->47.85FPS and23.147 ->20.900ms wall frame; CPU samples21.576 ->19.194ms.
+Both runs and moving/freeze exit0; final GI-pairing invalidation is compile-only.
+Step2 persistent raster inputs/culler routing is active; RT replacement and
+final fan-out remain pending.
 Actual dragon import/reimport passed in 82.66/67.04 seconds, yielding 17 DAG
 levels and 9737 pages with byte-identical reused `.mgdata`; the diagnostic
 reimport command had shutdown warnings. Import evidence uses an immutable
