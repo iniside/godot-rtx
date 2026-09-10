@@ -117,7 +117,7 @@ sun/environment to the Node scene. Their native replacements remain assigned
 to approved later steps; disabling old entry points does not complete them.
 GridMap authoring remains permanently excluded by the approved plan.
 
-## Step 4: owner-renewed prefab corrections in progress
+## Step 4: native document accepted after renewed corrections
 
 Implementation baseline: `2dd1bf401d93a724341355f9b55c5b9cc4f5e9da`.
 Frozen task commit: `c1927f7324946c489b3f3d213b0cd491a96cff81`.
@@ -180,7 +180,7 @@ native startup. This is clang-nav/source/XML/history evidence, not execution
 of a successful native document load or a threaded streaming contract.
 
 Final review REJECT at `22158a5585`, covering original `c1927f7324` and the
-cumulative `2dd1bf401d9..22158a5585`, leaves these required fixes:
+cumulative `2dd1bf401d9..22158a5585`, identified these two later-corrected defects:
 
 1. **P1 — KEEP_LOCAL reparent mode is lost when applying prefab overrides.**
    Override creation at `entity_scene_commands.cpp:370` omits the selected mode;
@@ -198,10 +198,20 @@ cumulative `2dd1bf401d9..22158a5585`, leaves these required fixes:
 
 Implementation stopped under the repository's maximum-two-review-round rule.
 The owner explicitly renewed work with "kontynuuj" after receiving both defects.
-The renewed correction task starts at `cf4bad9a9bd10207f77a4210947463b983cadf46`
-and covers the two named prefab failures, followed by a fresh source review
-before dependent renderer work. Steps 1–3 remain accepted. The full approved
-migration is incomplete.
+The renewed correction task started at `cf4bad9a9bd10207f77a4210947463b983cadf46`.
+Correction `2a7768e58ce1f6a360c90bdb6ac5539733634b56` preserves and validates
+the selected reparent mode and retains provenance during stored/inherited
+record preparation. Resident ECS values remain authoritative. Fresh source
+review PASS covered the exact commit, renewed range and cumulative step 4,
+confirming both scenarios closed and earlier corrections preserved.
+
+Ordinary/editor, double/editor and template_debug builds pass in 40.94s,
+41.49s and 32.84s. Fresh Vulkan RTX4090 editor and native-empty executions exit
+0; source/executable hashes, build logs and receipts are in
+`gpuprofile/ecs_step4_renewed_fixes/`. The named nonempty prefab scenarios still
+have source reasoning rather than executed UI proof. Steps 1–4 are accepted
+at their documented intermediate evidence boundary. The full migration remains
+incomplete.
 
 Successful nonempty `.escn` load/save, prefab apply/revert, undo/redo and subset
 round trips have not been executed. Their production authoring UI is step 6;
@@ -210,9 +220,18 @@ required final behavior validation through the real editor/native scenes.
 No new fixture, test harness, script, extra CLI proof API or automated test was
 introduced to stand in for that topology.
 
+## Step 5: native renderer integration in progress
+
+Task baseline: `2a7768e58ce1f6a360c90bdb6ac5539733634b56`. The full renderer
+frontend/consumer replacement and render-component integration is delegated as
+one responsibility. No source change or native-rendering result is claimed yet.
+Real Vulkan exercise of native geometry is required before this renderer step
+can be considered complete; finite production-content dependencies must be
+addressed explicitly rather than replacing them with empty-world startup proof.
+
 ## Remaining work
 
-The document step requires the two owner-renewed corrections and fresh review. Renderer, editor, subsystems and
+Renderer, editor, subsystems and
 native import/export steps have not landed. Existing Node-world
 operation is not evidence of the target entity model. The owner reiterated on
 2026-09-10 that static-mesh components are required for renderer validation.

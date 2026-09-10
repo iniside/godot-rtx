@@ -14,10 +14,10 @@ passes source review and independent data audit. Flecs/schema foundation
 and ordinary/double/template builds. Native lifecycle `9588beb0d4` plus
 correction `7e4513db52` builds on all three axes; normal Vulkan editor and empty
 native game exit 0. Final lifecycle source review passes. Native document
-`c1927f7324` plus correction `22158a5585` builds, but final review rejects two
-prefab defects (reparent mode and newly inherited unloaded records). Work is
-resumed after the owner explicitly renewed those two corrections with
-"kontynuuj"; fresh review remains required. See [execution evidence and limits](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
+`c1927f7324` plus corrections `22158a5585` and owner-renewed `2a7768e58c`
+passes fresh exact/cumulative source review, ordinary/double/template builds
+and Vulkan editor/empty-game startup. Nonempty document workflows remain
+unexecuted. Direct native renderer integration is now in progress. See [execution evidence and limits](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
 Scripting, Node plugins, 2D and HTML/CSS
 game UI are excluded; old world scenes need no compatibility beyond the finite
 renderer migration. SoftBody/Generic6DOF and CSG/GridMap authoring are also

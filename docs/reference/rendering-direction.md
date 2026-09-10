@@ -23,10 +23,10 @@ i niezależny audyt danych. Fundament Flecs `8b645f23a7` z poprawką `4e2db6d6ab
 przeszedł finalny source review oraz ordinary/double/template buildy.
 Wymiana cyklu świata `9588beb0d4` z poprawką `7e4513db52` kompiluje się na
 trzech osiach; pełny edytor i pusta gra Vulkan kończą się kodem 0. Finalny
-source review tego etapu przeszedł. Dokument `c1927f7324` z poprawką
-`22158a5585` kompiluje się, lecz finalny review odrzucił dwa błędy prefabów:
-utratę trybu reparent i odczyt nowych wyładowanych elementów. Właściciel wznowił
-naprawę tych dwóch błędów poleceniem „kontynuuj”; wymagany jest świeży review. Zobacz
+source review tego etapu przeszedł. Dokument `c1927f7324` z poprawkami
+`22158a5585` i wznowioną przez właściciela `2a7768e58c` przeszedł świeży review,
+trzy buildy i start edytora/pustej gry Vulkan. Niepuste operacje dokumentu
+pozostają niesprawdzone w wykonaniu. Trwa bezpośrednia integracja renderera encji. Zobacz
 [status i granice dowodów](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
 Nie ma jeszcze dowodu renderowania niepustych scen encji ani ich wydajności.
 
