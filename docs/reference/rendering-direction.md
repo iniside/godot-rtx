@@ -25,8 +25,8 @@ Wymiana cyklu świata `9588beb0d4` z poprawką `7e4513db52` kompiluje się na
 trzech osiach; pełny edytor i pusta gra Vulkan kończą się kodem 0. Finalny
 source review tego etapu przeszedł. Dokument `c1927f7324` z poprawką
 `22158a5585` kompiluje się, lecz finalny review odrzucił dwa błędy prefabów:
-utratę trybu reparent i odczyt nowych wyładowanych elementów. Praca zatrzymana
-na limicie dwóch rund do wznowienia przez właściciela. Zobacz
+utratę trybu reparent i odczyt nowych wyładowanych elementów. Właściciel wznowił
+naprawę tych dwóch błędów poleceniem „kontynuuj”; wymagany jest świeży review. Zobacz
 [status i granice dowodów](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
 Nie ma jeszcze dowodu renderowania niepustych scen encji ani ich wydajności.
 
