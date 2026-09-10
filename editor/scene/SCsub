@@ -9,3 +9,5 @@ SConscript("2d/SCsub")
 SConscript("3d/SCsub")
 SConscript("gui/SCsub")
 SConscript("texture/SCsub")
+
+SConscript("entity/SCsub")

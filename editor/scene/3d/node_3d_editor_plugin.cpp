@@ -2829,7 +2829,7 @@ void Node3DEditor::set_scene_document(const Ref<EntityScene> &p_document, bool p
 	}
 	Ref<EntityScene> previous_document = scene_document;
 	scene_document = p_document;
-	document_status->set_text(vformat(TTR("Native scene: %d entities. Entity editing is not available yet."), p_document->get_resident_count()));
+	document_status->set_text(vformat(TTR("Native scene: %d entities. Select in the Scene dock or click a mesh."), p_document->get_resident_count()));
 	entity_world = next_world;
 	native_directional_light = false;
 	native_environment = false;

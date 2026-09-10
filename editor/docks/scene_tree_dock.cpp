@@ -28,6 +28,7 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
+#include "editor/scene/entity/entity_scene_editor.h"
 #include "scene_tree_dock.h"
 
 #include "core/config/project_settings.h"
@@ -4697,6 +4698,7 @@ void SceneTreeDock::hide_tab_buttons() {
 }
 
 void SceneTreeDock::_remote_tree_selected() {
+	EntitySceneEditor::get_singleton()->hide();
 	main_mc->set_theme_type_variation("NoBorderHorizontalBottom");
 	scene_tree->hide();
 	create_root_dialog->hide();
@@ -4724,9 +4726,8 @@ void SceneTreeDock::_update_create_root_dialog_visibility() {
 		button_add->hide();
 		button_instance->hide();
 		scene_tree->set_can_rename(false);
-		if (!remote_tree || !remote_tree->is_visible()) {
-			scene_tree->show();
-		}
+		scene_tree->hide();
+		EntitySceneEditor::get_singleton()->set_visible(!remote_tree || !remote_tree->is_visible());
 		return;
 	}
 	if (remote_tree && remote_tree->is_visible()) {
@@ -5167,6 +5168,7 @@ SceneTreeDock::SceneTreeDock(Node *p_scene_root, EditorSelection *p_editor_selec
 
 	scene_tree = memnew(SceneTreeEditor(false, true, true));
 	main_mc->add_child(scene_tree);
+	main_mc->add_child(memnew(EntitySceneEditor));
 	scene_tree->get_scene_tree()->set_scroll_hint_mode(Tree::SCROLL_HINT_MODE_TOP);
 	scene_tree->connect("rmb_pressed", callable_mp(this, &SceneTreeDock::_tree_rmb));
 

@@ -54,6 +54,8 @@ public:
 		UndoRedo::MergeMode merge_mode = UndoRedo::MERGE_DISABLE;
 		bool backward_undo_ops = false;
 		bool mark_unsaved = true;
+		Callable native_undo;
+		Callable native_redo;
 	};
 
 	struct History {
@@ -124,6 +126,7 @@ public:
 	void add_do_reference(Object *p_object);
 	void add_undo_reference(Object *p_object);
 
+	void set_native_action(const Callable &p_undo, const Callable &p_redo);
 	void commit_action(bool p_execute = true);
 	bool is_committing_action() const;
 

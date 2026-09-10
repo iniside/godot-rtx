@@ -243,6 +243,13 @@ void EditorUndoRedoManager::add_undo_reference(Object *p_object) {
 	undo_redo->add_undo_reference(p_object);
 }
 
+void EditorUndoRedoManager::set_native_action(const Callable &p_undo, const Callable &p_redo) {
+	ERR_FAIL_COND(pending_action.history_id == INVALID_HISTORY);
+	ERR_FAIL_COND(pending_action.merge_mode != UndoRedo::MERGE_DISABLE);
+	pending_action.native_undo = p_undo;
+	pending_action.native_redo = p_redo;
+}
+
 void EditorUndoRedoManager::commit_action(bool p_execute) {
 	if (pending_action.history_id == INVALID_HISTORY) {
 		return; // Empty action, do nothing.
@@ -318,7 +325,14 @@ bool EditorUndoRedoManager::undo_history(int p_id) {
 	ERR_FAIL_COND_V(p_id == INVALID_HISTORY, false);
 	History &history = get_or_create_history(p_id);
 
+	ERR_FAIL_COND_V(history.undo_stack.is_empty(), false);
 	Action action = history.undo_stack.back()->get();
+	if (!action.native_undo.is_null()) {
+		Callable::CallError call_error;
+		Variant result;
+		action.native_undo.callp(nullptr, 0, result, call_error);
+		ERR_FAIL_COND_V(call_error.error != Callable::CallError::CALL_OK || result.get_type() != Variant::INT || int(result) != OK, false);
+	}
 	history.undo_stack.pop_back();
 	history.redo_stack.push_back(action);
 
@@ -371,7 +385,14 @@ bool EditorUndoRedoManager::redo_history(int p_id) {
 	ERR_FAIL_COND_V(p_id == INVALID_HISTORY, false);
 	History &history = get_or_create_history(p_id);
 
+	ERR_FAIL_COND_V(history.redo_stack.is_empty(), false);
 	Action action = history.redo_stack.back()->get();
+	if (!action.native_redo.is_null()) {
+		Callable::CallError call_error;
+		Variant result;
+		action.native_redo.callp(nullptr, 0, result, call_error);
+		ERR_FAIL_COND_V(call_error.error != Callable::CallError::CALL_OK || result.get_type() != Variant::INT || int(result) != OK, false);
+	}
 	history.redo_stack.pop_back();
 	history.undo_stack.push_back(action);
 

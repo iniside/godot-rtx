@@ -28,6 +28,7 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
+#include "editor/scene/entity/entity_scene_editor.h"
 #include "node_3d_editor_viewport.h"
 
 #include "core/config/project_settings.h"
@@ -2071,6 +2072,14 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 	}
 
 	if (_redirect_freelook_input(p_event, this)) {
+		return;
+	}
+
+	Ref<InputEventMouseButton> native_click = p_event;
+	if (EntitySceneEditor::get_singleton() && native_click.is_valid() && native_click->get_button_index() == MouseButton::LEFT && !native_click->is_alt_pressed()) {
+		if (native_click->is_pressed()) {
+			EntitySceneEditor::get_singleton()->pick(camera, native_click->get_position() * viewport->get_visible_rect().size / surface->get_size());
+		}
 		return;
 	}
 

@@ -28,6 +28,7 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
+#include "editor/scene/entity/entity_scene_editor.h"
 #include "editor_node.h"
 
 #ifndef _3D_DISABLED
@@ -2472,7 +2473,30 @@ static void _reset_animation_mixers(Node *p_node, List<Pair<AnimationMixer *, Re
 	}
 }
 
+bool EditorNode::_save_native_scene(const String &p_file, int p_idx) {
+	if (EntitySceneEditor::get_singleton()) {
+		EntitySceneEditor::get_singleton()->commit_pending_edits();
+	}
+	_save_editor_states(p_file, p_idx);
+	Ref<EntityScene> document = editor_data.get_scene_document(p_idx);
+	if (p_file.is_empty()) {
+		return document->get_record_count() == 0;
+	}
+	Error error = ResourceSaver::save(document, p_file);
+	if (error != OK) {
+		show_accept(vformat(TTR("Cannot save native scene (%d): %s"), error, document->get_last_error()), TTR("OK"));
+		return false;
+	}
+	editor_data.set_scene_as_saved(p_idx);
+	_update_title();
+	return true;
+}
+
 void EditorNode::_save_scene(String p_file, int idx) {
+	if (editor_data.get_scene_document(idx).is_valid()) {
+		_save_native_scene(p_file, idx < 0 ? editor_data.get_edited_scene() : idx);
+		return;
+	}
 	ERR_FAIL_COND_MSG(!saving_scene.is_empty() && saving_scene == p_file, "Scene saved while already being saved!");
 
 	Node *scene = editor_data.get_edited_scene_root(idx);
@@ -2620,7 +2644,7 @@ void EditorNode::_save_all_scenes() {
 	scenes_to_save_as.clear(); // In case saving was canceled before.
 	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
 		if (editor_data.get_scene_document(i).is_valid()) {
-			_save_editor_states(editor_data.get_scene_path(i), i);
+			_save_native_scene(editor_data.get_scene_path(i), i);
 			continue;
 		}
 		if (!is_scene_unsaved(i)) {
@@ -2668,6 +2692,9 @@ void EditorNode::_mark_unsaved_scenes() {
 }
 
 bool EditorNode::is_scene_unsaved(int p_idx) {
+	if (editor_data.get_scene_document(p_idx).is_valid()) {
+		return EditorUndoRedoManager::get_singleton()->is_history_unsaved(editor_data.get_scene_history_id(p_idx));
+	}
 	const Node *scene = editor_data.get_edited_scene_root(p_idx);
 	if (!scene) {
 		return false;
@@ -3474,7 +3501,9 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 			}
 			const int document_idx = scene_idx < 0 ? editor_data.get_edited_scene() : scene_idx;
 			if (editor_data.get_scene_document(document_idx).is_valid()) {
-				_save_editor_states(editor_data.get_scene_path(document_idx), document_idx);
+				if (!_save_native_scene(editor_data.get_scene_path(document_idx), document_idx)) {
+					break;
+				}
 				ScriptEditor::get_singleton()->save_current_script();
 				_save_external_resources(true);
 				save_editor_layout_delayed();
@@ -3855,7 +3884,7 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 					String unsaved_scenes;
 					int i = _next_unsaved_scene(true, 0);
 					while (i != -1) {
-						unsaved_scenes += "\n            " + editor_data.get_edited_scene_root(i)->get_scene_file_path();
+						unsaved_scenes += "\n            " + editor_data.get_scene_path(i);
 						i = _next_unsaved_scene(true, ++i);
 					}
 					if (p_option == PROJECT_RELOAD_CURRENT_PROJECT) {
@@ -3871,6 +3900,11 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 
 				DisplayServer::get_singleton()->window_request_attention();
 				break;
+			}
+			for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+				if (editor_data.get_scene_document(i).is_valid() && is_scene_unsaved(i) && !_save_native_scene(editor_data.get_scene_path(i), i)) {
+					return;
+				}
 			}
 			_save_external_resources();
 			_discard_changes();
@@ -4196,11 +4230,11 @@ void EditorNode::_export_as_menu_option(int p_idx) {
 
 int EditorNode::_next_unsaved_scene(bool p_valid_filename, int p_start) {
 	for (int i = p_start; i < editor_data.get_edited_scene_count(); i++) {
-		if (!editor_data.get_edited_scene_root(i)) {
+		if (!editor_data.get_edited_scene_root(i) && editor_data.get_scene_document(i).is_null()) {
 			continue;
 		}
 
-		String scene_filename = editor_data.get_edited_scene_root(i)->get_scene_file_path();
+		String scene_filename = editor_data.get_scene_path(i);
 		if (p_valid_filename && scene_filename.is_empty()) {
 			continue;
 		}
@@ -6715,13 +6749,16 @@ void EditorNode::_restart_editor(bool p_goto_project_manager) {
 void EditorNode::_scene_tab_closed(int p_tab) {
 	current_menu_option = SCENE_TAB_CLOSE;
 	tab_closing_idx = p_tab;
+	if (EntitySceneEditor::get_singleton()) {
+		EntitySceneEditor::get_singleton()->commit_pending_edits();
+	}
 	Node *scene = editor_data.get_edited_scene_root(p_tab);
-	if (!scene) {
+	if (!scene && editor_data.get_scene_document(p_tab).is_null()) {
 		_discard_changes();
 		return;
 	}
 
-	String scene_filename = scene->get_scene_file_path();
+	String scene_filename = editor_data.get_scene_path(p_tab);
 	String unsaved_message;
 
 	if (EditorUndoRedoManager::get_singleton()->is_history_unsaved(editor_data.get_scene_history_id(p_tab))) {

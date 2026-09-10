@@ -28,14 +28,15 @@ public:
 		EntityWorld::ReparentMode reparent_mode = EntityWorld::KEEP_WORLD;
 	};
 
-private:
-	struct History {
+	struct Transaction {
 		String name;
 		Dictionary before;
 		Dictionary after;
 		Dictionary prefabs_before;
 		Dictionary prefabs_after;
 	};
+private:
+	using History = Transaction;
 	EntityScene &document;
 	Vector<History> history;
 	int cursor = 0;
@@ -53,7 +54,8 @@ private:
 
 public:
 	explicit EntitySceneCommands(EntityScene &p_document) : document(p_document) {}
-	Error execute(const String &p_name, const Vector<Command> &p_commands, Dictionary *r_remap = nullptr);
+	Error execute(const String &p_name, const Vector<Command> &p_commands, Dictionary *r_remap = nullptr, Transaction *r_transaction = nullptr);
+	Error restore_transaction(const Transaction &p_transaction, bool p_forward);
 	Error undo();
 	Error redo();
 	bool can_undo() const { return cursor > 0; }

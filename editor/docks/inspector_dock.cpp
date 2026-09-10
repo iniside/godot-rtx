@@ -534,7 +534,25 @@ void InspectorDock::set_info(const String &p_button_text, const String &p_messag
 void InspectorDock::clear() {
 }
 
+void InspectorDock::set_native_editor(Control *p_editor) {
+	ERR_FAIL_COND(native_editor != nullptr);
+	native_editor = p_editor;
+	inspector->get_parent()->add_child(native_editor);
+	show_native_editor();
+}
+
+void InspectorDock::show_native_editor() {
+	if (native_editor) {
+		inspector->hide();
+		native_editor->show();
+	}
+}
+
 void InspectorDock::update(Object *p_object) {
+	if (native_editor && p_object) {
+		native_editor->hide();
+		inspector->show();
+	}
 	EditorSelectionHistory *editor_history = EditorNode::get_singleton()->get_editor_selection_history();
 
 	backward_button->set_disabled(editor_history->is_at_beginning());

@@ -150,6 +150,7 @@ public:
 
 	Error add_component(EntityHandle p_handle, uint64_t p_component);
 	Error remove_component(EntityHandle p_handle, uint64_t p_component);
+	bool has_component(EntityHandle p_handle, uint64_t p_component) const;
 	Error read_component(EntityHandle p_handle, uint64_t p_component, Variant &r_value) const;
 	Error write_component(EntityHandle p_handle, uint64_t p_component, const Variant &p_value);
 	Error read_field(EntityHandle p_handle, uint64_t p_component, uint64_t p_field, Variant &r_value) const;

@@ -226,7 +226,7 @@ Error EntitySceneCommands::_apply(EntityScene &p_scene, const Command &p_command
 	return error;
 }
 
-Error EntitySceneCommands::execute(const String &p_name, const Vector<Command> &p_commands, Dictionary *r_remap) {
+Error EntitySceneCommands::execute(const String &p_name, const Vector<Command> &p_commands, Dictionary *r_remap, Transaction *r_transaction) {
 	ERR_FAIL_COND_V(document._owner() != OK, ERR_UNAUTHORIZED);
 	ERR_FAIL_COND_V(p_commands.is_empty(), ERR_INVALID_PARAMETER);
 	Vector<EntityId> needed;
@@ -437,12 +437,20 @@ Error EntitySceneCommands::execute(const String &p_name, const Vector<Command> &
 	}
 	document.prefab_instances = prepared->prefab_instances;
 	document._commit(**prepared, changed, true);
-	_push(item);
+	if (r_transaction) {
+		*r_transaction = item;
+	} else {
+		_push(item);
+	}
 	document.emit_changed();
 	if (r_remap) {
 		*r_remap = remap;
 	}
 	return OK;
+}
+
+Error EntitySceneCommands::restore_transaction(const Transaction &p_transaction, bool p_forward) {
+	return _restore(p_forward ? p_transaction.after : p_transaction.before, p_forward ? p_transaction.prefabs_after : p_transaction.prefabs_before);
 }
 
 Error EntitySceneCommands::undo() {

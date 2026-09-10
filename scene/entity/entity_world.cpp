@@ -384,6 +384,12 @@ Error EntityWorld::remove_component(EntityHandle p_handle, uint64_t p_component)
 	return OK;
 }
 
+bool EntityWorld::has_component(EntityHandle p_handle, uint64_t p_component) const {
+	ERR_FAIL_COND_V(!_is_owner(), false);
+	const EntityComponentSchema *schema = schemas.find(p_component);
+	return is_alive(p_handle) && schema && schema->is_component && ecs_has_id(ecs.c_ptr(), p_handle.entity, schema->runtime_id);
+}
+
 Error EntityWorld::read_component(EntityHandle p_handle, uint64_t p_component, Variant &r_value) const {
 	ERR_FAIL_COND_V(!is_alive(p_handle), ERR_DOES_NOT_EXIST);
 	const EntityComponentSchema *schema = schemas.find(p_component);

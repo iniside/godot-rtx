@@ -74,6 +74,7 @@ class InspectorDock : public EditorDock {
 	EditorData *editor_data = nullptr;
 
 	EditorInspector *inspector = nullptr;
+	Control *native_editor = nullptr;
 
 	Object *current = nullptr;
 
@@ -148,6 +149,8 @@ protected:
 	void _notification(int p_what);
 
 public:
+	void set_native_editor(Control *p_editor);
+	void show_native_editor();
 	void go_back();
 	void edit_resource(const Ref<Resource> &p_resource);
 	void open_resource(const String &p_type);
