@@ -229,6 +229,26 @@ Real Vulkan exercise of native geometry is required before this renderer step
 can be considered complete; finite production-content dependencies must be
 addressed explicitly rather than replacing them with empty-world startup proof.
 
+The existing `energy_directional` fixture is reserved for the first native
+Vulkan exercise after render schemas stabilize. Read-only comparison confirms
+its scene, geometry.gltf/import, plane wrapper/mesh and current dirty project
+configuration match the preserved `entity_migration/sources.json` hashes.
+Resolved inputs and defaults remain in the existing preservation artifacts;
+no new conversion has run. Retain all four glTF meshes, including three hidden
+siblings and Deformer's Stretch morph target, both cameras, the directional
+light and environment. Required shared identities are four meshes, one material
+and one Environment; Plane already has `geometry_parts/plane_mesh.tres`.
+Conversion must use standalone shared assets or verified stable asset addressing,
+not retain old scene wrappers as the runtime world. File-local resource IDs are
+not ResourceUIDs. Existing project main_scene remains unchanged until migration.
+
+Renderer tracing confirms additional active consumers in geometry implementations,
+backend override parity, editor previews/interface/gizmos and retained scene
+parser types. Those consumers belong to the same replacement step. Native
+double translation must reach the existing high/low GPU motion path even in
+ordinary builds; the old REAL_T_IS_DOUBLE condition cannot be used as a proxy
+for EntityPosition precision. No native renderer execution is established yet.
+
 ## Remaining work
 
 Renderer, editor, subsystems and
