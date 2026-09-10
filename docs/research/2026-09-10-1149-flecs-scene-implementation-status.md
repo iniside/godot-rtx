@@ -224,7 +224,8 @@ introduced to stand in for that topology.
 
 Task baseline: `2a7768e58ce1f6a360c90bdb6ac5539733634b56`. The full renderer
 frontend/consumer replacement and render-component integration is delegated as
-one responsibility. No source change or native-rendering result is claimed yet.
+one responsibility. Implementation is uncommitted; no native-rendering result
+is claimed yet.
 Real Vulkan exercise of native geometry is required before this renderer step
 can be considered complete; finite production-content dependencies must be
 addressed explicitly rather than replacing them with empty-world startup proof.
@@ -264,6 +265,37 @@ ADD_COMPONENT command batch and EntitySceneIO::save. Relevant source anchors:
 not an implemented converter or successful native scene round trip. The
 converter writer will run after the renderer source freezes, with serialized
 source ownership and builds.
+
+Owner sequencing correction (2026-09-10): prioritize a visible native
+energy_directional scene before expanding the remaining renderer refactor.
+After the current coherent ordinary build, temporarily freeze source and pass
+the build/source slot to the finite converter. Then execute mesh, material,
+camera and light on Vulkan and fix any actual rendering blockers first. The
+scene near the origin does not depend on completing every 100 km/nonmesh/tool
+path. Those obligations remain in step 5 after this first-image gate; the
+temporary checkpoint is not source completion or final renderer acceptance.
+
+First-image checkpoint: ordinary editor build passes in 30.56s at
+`111c6a19b57b479cb1dc4325d25af744e6550156` plus the uncommitted renderer changes.
+`gpuprofile/ecs_step5_renderer/converter_checkpoint_manifest.json` records
+138 owned source paths/hashes and binary/log hashes; the paired build log is
+`converter_checkpoint_build.log`. Engine executable SHA256 is
+`927a1830f4f2b8b2eb4e2bbb9f1c612a9f850fea23bf01e76033a03b33d0c161`.
+The renderer writer has stopped and released source/build ownership to the
+bounded finite-conversion context. Double/template and nonempty Vulkan
+validation are still pending. This is compile evidence for an intermediate
+dirty source snapshot, not a reviewed or completed renderer implementation.
+
+Bounded baseline artifact audit found historical stress logs, but no retained
+replayable exact pre-entity executable in their named artifact locations.
+`%TEMP%/godot-render-repair-20260909/micro-step4-history-final.log` and its
+receipt cover the older runtime-populated scene, while `editable-stress-game`
+log/receipt cover the retained serialized topology for only 300 frames and
+explicitly do not establish a performance comparison. Their executable paths
+have since been overwritten. Historical numbers therefore remain references,
+not a controlled A/B gate; final native measurements must state this limit.
+This read-only audit does not block the first native image or authorize
+recreating the old Node world. No benchmark was run during this audit.
 
 Intermediate tool closure will also remove Node-based polygon/skeleton authoring
 and import-dialog animation playback. Shared mesh/material/static import
