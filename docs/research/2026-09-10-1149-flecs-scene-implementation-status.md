@@ -249,6 +249,22 @@ double translation must reach the existing high/low GPU motion path even in
 ordinary builds; the old REAL_T_IS_DOUBLE condition cannot be used as a proxy
 for EntityPosition precision. No native renderer execution is established yet.
 
+Finite-conversion integration research (2026-09-10, document APIs unchanged
+since `2a7768e58c`) selects a tools-only editor command after the first
+EditorFileSystem import scan. An earlier Main startup hook would depend on
+existing glTF import artifacts. The existing `wait_for_import` lifecycle can
+keep the command alive until assets are available, with game scene opening
+disabled. Root `editor/SCsub` already includes editor C++ sources. Read shared
+meshes through PackedScene/SceneState without instantiating Nodes, save/reload
+standalone resources and verify ResourceUIDs, then use one CREATE plus typed
+ADD_COMPONENT command batch and EntitySceneIO::save. Relevant source anchors:
+`main/main.cpp:1708,4410,4602,5044`, `editor/editor_node.cpp:915,8529`,
+`scene/entity/entity_scene_commands.cpp:229,434`, and
+`scene/entity/entity_scene_io.cpp:212`. This is clangd/source/history research,
+not an implemented converter or successful native scene round trip. The
+converter writer will run after the renderer source freezes, with serialized
+source ownership and builds.
+
 ## Remaining work
 
 Renderer, editor, subsystems and
