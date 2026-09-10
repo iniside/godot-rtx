@@ -35,6 +35,11 @@ właściciel potwierdził obraz. Konwersja i przechwycenie Vulkan kończą się 
 0. Zwykły przebieg tej samej nieruchomej sceny bez zapisu PNG raportuje
 198–219 FPS przy 1280x720 na RTX 4090, bez VSync. Audyt ograniczonego dowodu main przeszedł;
 pozostała implementacja została wznowiona.
+Kolejna para klatek ordinary Vulkan zachowuje układ i widoczność galerii po
+przesunięciu wszystkich encji o 100000 na każdej osi; niezależny audyt danych
+i obrazu przeszedł. To dowód nieruchomej galerii, nie pełnej poprawności mgły/GI,
+cieni, ruchu ani gęstego świata. Status rozdziela hash silnika od launchera
+konsolowego oraz odnotowuje ograniczenia historycznego snapshotu źródeł.
 Operacje prefab/UI oraz cała integracja renderera pozostają nieukończone. Zobacz
 [status i granice dowodów](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
 Reakcja na zmianę energii światła, pozostałe przypadki renderowania i wydajność gęstego świata

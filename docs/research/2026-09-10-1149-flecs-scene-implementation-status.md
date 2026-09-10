@@ -373,7 +373,7 @@ frames. Initial converter shutdown failure and the resulting missing persisted
 Environment UID were corrected using existing ResourceUID cache persistence
 and normal SceneTree quit. Evidence: `gpuprofile/ecs_main_converter/manifest.json`
 and `gpuprofile/ecs_main_first_image/capture02/main00000119.png`, at HEAD
-`fd59c0dcbc` plus the recorded uncommitted source; executable SHA256
+`fd59c0dcbc` plus the recorded uncommitted source; console-launcher SHA256
 `aa66dd0691d2ef72e8f8ec9d9ba625f0e2e17216e8dc4ec981cfa5328dd4ab59`.
 Fresh bounded main proof audit PASS independently verifies 150 artifact hashes,
 138 checkpoint source entries, preserved population/input hashes, typed readback,
@@ -387,6 +387,47 @@ windows (`gpuprofile/ecs_main_first_image/normal01.log`). MovieWriter reported
 is not ordinary runtime FPS. This verifies only the static gallery at 1280x720
 on RTX 4090, not dense-world performance, animation, or an old/new comparison.
 The owner authorized resuming the remaining implementation after this result.
+
+Resumed shadow precision checkpoint at `a49e5c7b96` plus dirty source builds
+ordinary editor (58.60s, final 31.27s) and renders the unchanged main gallery
+for 120 Vulkan frames with exit 0. Root inspected the new image: recognizable
+geometry/materials/shadows remain visible. Evidence is under
+`gpuprofile/ecs_step5_renderer/shadow_capture01/`; console-launcher SHA256
+`a9d9fff0624b86503b6c13b7627e1f2c1f73017f7a6f197acbba3461cafc4ba2`.
+This is an origin-scene check only, not far-coordinate or isolated raster-shadow
+proof. Fog/GI, particles/colliders and remaining tool consumers are still open.
+
+Fog source closure builds ordinary editor (58.01s); subsequent VoxelGI/lightmap
+closure builds after correcting the Dummy override (37.23s). A finite scratch
+copy of main translates all 67 parentless entities by `(100000,100000,100000)`;
+201 same-width position payloads change, with original scene/assets and the
+copy's header/manifest otherwise unchanged. Data and provenance are under
+`gpuprofile/ecs_step5_renderer/far_main/`. Matched ordinary Vulkan runs of
+origin and translated main each exit 0 with 120 captured frames using the same
+console launcher SHA256 `62cacf8168d2cc87cf95a79b1e541146e211d0dfc00aacbdd9e5d26a628e6040`.
+Root inspected both: gallery geometry/layout/materials/shadows remain visible;
+images are not pixel-identical. `gi_origin_far_manifest.json` records source
+and artifact identities. Fresh bounded far proof audit PASS independently
+decodes all translated positions, compares 76 unchanged dependencies and their
+actual loads, verifies all 11 frozen artifact hashes, inspects both images and
+verifies the engine/launcher companion metadata. This supports
+static translated-gallery visibility only, not isolated fog/VoxelGI/raster-shadow,
+motion, dense-world performance or the double build axis. Particle simulation,
+collider publication and remaining tool consumers are now the active work.
+
+The far proof audit exposed an executable-identity metadata error: Windows
+`console_wrapper_windows.cpp` launches the sibling GUI executable; the console
+hash does not identify the rendering engine. The actual GUI engine was retained
+after both captures, before another build, with SHA256
+`d75e3c196dac1fe1404294ef9d93f1576a466890a09cbbcff55cc37ba3b3c03c`.
+This is post-capture collection with recorded no-build continuity, not a
+contemporaneous engine hash. Earlier console-only receipts likewise cannot
+cryptographically pin their historical engine binary. Exact historical source
+reconstruction is also unavailable for this checkpoint: source hashes were
+retained, but no complete source snapshot before subsequent particle edits.
+The saved scene data, actual Vulkan images and capture logs remain valid
+bounded observations. Future checkpoints retain both engine and launcher plus
+the exact owned source snapshot before further edits.
 
 Bounded baseline artifact audit found historical stress logs, but no retained
 replayable exact pre-entity executable in their named artifact locations.
@@ -408,6 +449,25 @@ second preview-only evaluator or retain the old Node tick as a bridge. This is
 an implementation sequencing boundary, not a final animation scope exclusion.
 
 ## Remaining work
+
+Step 6 entry research at `a49e5c7b96` verifies that document/tab ownership,
+open/save, Inspector and undo still require native integration. Existing
+EntityScene/EntityWorld/schema/command APIs already provide the data substrate;
+no entity Object proxy is needed. `EditorData::EditedScene` owns Node roots and
+selection; `EditorNode::load_scene` instantiates PackedScene. Native save must
+replace the old packing flags too: `_save_scene` always supplies
+`FLAG_REPLACE_SUBRESOURCE_PATHS`, rejected by ResourceFormatSaverEntityScene.
+Inspector field reads, defaults/revert and schema enumeration must resolve
+native addresses, while real shared Resource subinspectors remain supported.
+
+Undo integration must preserve one chronological history across entity edits
+and shared-resource edits. Existing native commands advance a separate cursor;
+blindly wrapping execute/undo in UI MERGE_ENDS actions would undo a 0→1→2
+gesture only to 1. The approved document-service target should apply native
+transaction payloads under the existing EditorUndoRedoManager chronology,
+preserving atomic validation/restore. Native failure must not advance UI
+history: existing core UndoRedo ignores invoked method return values. These
+are source-backed implementation entry constraints, not executed editor proof.
 
 Renderer, editor, subsystems and
 native import/export steps have not landed. Existing Node-world

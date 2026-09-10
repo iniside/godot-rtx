@@ -26,6 +26,12 @@ and shadows, confirmed by the owner. Conversion and Vulkan capture exit 0;
 the same binary's ordinary static run reports 198–219 FPS at 1280x720 on
 RTX 4090 with VSync disabled. This is not dense-world or animation evidence;
 bounded main proof audit passes. Remaining implementation has resumed.
+Subsequent ordinary Vulkan captures preserve recognizable static gallery
+geometry/materials/shadows after translating all roots by 100000 on each axis;
+independent data/image audit passes. Engine identity is recorded separately
+from the Windows console launcher, with explicit post-capture collection.
+Fog/GI changes compile; isolated feature execution, particles and tool closure
+remain incomplete. See the status for source-snapshot and proof limits.
 Prefab/UI workflows and full renderer integration remain incomplete. See
 [execution evidence and limits](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
 Scripting, Node plugins, 2D and HTML/CSS
