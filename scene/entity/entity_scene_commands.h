@@ -40,7 +40,7 @@ private:
 	Vector<History> history;
 	int cursor = 0;
 
-	Error _snapshot(EntityScene &p_scene, const Vector<EntityId> &p_ids, Dictionary &r_records);
+	Error _snapshot(EntityScene &p_scene, const Vector<EntityId> &p_ids, Dictionary &r_records, bool p_prefer_stored = false);
 	Error _restore(const Dictionary &p_records, const Dictionary &p_prefabs);
 	Error _apply(EntityScene &p_scene, const Command &p_command, Vector<EntityId> &r_changed, Dictionary &r_remap);
 	Error _remap_record(Dictionary &r_record, const Dictionary &p_remap);

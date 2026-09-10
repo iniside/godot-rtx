@@ -2,7 +2,7 @@
 
 #include "entity_scene_io.h"
 
-Error EntitySceneCommands::_snapshot(EntityScene &p_scene, const Vector<EntityId> &p_ids, Dictionary &r_records) {
+Error EntitySceneCommands::_snapshot(EntityScene &p_scene, const Vector<EntityId> &p_ids, Dictionary &r_records, bool p_prefer_stored) {
 	for (EntityId id : p_ids) {
 		Dictionary record;
 		if (p_scene.catalog.get_state(id) == EntityReferenceState::MISSING) {
@@ -11,7 +11,7 @@ Error EntitySceneCommands::_snapshot(EntityScene &p_scene, const Vector<EntityId
 			record["deleted"] = true;
 			record["order"] = int64_t(0);
 		} else {
-			Error error = p_scene._read_record(id, record);
+			Error error = p_scene._read_record(id, record, nullptr, p_prefer_stored);
 			if (error != OK) {
 				return error;
 			}
@@ -375,6 +375,9 @@ Error EntitySceneCommands::execute(const String &p_name, const Vector<Command> &
 			override["before"] = command.before.duplicate(true);
 			override["after"] = command.after.duplicate(true);
 			override["parent"] = command.parent.to_string();
+			if (command.kind == REPARENT) {
+				override["reparent_mode"] = int(command.reparent_mode);
+			}
 			overrides.push_back(override);
 			for (const Variant &local_id : poses_before.get_key_list()) {
 				String source_key;
@@ -646,6 +649,13 @@ Error EntitySceneCommands::_reconcile_prefab_catalog() {
 		}
 		for (const Variant &value : Array(instance["overrides"])) {
 			if (value.get_type() != Variant::DICTIONARY || !Dictionary(value).has_all(Array{"source", "kind", "component", "field", "before", "after", "parent"})) {
+				return ERR_FILE_CORRUPT;
+			}
+			Dictionary override = value;
+			if (override["kind"].get_type() != Variant::INT) {
+				return ERR_FILE_CORRUPT;
+			}
+			if (int(override["kind"]) == REPARENT && (!override.has("reparent_mode") || override["reparent_mode"].get_type() != Variant::INT || (int64_t(override["reparent_mode"]) != EntityWorld::KEEP_WORLD && int64_t(override["reparent_mode"]) != EntityWorld::KEEP_LOCAL))) {
 				return ERR_FILE_CORRUPT;
 			}
 		}
@@ -963,10 +973,8 @@ Error EntitySceneCommands::refresh_prefab(EntityId p_instance, const Ref<EntityS
 		ids.push_back(id);
 	}
 	Dictionary saved_prefabs = document.prefab_instances;
-	document.prefab_instances = Dictionary();
 	Ref<EntityScene> prepared;
-	Error error = document._prepare(ids, prepared);
-	document.prefab_instances = saved_prefabs;
+	Error error = document._prepare(ids, prepared, true);
 	if (error != OK) {
 		return error;
 	}
@@ -987,9 +995,7 @@ Error EntitySceneCommands::refresh_prefab(EntityId p_instance, const Ref<EntityS
 	item.name = "Refresh prefab";
 	item.prefabs_before = saved_prefabs.duplicate(true);
 	item.prefabs_after = prepared->prefab_instances.duplicate(true);
-	document.prefab_instances = Dictionary();
-	error = _snapshot(document, changed, item.before);
-	document.prefab_instances = saved_prefabs;
+	error = _snapshot(document, changed, item.before, true);
 	if (error == OK) {
 		error = _snapshot(**prepared, changed, item.after);
 	}
@@ -1093,6 +1099,9 @@ Error EntitySceneCommands::apply_overrides(EntityId p_instance, const Ref<Entity
 		command.document = p_prefab->document_id;
 		EntityId::parse(override["source"], command.entity);
 		command.kind = Kind(int(override["kind"]));
+		if (command.kind == REPARENT) {
+			command.reparent_mode = EntityWorld::ReparentMode(int(override["reparent_mode"]));
+		}
 		command.component = String(override["component"]).hex_to_int();
 		command.field = String(override["field"]).hex_to_int();
 		command.before = override["before"].duplicate(true);
@@ -1183,10 +1192,8 @@ Error EntitySceneCommands::apply_overrides(EntityId p_instance, const Ref<Entity
 			}
 		}
 		Dictionary user_prefabs = user->prefab_instances;
-		user->prefab_instances = Dictionary();
 		Ref<EntityScene> prepared;
-		error = user->_prepare(needed, prepared);
-		user->prefab_instances = user_prefabs;
+		error = user->_prepare(needed, prepared, true);
 		if (error != OK) {
 			return error;
 		}

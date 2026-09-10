@@ -113,7 +113,7 @@ Error EntityScene::_encode_record(EntityId p_id, Dictionary &r_record) {
 	return OK;
 }
 
-Error EntityScene::_read_record(EntityId p_id, Dictionary &r_record, bool *r_stored) {
+Error EntityScene::_read_record(EntityId p_id, Dictionary &r_record, bool *r_stored, bool p_prefer_stored) {
 	if (r_stored) {
 		*r_stored = false;
 	}
@@ -123,7 +123,10 @@ Error EntityScene::_read_record(EntityId p_id, Dictionary &r_record, bool *r_sto
 		error = _encode_record(p_id, r_record);
 	} else if (target.state == EntityReferenceState::UNLOADED) {
 		bool prefab_record = false;
-		error = get_commands()._prefab_record(p_id, r_record, prefab_record);
+		const Section *section = sections.getptr(p_id);
+		if (!p_prefer_stored || !section || (section->bytes.is_empty() && !section->length)) {
+			error = get_commands()._prefab_record(p_id, r_record, prefab_record);
+		}
 		if (error != OK) {
 			return error;
 		}
@@ -309,7 +312,7 @@ Error EntityScene::_collect_required(const Vector<EntityId> &p_ids, Vector<Entit
 	return OK;
 }
 
-Error EntityScene::_prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_scene) {
+Error EntityScene::_prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_scene, bool p_prefer_stored) {
 	ERR_FAIL_COND_V(_owner() != OK, ERR_UNAUTHORIZED);
 	Vector<EntityId> required;
 	Error error = _collect_required(p_ids, required);
@@ -321,7 +324,7 @@ Error EntityScene::_prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_s
 	prepared->document_id = document_id;
 	for (EntityId id : required) {
 		Dictionary record;
-		error = _read_record(id, record);
+		error = _read_record(id, record, nullptr, p_prefer_stored);
 		if (error != OK) {
 			return error;
 		}

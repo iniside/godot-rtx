@@ -35,11 +35,11 @@ class EntityScene : public Resource {
 	Thread::ID owner_thread = 0;
 
 	Error _owner();
-	Error _read_record(EntityId p_id, Dictionary &r_record, bool *r_stored = nullptr);
+	Error _read_record(EntityId p_id, Dictionary &r_record, bool *r_stored = nullptr, bool p_prefer_stored = false);
 	Error _read_bytes(EntityId p_id, PackedByteArray &r_bytes);
 	Error _encode_record(EntityId p_id, Dictionary &r_record);
 	Error _collect_required(const Vector<EntityId> &p_ids, Vector<EntityId> &r_ids) const;
-	Error _prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_scene);
+	Error _prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_scene, bool p_prefer_stored = false);
 	Error _can_commit(const EntityScene &p_prepared, const Vector<EntityId> &p_ids) const;
 	void _commit(EntityScene &p_prepared, const Vector<EntityId> &p_ids, bool p_resident);
 	Error _install(EntityId p_id, const Dictionary &p_record);
