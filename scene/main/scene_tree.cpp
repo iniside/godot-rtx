@@ -158,9 +158,6 @@ void SceneTree::node_added(Node *p_node) {
 
 void SceneTree::node_removed(Node *p_node) {
 	// Nodes can only be removed from the main thread.
-	if (current_scene == p_node) {
-		current_scene = nullptr;
-	}
 	emit_signal(node_removed_name, p_node);
 	if (nodes_removed_on_group_call_lock) {
 		nodes_removed_on_group_call.insert(p_node);
@@ -722,10 +719,6 @@ bool SceneTree::process(double p_time) {
 	MessageQueue::get_singleton()->flush(); //small little hack
 	flush_transform_notifications(); //transforms after world update, to avoid unnecessary enter/exit notifications
 
-	if (unlikely(pending_new_scene_id.is_valid())) {
-		_flush_scene_change();
-	}
-
 	process_timers(p_time, false); //go through timers
 	process_tweens(p_time, false);
 
@@ -737,46 +730,6 @@ bool SceneTree::process(double p_time) {
 	_flush_accessibility_changes();
 
 	_call_idle_callbacks();
-
-#ifdef TOOLS_ENABLED
-#ifndef _3D_DISABLED
-	if (Engine::get_singleton()->is_editor_hint()) {
-		String env_path = GLOBAL_GET("rendering/environment/defaults/default_environment");
-		env_path = env_path.strip_edges(); // User may have added a space or two.
-
-		bool can_load = true;
-		if (env_path.begins_with("uid://")) {
-			// If an uid path, ensure it is mapped to a resource which could not be
-			// the case if the editor is still scanning the filesystem.
-			ResourceUID::ID id = ResourceUID::get_singleton()->text_to_id(env_path);
-			can_load = ResourceUID::get_singleton()->has_id(id);
-			if (can_load) {
-				env_path = ResourceUID::get_singleton()->get_id_path(id);
-			}
-		}
-
-		if (can_load) {
-			String cpath;
-			Ref<Environment> fallback = get_root()->get_world_3d()->get_fallback_environment();
-			if (fallback.is_valid()) {
-				cpath = fallback->get_path();
-			}
-			if (cpath != env_path) {
-				if (!env_path.is_empty()) {
-					fallback = ResourceLoader::load(env_path);
-					if (fallback.is_null()) {
-						//could not load fallback, set as empty
-						ProjectSettings::get_singleton()->set("rendering/environment/defaults/default_environment", "");
-					}
-				} else {
-					fallback.unref();
-				}
-				get_root()->get_world_3d()->set_fallback_environment(fallback);
-			}
-		}
-	}
-#endif // _3D_DISABLED
-#endif // TOOLS_ENABLED
 
 	// Second pass of scene tree fixed timestep interpolation.
 	// ToDo: Possibly needs another flush_transform_notifications here
@@ -1660,111 +1613,6 @@ Node *SceneTree::get_edited_scene_root() const {
 #endif
 }
 
-void SceneTree::set_current_scene(Node *p_scene) {
-	ERR_FAIL_COND_MSG(!Thread::is_main_thread(), "Changing scene can only be done from the main thread.");
-	ERR_FAIL_COND(p_scene && p_scene->get_parent() != root);
-	current_scene = p_scene;
-}
-
-Node *SceneTree::get_current_scene() const {
-	return current_scene;
-}
-
-void SceneTree::_flush_scene_change() {
-	if (prev_scene_id.is_valid()) {
-		// Might have already been freed externally.
-		Node *prev_scene = ObjectDB::get_instance<Node>(prev_scene_id);
-		if (prev_scene) {
-			memdelete(prev_scene);
-		}
-		prev_scene_id = ObjectID();
-	}
-
-	DEV_ASSERT(pending_new_scene_id.is_valid());
-	Node *pending_new_scene = ObjectDB::get_instance<Node>(pending_new_scene_id);
-	if (pending_new_scene) {
-		// Ensure correct state before `add_child` (might enqueue subsequent scene change).
-		current_scene = pending_new_scene;
-		pending_new_scene_id = ObjectID();
-
-		root->add_child(pending_new_scene);
-		// Update display for cursor instantly.
-		root->update_mouse_cursor_state();
-
-		// Only on successful scene change.
-		emit_signal(SNAME("scene_changed"));
-	} else {
-		current_scene = nullptr;
-		pending_new_scene_id = ObjectID();
-		ERR_PRINT("Scene instance has been freed before becoming the current scene. No current scene is set.");
-	}
-}
-
-Error SceneTree::change_scene_to_file(const String &p_path) {
-	ERR_FAIL_COND_V_MSG(!Thread::is_main_thread(), ERR_INVALID_PARAMETER, "Changing scene can only be done from the main thread.");
-	Ref<PackedScene> new_scene = ResourceLoader::load(p_path);
-	if (new_scene.is_null()) {
-		return ERR_CANT_OPEN;
-	}
-
-	return change_scene_to_packed(new_scene);
-}
-
-Error SceneTree::change_scene_to_packed(RequiredParam<PackedScene> rp_scene) {
-	EXTRACT_PARAM_OR_FAIL_V_MSG(p_scene, rp_scene, ERR_INVALID_PARAMETER, "Can't change to a null scene. Use unload_current_scene() if you wish to unload it.");
-
-	Node *new_scene = p_scene->instantiate();
-	ERR_FAIL_NULL_V(new_scene, ERR_CANT_CREATE);
-
-	return change_scene_to_node(new_scene);
-}
-
-Error SceneTree::change_scene_to_node(RequiredParam<Node> rp_node) {
-	EXTRACT_PARAM_OR_FAIL_V_MSG(p_node, rp_node, ERR_INVALID_PARAMETER, "Can't change to a null node. Use unload_current_scene() if you wish to unload it.");
-	ERR_FAIL_COND_V_MSG(p_node->is_inside_tree(), ERR_UNCONFIGURED, "The new scene node can't already be inside scene tree.");
-
-	// If called again while a change is pending.
-	if (pending_new_scene_id.is_valid()) {
-		Node *pending_new_scene = ObjectDB::get_instance<Node>(pending_new_scene_id);
-		if (pending_new_scene) {
-			queue_delete(pending_new_scene);
-		}
-		pending_new_scene_id = ObjectID();
-	}
-
-	if (current_scene) {
-		prev_scene_id = current_scene->get_instance_id();
-		// Let as many side effects as possible happen or be queued now,
-		// so they are run before the scene is actually deleted.
-		root->remove_child(current_scene);
-	}
-	DEV_ASSERT(!current_scene);
-
-	pending_new_scene_id = p_node->get_instance_id();
-	return OK;
-}
-
-Error SceneTree::reload_current_scene() {
-	ERR_FAIL_COND_V_MSG(!Thread::is_main_thread(), ERR_INVALID_PARAMETER, "Reloading scene can only be done from the main thread.");
-	ERR_FAIL_NULL_V(current_scene, ERR_UNCONFIGURED);
-	String fname = current_scene->get_scene_file_path();
-	return change_scene_to_file(fname);
-}
-
-void SceneTree::unload_current_scene() {
-	ERR_FAIL_COND_MSG(!Thread::is_main_thread(), "Unloading the current scene can only be done from the main thread.");
-	if (current_scene) {
-		memdelete(current_scene);
-		current_scene = nullptr;
-	}
-}
-
-void SceneTree::add_current_scene(Node *p_current) {
-	ERR_FAIL_COND_MSG(!Thread::is_main_thread(), "Adding a current scene can only be done from the main thread.");
-	current_scene = p_current;
-	root->add_child(p_current);
-}
-
 RequiredResult<SceneTreeTimer> SceneTree::create_timer(double p_delay_sec, bool p_process_always, bool p_process_in_physics, bool p_ignore_time_scale) {
 	_THREAD_SAFE_METHOD_
 	Ref<SceneTreeTimer> stt;
@@ -1950,16 +1798,6 @@ void SceneTree::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_first_node_in_group", "group"), &SceneTree::get_first_node_in_group);
 	ClassDB::bind_method(D_METHOD("get_node_count_in_group", "group"), &SceneTree::get_node_count_in_group);
 
-	ClassDB::bind_method(D_METHOD("set_current_scene", "child_node"), &SceneTree::set_current_scene);
-	ClassDB::bind_method(D_METHOD("get_current_scene"), &SceneTree::get_current_scene);
-
-	ClassDB::bind_method(D_METHOD("change_scene_to_file", "path"), &SceneTree::change_scene_to_file);
-	ClassDB::bind_method(D_METHOD("change_scene_to_packed", "packed_scene"), &SceneTree::change_scene_to_packed);
-	ClassDB::bind_method(D_METHOD("change_scene_to_node", "node"), &SceneTree::change_scene_to_node);
-
-	ClassDB::bind_method(D_METHOD("reload_current_scene"), &SceneTree::reload_current_scene);
-	ClassDB::bind_method(D_METHOD("unload_current_scene"), &SceneTree::unload_current_scene);
-
 	ClassDB::bind_method(D_METHOD("set_multiplayer", "multiplayer", "root_path"), &SceneTree::set_multiplayer, DEFVAL(NodePath()));
 	ClassDB::bind_method(D_METHOD("get_multiplayer", "for_path"), &SceneTree::get_multiplayer, DEFVAL(NodePath()));
 	ClassDB::bind_method(D_METHOD("set_multiplayer_poll_enabled", "enabled"), &SceneTree::set_multiplayer_poll_enabled);
@@ -1972,13 +1810,11 @@ void SceneTree::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "debug_navigation_hint"), "set_debug_navigation_hint", "is_debugging_navigation_hint");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "paused"), "set_pause", "is_paused");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "edited_scene_root", PROPERTY_HINT_RESOURCE_TYPE, Node::get_class_static(), PROPERTY_USAGE_NONE), "set_edited_scene_root", "get_edited_scene_root");
-	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "current_scene", PROPERTY_HINT_RESOURCE_TYPE, Node::get_class_static(), PROPERTY_USAGE_NONE), "set_current_scene", "get_current_scene");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "root", PROPERTY_HINT_RESOURCE_TYPE, Node::get_class_static(), PROPERTY_USAGE_NONE), "", "get_root");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "multiplayer_poll"), "set_multiplayer_poll_enabled", "is_multiplayer_poll_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "physics_interpolation"), "set_physics_interpolation_enabled", "is_physics_interpolation_enabled");
 
 	ADD_SIGNAL(MethodInfo("tree_changed"));
-	ADD_SIGNAL(MethodInfo("scene_changed"));
 	ADD_SIGNAL(MethodInfo("tree_process_mode_changed")); //editor only signal, but due to API hash it can't be removed in run-time
 	ADD_SIGNAL(MethodInfo("node_added", PropertyInfo(Variant::OBJECT, "node", PROPERTY_HINT_RESOURCE_TYPE, Node::get_class_static())));
 	ADD_SIGNAL(MethodInfo("node_removed", PropertyInfo(Variant::OBJECT, "node", PROPERTY_HINT_RESOURCE_TYPE, Node::get_class_static())));
@@ -2080,27 +1916,12 @@ SceneTree::SceneTree() {
 	// Set after auto translate mode to avoid changing the displayed title back and forth.
 	root->set_title(GLOBAL_GET("application/config/name"));
 
-#ifndef _3D_DISABLED
-	if (root->get_world_3d().is_null()) {
-		root->set_world_3d(Ref<World3D>(memnew(World3D)));
-	}
-	root->set_as_audio_listener_3d(true);
-#endif // _3D_DISABLED
-
-	set_physics_interpolation_enabled(GLOBAL_DEF("physics/common/physics_interpolation", false));
-
-	// Always disable jitter fix if physics interpolation is enabled -
-	// Jitter fix will interfere with interpolation, and is not necessary
-	// when interpolation is active.
-	if (is_physics_interpolation_enabled()) {
-		Engine::get_singleton()->set_physics_jitter_fix(0);
-	}
+	_physics_interpolation_enabled_in_project = GLOBAL_DEF("physics/common/physics_interpolation", false);
 
 	// Initialize network state.
 	set_multiplayer(MultiplayerAPI::create_default_interface());
 
 	root->set_as_audio_listener_2d(true);
-	current_scene = nullptr;
 
 	const int msaa_mode_2d = GLOBAL_GET("rendering/anti_aliasing/quality/msaa_2d");
 	root->set_msaa_2d(Viewport::MSAA(msaa_mode_2d));
@@ -2178,39 +1999,6 @@ SceneTree::SceneTree() {
 	Viewport::SDFScale sdf_scale = Viewport::SDFScale(int(GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/2d/sdf/scale", PROPERTY_HINT_ENUM, "100%,50%,25%"), 1)));
 	root->set_sdf_scale(sdf_scale);
 
-#ifndef _3D_DISABLED
-	{ // Load default fallback environment.
-		// Get possible extensions.
-		List<String> exts;
-		ResourceLoader::get_recognized_extensions_for_type("Environment", &exts);
-		String ext_hint;
-		for (const String &E : exts) {
-			if (!ext_hint.is_empty()) {
-				ext_hint += ",";
-			}
-			ext_hint += "*." + E;
-		}
-		// Get path.
-		String env_path = GLOBAL_DEF(PropertyInfo(Variant::STRING, "rendering/environment/defaults/default_environment", PROPERTY_HINT_FILE, ext_hint), "");
-		// Setup property.
-		env_path = env_path.strip_edges();
-		if (!env_path.is_empty()) {
-			Ref<Environment> env = ResourceLoader::load(env_path);
-			if (env.is_valid()) {
-				root->get_world_3d()->set_fallback_environment(env);
-			} else {
-				if (Engine::get_singleton()->is_editor_hint()) {
-					// File was erased, clear the field.
-					ProjectSettings::get_singleton()->set("rendering/environment/defaults/default_environment", "");
-				} else {
-					// File was erased, notify user.
-					ERR_PRINT("Default Environment as specified in the project setting \"rendering/environment/defaults/default_environment\" could not be loaded.");
-				}
-			}
-		}
-	}
-#endif // _3D_DISABLED
-
 #if !defined(PHYSICS_2D_DISABLED) || !defined(PHYSICS_3D_DISABLED)
 	root->set_physics_object_picking(GLOBAL_DEF("physics/common/enable_object_picking", true));
 #endif // !defined(PHYSICS_2D_DISABLED) || !defined(PHYSICS_3D_DISABLED)
@@ -2227,20 +2015,6 @@ SceneTree::SceneTree() {
 }
 
 SceneTree::~SceneTree() {
-	if (prev_scene_id.is_valid()) {
-		Node *prev_scene = ObjectDB::get_instance<Node>(prev_scene_id);
-		if (prev_scene) {
-			memdelete(prev_scene);
-		}
-		prev_scene_id = ObjectID();
-	}
-	if (pending_new_scene_id.is_valid()) {
-		Node *pending_new_scene = ObjectDB::get_instance<Node>(pending_new_scene_id);
-		if (pending_new_scene) {
-			memdelete(pending_new_scene);
-		}
-		pending_new_scene_id = ObjectID();
-	}
 	if (root) {
 		root->_set_tree(nullptr);
 		root->_propagate_after_exit_tree();

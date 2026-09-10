@@ -604,7 +604,7 @@ void Viewport::_notification(int p_what) {
 			RenderingServer::get_singleton()->viewport_set_canvas_cull_mask(viewport, canvas_cull_mask);
 			_update_audio_listener_2d();
 #ifndef _3D_DISABLED
-			RenderingServer::get_singleton()->viewport_set_scenario(viewport, find_world_3d()->get_scenario());
+			RenderingServer::get_singleton()->viewport_set_scenario(viewport, find_world_3d().is_valid() ? find_world_3d()->get_scenario() : RID());
 			_update_audio_listener_3d();
 #endif // _3D_DISABLED
 
@@ -617,15 +617,17 @@ void Viewport::_notification(int p_what) {
 				RenderingServer::get_singleton()->canvas_item_set_parent(contact_2d_debug, current_canvas);
 #endif // PHYSICS_2D_DISABLED
 #ifndef PHYSICS_3D_DISABLED
-				PhysicsServer3D::get_singleton()->space_set_debug_contacts(find_world_3d()->get_space(), get_tree()->get_collision_debug_contact_count());
-				contact_3d_debug_multimesh = RenderingServer::get_singleton()->multimesh_create();
-				RenderingServer::get_singleton()->multimesh_allocate_data(contact_3d_debug_multimesh, get_tree()->get_collision_debug_contact_count(), RSE::MULTIMESH_TRANSFORM_3D, false);
-				RenderingServer::get_singleton()->multimesh_set_visible_instances(contact_3d_debug_multimesh, 0);
-				RenderingServer::get_singleton()->multimesh_set_mesh(contact_3d_debug_multimesh, get_tree()->get_debug_contact_mesh()->get_rid());
-				contact_3d_debug_instance = RenderingServer::get_singleton()->instance_create();
-				RenderingServer::get_singleton()->instance_set_base(contact_3d_debug_instance, contact_3d_debug_multimesh);
-				RenderingServer::get_singleton()->instance_set_scenario(contact_3d_debug_instance, find_world_3d()->get_scenario());
-				RenderingServer::get_singleton()->instance_geometry_set_flag(contact_3d_debug_instance, RSE::INSTANCE_FLAG_DRAW_NEXT_FRAME_IF_VISIBLE, true);
+				if (find_world_3d().is_valid()) {
+					PhysicsServer3D::get_singleton()->space_set_debug_contacts(find_world_3d()->get_space(), get_tree()->get_collision_debug_contact_count());
+					contact_3d_debug_multimesh = RenderingServer::get_singleton()->multimesh_create();
+					RenderingServer::get_singleton()->multimesh_allocate_data(contact_3d_debug_multimesh, get_tree()->get_collision_debug_contact_count(), RSE::MULTIMESH_TRANSFORM_3D, false);
+					RenderingServer::get_singleton()->multimesh_set_visible_instances(contact_3d_debug_multimesh, 0);
+					RenderingServer::get_singleton()->multimesh_set_mesh(contact_3d_debug_multimesh, get_tree()->get_debug_contact_mesh()->get_rid());
+					contact_3d_debug_instance = RenderingServer::get_singleton()->instance_create();
+					RenderingServer::get_singleton()->instance_set_base(contact_3d_debug_instance, contact_3d_debug_multimesh);
+					RenderingServer::get_singleton()->instance_set_scenario(contact_3d_debug_instance, find_world_3d()->get_scenario());
+					RenderingServer::get_singleton()->instance_geometry_set_flag(contact_3d_debug_instance, RSE::INSTANCE_FLAG_DRAW_NEXT_FRAME_IF_VISIBLE, true);
+				}
 #endif // PHYSICS_3D_DISABLED
 				set_physics_process_internal(true);
 			}
@@ -4928,7 +4930,7 @@ void Viewport::set_world_3d(const Ref<World3D> &p_world_3d) {
 	}
 
 	if (is_inside_tree()) {
-		RenderingServer::get_singleton()->viewport_set_scenario(viewport, find_world_3d()->get_scenario());
+		RenderingServer::get_singleton()->viewport_set_scenario(viewport, find_world_3d().is_valid() ? find_world_3d()->get_scenario() : RID());
 	}
 
 	_update_audio_listener_3d();
@@ -4952,7 +4954,7 @@ void Viewport::_own_world_3d_changed() {
 	}
 
 	if (is_inside_tree()) {
-		RenderingServer::get_singleton()->viewport_set_scenario(viewport, find_world_3d()->get_scenario());
+		RenderingServer::get_singleton()->viewport_set_scenario(viewport, find_world_3d().is_valid() ? find_world_3d()->get_scenario() : RID());
 	}
 
 	_update_audio_listener_3d();
@@ -4990,7 +4992,7 @@ void Viewport::set_use_own_world_3d(bool p_use_own_world_3d) {
 	}
 
 	if (is_inside_tree()) {
-		RenderingServer::get_singleton()->viewport_set_scenario(viewport, find_world_3d()->get_scenario());
+		RenderingServer::get_singleton()->viewport_set_scenario(viewport, find_world_3d().is_valid() ? find_world_3d()->get_scenario() : RID());
 	}
 
 	_update_audio_listener_3d();

@@ -1,12 +1,11 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <class name="SceneTree" inherits="MainLoop" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
-		Manages the game loop via a hierarchy of nodes.
+		Manages the application UI hierarchy of nodes.
 	</brief_description>
 	<description>
-		As one of the most important classes, the [SceneTree] manages the hierarchy of nodes in a scene, as well as scenes themselves. Nodes can be added, fetched and removed. The whole scene tree (and thus the current scene) can be paused. Scenes can be loaded, switched and reloaded.
-		You can also use the [SceneTree] to organize your nodes into [b]groups[/b]: every node can be added to as many groups as you want to create, e.g. an "enemy" group. You can then iterate these groups or even call methods and set properties on all the nodes belonging to any given group.
-		[SceneTree] is the default [MainLoop] implementation used by the engine, and is thus in charge of the game loop.
+		[SceneTree] manages the editor and project manager UI. Nodes can be added, fetched, removed, paused, and organized into groups.
+		The game world uses the native entity runtime. [SceneTree] does not load or own the current game scene.
 	</description>
 	<tutorials>
 		<link title="SceneTree">$DOCS_URL/tutorials/scripting/scene_tree.html</link>
@@ -37,38 +36,6 @@
 						"enemies", "hide")
 				[/codeblock]
 				[b]Note:[/b] In C#, [param method] must be in snake_case when referring to built-in Godot methods. Prefer using the names exposed in the [code]MethodName[/code] class to avoid allocating a new [StringName] on each call.
-			</description>
-		</method>
-		<method name="change_scene_to_file">
-			<return type="int" enum="Error" />
-			<param index="0" name="path" type="String" />
-			<description>
-				Changes the running scene to the one at the given [param path], after loading it into a [PackedScene] and creating a new instance.
-				Returns [constant OK] on success, [constant ERR_CANT_OPEN] if the [param path] cannot be loaded into a [PackedScene], or [constant ERR_CANT_CREATE] if that scene cannot be instantiated.
-				[b]Note:[/b] See [method change_scene_to_node] for details on the order of operations.
-			</description>
-		</method>
-		<method name="change_scene_to_node">
-			<return type="int" enum="Error" />
-			<param index="0" name="node" type="Node" />
-			<description>
-				Changes the running scene to the provided [Node]. Useful when you want to set up the new scene before changing.
-				Returns [constant OK] on success, [constant ERR_INVALID_PARAMETER] if the [param node] is [code]null[/code], or [constant ERR_UNCONFIGURED] if the [param node] is already inside the scene tree.
-				[b]Note:[/b] Operations happen in the following order when [method change_scene_to_node] is called:
-				1. The current scene node is immediately removed from the tree. From that point, [method Node.get_tree] called on the current (outgoing) scene will return [code]null[/code]. [member current_scene] will be [code]null[/code] too, because the new scene is not available yet.
-				2. At the end of the frame, the formerly current scene, already removed from the tree, will be deleted (freed from memory) and then the new scene node will be added to the tree. [method Node.get_tree] and [member current_scene] will be back to working as usual.
-				This ensures that both scenes aren't running at the same time, while still freeing the previous scene in a safe way similar to [method Node.queue_free].
-				If you want to reliably access the new scene, await the [signal scene_changed] signal.
-				[b]Warning:[/b] After using this method, the [SceneTree] will take ownership of the node and will free it automatically when changing scene again. Any references you had to that node will become invalid.
-			</description>
-		</method>
-		<method name="change_scene_to_packed">
-			<return type="int" enum="Error" />
-			<param index="0" name="packed_scene" type="PackedScene" />
-			<description>
-				Changes the running scene to a new instance of the given [PackedScene] (which must be valid).
-				Returns [constant OK] on success, [constant ERR_CANT_CREATE] if the scene cannot be instantiated, or [constant ERR_INVALID_PARAMETER] if the scene is invalid.
-				[b]Note:[/b] See [method change_scene_to_node] for details on the order of operations.
 			</description>
 		</method>
 		<method name="create_timer">
@@ -208,13 +175,6 @@
 				[b]Note:[/b] On iOS this method doesn't work. Instead, as recommended by the [url=https://developer.apple.com/library/archive/qa/qa1561/_index.html]iOS Human Interface Guidelines[/url], the user is expected to close apps via the Home button.
 			</description>
 		</method>
-		<method name="reload_current_scene">
-			<return type="int" enum="Error" />
-			<description>
-				Reloads the currently active scene, replacing [member current_scene] with a new instance of its original [PackedScene].
-				Returns [constant OK] on success, [constant ERR_UNCONFIGURED] if no [member current_scene] is defined, [constant ERR_CANT_OPEN] if [member current_scene] cannot be loaded into a [PackedScene], or [constant ERR_CANT_CREATE] if the scene cannot be instantiated.
-			</description>
-		</method>
 		<method name="set_group">
 			<return type="void" />
 			<param index="0" name="group" type="StringName" />
@@ -247,21 +207,11 @@
 				[b]Note:[/b] [method set_multiplayer] should be called [i]before[/i] the child nodes are ready at the given [param root_path]. If multiplayer nodes like [MultiplayerSpawner] or [MultiplayerSynchronizer] are added to the tree before the custom multiplayer API is set, they will not work.
 			</description>
 		</method>
-		<method name="unload_current_scene">
-			<return type="void" />
-			<description>
-				If a current scene is loaded, calling this method will unload it.
-			</description>
-		</method>
 	</methods>
 	<members>
 		<member name="auto_accept_quit" type="bool" setter="set_auto_accept_quit" getter="is_auto_accept_quit" default="true">
 			If [code]true[/code], the application automatically accepts quitting requests.
 			For mobile platforms, see [member quit_on_go_back].
-		</member>
-		<member name="current_scene" type="Node" setter="set_current_scene" getter="get_current_scene">
-			The root node of the currently loaded main scene, usually as a direct child of [member root]. See also [method change_scene_to_file], [method change_scene_to_packed], and [method reload_current_scene].
-			[b]Warning:[/b] Setting this property directly may not work as expected, as it does [i]not[/i] add or remove any nodes from this tree.
 		</member>
 		<member name="debug_collisions_hint" type="bool" setter="set_debug_collisions_hint" getter="is_debugging_collisions_hint" default="false">
 			If [code]true[/code], collision shapes will be visible when running the game from the editor for debugging purposes.
@@ -298,7 +248,7 @@
 			To handle 'Go Back' button when this option is disabled, use [constant DisplayServer.WINDOW_EVENT_GO_BACK_REQUEST].
 		</member>
 		<member name="root" type="Window" setter="" getter="get_root">
-			The tree's root [Window]. This is top-most [Node] of the scene tree, and is always present. An absolute [NodePath] always starts from this node. Children of the root node may include the loaded [member current_scene], as well as any [url=$DOCS_URL/tutorials/scripting/singletons_autoload.html]AutoLoad[/url] configured in the Project Settings.
+			The tree's root [Window]. This is the top-most [Node] of the application UI hierarchy and is always present. An absolute [NodePath] always starts from this node.
 			[b]Warning:[/b] Do not delete this node. This will result in unstable behavior, followed by a crash.
 		</member>
 	</members>
@@ -335,17 +285,6 @@
 		<signal name="process_frame">
 			<description>
 				Emitted immediately before [method Node._process] is called on every node in this tree.
-			</description>
-		</signal>
-		<signal name="scene_changed">
-			<description>
-				Emitted after the new scene is added to scene tree and initialized. Can be used to reliably access [member current_scene] when changing scenes.
-				[codeblock]
-				# This code should be inside an autoload.
-				get_tree().change_scene_to_file(other_scene_path)
-				await get_tree().scene_changed
-				print(get_tree().current_scene) # Prints the new scene.
-				[/codeblock]
 			</description>
 		</signal>
 		<signal name="tree_changed">

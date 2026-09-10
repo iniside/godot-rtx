@@ -1,20 +1,100 @@
 #include "entity_world.h"
 
+#include "core/config/project_settings.h"
+#include "servers/rendering/rendering_server.h"
+
+#ifndef NAVIGATION_3D_DISABLED
+#include "servers/navigation_3d/navigation_server_3d.h"
+#endif
+
 #include <atomic>
 
 static std::atomic<uint64_t> entity_world_generation{ 1 };
 
 EntityWorld::EntityWorld(EntityCatalog &p_catalog) :
-		catalog(p_catalog), generation(entity_world_generation.fetch_add(1)) {
+		catalog(p_catalog), generation(entity_world_generation.fetch_add(1)), transforms(*this) {
 	ecs.component<Identity>();
 	register_entity_component_schemas(ecs, schemas);
 }
 
 EntityWorld::~EntityWorld() {
 	DEV_ASSERT(_is_owner());
+	ecs.quit();
 	for (const KeyValue<EntityId, Resident> &entry : residents) {
-		ecs.entity(entry.value.handle.entity).destruct();
+		if (ecs_is_alive(ecs.c_ptr(), entry.value.handle.entity)) {
+			ecs.entity(entry.value.handle.entity).destruct();
+		}
 	}
+	residents.clear();
+	finalize_services();
+}
+
+Error EntityWorld::initialize_services() {
+	ERR_FAIL_COND_V(!_is_owner(), ERR_UNAUTHORIZED);
+	ERR_FAIL_COND_V(scenario.is_valid(), ERR_ALREADY_IN_USE);
+	RenderingServer *server = RenderingServer::get_singleton();
+	ERR_FAIL_NULL_V(server, ERR_UNCONFIGURED);
+	scenario = server->scenario_create();
+	camera = server->camera_create();
+	if (scenario.is_null() || camera.is_null()) {
+		finalize_services();
+		return ERR_CANT_CREATE;
+	}
+#ifndef NAVIGATION_3D_DISABLED
+	NavigationServer3D *navigation = NavigationServer3D::get_singleton();
+	if (navigation) {
+		navigation_map = navigation->map_create();
+		if (navigation_map.is_null()) {
+			finalize_services();
+			return ERR_CANT_CREATE;
+		}
+		navigation->map_set_cell_size(navigation_map, GLOBAL_GET("navigation/3d/default_cell_size"));
+		navigation->map_set_cell_height(navigation_map, GLOBAL_GET("navigation/3d/default_cell_height"));
+		navigation->map_set_up(navigation_map, GLOBAL_GET("navigation/3d/default_up"));
+		navigation->map_set_merge_rasterizer_cell_scale(navigation_map, GLOBAL_GET("navigation/3d/merge_rasterizer_cell_scale"));
+		navigation->map_set_use_edge_connections(navigation_map, GLOBAL_GET("navigation/3d/use_edge_connections"));
+		navigation->map_set_edge_connection_margin(navigation_map, GLOBAL_GET("navigation/3d/default_edge_connection_margin"));
+		navigation->map_set_link_connection_radius(navigation_map, GLOBAL_GET("navigation/3d/default_link_connection_radius"));
+		navigation->map_set_active(navigation_map, true);
+	}
+#endif
+	return OK;
+}
+
+void EntityWorld::finalize_services() {
+	DEV_ASSERT(_is_owner());
+#ifndef NAVIGATION_3D_DISABLED
+	if (navigation_map.is_valid()) {
+		NavigationServer3D::get_singleton()->map_set_active(navigation_map, false);
+		NavigationServer3D::get_singleton()->free_rid(navigation_map);
+		navigation_map = RID();
+	}
+#endif
+	RenderingServer *server = RenderingServer::get_singleton();
+	if (camera.is_valid()) {
+		server->free_rid(camera);
+		camera = RID();
+	}
+	if (scenario.is_valid()) {
+		server->free_rid(scenario);
+		scenario = RID();
+	}
+}
+
+void EntityWorld::_component_changed(EntityHandle p_handle) {
+	transforms.mark_dirty(p_handle.entity);
+	_mark_changed(get_id(p_handle));
+}
+
+bool EntityWorld::_has_resident_children(EntityHandle p_handle) const {
+	ecs_iter_t children = ecs_children(ecs.c_ptr(), p_handle.entity);
+	while (ecs_children_next(&children)) {
+		if (children.count) {
+			ecs_iter_fini(&children);
+			return true;
+		}
+	}
+	return false;
 }
 
 void EntityWorld::_mark_changed(EntityId p_id) {
@@ -28,6 +108,10 @@ void EntityWorld::_mark_changed(EntityId p_id) {
 
 EntityHandle EntityWorld::_materialize(EntityId p_id) {
 	flecs::entity entity = ecs.entity().set<Identity>({ p_id });
+	EntityRef parent = catalog.get_parent(p_id);
+	if (parent.id.is_valid()) {
+		entity.set<flecs::Parent>({ resolve(parent).handle.entity });
+	}
 	EntityHandle handle{ generation, entity.id() };
 	residents.insert(p_id, { handle, 0 });
 	_mark_changed(p_id);
@@ -54,6 +138,8 @@ Error EntityWorld::load_entity(EntityId p_id, EntityHandle &r_handle) {
 	ERR_FAIL_COND_V(!_is_owner(), ERR_UNAUTHORIZED);
 	ERR_FAIL_COND_V(residents.has(p_id), ERR_ALREADY_EXISTS);
 	ERR_FAIL_COND_V(catalog.get_state(p_id) != EntityReferenceState::UNLOADED, ERR_DOES_NOT_EXIST);
+	EntityRef parent = catalog.get_parent(p_id);
+	ERR_FAIL_COND_V(parent.id.is_valid() && resolve(parent).state != EntityReferenceState::RESIDENT, ERR_UNAVAILABLE);
 	r_handle = _materialize(p_id);
 	return OK;
 }
@@ -61,7 +147,10 @@ Error EntityWorld::load_entity(EntityId p_id, EntityHandle &r_handle) {
 Error EntityWorld::restore_entity(EntityId p_id, EntityHandle &r_handle) {
 	ERR_FAIL_COND_V(!_is_owner(), ERR_UNAUTHORIZED);
 	ERR_FAIL_COND_V(catalog.get_state(p_id) != EntityReferenceState::DELETED, ERR_INVALID_PARAMETER);
-	catalog.records[p_id] = false;
+	EntityRef parent = catalog.get_parent(p_id);
+	ERR_FAIL_COND_V(parent.id.is_valid() && resolve(parent).state != EntityReferenceState::RESIDENT, ERR_UNAVAILABLE);
+	catalog.records[p_id].deleted = false;
+	catalog._set_parent(p_id, parent);
 	r_handle = _materialize(p_id);
 	return OK;
 }
@@ -69,7 +158,9 @@ Error EntityWorld::restore_entity(EntityId p_id, EntityHandle &r_handle) {
 Error EntityWorld::unload_entity(EntityHandle p_handle) {
 	ERR_FAIL_COND_V(!_is_owner(), ERR_UNAUTHORIZED);
 	ERR_FAIL_COND_V(!is_alive(p_handle), ERR_DOES_NOT_EXIST);
+	ERR_FAIL_COND_V(_has_resident_children(p_handle), ERR_BUSY);
 	EntityId id = get_id(p_handle);
+	transforms.forget(p_handle.entity);
 	residents.erase(id);
 	ecs.entity(p_handle.entity).destruct();
 	_mark_changed(id);
@@ -78,20 +169,99 @@ Error EntityWorld::unload_entity(EntityHandle p_handle) {
 
 Error EntityWorld::delete_entity(EntityId p_id) {
 	ERR_FAIL_COND_V(!_is_owner(), ERR_UNAUTHORIZED);
-	bool *deleted = catalog.records.getptr(p_id);
-	ERR_FAIL_COND_V(!deleted, ERR_DOES_NOT_EXIST);
-	if (*deleted) {
+	EntityCatalog::Record *record = catalog.records.getptr(p_id);
+	ERR_FAIL_COND_V(!record, ERR_DOES_NOT_EXIST);
+	if (record->deleted) {
 		return OK;
 	}
+	ERR_FAIL_COND_V(catalog.children.has(p_id), ERR_BUSY);
 	Resident *resident = residents.getptr(p_id);
 	if (resident) {
 		EntityHandle handle = resident->handle;
+		transforms.forget(handle.entity);
 		residents.erase(p_id);
 		ecs.entity(handle.entity).destruct();
 	}
-	*deleted = true;
+	record->deleted = true;
+	catalog._unlink_parent(p_id);
 	_mark_changed(p_id);
 	return OK;
+}
+
+Error EntityWorld::delete_hierarchy(EntityId p_id) {
+	ERR_FAIL_COND_V(!_is_owner(), ERR_UNAUTHORIZED);
+	ERR_FAIL_COND_V(!catalog.records.has(p_id), ERR_DOES_NOT_EXIST);
+	Vector<EntityId> ordered;
+	ordered.push_back(p_id);
+	for (int i = 0; i < ordered.size(); i++) {
+		const HashSet<EntityId, EntityIdHasher> *descendants = catalog.children.getptr(ordered[i]);
+		if (descendants) {
+			for (EntityId descendant : *descendants) {
+				ordered.push_back(descendant);
+			}
+		}
+	}
+	for (int i = ordered.size() - 1; i >= 0; i--) {
+		EntityId id = ordered[i];
+		Resident *resident = residents.getptr(id);
+		if (resident) {
+			EntityHandle handle = resident->handle;
+			transforms.forget(handle.entity);
+			residents.erase(id);
+			ecs.entity(handle.entity).destruct();
+		}
+		catalog.records[id].deleted = true;
+		catalog._unlink_parent(id);
+		_mark_changed(id);
+	}
+	return OK;
+}
+
+Error EntityWorld::reparent(EntityHandle p_handle, EntityRef p_parent, ReparentMode p_mode) {
+	ERR_FAIL_COND_V(!is_alive(p_handle), ERR_DOES_NOT_EXIST);
+	ERR_FAIL_COND_V(p_mode != KEEP_WORLD && p_mode != KEEP_LOCAL, ERR_INVALID_PARAMETER);
+	EntityId id = get_id(p_handle);
+	EntityResolution parent = resolve(p_parent);
+	ERR_FAIL_COND_V(p_parent.id.is_valid() && parent.state != EntityReferenceState::RESIDENT, ERR_UNAVAILABLE);
+	for (EntityRef ancestor = p_parent; ancestor.id.is_valid(); ancestor = catalog.get_parent(ancestor.id)) {
+		ERR_FAIL_COND_V(ancestor.id == id, ERR_CYCLIC_LINK);
+	}
+	transforms.update();
+	const EntityTransform *transform = get<EntityTransform>(p_handle);
+	EntityPose local;
+	if (transform && p_mode == KEEP_WORLD) {
+		local = transform->current;
+		for (EntityRef ancestor = p_parent; ancestor.id.is_valid(); ancestor = catalog.get_parent(ancestor.id)) {
+			const EntityTransform *parent_transform = get<EntityTransform>(resolve(ancestor).handle);
+			if (parent_transform) {
+				Error error = EntityTransformSystem::relative_to(transform->current, parent_transform->current, local);
+				if (error != OK) {
+					return error;
+				}
+				break;
+			}
+		}
+	}
+	flecs::entity entity = ecs.entity(p_handle.entity);
+	if (p_parent.id.is_valid()) {
+		entity.set<flecs::Parent>({ parent.handle.entity });
+	} else {
+		entity.remove<flecs::Parent>();
+	}
+	catalog._set_parent(id, p_parent);
+	if (transform && p_mode == KEEP_WORLD) {
+		entity.get_mut<EntityTransform>().local = local;
+	}
+	_component_changed(p_handle);
+	return OK;
+}
+
+Error EntityWorld::teleport(EntityHandle p_handle, const EntityPose &p_local) {
+	Error error = edit<EntityTransform>(p_handle, [&](EntityTransform &p_transform) { p_transform.local = p_local; });
+	if (error == OK) {
+		transforms.teleport(p_handle.entity);
+	}
+	return error;
 }
 
 EntityResolution EntityWorld::resolve(EntityRef p_reference) const {
@@ -146,7 +316,7 @@ Error EntityWorld::add_component(EntityHandle p_handle, uint64_t p_component) {
 		return ERR_ALREADY_EXISTS;
 	}
 	schema->add_default(ecs, p_handle.entity);
-	_mark_changed(get_id(p_handle));
+	_component_changed(p_handle);
 	return OK;
 }
 
@@ -156,8 +326,11 @@ Error EntityWorld::remove_component(EntityHandle p_handle, uint64_t p_component)
 	ERR_FAIL_NULL_V(schema, ERR_DOES_NOT_EXIST);
 	ERR_FAIL_COND_V(!schema->is_component, ERR_INVALID_PARAMETER);
 	if (ecs_has_id(ecs.c_ptr(), p_handle.entity, schema->runtime_id)) {
+		if (p_component == EntityComponentTraits<EntityTransform>::id) {
+			transforms.teleport(p_handle.entity);
+		}
 		ecs_remove_id(ecs.c_ptr(), p_handle.entity, schema->runtime_id);
-		_mark_changed(get_id(p_handle));
+		_component_changed(p_handle);
 	}
 	return OK;
 }
@@ -179,9 +352,15 @@ Error EntityWorld::write_component(EntityHandle p_handle, uint64_t p_component, 
 	const EntityComponentSchema *schema = schemas.find(p_component);
 	ERR_FAIL_NULL_V(schema, ERR_DOES_NOT_EXIST);
 	ERR_FAIL_COND_V(!schema->is_component, ERR_INVALID_PARAMETER);
+	if (p_component == EntityComponentTraits<EntityTransform>::id) {
+		EntityTransform value;
+		Error error = schema->decode(&value, p_value);
+		ERR_FAIL_COND_V_MSG(error != OK, error, "Cannot decode entity " + get_id(p_handle).to_string() + " component " + String(schema->name));
+		return set<EntityTransform>(p_handle, value);
+	}
 	Error error = schema->set_serialized(ecs, p_handle.entity, p_value);
 	ERR_FAIL_COND_V_MSG(error != OK, error, "Cannot decode entity " + get_id(p_handle).to_string() + " component " + String(schema->name));
-	_mark_changed(get_id(p_handle));
+	_component_changed(p_handle);
 	return OK;
 }
 
@@ -204,6 +383,6 @@ Error EntityWorld::write_field(EntityHandle p_handle, uint64_t p_component, uint
 	ERR_FAIL_COND_V(!schema->is_component, ERR_INVALID_PARAMETER);
 	Error error = schema->set_field(ecs, p_handle.entity, p_field, p_value);
 	ERR_FAIL_COND_V_MSG(error != OK, error, "Cannot edit entity " + get_id(p_handle).to_string() + " component " + String(schema->name));
-	_mark_changed(get_id(p_handle));
+	_component_changed(p_handle);
 	return OK;
 }

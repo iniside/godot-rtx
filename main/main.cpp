@@ -64,6 +64,7 @@
 #include "main/main_timer_sync.h"
 #include "main/performance.h"
 #include "main/splash.gen.h"
+#include "scene/entity/entity_scene_runtime.h"
 #include "scene/main/scene_tree.h"
 #include "scene/main/window.h"
 #include "scene/property_list_helper.h"
@@ -700,8 +701,7 @@ void Main::print_help(const char *p_binary) {
 	print_help_title("Standalone tools");
 #endif // defined(OVERRIDE_PATH_ENABLED) || defined(TESTS_ENABLED)
 #if defined(OVERRIDE_PATH_ENABLED)
-	print_help_option("-s, --script <script>", "Run a script.\n", CLI_OPTION_AVAILABILITY_TEMPLATE_UNSAFE);
-	print_help_option("--main-loop <main_loop_name>", "Run a MainLoop specified by its global class name.\n", CLI_OPTION_AVAILABILITY_TEMPLATE_UNSAFE);
+	print_help_option("-s, --script <script>", "Select a script to parse with --check-only.\n", CLI_OPTION_AVAILABILITY_TEMPLATE_UNSAFE);
 	print_help_option("--check-only", "Only parse for errors and quit (use with --script).\n", CLI_OPTION_AVAILABILITY_TEMPLATE_UNSAFE);
 #endif // defined(OVERRIDE_PATH_ENABLED)
 #ifdef TOOLS_ENABLED
@@ -2362,19 +2362,6 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 			max_files = GLOBAL_GET("debug/file_logging/max_log_files");
 		}
 		OS::get_singleton()->add_logger(memnew(RotatedFileLogger(base_path, max_files)));
-	}
-
-	if (main_args.is_empty() && String(GLOBAL_GET("application/run/main_scene")) == "") {
-#ifdef TOOLS_ENABLED
-		if (!editor && !project_manager) {
-#endif
-			const String error_msg = "Error: Can't run project: no main scene defined in the project.\n";
-			OS::get_singleton()->print("%s", error_msg.utf8().get_data());
-			OS::get_singleton()->alert(error_msg);
-			goto error;
-#ifdef TOOLS_ENABLED
-		}
-#endif
 	}
 
 	if (editor || project_manager) {
@@ -4093,7 +4080,6 @@ int Main::start() {
 	String positional_arg;
 	String game_path;
 	String script;
-	String main_loop_type;
 	bool check_only = false;
 
 #ifdef TOOLS_ENABLED
@@ -4190,8 +4176,6 @@ int Main::start() {
 			bool parsed_pair = true;
 			if (E->get() == "-s" || E->get() == "--script") {
 				script = E->next()->get();
-			} else if (E->get() == "--main-loop") {
-				main_loop_type = E->next()->get();
 #ifdef TOOLS_ENABLED
 			} else if (E->get() == "--doctool") {
 				doc_tool_path = E->next()->get();
@@ -4397,12 +4381,10 @@ int Main::start() {
 	if (disable_override) {
 		script = String();
 		game_path = String();
-		main_loop_type = String();
 	}
 #else
 	script = String();
 	game_path = String();
-	main_loop_type = String();
 #endif // defined(OVERRIDE_PATH_ENABLED)
 
 	if (script.is_empty() && game_path.is_empty()) {
@@ -4419,94 +4401,107 @@ int Main::start() {
 		}
 	}
 
-#ifdef TOOLS_ENABLED
-	if (!editor && !project_manager && !cmdline_tool && script.is_empty() && game_path.is_empty()) {
-		// If we end up here, it means we didn't manage to detect what we want to run.
-		// Let's throw an error gently. The code leading to this is pretty brittle so
-		// this might end up triggered by valid usage, in which case we'll have to
-		// fine-tune further.
-		OS::get_singleton()->alert("Couldn't detect whether to run the editor, the project manager or a specific project. Aborting.");
-		ERR_FAIL_V_MSG(EXIT_FAILURE, "Couldn't detect whether to run the editor, the project manager or a specific project. Aborting.");
+	if (!script.is_empty() && check_only) {
+		Ref<Script> script_resource = ResourceLoader::load(script);
+		ERR_FAIL_COND_V_MSG(script_resource.is_null(), EXIT_FAILURE, "Can't load script: " + script);
+		return script_resource->is_valid() ? EXIT_SUCCESS : EXIT_FAILURE;
 	}
-#endif
-
+	ERR_FAIL_COND_V_MSG(!script.is_empty(), EXIT_FAILURE, "Script main loops are not supported by the native entity runtime.");
 	MainLoop *main_loop = nullptr;
-	if (editor) {
+	EntitySceneRuntime *entity_runtime = nullptr;
+	if (editor || project_manager) {
 		main_loop = memnew(SceneTree);
-	}
-	if (main_loop_type.is_empty()) {
-		main_loop_type = GLOBAL_GET("application/run/main_loop_type");
-	}
-
-	if (!script.is_empty()) {
-		Ref<Script> script_res = ResourceLoader::load(script);
-		ERR_FAIL_COND_V_MSG(script_res.is_null(), EXIT_FAILURE, "Can't load script: " + script);
-
-		if (check_only) {
-			return script_res->is_valid() ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-
-		if (script_res->can_instantiate()) {
-			StringName instance_type = script_res->get_instance_base_type();
-			Object *obj = ClassDB::instantiate(instance_type);
-			MainLoop *script_loop = Object::cast_to<MainLoop>(obj);
-			if (!script_loop) {
-				if (obj) {
-					memdelete(obj);
-				}
-				OS::get_singleton()->alert(vformat("Can't load the script \"%s\" as it doesn't inherit from SceneTree or MainLoop.", script));
-				ERR_FAIL_V_MSG(EXIT_FAILURE, vformat("Can't load the script \"%s\" as it doesn't inherit from SceneTree or MainLoop.", script));
-			}
-
-			script_loop->set_script(script_res);
-			main_loop = script_loop;
-		} else {
-			return EXIT_FAILURE;
-		}
-	} else { // Not based on script path.
-		if (!editor && !ClassDB::class_exists(main_loop_type) && ScriptServer::is_global_class(main_loop_type)) {
-			String script_path = ScriptServer::get_global_class_path(main_loop_type);
-			Ref<Script> script_res = ResourceLoader::load(script_path);
-			if (script_res.is_null()) {
-				OS::get_singleton()->alert("Error: Could not load MainLoop script type: " + main_loop_type);
-				ERR_FAIL_V_MSG(EXIT_FAILURE, vformat("Could not load global class %s.", main_loop_type));
-			}
-			StringName script_base = script_res->get_instance_base_type();
-			Object *obj = ClassDB::instantiate(script_base);
-			MainLoop *script_loop = Object::cast_to<MainLoop>(obj);
-			if (!script_loop) {
-				if (obj) {
-					memdelete(obj);
-				}
-				OS::get_singleton()->alert("Error: Invalid MainLoop script base type: " + script_base);
-				ERR_FAIL_V_MSG(EXIT_FAILURE, vformat("The global class %s does not inherit from SceneTree or MainLoop.", main_loop_type));
-			}
-			script_loop->set_script(script_res);
-			main_loop = script_loop;
-		}
-	}
-
-	if (!main_loop && main_loop_type.is_empty()) {
-		main_loop_type = "SceneTree";
-	}
-
-	if (!main_loop) {
-		if (!ClassDB::class_exists(main_loop_type)) {
-			OS::get_singleton()->alert("Error: MainLoop type doesn't exist: " + main_loop_type);
-			return EXIT_FAILURE;
-		} else {
-			Object *ml = ClassDB::instantiate(main_loop_type);
-			ERR_FAIL_NULL_V_MSG(ml, EXIT_FAILURE, "Can't instance MainLoop type.");
-
-			main_loop = Object::cast_to<MainLoop>(ml);
-			if (!main_loop) {
-				memdelete(ml);
-				ERR_FAIL_V_MSG(EXIT_FAILURE, "Invalid MainLoop type.");
-			}
-		}
+	} else {
+		entity_runtime = memnew(EntitySceneRuntime);
+		main_loop = entity_runtime;
 	}
 
 	OS::get_singleton()->set_main_loop(main_loop);
+
+	ResourceLoader::add_custom_loaders();
+	ResourceSaver::add_custom_savers();
+
+	String local_game_path;
+	if (!game_path.is_empty() && !project_manager) {
+		local_game_path = game_path.replace_char('\\', '/');
+
+		if (!local_game_path.begins_with("res://")) {
+			bool absolute =
+					(local_game_path.size() > 1) && (local_game_path[0] == '/' || local_game_path[1] == ':');
+
+			if (!absolute) {
+				if (ProjectSettings::get_singleton()->is_using_datapack()) {
+					local_game_path = "res://" + local_game_path;
+
+				} else {
+					int sep = local_game_path.rfind_char('/');
+
+					if (sep == -1) {
+						Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+						ERR_FAIL_COND_V(da.is_null(), EXIT_FAILURE);
+
+						local_game_path = da->get_current_dir().path_join(local_game_path);
+					} else {
+						Ref<DirAccess> da = DirAccess::open(local_game_path.substr(0, sep));
+						if (da.is_valid()) {
+							local_game_path = da->get_current_dir().path_join(
+									local_game_path.substr(sep + 1));
+						}
+					}
+				}
+			}
+		}
+
+		local_game_path = ProjectSettings::get_singleton()->localize_path(local_game_path);
+	}
+	if (entity_runtime) {
+		Error error = entity_runtime->setup();
+		ERR_FAIL_COND_V_MSG(error != OK, EXIT_FAILURE, "Cannot initialize native entity runtime.");
+		ERR_FAIL_COND_V_MSG(!local_game_path.is_empty(), EXIT_FAILURE, "Native EntityScene loading is not available yet: " + local_game_path);
+	}
+
+	if (!project_manager && !editor) { // game
+
+		OS::get_singleton()->benchmark_begin_measure("Startup", "Load Game");
+
+		// Load SSL Certificates from Project Settings (or builtin).
+		Crypto::load_default_certificates(GLOBAL_GET("network/tls/certificate_bundle_override"));
+
+		if (!game_path.is_empty()) {
+#ifdef MACOS_ENABLED
+#ifndef TOOLS_ENABLED
+			if ((FileAccess::exists(OS::get_singleton()->get_bundle_resource_dir().path_join("Assets.car")) && !OS::get_singleton()->get_bundle_icon_name().is_empty()) || (!OS::get_singleton()->get_bundle_icon_path().is_empty())) {
+				has_icon = true; // Bundle has embedded icon, do not override with project icon.
+			}
+#endif
+			String mac_icon_path = GLOBAL_GET("application/config/macos_native_icon");
+			if (DisplayServer::get_singleton()->has_feature(DisplayServerEnums::FEATURE_NATIVE_ICON) && !mac_icon_path.is_empty() && !has_icon) {
+				DisplayServer::get_singleton()->set_native_icon(mac_icon_path);
+				has_icon = true;
+			}
+#endif
+
+#ifdef WINDOWS_ENABLED
+			String win_icon_path = GLOBAL_GET("application/config/windows_native_icon");
+			if (DisplayServer::get_singleton()->has_feature(DisplayServerEnums::FEATURE_NATIVE_ICON) && !win_icon_path.is_empty()) {
+				DisplayServer::get_singleton()->set_native_icon(win_icon_path);
+				has_icon = true;
+			}
+#endif
+
+			String icon_path = GLOBAL_GET("application/config/icon");
+			if (DisplayServer::get_singleton()->has_feature(DisplayServerEnums::FEATURE_ICON) && !icon_path.is_empty() && !has_icon) {
+				Ref<Image> icon;
+				icon.instantiate();
+				if (ImageLoader::load_image(icon_path, icon) == OK) {
+					DisplayServer::get_singleton()->set_icon(icon);
+					has_icon = true;
+				}
+			}
+		}
+
+		OS::get_singleton()->benchmark_end_measure("Startup", "Load Game");
+	}
 
 	SceneTree *sml = Object::cast_to<SceneTree>(main_loop);
 	if (sml) {
@@ -4564,81 +4559,6 @@ int Main::start() {
 			sml->get_root()->set_embedding_subwindows(true);
 		}
 
-		ResourceLoader::add_custom_loaders();
-		ResourceSaver::add_custom_savers();
-
-		if (!project_manager && !editor) { // game
-			if (!game_path.is_empty() || !script.is_empty()) {
-				//autoload
-				OS::get_singleton()->benchmark_begin_measure("Startup", "Load Autoloads");
-				HashMap<StringName, ProjectSettings::AutoloadInfo> autoloads(ProjectSettings::get_singleton()->get_autoload_list());
-
-				//first pass, add the constants so they exist before any script is loaded
-				for (const KeyValue<StringName, ProjectSettings::AutoloadInfo> &E : autoloads) {
-					const ProjectSettings::AutoloadInfo &info = E.value;
-
-					if (info.is_singleton) {
-						for (int i = 0; i < ScriptServer::get_language_count(); i++) {
-							ScriptServer::get_language(i)->add_global_constant(info.name, Variant());
-						}
-					}
-				}
-
-				//second pass, load into global constants
-				List<Node *> to_add;
-				for (const KeyValue<StringName, ProjectSettings::AutoloadInfo> &E : autoloads) {
-					const ProjectSettings::AutoloadInfo &info = E.value;
-
-					Node *n = nullptr;
-					if (ResourceLoader::get_resource_type(info.path) == "PackedScene") {
-						// Cache the scene reference before loading it (for cyclic references)
-						Ref<PackedScene> scn;
-						scn.instantiate();
-						scn->set_path(ResourceUID::ensure_path(info.path));
-						scn->reload_from_file();
-						ERR_CONTINUE_MSG(scn.is_null(), vformat("Failed to instantiate an autoload, can't load from path: %s.", info.path));
-
-						if (scn.is_valid()) {
-							n = scn->instantiate();
-						}
-					} else {
-						Ref<Resource> res = ResourceLoader::load(info.path);
-						ERR_CONTINUE_MSG(res.is_null(), vformat("Failed to instantiate an autoload, can't load from path: %s.", info.path));
-
-						Ref<Script> script_res = res;
-						if (script_res.is_valid()) {
-							StringName ibt = script_res->get_instance_base_type();
-							bool valid_type = ClassDB::is_parent_class(ibt, "Node");
-							ERR_CONTINUE_MSG(!valid_type, vformat("Failed to instantiate an autoload, script '%s' does not inherit from 'Node'.", info.path));
-
-							Object *obj = ClassDB::instantiate(ibt);
-							ERR_CONTINUE_MSG(!obj, vformat("Failed to instantiate an autoload, cannot instantiate '%s'.", ibt));
-
-							n = Object::cast_to<Node>(obj);
-							n->set_script(script_res);
-						}
-					}
-
-					ERR_CONTINUE_MSG(!n, vformat("Failed to instantiate an autoload, path is not pointing to a scene or a script: %s.", info.path));
-					n->set_name(info.name);
-
-					//defer so references are all valid on _ready()
-					to_add.push_back(n);
-
-					if (info.is_singleton) {
-						for (int i = 0; i < ScriptServer::get_language_count(); i++) {
-							ScriptServer::get_language(i)->add_global_constant(info.name, n);
-						}
-					}
-				}
-
-				for (Node *E : to_add) {
-					sml->get_root()->add_child(E);
-				}
-				OS::get_singleton()->benchmark_end_measure("Startup", "Load Autoloads");
-			}
-		}
-
 #ifdef TOOLS_ENABLED
 #ifdef MODULE_GDSCRIPT_ENABLED
 		if (!doc_tool_path.is_empty() && !gdscript_docs_path.is_empty()) {
@@ -4694,75 +4614,6 @@ int Main::start() {
 		sml->set_auto_accept_quit(GLOBAL_GET("application/config/auto_accept_quit"));
 		sml->set_quit_on_go_back(GLOBAL_GET("application/config/quit_on_go_back"));
 
-		if (!editor && !project_manager) {
-			//standard helpers that can be changed from main config
-
-			String stretch_mode = GLOBAL_GET("display/window/stretch/mode");
-			String stretch_aspect = GLOBAL_GET("display/window/stretch/aspect");
-			Size2i stretch_size = Size2i(GLOBAL_GET("display/window/size/viewport_width"),
-					GLOBAL_GET("display/window/size/viewport_height"));
-			real_t stretch_scale = GLOBAL_GET("display/window/stretch/scale");
-			String stretch_scale_mode = GLOBAL_GET("display/window/stretch/scale_mode");
-
-			Window::ContentScaleMode cs_sm = Window::CONTENT_SCALE_MODE_DISABLED;
-			if (stretch_mode == "canvas_items") {
-				cs_sm = Window::CONTENT_SCALE_MODE_CANVAS_ITEMS;
-			} else if (stretch_mode == "viewport") {
-				cs_sm = Window::CONTENT_SCALE_MODE_VIEWPORT;
-			}
-
-			Window::ContentScaleAspect cs_aspect = Window::CONTENT_SCALE_ASPECT_IGNORE;
-			if (stretch_aspect == "keep") {
-				cs_aspect = Window::CONTENT_SCALE_ASPECT_KEEP;
-			} else if (stretch_aspect == "keep_width") {
-				cs_aspect = Window::CONTENT_SCALE_ASPECT_KEEP_WIDTH;
-			} else if (stretch_aspect == "keep_height") {
-				cs_aspect = Window::CONTENT_SCALE_ASPECT_KEEP_HEIGHT;
-			} else if (stretch_aspect == "expand") {
-				cs_aspect = Window::CONTENT_SCALE_ASPECT_EXPAND;
-			}
-
-			Window::ContentScaleStretch cs_stretch = Window::CONTENT_SCALE_STRETCH_FRACTIONAL;
-			if (stretch_scale_mode == "integer") {
-				cs_stretch = Window::CONTENT_SCALE_STRETCH_INTEGER;
-			}
-
-			sml->get_root()->set_content_scale_mode(cs_sm);
-			sml->get_root()->set_content_scale_aspect(cs_aspect);
-			sml->get_root()->set_content_scale_stretch(cs_stretch);
-			sml->get_root()->set_content_scale_size(stretch_size);
-			sml->get_root()->set_content_scale_factor(stretch_scale);
-
-			sml->set_auto_accept_quit(GLOBAL_GET("application/config/auto_accept_quit"));
-			sml->set_quit_on_go_back(GLOBAL_GET("application/config/quit_on_go_back"));
-			String appname = GLOBAL_GET("application/config/name");
-			appname = TranslationServer::get_singleton()->translate(appname);
-#ifdef DEBUG_ENABLED
-			// Append a suffix to the window title to denote that the project is running
-			// from a debug build (including the editor). Since this results in lower performance,
-			// this should be clearly presented to the user.
-			DisplayServer::get_singleton()->window_set_title(vformat("%s (DEBUG)", appname));
-#else
-			DisplayServer::get_singleton()->window_set_title(appname);
-#endif
-
-			bool snap_controls = GLOBAL_GET("gui/common/snap_controls_to_pixels");
-			sml->get_root()->set_snap_controls_to_pixels(snap_controls);
-
-			int drag_threshold = GLOBAL_GET("gui/common/drag_threshold");
-			sml->get_root()->set_drag_threshold(drag_threshold);
-
-			bool font_oversampling = GLOBAL_GET("gui/fonts/dynamic_fonts/use_oversampling");
-			sml->get_root()->set_use_oversampling(font_oversampling);
-
-			int texture_filter = GLOBAL_GET("rendering/textures/canvas_textures/default_texture_filter");
-			int texture_repeat = GLOBAL_GET("rendering/textures/canvas_textures/default_texture_repeat");
-			sml->get_root()->set_default_canvas_item_texture_filter(
-					Viewport::DefaultCanvasItemTextureFilter(texture_filter));
-			sml->get_root()->set_default_canvas_item_texture_repeat(
-					Viewport::DefaultCanvasItemTextureRepeat(texture_repeat));
-		}
-
 #ifdef TOOLS_ENABLED
 		if (editor) {
 			bool editor_embed_subwindows = EDITOR_GET("interface/editor/display/single_window_mode");
@@ -4774,39 +4625,7 @@ int Main::start() {
 		}
 #endif
 
-		String local_game_path;
-		if (!game_path.is_empty() && !project_manager) {
-			local_game_path = game_path.replace_char('\\', '/');
-
-			if (!local_game_path.begins_with("res://")) {
-				bool absolute =
-						(local_game_path.size() > 1) && (local_game_path[0] == '/' || local_game_path[1] == ':');
-
-				if (!absolute) {
-					if (ProjectSettings::get_singleton()->is_using_datapack()) {
-						local_game_path = "res://" + local_game_path;
-
-					} else {
-						int sep = local_game_path.rfind_char('/');
-
-						if (sep == -1) {
-							Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-							ERR_FAIL_COND_V(da.is_null(), EXIT_FAILURE);
-
-							local_game_path = da->get_current_dir().path_join(local_game_path);
-						} else {
-							Ref<DirAccess> da = DirAccess::open(local_game_path.substr(0, sep));
-							if (da.is_valid()) {
-								local_game_path = da->get_current_dir().path_join(
-										local_game_path.substr(sep + 1));
-							}
-						}
-					}
-				}
-			}
-
-			local_game_path = ProjectSettings::get_singleton()->localize_path(local_game_path);
-
+		if (!local_game_path.is_empty() && !project_manager) {
 #ifdef TOOLS_ENABLED
 			if (editor) {
 				if (!recovery_mode && (game_path != ResourceUID::ensure_path(String(GLOBAL_GET("application/run/main_scene"))) || !editor_node->has_scenes_in_session())) {
@@ -4821,58 +4640,6 @@ int Main::start() {
 				}
 			}
 #endif
-		}
-
-		if (!project_manager && !editor) { // game
-
-			OS::get_singleton()->benchmark_begin_measure("Startup", "Load Game");
-
-			// Load SSL Certificates from Project Settings (or builtin).
-			Crypto::load_default_certificates(GLOBAL_GET("network/tls/certificate_bundle_override"));
-
-			if (!game_path.is_empty()) {
-				Node *scene = nullptr;
-				Ref<PackedScene> scenedata = ResourceLoader::load(local_game_path);
-				if (scenedata.is_valid()) {
-					scene = scenedata->instantiate();
-				}
-
-				ERR_FAIL_NULL_V_MSG(scene, EXIT_FAILURE, "Failed loading scene: " + local_game_path + ".");
-				sml->add_current_scene(scene);
-
-#ifdef MACOS_ENABLED
-#ifndef TOOLS_ENABLED
-				if ((FileAccess::exists(OS::get_singleton()->get_bundle_resource_dir().path_join("Assets.car")) && !OS::get_singleton()->get_bundle_icon_name().is_empty()) || (!OS::get_singleton()->get_bundle_icon_path().is_empty())) {
-					has_icon = true; // Bundle has embedded icon, do not override with project icon.
-				}
-#endif
-				String mac_icon_path = GLOBAL_GET("application/config/macos_native_icon");
-				if (DisplayServer::get_singleton()->has_feature(DisplayServerEnums::FEATURE_NATIVE_ICON) && !mac_icon_path.is_empty() && !has_icon) {
-					DisplayServer::get_singleton()->set_native_icon(mac_icon_path);
-					has_icon = true;
-				}
-#endif
-
-#ifdef WINDOWS_ENABLED
-				String win_icon_path = GLOBAL_GET("application/config/windows_native_icon");
-				if (DisplayServer::get_singleton()->has_feature(DisplayServerEnums::FEATURE_NATIVE_ICON) && !win_icon_path.is_empty()) {
-					DisplayServer::get_singleton()->set_native_icon(win_icon_path);
-					has_icon = true;
-				}
-#endif
-
-				String icon_path = GLOBAL_GET("application/config/icon");
-				if (DisplayServer::get_singleton()->has_feature(DisplayServerEnums::FEATURE_ICON) && !icon_path.is_empty() && !has_icon) {
-					Ref<Image> icon;
-					icon.instantiate();
-					if (ImageLoader::load_image(icon_path, icon) == OK) {
-						DisplayServer::get_singleton()->set_icon(icon);
-						has_icon = true;
-					}
-				}
-			}
-
-			OS::get_singleton()->benchmark_end_measure("Startup", "Load Game");
 		}
 
 #ifdef TOOLS_ENABLED

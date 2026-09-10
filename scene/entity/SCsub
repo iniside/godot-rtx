@@ -13,7 +13,7 @@ generated = env_entity.Command(
     env_entity.Action(entity_component_codegen.generate, "Generating native entity component schemas ..."),
     source_scanner=CScanner,
 )
-env_entity.add_source_files(env.scene_sources, ["entity_id.cpp", "entity_world.cpp", "entity_component_schema.cpp"])
+env_entity.add_source_files(env.scene_sources, ["entity_id.cpp", "entity_world.cpp", "entity_component_schema.cpp", "entity_transform_system.cpp", "entity_scene_runtime.cpp"])
 env_entity.add_source_files(env.scene_sources, [generated[1]])
 
 env_flecs = env.Clone()

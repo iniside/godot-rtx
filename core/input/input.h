@@ -326,6 +326,7 @@ private:
 
 	friend class DisplayServer;
 	friend class SceneTree;
+	friend class EntitySceneRuntime;
 	friend class SceneDebugger;
 
 	static void (*set_mouse_mode_func)(MouseMode);

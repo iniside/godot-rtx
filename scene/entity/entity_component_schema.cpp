@@ -22,6 +22,9 @@ void initialize_entity_types() {
 		}
 	};
 	api.strdup_ = [](const char *p_text) -> char * {
+		if (!p_text) {
+			return nullptr;
+		}
 		size_t length = strlen(p_text) + 1;
 		char *copy = static_cast<char *>(Memory::alloc_static(length));
 		if (copy) {

@@ -38,6 +38,7 @@
 #include "core/os/os.h"
 #ifndef _3D_DISABLED
 #include "scene/entity/entity_component_schema.h"
+#include "scene/entity/entity_scene_runtime.h"
 #endif
 #include "scene/animation/animation_blend_space_1d.h"
 #include "scene/animation/animation_blend_space_2d.h"
@@ -1106,6 +1107,7 @@ void register_scene_types() {
 	GDREGISTER_CLASS(PackedScene);
 
 	GDREGISTER_CLASS(SceneTree);
+	GDREGISTER_INTERNAL_CLASS(EntitySceneRuntime);
 	GDREGISTER_ABSTRACT_CLASS(SceneTreeTimer); // sorry, you can't create it
 
 #ifndef DISABLE_DEPRECATED

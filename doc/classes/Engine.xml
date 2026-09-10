@@ -78,8 +78,7 @@
 		<method name="get_main_loop" qualifiers="const">
 			<return type="MainLoop" />
 			<description>
-				Returns the instance of the [MainLoop]. This is usually the main [SceneTree] and is the same as [method Node.get_tree].
-				[b]Note:[/b] The type instantiated as the main loop can changed with [member ProjectSettings.application/run/main_loop_type].
+				Returns the application's [MainLoop]. Games use the native entity runtime; the editor and project manager UI use [SceneTree].
 			</description>
 		</method>
 		<method name="get_physics_frames" qualifiers="const">

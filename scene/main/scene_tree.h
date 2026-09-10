@@ -200,9 +200,6 @@ private:
 
 	TypedArray<Node> _get_nodes_in_group(const StringName &p_group);
 
-	Node *current_scene = nullptr;
-	ObjectID prev_scene_id;
-	ObjectID pending_new_scene_id;
 
 	Color debug_collisions_color;
 	Color debug_collision_contact_color;
@@ -213,7 +210,6 @@ private:
 	Ref<Material> collision_material;
 	int collision_debug_contacts;
 
-	void _flush_scene_change();
 
 	List<Ref<SceneTreeTimer>> timers;
 	List<Ref<Tween>> tweens;
@@ -422,13 +418,6 @@ public:
 	void set_edited_scene_root(Node *p_node);
 	Node *get_edited_scene_root() const;
 
-	void set_current_scene(Node *p_scene);
-	Node *get_current_scene() const;
-	Error change_scene_to_file(const String &p_path);
-	Error change_scene_to_packed(RequiredParam<PackedScene> rp_scene);
-	Error change_scene_to_node(RequiredParam<Node> rp_node);
-	Error reload_current_scene();
-	void unload_current_scene();
 
 	RequiredResult<SceneTreeTimer> create_timer(double p_delay_sec, bool p_process_always = true, bool p_process_in_physics = false, bool p_ignore_time_scale = false);
 	RequiredResult<Tween> create_tween();
@@ -436,7 +425,6 @@ public:
 	TypedArray<Tween> get_processed_tweens();
 
 	//used by Main::start, don't use otherwise
-	void add_current_scene(Node *p_current);
 
 	static SceneTree *get_singleton() { return singleton; }
 

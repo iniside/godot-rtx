@@ -63,3 +63,12 @@ struct ENTITY_COMPONENT("id=2000000000000003") EntityMesh {
 	ENTITY_FIELD("id=0000000000000005;min=0;max=4294967295")
 	uint32_t layers = 1;
 };
+
+struct ENTITY_COMPONENT("id=2000000000000004") EntityVisibility {
+	ENTITY_FIELD("id=0000000000000001")
+	bool visible = true;
+	ENTITY_FIELD("id=0000000000000002")
+	bool inherit_parent = false;
+	ENTITY_FIELD("id=0000000000000003;serialize=false;edit=false")
+	bool effective = true;
+};

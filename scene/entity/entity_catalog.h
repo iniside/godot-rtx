@@ -3,24 +3,58 @@
 #include "entity_id.h"
 
 #include "core/templates/hash_map.h"
+#include "core/templates/hash_set.h"
 
 class EntityWorld;
 
 class EntityCatalog {
 	friend class EntityWorld;
-	HashMap<EntityId, bool, EntityIdHasher> records;
+	struct Record {
+		bool deleted = false;
+		EntityRef parent;
+	};
+	HashMap<EntityId, Record, EntityIdHasher> records;
+	HashMap<EntityId, HashSet<EntityId, EntityIdHasher>, EntityIdHasher> children;
+
+	void _unlink_parent(EntityId p_id) {
+		EntityId parent = records[p_id].parent.id;
+		auto *siblings = children.getptr(parent);
+		if (siblings) {
+			siblings->erase(p_id);
+			if (siblings->is_empty()) {
+				children.erase(parent);
+			}
+		}
+	}
+
+	void _set_parent(EntityId p_id, EntityRef p_parent) {
+		_unlink_parent(p_id);
+		records[p_id].parent = p_parent;
+		if (p_parent.id.is_valid()) {
+			children[p_parent.id].insert(p_id);
+		}
+	}
 
 public:
-	Error add_record(EntityId p_id) {
+	Error add_record(EntityId p_id, EntityRef p_parent = {}) {
 		ERR_FAIL_COND_V(!p_id.is_valid(), ERR_INVALID_PARAMETER);
 		ERR_FAIL_COND_V(records.has(p_id), ERR_ALREADY_EXISTS);
-		records.insert(p_id, false);
+		ERR_FAIL_COND_V(p_parent.id.is_valid() && get_state(p_parent.id) != EntityReferenceState::UNLOADED, ERR_INVALID_PARAMETER);
+		records.insert(p_id, { false, p_parent });
+		if (p_parent.id.is_valid()) {
+			children[p_parent.id].insert(p_id);
+		}
 		return OK;
 	}
 
 	EntityReferenceState get_state(EntityId p_id) const {
-		const bool *deleted = records.getptr(p_id);
-		return deleted ? (*deleted ? EntityReferenceState::DELETED : EntityReferenceState::UNLOADED) : EntityReferenceState::MISSING;
+		const Record *record = records.getptr(p_id);
+		return record ? (record->deleted ? EntityReferenceState::DELETED : EntityReferenceState::UNLOADED) : EntityReferenceState::MISSING;
+	}
+
+	EntityRef get_parent(EntityId p_id) const {
+		const Record *record = records.getptr(p_id);
+		return record ? record->parent : EntityRef();
 	}
 
 	int get_record_count() const { return records.size(); }
