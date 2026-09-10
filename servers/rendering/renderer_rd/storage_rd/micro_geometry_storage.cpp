@@ -396,6 +396,7 @@ void MicroGeometryStorage::_publish(Asset &r_asset) {
 			changed = true;
 		}
 	}
+	const uint32_t previous_ready = r_asset.gpu.ready;
 	r_asset.gpu.ready = 3;
 	for (uint32_t group : r_asset.source->get_metadata().terminals) {
 		r_asset.gpu.ready &= r_asset.group_states[group];
@@ -403,6 +404,9 @@ void MicroGeometryStorage::_publish(Asset &r_asset) {
 	if (changed) {
 		r_asset.gpu.residency_generation++;
 		RD::get_singleton()->buffer_update(r_asset.descriptor_buffer, 0, sizeof(GPUAsset), &r_asset.gpu);
+	}
+	if (previous_ready != r_asset.gpu.ready) {
+		r_asset.dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MESH);
 	}
 }
 
@@ -468,7 +472,15 @@ void MicroGeometryStorage::release(RID p_asset) {
 	statistics.retired_metadata_bytes += retired.bytes;
 	sources.erase(asset->source.ptr());
 	active_assets.erase(p_asset);
+	asset->dependency.deleted_notify(p_asset);
 	assets.free(p_asset);
+}
+
+void MicroGeometryStorage::update_dependency(RID p_asset, DependencyTracker *p_tracker) {
+	Asset *asset = assets.get_or_null(p_asset);
+	if (asset) {
+		p_tracker->update_dependency(&asset->dependency);
+	}
 }
 
 bool MicroGeometryStorage::request_group(RID p_asset, uint32_t p_group) {

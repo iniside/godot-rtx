@@ -3726,12 +3726,11 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 		auto append_micro_surface = [&](const RenderForwardClustered::GeometryInstanceSurfaceDataCache *p_surface) {
 			const auto *instance = p_surface->owner;
 			const auto *shader = p_surface->shader;
-			if (!shader || !instance->persistent_instance || !p_surface->persistent_surface || instance->mesh_instance.is_valid() || instance->rt_procedural || instance->instance_count == 0 || p_surface->primitive != RSE::PRIMITIVE_TRIANGLES || shader->uses_alpha_pass() || shader->uses_vertex || shader->uses_position || shader->uses_vertex_time || shader->writes_modelview_or_projection || shader->uses_particle_trails || shader->uses_point_size || shader->uses_z_clip_scale) {
+			if (p_surface->micro_geometry_source.is_null()) {
 				return false;
 			}
 			const auto &record = persistent_instances[uint32_t(instance->persistent_instance) - 1].data;
 			RID asset = RID::from_uint64(record.asset);
-			auto *storage = mesh_storage->get_micro_geometry_storage();
 			const MicroResource *resource = micro_resources.getptr(asset);
 			if (!resource || resource->source.is_null()) {
 				return false;
@@ -3740,20 +3739,11 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			uses_time |= shader->rt_uses_time();
 			uses_previous_time |= shader->rt_uses_previous_time();
 			uses_gpu_instances |= instance->data->base_type == RSE::INSTANCE_MULTIMESH && mesh_storage->multimesh_has_gpu_updates(instance->data->base);
-			if (!storage->is_ready(asset, true)) {
+			if (!p_surface->micro_geometry_rt_ready) {
 				return true;
 			}
 			const auto &metadata = source->get_metadata();
-			uint32_t surface_index = UINT32_MAX;
-			for (uint32_t index = 0; index < uint32_t(metadata.surfaces.size()); index++) {
-				if (metadata.surfaces[index].source_surface == p_surface->surface_index) {
-					surface_index = index;
-					break;
-				}
-			}
-			if (surface_index == UINT32_MAX) {
-				return false;
-			}
+			const uint32_t surface_index = p_surface->micro_geometry_surface_index;
 			const uint32_t count = record.multimesh_address != 0 ? record.multimesh_count : 1;
 			if (!count) {
 				return true;
@@ -3773,23 +3763,13 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			if (!shader->uses_alpha_clip && !shader->uses_alpha && !shader->uses_blend_alpha) {
 				flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_FORCE_OPAQUE_BIT;
 			}
-			MicroGeometrySelection::Task task;
-			task.instance = record.handle;
-			task.surface = p_surface->persistent_surface;
-			task.asset = record.asset;
-			task.group_count = metadata.groups.size();
-			task.cluster_count = metadata.clusters.size();
-			task.coarse_count = metadata.coarse_cluster_count;
-			task.multimesh_count = count;
+			MicroGeometrySelection::Task task = p_surface->micro_geometry_task;
 			task.bin = micro_tasks.size();
-			task.flags = instance->store_transform_cache ? 0 : 1;
 			if (p_render_data->scene_data->view_count != 1) {
 				task.flags |= 2;
 			}
 			if (instance->base_flags & RenderForwardClustered::INSTANCE_DATA_FLAG_MULTIMESH_INDIRECT) {
-				RID commands = mm_resources.get(instance->data->base).commands;
-				task.indirect_command = mm_resources.get(instance->data->base).command_address + uint64_t(p_surface->surface_index) * sizeof(uint32_t) * RendererRD::MeshStorage::INDIRECT_MULTIMESH_COMMAND_STRIDE;
-				geometry_buffer_dependencies.insert(commands);
+				geometry_buffer_dependencies.insert(p_surface->micro_geometry_commands);
 			}
 			const auto &surface_record = persistent_surfaces[uint32_t(task.surface) - 1].data;
 			RTMicroGeometryTask rt_task;
@@ -3806,7 +3786,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			rt_task.group_count = task.group_count;
 			rt_task.instance_flags = flags;
 			rt_task.indirect_command = task.indirect_command;
-			micro_levels = MAX(micro_levels, uint32_t(metadata.roots.size()));
+			micro_levels = MAX(micro_levels, p_surface->micro_geometry_levels);
 			micro_tasks.push_back(task);
 			micro_rt_tasks.push_back(rt_task);
 			for (uint32_t ordinal = 0; ordinal < count; ordinal++) {

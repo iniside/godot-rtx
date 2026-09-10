@@ -36,6 +36,7 @@
 #include "servers/rendering/micro_geometry_data.h"
 #include "servers/rendering/renderer_rd/shaders/forward_clustered/micro_geometry_page.slang.gen.h"
 #include "servers/rendering/rendering_device.h"
+#include "servers/rendering/storage/utilities.h"
 
 namespace RendererRD {
 
@@ -173,6 +174,7 @@ private:
 		uint64_t clas_submission = 0;
 	};
 	struct Asset {
+		Dependency dependency;
 		LocalVector<RID> rt_resources;
 		uint64_t rt_bytes = 0;
 		RID clas_addresses;
@@ -279,6 +281,7 @@ public:
 	void feedback_free(RID p_feedback);
 	RID acquire(const Ref<MicroGeometryData> &p_source);
 	void release(RID p_asset);
+	void update_dependency(RID p_asset, DependencyTracker *p_tracker);
 	void update();
 	bool request_group(RID p_asset, uint32_t p_group);
 	bool pin_page(const PagePin &p_pin);

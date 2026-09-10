@@ -273,6 +273,9 @@ protected:
 			uint32_t flags = 0;
 			bool mirror = false;
 			bool double_sided = false;
+			bool operator==(const Bin &p_other) const {
+				return shader == p_other.shader && material == p_other.material && flags == p_other.flags && mirror == p_other.mirror && double_sided == p_other.double_sided;
+			}
 		};
 		Vector<Bin> bins;
 		HashSet<uint64_t> surfaces;
@@ -665,6 +668,13 @@ protected:
 		uint32_t surface_index = 0;
 		uint32_t rtxdi_material_flags = 0;
 		uint64_t persistent_surface = 0;
+		MicroGeometrySelection::Task micro_geometry_task;
+		MicroGeometryRasterPass::Bin micro_geometry_bins[2];
+		Ref<MicroGeometryData> micro_geometry_source;
+		RID micro_geometry_commands;
+		uint32_t micro_geometry_levels = 0;
+		uint32_t micro_geometry_surface_index = UINT32_MAX;
+		bool micro_geometry_rt_ready = false;
 
 		void *surface = nullptr;
 		RID material_rid;
@@ -683,9 +693,10 @@ protected:
 		GeometryInstanceForwardClustered *owner = nullptr;
 		SelfList<GeometryInstanceSurfaceDataCache> compilation_dirty_element;
 		SelfList<GeometryInstanceSurfaceDataCache> compilation_all_element;
+		SelfList<GeometryInstanceSurfaceDataCache> micro_geometry_element;
 
 		GeometryInstanceSurfaceDataCache() :
-				compilation_dirty_element(this), compilation_all_element(this) {}
+				compilation_dirty_element(this), compilation_all_element(this), micro_geometry_element(this) {}
 	};
 
 	class GeometryInstanceForwardClustered : public RenderGeometryInstanceBase {
@@ -768,6 +779,8 @@ protected:
 	uint64_t instance_motion_update_frame = UINT64_MAX;
 	SelfList<GeometryInstanceSurfaceDataCache>::List geometry_surface_compilation_dirty_list;
 	SelfList<GeometryInstanceSurfaceDataCache>::List geometry_surface_compilation_all_list;
+	SelfList<GeometryInstanceSurfaceDataCache>::List micro_geometry_surface_list;
+	uint64_t micro_geometry_generation = 1;
 
 	PagedAllocator<GeometryInstanceForwardClustered> geometry_instance_alloc;
 	PagedAllocator<GeometryInstanceSurfaceDataCache> geometry_instance_surface_alloc;
@@ -819,6 +832,7 @@ protected:
 	void _mesh_compile_pipelines_for_surface(const SurfacePipelineData &p_surface, const GlobalPipelineData &p_global, RSE::PipelineSource p_source, Vector<ShaderPipelinePair> *r_pipeline_pairs = nullptr);
 	void _mesh_generate_all_pipelines_for_surface_cache(GeometryInstanceSurfaceDataCache *p_surface_cache, const GlobalPipelineData &p_global);
 	void _update_dirty_geometry_instances();
+	void _update_micro_geometry_instances(const LocalVector<RenderGeometryInstance *> &p_instances);
 	void _update_dirty_geometry_pipelines();
 
 	// Global data about the scene that can be used to pre-allocate resources without relying on culling.
