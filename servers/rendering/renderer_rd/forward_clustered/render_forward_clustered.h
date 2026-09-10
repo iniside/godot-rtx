@@ -159,6 +159,8 @@ public:
 		uint32_t micro_geometry_clusters = 0;
 		uint32_t micro_geometry_triangles = 0;
 		uint64_t micro_geometry_stats_epoch = 0;
+		uint64_t micro_geometry_stats_submitted_frame = 0;
+		uint64_t micro_geometry_stats_frame = 0;
 		bool micro_geometry_stats_pending = false;
 		RSE::ViewportDebugDraw micro_geometry_debug_mode = RSE::VIEWPORT_DEBUG_DRAW_DISABLED;
 		static void micro_geometry_stats_received(const Vector<uint8_t> &p_bytes, Ref<RenderBufferDataForwardClustered> p_data, uint64_t p_epoch);

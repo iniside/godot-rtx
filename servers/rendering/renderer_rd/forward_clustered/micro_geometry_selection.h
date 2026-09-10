@@ -125,6 +125,10 @@ public:
 		Vector<uint8_t> leased;
 		uint64_t owner = 0;
 		uint64_t blocked_revision = 0;
+		uint64_t sample_frame = 0;
+		uint64_t completed_frame = 0;
+		uint32_t queue_overflows = 0;
+		uint32_t record_overflows = 0;
 		bool retired = false;
 		bool pending = false;
 		bool retry = false;
@@ -180,6 +184,12 @@ public:
 		uint64_t retired_bytes = 0;
 		uint64_t dynamic_memory_bytes = 0;
 		uint64_t fixed_memory_bytes = 0;
+		uint64_t diagnostic_fixed_bytes = 0;
+		uint64_t requested_bytes = 0;
+		uint64_t replacement_peak_bytes = 0;
+		uint64_t profile_frame = UINT64_MAX;
+		uint32_t resize_attempts = 0;
+		const char *allocation_status = "not_attempted";
 		Parameters data;
 		uint32_t levels = 0;
 		uint32_t selected_capacity = 0;
@@ -223,6 +233,7 @@ private:
 	RID _buffer(Pass &r_pass, uint64_t p_size, const void *p_data = nullptr, uint32_t p_usage = 0);
 	bool _resize(Pass *p_pass, const Vector<Unit> &p_units);
 	static void _retire_buffers(Pass *p_pass);
+	static void _report_selection(Pass *p_pass);
 	static Capacity *_capacity_entry(CapacityFeedback *p_feedback, uint32_t p_index, bool p_create);
 	static void _retire_capacity(CapacityFeedback *p_feedback);
 	static void _capacity_feedback(const Vector<uint8_t> &p_bytes, Ref<RefCounted> p_feedback);
