@@ -32,7 +32,9 @@
 
 #include "core/config/project_settings.h"
 #include "core/math/geometry_3d.h"
+#include "core/object/worker_thread_pool.h"
 #include "core/os/os.h"
+#include "core/profiling/profiling.h"
 #include "servers/rendering/renderer_rd/renderer_scene_render_rd.h"
 #include "servers/rendering/renderer_rd/storage_rd/texture_storage.h"
 #include "servers/rendering/rendering_server_globals.h"
@@ -751,7 +753,6 @@ void LightStorage::set_max_lights(const uint32_t p_max_lights) {
 }
 
 void LightStorage::update_light_buffers(RenderDataRD *p_render_data, const PagedArray<RID> &p_lights, const Transform3D &p_camera_transform, RID p_shadow_atlas, bool p_using_shadows, uint32_t &r_directional_light_count, uint32_t &r_positional_light_count, bool &r_directional_light_soft_shadows) {
-	ForwardIDStorage *forward_id_storage = ForwardIDStorage::get_singleton();
 	RendererRD::TextureStorage *texture_storage = RendererRD::TextureStorage::get_singleton();
 
 	Transform3D inverse_transform = p_camera_transform.affine_inverse();
@@ -765,521 +766,540 @@ void LightStorage::update_light_buffers(RenderDataRD *p_render_data, const Paged
 
 	r_directional_light_soft_shadows = false;
 
-	for (int i = 0; i < (int)p_lights.size(); i++) {
-		LightInstance *light_instance = light_instance_owner.get_or_null(p_lights[i]);
-		if (!light_instance) {
-			continue;
-		}
-		Light *light = light_owner.get_or_null(light_instance->light);
-
-		ERR_CONTINUE(light == nullptr);
-
-		switch (light->type) {
-			case RSE::LIGHT_DIRECTIONAL: {
-				if (r_directional_light_count >= max_directional_lights || light->directional_sky_mode == RSE::LIGHT_DIRECTIONAL_SKY_MODE_SKY_ONLY) {
-					continue;
-				}
-
-				DirectionalLightData &light_data = directional_lights[r_directional_light_count];
-
-				Transform3D light_transform = light_instance->transform;
-
-				Vector3 direction = inverse_transform.basis.xform(light_transform.basis.xform(Vector3(0, 0, 1))).normalized();
-
-				light_data.direction[0] = direction.x;
-				light_data.direction[1] = direction.y;
-				light_data.direction[2] = direction.z;
-
-				float sign = light->negative ? -1 : 1;
-
-				light_data.energy = sign * light->param[RSE::LIGHT_PARAM_ENERGY];
-
-				if (RendererSceneRenderRD::get_singleton()->is_using_physical_light_units()) {
-					light_data.energy *= light->param[RSE::LIGHT_PARAM_INTENSITY];
-				} else {
-					light_data.energy *= Math::PI;
-				}
-
-				if (p_render_data->camera_attributes.is_valid()) {
-					light_data.energy *= RSG::camera_attributes->camera_attributes_get_exposure_normalization_factor(p_render_data->camera_attributes);
-				}
-
-				Color linear_col = light->color.srgb_to_linear();
-				light_data.color[0] = linear_col.r;
-				light_data.color[1] = linear_col.g;
-				light_data.color[2] = linear_col.b;
-
-				light_data.specular = light->param[RSE::LIGHT_PARAM_SPECULAR];
-				light_data.volumetric_fog_energy = light->param[RSE::LIGHT_PARAM_VOLUMETRIC_FOG_ENERGY];
-				light_data.mask = light->cull_mask;
-
-				float size = light->param[RSE::LIGHT_PARAM_SIZE];
-
-				light_data.size = 1.0 - Math::cos(Math::deg_to_rad(size)); //angle to cosine offset
-
-				light_data.shadow_opacity = (p_using_shadows && light->shadow)
-						? light->param[RSE::LIGHT_PARAM_SHADOW_OPACITY]
-						: 0.0;
-
-				float angular_diameter = light->param[RSE::LIGHT_PARAM_SIZE];
-				if (angular_diameter > 0.0) {
-					// I know tan(0) is 0, but let's not risk it with numerical precision.
-					// technically this will keep expanding until reaching the sun, but all we care
-					// is expand until we reach the radius of the near plane (there can't be more occluders than that)
-					angular_diameter = Math::tan(Math::deg_to_rad(angular_diameter));
-					if (light->shadow && light->param[RSE::LIGHT_PARAM_SHADOW_BLUR] > 0.0) {
-						// Only enable PCSS-like soft shadows if blurring is enabled.
-						// Otherwise, performance would decrease with no visual difference.
-						r_directional_light_soft_shadows = true;
-					}
-				} else {
-					angular_diameter = 0.0;
-				}
-
-				light_data.bake_mode = light->bake_mode;
-
-				if (light_data.shadow_opacity > 0.001) {
-					RSE::LightDirectionalShadowMode smode = light->directional_shadow_mode;
-
-					light_data.soft_shadow_scale = light->param[RSE::LIGHT_PARAM_SHADOW_BLUR];
-					light_data.softshadow_angle = angular_diameter;
-
-					if (angular_diameter <= 0.0) {
-						light_data.soft_shadow_scale *= RendererSceneRenderRD::get_singleton()->directional_shadow_quality_radius_get(); // Only use quality radius for PCF
-					}
-
-					int limit = smode == RSE::LIGHT_DIRECTIONAL_SHADOW_ORTHOGONAL ? 0 : (smode == RSE::LIGHT_DIRECTIONAL_SHADOW_PARALLEL_2_SPLITS ? 1 : 3);
-					light_data.blend_splits = (smode != RSE::LIGHT_DIRECTIONAL_SHADOW_ORTHOGONAL) && light->directional_blend_splits;
-					for (int j = 0; j < 4; j++) {
-						Rect2 atlas_rect = light_instance->shadow_transform[j].atlas_rect;
-						Projection correction;
-						correction.set_depth_correction(false, true, false);
-						Projection matrix = correction * light_instance->shadow_transform[j].camera;
-						float split = light_instance->shadow_transform[MIN(limit, j)].split;
-
-						Projection bias;
-						bias.set_light_bias();
-						Projection rectm;
-						rectm.set_light_atlas_rect(atlas_rect);
-
-						Transform3D modelview = (inverse_transform * light_instance->shadow_transform[j].transform).inverse();
-
-						Projection shadow_mtx = rectm * bias * matrix * modelview;
-						light_data.shadow_split_offsets[j] = split;
-						float bias_scale = light_instance->shadow_transform[j].bias_scale * light_data.soft_shadow_scale;
-						light_data.shadow_bias[j] = light->param[RSE::LIGHT_PARAM_SHADOW_BIAS] / 100.0 * bias_scale;
-						light_data.shadow_normal_bias[j] = light->param[RSE::LIGHT_PARAM_SHADOW_NORMAL_BIAS] * light_instance->shadow_transform[j].shadow_texel_size;
-						light_data.shadow_transmittance_bias[j] = light->param[RSE::LIGHT_PARAM_TRANSMITTANCE_BIAS] / 100.0 * bias_scale;
-						light_data.shadow_z_range[j] = light_instance->shadow_transform[j].farplane;
-						light_data.shadow_range_begin[j] = light_instance->shadow_transform[j].range_begin;
-						RendererRD::MaterialStorage::store_camera(shadow_mtx, light_data.shadow_matrices[j]);
-
-						Vector2 uv_scale = light_instance->shadow_transform[j].uv_scale;
-						uv_scale *= atlas_rect.size; //adapt to atlas size
-						switch (j) {
-							case 0: {
-								light_data.uv_scale1[0] = uv_scale.x;
-								light_data.uv_scale1[1] = uv_scale.y;
-							} break;
-							case 1: {
-								light_data.uv_scale2[0] = uv_scale.x;
-								light_data.uv_scale2[1] = uv_scale.y;
-							} break;
-							case 2: {
-								light_data.uv_scale3[0] = uv_scale.x;
-								light_data.uv_scale3[1] = uv_scale.y;
-							} break;
-							case 3: {
-								light_data.uv_scale4[0] = uv_scale.x;
-								light_data.uv_scale4[1] = uv_scale.y;
-							} break;
-						}
-					}
-
-					float fade_start = light->param[RSE::LIGHT_PARAM_SHADOW_FADE_START];
-					light_data.fade_from = -light_data.shadow_split_offsets[3] * MIN(fade_start, 0.999); //using 1.0 would break smoothstep
-					light_data.fade_to = -light_data.shadow_split_offsets[3];
-				}
-
-				r_directional_light_count++;
-			} break;
-			case RSE::LIGHT_OMNI: {
-				if (omni_light_count >= max_lights) {
-					continue;
-				}
-
-				Transform3D light_transform = light_instance->transform;
-				const real_t distance = p_camera_transform.origin.distance_to(light_transform.origin);
-
-				if (light->distance_fade) {
-					const float fade_begin = light->distance_fade_begin;
-					const float fade_length = light->distance_fade_length;
-
-					if (distance > fade_begin) {
-						if (distance > fade_begin + fade_length) {
-							// Out of range, don't draw this light to improve performance.
-							continue;
-						}
-					}
-				}
-
-				omni_light_sort[omni_light_count].light_instance = light_instance;
-				omni_light_sort[omni_light_count].light = light;
-				omni_light_sort[omni_light_count].depth = distance;
-				omni_light_count++;
-			} break;
-			case RSE::LIGHT_SPOT: {
-				if (spot_light_count >= max_lights) {
-					continue;
-				}
-
-				Transform3D light_transform = light_instance->transform;
-				const real_t distance = p_camera_transform.origin.distance_to(light_transform.origin);
-
-				if (light->distance_fade) {
-					const float fade_begin = light->distance_fade_begin;
-					const float fade_length = light->distance_fade_length;
-
-					if (distance > fade_begin) {
-						if (distance > fade_begin + fade_length) {
-							// Out of range, don't draw this light to improve performance.
-							continue;
-						}
-					}
-				}
-
-				spot_light_sort[spot_light_count].light_instance = light_instance;
-				spot_light_sort[spot_light_count].light = light;
-				spot_light_sort[spot_light_count].depth = distance;
-				spot_light_count++;
-			} break;
-			case RSE::LIGHT_AREA: {
-				if (area_light_count >= max_lights) {
-					continue;
-				}
-
-				Transform3D light_transform = light_instance->transform;
-				const real_t distance = p_camera_transform.origin.distance_to(light_transform.origin);
-
-				if (light->distance_fade) {
-					const float fade_begin = light->distance_fade_begin;
-					const float fade_length = light->distance_fade_length;
-
-					if (distance > fade_begin) {
-						if (distance > fade_begin + fade_length) {
-							// Out of range, don't draw this light, to improve performance.
-							continue;
-						}
-					}
-				}
-
-				area_light_sort[area_light_count].light_instance = light_instance;
-				area_light_sort[area_light_count].light = light;
-				area_light_sort[area_light_count].depth = distance;
-				area_light_count++;
+	if (p_lights.size() == 0) {
+		return;
+	}
+	LocalVector<LightInstance *> admitted_lights;
+	auto prepare = [&]() {
+		for (int i = 0; i < (int)p_lights.size(); i++) {
+			LightInstance *light_instance = light_instance_owner.get_or_null(p_lights[i]);
+			if (!light_instance) {
+				continue;
 			}
-		}
+			Light *light = light_owner.get_or_null(light_instance->light);
 
-		light_instance->last_pass = RSG::rasterizer->get_frame_number();
-	}
+			ERR_CONTINUE(light == nullptr);
 
-	if (omni_light_count) {
-		SortArray<LightInstanceDepthSort> sorter;
-		sorter.sort(omni_light_sort, omni_light_count);
-	}
+			switch (light->type) {
+				case RSE::LIGHT_DIRECTIONAL: {
+					if (r_directional_light_count >= max_directional_lights || light->directional_sky_mode == RSE::LIGHT_DIRECTIONAL_SKY_MODE_SKY_ONLY) {
+						continue;
+					}
 
-	if (spot_light_count) {
-		SortArray<LightInstanceDepthSort> sorter;
-		sorter.sort(spot_light_sort, spot_light_count);
-	}
+					DirectionalLightData &light_data = directional_lights[r_directional_light_count];
 
-	if (area_light_count) {
-		SortArray<LightInstanceDepthSort> sorter;
-		sorter.sort(area_light_sort, area_light_count);
-	}
+					Transform3D light_transform = light_instance->transform;
 
-	bool using_forward_ids = forward_id_storage->uses_forward_ids();
+					Vector3 direction = inverse_transform.basis.xform(light_transform.basis.xform(Vector3(0, 0, 1))).normalized();
 
-	for (uint32_t i = 0; i < (omni_light_count + spot_light_count + area_light_count); i++) {
-		uint32_t index;
-		LightData *light_data_ptr;
-		RSE::LightType type;
-		LightInstance *light_instance;
-		Light *light;
-		real_t distance;
+					light_data.direction[0] = direction.x;
+					light_data.direction[1] = direction.y;
+					light_data.direction[2] = direction.z;
 
-		if (i >= omni_light_count + spot_light_count) {
-			index = i - (omni_light_count + spot_light_count);
-			light_data_ptr = &area_lights[index];
-			type = RSE::LIGHT_AREA;
-			light_instance = area_light_sort[index].light_instance;
-			light = area_light_sort[index].light;
-			distance = area_light_sort[index].depth;
-		} else if (i >= omni_light_count) {
-			index = i - (omni_light_count);
-			light_data_ptr = &spot_lights[index];
-			type = RSE::LIGHT_SPOT;
-			light_instance = spot_light_sort[index].light_instance;
-			light = spot_light_sort[index].light;
-			distance = spot_light_sort[index].depth;
-		} else {
-			index = i;
-			light_data_ptr = &omni_lights[index];
-			type = RSE::LIGHT_OMNI;
-			light_instance = omni_light_sort[index].light_instance;
-			light = omni_light_sort[index].light;
-			distance = omni_light_sort[index].depth;
-		}
+					float sign = light->negative ? -1 : 1;
 
-		if (using_forward_ids) {
-			ForwardIDType forward_id_type = _light_type_to_forward_id_type(light_instance->light_type);
-			forward_id_storage->map_forward_id(forward_id_type, light_instance->forward_id, index, light_instance->last_pass);
-		}
+					light_data.energy = sign * light->param[RSE::LIGHT_PARAM_ENERGY];
 
-		LightData &light_data = *light_data_ptr;
-		Transform3D light_transform = light_instance->transform;
+					if (RendererSceneRenderRD::get_singleton()->is_using_physical_light_units()) {
+						light_data.energy *= light->param[RSE::LIGHT_PARAM_INTENSITY];
+					} else {
+						light_data.energy *= Math::PI;
+					}
 
-		float sign = light->negative ? -1 : 1;
-		Color linear_col = light->color.srgb_to_linear();
+					if (p_render_data->camera_attributes.is_valid()) {
+						light_data.energy *= RSG::camera_attributes->camera_attributes_get_exposure_normalization_factor(p_render_data->camera_attributes);
+					}
 
-		light_data.attenuation = light->param[RSE::LIGHT_PARAM_ATTENUATION];
+					Color linear_col = light->color.srgb_to_linear();
+					light_data.color[0] = linear_col.r;
+					light_data.color[1] = linear_col.g;
+					light_data.color[2] = linear_col.b;
 
-		// Reuse fade begin, fade length and distance for shadow LOD determination later.
-		float fade_begin = 0.0;
-		float fade_shadow = 0.0;
-		float fade_length = 0.0;
+					light_data.specular = light->param[RSE::LIGHT_PARAM_SPECULAR];
+					light_data.volumetric_fog_energy = light->param[RSE::LIGHT_PARAM_VOLUMETRIC_FOG_ENERGY];
+					light_data.mask = light->cull_mask;
 
-		float fade = 1.0;
-		float shadow_opacity_fade = 1.0;
-		if (light->distance_fade) {
-			fade_begin = light->distance_fade_begin;
-			fade_shadow = light->distance_fade_shadow;
-			fade_length = light->distance_fade_length;
+					float size = light->param[RSE::LIGHT_PARAM_SIZE];
 
-			// Use `smoothstep()` to make opacity changes more gradual and less noticeable to the player.
-			if (distance > fade_begin) {
-				fade = Math::smoothstep(0.0f, 1.0f, 1.0f - float(distance - fade_begin) / fade_length);
+					light_data.size = 1.0 - Math::cos(Math::deg_to_rad(size)); //angle to cosine offset
+
+					light_data.shadow_opacity = (p_using_shadows && light->shadow)
+							? light->param[RSE::LIGHT_PARAM_SHADOW_OPACITY]
+							: 0.0;
+
+					float angular_diameter = light->param[RSE::LIGHT_PARAM_SIZE];
+					if (angular_diameter > 0.0) {
+						// I know tan(0) is 0, but let's not risk it with numerical precision.
+						// technically this will keep expanding until reaching the sun, but all we care
+						// is expand until we reach the radius of the near plane (there can't be more occluders than that)
+						angular_diameter = Math::tan(Math::deg_to_rad(angular_diameter));
+						if (light->shadow && light->param[RSE::LIGHT_PARAM_SHADOW_BLUR] > 0.0) {
+							// Only enable PCSS-like soft shadows if blurring is enabled.
+							// Otherwise, performance would decrease with no visual difference.
+							r_directional_light_soft_shadows = true;
+						}
+					} else {
+						angular_diameter = 0.0;
+					}
+
+					light_data.bake_mode = light->bake_mode;
+
+					if (light_data.shadow_opacity > 0.001) {
+						RSE::LightDirectionalShadowMode smode = light->directional_shadow_mode;
+
+						light_data.soft_shadow_scale = light->param[RSE::LIGHT_PARAM_SHADOW_BLUR];
+						light_data.softshadow_angle = angular_diameter;
+
+						if (angular_diameter <= 0.0) {
+							light_data.soft_shadow_scale *= RendererSceneRenderRD::get_singleton()->directional_shadow_quality_radius_get(); // Only use quality radius for PCF
+						}
+
+						int limit = smode == RSE::LIGHT_DIRECTIONAL_SHADOW_ORTHOGONAL ? 0 : (smode == RSE::LIGHT_DIRECTIONAL_SHADOW_PARALLEL_2_SPLITS ? 1 : 3);
+						light_data.blend_splits = (smode != RSE::LIGHT_DIRECTIONAL_SHADOW_ORTHOGONAL) && light->directional_blend_splits;
+						for (int j = 0; j < 4; j++) {
+							Rect2 atlas_rect = light_instance->shadow_transform[j].atlas_rect;
+							Projection correction;
+							correction.set_depth_correction(false, true, false);
+							Projection matrix = correction * light_instance->shadow_transform[j].camera;
+							float split = light_instance->shadow_transform[MIN(limit, j)].split;
+
+							Projection bias;
+							bias.set_light_bias();
+							Projection rectm;
+							rectm.set_light_atlas_rect(atlas_rect);
+
+							Transform3D modelview = (inverse_transform * light_instance->shadow_transform[j].transform).inverse();
+
+							Projection shadow_mtx = rectm * bias * matrix * modelview;
+							light_data.shadow_split_offsets[j] = split;
+							float bias_scale = light_instance->shadow_transform[j].bias_scale * light_data.soft_shadow_scale;
+							light_data.shadow_bias[j] = light->param[RSE::LIGHT_PARAM_SHADOW_BIAS] / 100.0 * bias_scale;
+							light_data.shadow_normal_bias[j] = light->param[RSE::LIGHT_PARAM_SHADOW_NORMAL_BIAS] * light_instance->shadow_transform[j].shadow_texel_size;
+							light_data.shadow_transmittance_bias[j] = light->param[RSE::LIGHT_PARAM_TRANSMITTANCE_BIAS] / 100.0 * bias_scale;
+							light_data.shadow_z_range[j] = light_instance->shadow_transform[j].farplane;
+							light_data.shadow_range_begin[j] = light_instance->shadow_transform[j].range_begin;
+							RendererRD::MaterialStorage::store_camera(shadow_mtx, light_data.shadow_matrices[j]);
+
+							Vector2 uv_scale = light_instance->shadow_transform[j].uv_scale;
+							uv_scale *= atlas_rect.size; //adapt to atlas size
+							switch (j) {
+								case 0: {
+									light_data.uv_scale1[0] = uv_scale.x;
+									light_data.uv_scale1[1] = uv_scale.y;
+								} break;
+								case 1: {
+									light_data.uv_scale2[0] = uv_scale.x;
+									light_data.uv_scale2[1] = uv_scale.y;
+								} break;
+								case 2: {
+									light_data.uv_scale3[0] = uv_scale.x;
+									light_data.uv_scale3[1] = uv_scale.y;
+								} break;
+								case 3: {
+									light_data.uv_scale4[0] = uv_scale.x;
+									light_data.uv_scale4[1] = uv_scale.y;
+								} break;
+							}
+						}
+
+						float fade_start = light->param[RSE::LIGHT_PARAM_SHADOW_FADE_START];
+						light_data.fade_from = -light_data.shadow_split_offsets[3] * MIN(fade_start, 0.999); //using 1.0 would break smoothstep
+						light_data.fade_to = -light_data.shadow_split_offsets[3];
+					}
+
+					r_directional_light_count++;
+				} break;
+				case RSE::LIGHT_OMNI: {
+					if (omni_light_count >= max_lights) {
+						continue;
+					}
+
+					Transform3D light_transform = light_instance->transform;
+					const real_t distance = p_camera_transform.origin.distance_to(light_transform.origin);
+
+					if (light->distance_fade) {
+						const float fade_begin = light->distance_fade_begin;
+						const float fade_length = light->distance_fade_length;
+
+						if (distance > fade_begin) {
+							if (distance > fade_begin + fade_length) {
+								// Out of range, don't draw this light to improve performance.
+								continue;
+							}
+						}
+					}
+
+					omni_light_sort[omni_light_count].light_instance = light_instance;
+					omni_light_sort[omni_light_count].light = light;
+					omni_light_sort[omni_light_count].depth = distance;
+					omni_light_count++;
+				} break;
+				case RSE::LIGHT_SPOT: {
+					if (spot_light_count >= max_lights) {
+						continue;
+					}
+
+					Transform3D light_transform = light_instance->transform;
+					const real_t distance = p_camera_transform.origin.distance_to(light_transform.origin);
+
+					if (light->distance_fade) {
+						const float fade_begin = light->distance_fade_begin;
+						const float fade_length = light->distance_fade_length;
+
+						if (distance > fade_begin) {
+							if (distance > fade_begin + fade_length) {
+								// Out of range, don't draw this light to improve performance.
+								continue;
+							}
+						}
+					}
+
+					spot_light_sort[spot_light_count].light_instance = light_instance;
+					spot_light_sort[spot_light_count].light = light;
+					spot_light_sort[spot_light_count].depth = distance;
+					spot_light_count++;
+				} break;
+				case RSE::LIGHT_AREA: {
+					if (area_light_count >= max_lights) {
+						continue;
+					}
+
+					Transform3D light_transform = light_instance->transform;
+					const real_t distance = p_camera_transform.origin.distance_to(light_transform.origin);
+
+					if (light->distance_fade) {
+						const float fade_begin = light->distance_fade_begin;
+						const float fade_length = light->distance_fade_length;
+
+						if (distance > fade_begin) {
+							if (distance > fade_begin + fade_length) {
+								// Out of range, don't draw this light, to improve performance.
+								continue;
+							}
+						}
+					}
+
+					area_light_sort[area_light_count].light_instance = light_instance;
+					area_light_sort[area_light_count].light = light;
+					area_light_sort[area_light_count].depth = distance;
+					area_light_count++;
+				}
 			}
 
-			if (distance > fade_shadow) {
-				shadow_opacity_fade = Math::smoothstep(0.0f, 1.0f, 1.0f - float(distance - fade_shadow) / fade_length);
-			}
+			admitted_lights.push_back(light_instance);
 		}
 
-		float energy = sign * light->param[RSE::LIGHT_PARAM_ENERGY] * fade;
+		if (omni_light_count) {
+			SortArray<LightInstanceDepthSort> sorter;
+			sorter.sort(omni_light_sort, omni_light_count);
+		}
 
-		if (RendererSceneRenderRD::get_singleton()->is_using_physical_light_units()) {
-			energy *= light->param[RSE::LIGHT_PARAM_INTENSITY];
+		if (spot_light_count) {
+			SortArray<LightInstanceDepthSort> sorter;
+			sorter.sort(spot_light_sort, spot_light_count);
+		}
 
-			// Convert from Luminous Power to Luminous Intensity
-			if (type == RSE::LIGHT_OMNI) {
-				energy *= 1.0 / (Math::PI * 4.0);
-			} else if (type == RSE::LIGHT_AREA) {
-				energy *= 1.0 / (Math::PI * 2.0);
+		if (area_light_count) {
+			SortArray<LightInstanceDepthSort> sorter;
+			sorter.sort(area_light_sort, area_light_count);
+		}
+
+		for (uint32_t i = 0; i < (omni_light_count + spot_light_count + area_light_count); i++) {
+			uint32_t index;
+			LightData *light_data_ptr;
+			RSE::LightType type;
+			LightInstance *light_instance;
+			Light *light;
+			real_t distance;
+
+			if (i >= omni_light_count + spot_light_count) {
+				index = i - (omni_light_count + spot_light_count);
+				light_data_ptr = &area_lights[index];
+				type = RSE::LIGHT_AREA;
+				light_instance = area_light_sort[index].light_instance;
+				light = area_light_sort[index].light;
+				distance = area_light_sort[index].depth;
+			} else if (i >= omni_light_count) {
+				index = i - (omni_light_count);
+				light_data_ptr = &spot_lights[index];
+				type = RSE::LIGHT_SPOT;
+				light_instance = spot_light_sort[index].light_instance;
+				light = spot_light_sort[index].light;
+				distance = spot_light_sort[index].depth;
 			} else {
-				// Spot Lights are not physically accurate, Luminous Intensity should change in relation to the cone angle.
-				// We make this assumption to keep them easy to control.
-				energy *= 1.0 / Math::PI;
+				index = i;
+				light_data_ptr = &omni_lights[index];
+				type = RSE::LIGHT_OMNI;
+				light_instance = omni_light_sort[index].light_instance;
+				light = omni_light_sort[index].light;
+				distance = omni_light_sort[index].depth;
 			}
-		} else {
-			energy *= Math::PI;
-		}
 
-		if (p_render_data->camera_attributes.is_valid()) {
-			energy *= RSG::camera_attributes->camera_attributes_get_exposure_normalization_factor(p_render_data->camera_attributes);
-		}
+			LightData &light_data = *light_data_ptr;
+			Transform3D light_transform = light_instance->transform;
 
-		light_data.color[0] = linear_col.r * energy;
-		light_data.color[1] = linear_col.g * energy;
-		light_data.color[2] = linear_col.b * energy;
-		light_data.specular_amount = light->param[RSE::LIGHT_PARAM_SPECULAR] * 2.0;
-		light_data.volumetric_fog_energy = light->param[RSE::LIGHT_PARAM_VOLUMETRIC_FOG_ENERGY];
-		light_data.bake_mode = light->bake_mode;
+			float sign = light->negative ? -1 : 1;
+			Color linear_col = light->color.srgb_to_linear();
 
-		float radius = MAX(0.001, light->param[RSE::LIGHT_PARAM_RANGE]);
-		light_data.inv_radius = 1.0 / radius;
-		Vector2 area_size = light->area_size;
-		Vector3 pos = inverse_transform.xform(light_transform.origin);
-		light_data.position[0] = pos.x;
-		light_data.position[1] = pos.y;
-		light_data.position[2] = pos.z;
+			light_data.attenuation = light->param[RSE::LIGHT_PARAM_ATTENUATION];
 
-		Vector3 direction = inverse_transform.basis.xform(light_transform.basis.xform(Vector3(0, 0, -1))).normalized();
+			// Reuse fade begin, fade length and distance for shadow LOD determination later.
+			float fade_begin = 0.0;
+			float fade_shadow = 0.0;
+			float fade_length = 0.0;
 
-		light_data.direction[0] = direction.x;
-		light_data.direction[1] = direction.y;
-		light_data.direction[2] = direction.z;
+			float fade = 1.0;
+			float shadow_opacity_fade = 1.0;
+			if (light->distance_fade) {
+				fade_begin = light->distance_fade_begin;
+				fade_shadow = light->distance_fade_shadow;
+				fade_length = light->distance_fade_length;
 
-		float size = light->param[RSE::LIGHT_PARAM_SIZE];
+				// Use `smoothstep()` to make opacity changes more gradual and less noticeable to the player.
+				if (distance > fade_begin) {
+					fade = Math::smoothstep(0.0f, 1.0f, 1.0f - float(distance - fade_begin) / fade_length);
+				}
 
-		light_data.size = size;
-
-		light_data.inv_spot_attenuation = 1.0f / light->param[RSE::LIGHT_PARAM_SPOT_ATTENUATION];
-		float spot_angle = light->param[RSE::LIGHT_PARAM_SPOT_ANGLE];
-		light_data.cos_spot_angle = Math::cos(Math::deg_to_rad(spot_angle));
-		if (type == RSE::LIGHT_AREA) {
-			Vector3 area_vec_a = inverse_transform.basis.xform(light_transform.basis.xform(Vector3(1, 0, 0))).normalized() * area_size.x;
-			Vector3 area_vec_b = inverse_transform.basis.xform(light_transform.basis.xform(Vector3(0, 1, 0))).normalized() * area_size.y;
-
-			light_data.area_width[0] = area_vec_a.x;
-			light_data.area_width[1] = area_vec_a.y;
-			light_data.area_width[2] = area_vec_a.z;
-
-			light_data.area_height[0] = area_vec_b.x;
-			light_data.area_height[1] = area_vec_b.y;
-			light_data.area_height[2] = area_vec_b.z;
-			light_data.inv_spot_attenuation = 1.0 / (radius + area_size.length() / 2.0); // center range
-
-			if (light->area_normalize_energy) {
-				// normalization to make larger lights output same amount of light as smaller lights with same energy
-				float surface_area = area_size.x * area_size.y;
-				light_data.color[0] /= surface_area;
-				light_data.color[1] /= surface_area;
-				light_data.color[2] /= surface_area;
+				if (distance > fade_shadow) {
+					shadow_opacity_fade = Math::smoothstep(0.0f, 1.0f, 1.0f - float(distance - fade_shadow) / fade_length);
+				}
 			}
-		}
-		light_data.mask = light->cull_mask;
 
-		light_data.atlas_rect[0] = 0;
-		light_data.atlas_rect[1] = 0;
-		light_data.atlas_rect[2] = 0;
-		light_data.atlas_rect[3] = 0;
+			float energy = sign * light->param[RSE::LIGHT_PARAM_ENERGY] * fade;
 
-		RID projector = light->projector;
+			if (RendererSceneRenderRD::get_singleton()->is_using_physical_light_units()) {
+				energy *= light->param[RSE::LIGHT_PARAM_INTENSITY];
 
-		if (projector.is_valid() && type != RSE::LIGHT_AREA) {
-			Rect2 rect = texture_storage->decal_atlas_get_texture_rect(projector);
-
-			if (type == RSE::LIGHT_SPOT) {
-				light_data.projector_rect[0] = rect.position.x;
-				light_data.projector_rect[1] = rect.position.y + rect.size.height; //flip because shadow is flipped
-				light_data.projector_rect[2] = rect.size.width;
-				light_data.projector_rect[3] = -rect.size.height;
+				// Convert from Luminous Power to Luminous Intensity
+				if (type == RSE::LIGHT_OMNI) {
+					energy *= 1.0 / (Math::PI * 4.0);
+				} else if (type == RSE::LIGHT_AREA) {
+					energy *= 1.0 / (Math::PI * 2.0);
+				} else {
+					// Spot Lights are not physically accurate, Luminous Intensity should change in relation to the cone angle.
+					// We make this assumption to keep them easy to control.
+					energy *= 1.0 / Math::PI;
+				}
 			} else {
+				energy *= Math::PI;
+			}
+
+			if (p_render_data->camera_attributes.is_valid()) {
+				energy *= RSG::camera_attributes->camera_attributes_get_exposure_normalization_factor(p_render_data->camera_attributes);
+			}
+
+			light_data.color[0] = linear_col.r * energy;
+			light_data.color[1] = linear_col.g * energy;
+			light_data.color[2] = linear_col.b * energy;
+			light_data.specular_amount = light->param[RSE::LIGHT_PARAM_SPECULAR] * 2.0;
+			light_data.volumetric_fog_energy = light->param[RSE::LIGHT_PARAM_VOLUMETRIC_FOG_ENERGY];
+			light_data.bake_mode = light->bake_mode;
+
+			float radius = MAX(0.001, light->param[RSE::LIGHT_PARAM_RANGE]);
+			light_data.inv_radius = 1.0 / radius;
+			Vector2 area_size = light->area_size;
+			Vector3 pos = inverse_transform.xform(light_transform.origin);
+			light_data.position[0] = pos.x;
+			light_data.position[1] = pos.y;
+			light_data.position[2] = pos.z;
+
+			Vector3 direction = inverse_transform.basis.xform(light_transform.basis.xform(Vector3(0, 0, -1))).normalized();
+
+			light_data.direction[0] = direction.x;
+			light_data.direction[1] = direction.y;
+			light_data.direction[2] = direction.z;
+
+			float size = light->param[RSE::LIGHT_PARAM_SIZE];
+
+			light_data.size = size;
+
+			light_data.inv_spot_attenuation = 1.0f / light->param[RSE::LIGHT_PARAM_SPOT_ATTENUATION];
+			float spot_angle = light->param[RSE::LIGHT_PARAM_SPOT_ANGLE];
+			light_data.cos_spot_angle = Math::cos(Math::deg_to_rad(spot_angle));
+			if (type == RSE::LIGHT_AREA) {
+				Vector3 area_vec_a = inverse_transform.basis.xform(light_transform.basis.xform(Vector3(1, 0, 0))).normalized() * area_size.x;
+				Vector3 area_vec_b = inverse_transform.basis.xform(light_transform.basis.xform(Vector3(0, 1, 0))).normalized() * area_size.y;
+
+				light_data.area_width[0] = area_vec_a.x;
+				light_data.area_width[1] = area_vec_a.y;
+				light_data.area_width[2] = area_vec_a.z;
+
+				light_data.area_height[0] = area_vec_b.x;
+				light_data.area_height[1] = area_vec_b.y;
+				light_data.area_height[2] = area_vec_b.z;
+				light_data.inv_spot_attenuation = 1.0 / (radius + area_size.length() / 2.0); // center range
+
+				if (light->area_normalize_energy) {
+					// normalization to make larger lights output same amount of light as smaller lights with same energy
+					float surface_area = area_size.x * area_size.y;
+					light_data.color[0] /= surface_area;
+					light_data.color[1] /= surface_area;
+					light_data.color[2] /= surface_area;
+				}
+			}
+			light_data.mask = light->cull_mask;
+
+			light_data.atlas_rect[0] = 0;
+			light_data.atlas_rect[1] = 0;
+			light_data.atlas_rect[2] = 0;
+			light_data.atlas_rect[3] = 0;
+
+			RID projector = light->projector;
+
+			if (projector.is_valid() && type != RSE::LIGHT_AREA) {
+				Rect2 rect = texture_storage->decal_atlas_get_texture_rect(projector);
+
+				if (type == RSE::LIGHT_SPOT) {
+					light_data.projector_rect[0] = rect.position.x;
+					light_data.projector_rect[1] = rect.position.y + rect.size.height; //flip because shadow is flipped
+					light_data.projector_rect[2] = rect.size.width;
+					light_data.projector_rect[3] = -rect.size.height;
+				} else {
+					light_data.projector_rect[0] = rect.position.x;
+					light_data.projector_rect[1] = rect.position.y;
+					light_data.projector_rect[2] = rect.size.width;
+					light_data.projector_rect[3] = rect.size.height * 0.5; //used by dp, so needs to be half
+				}
+			} else {
+				light_data.projector_rect[0] = 0;
+				light_data.projector_rect[1] = 0;
+				light_data.projector_rect[2] = 0;
+				light_data.projector_rect[3] = 0;
+			}
+
+			RID area_texture = light->area_texture;
+			if (area_texture.is_valid() && type == RSE::LIGHT_AREA) {
+				Rect2 rect = texture_storage->area_light_atlas_get_texture_rect(area_texture);
 				light_data.projector_rect[0] = rect.position.x;
 				light_data.projector_rect[1] = rect.position.y;
 				light_data.projector_rect[2] = rect.size.width;
-				light_data.projector_rect[3] = rect.size.height * 0.5; //used by dp, so needs to be half
-			}
-		} else {
-			light_data.projector_rect[0] = 0;
-			light_data.projector_rect[1] = 0;
-			light_data.projector_rect[2] = 0;
-			light_data.projector_rect[3] = 0;
-		}
-
-		RID area_texture = light->area_texture;
-		if (area_texture.is_valid() && type == RSE::LIGHT_AREA) {
-			Rect2 rect = texture_storage->area_light_atlas_get_texture_rect(area_texture);
-			light_data.projector_rect[0] = rect.position.x;
-			light_data.projector_rect[1] = rect.position.y;
-			light_data.projector_rect[2] = rect.size.width;
-			light_data.projector_rect[3] = rect.size.height;
-			Size2i texture_size = (rect.size * texture_storage->area_light_atlas_get_size()).ceil();
-			light_data.cos_spot_angle = MIN(Math::floor(Math::log2(MAX(MIN(texture_size.x, texture_size.y), 1.0f))), texture_storage->area_light_atlas_get_mipmaps()) - 1.0f; // max mipmaps
-		}
-
-		const bool needs_shadow =
-				p_using_shadows &&
-				owns_shadow_atlas(p_shadow_atlas) &&
-				shadow_atlas_owns_light_instance(p_shadow_atlas, light_instance->self) &&
-				light->shadow;
-
-		bool in_shadow_range = true;
-		if (needs_shadow && light->distance_fade) {
-			if (distance > light->distance_fade_shadow + light->distance_fade_length) {
-				// Out of range, don't draw shadows to improve performance.
-				in_shadow_range = false;
-			}
-		}
-
-		if (needs_shadow && in_shadow_range) {
-			// fill in the shadow information
-
-			light_data.shadow_opacity = light->param[RSE::LIGHT_PARAM_SHADOW_OPACITY] * shadow_opacity_fade;
-
-			float shadow_texel_size = light_instance_get_shadow_texel_size(light_instance->self, p_shadow_atlas);
-			light_data.shadow_normal_bias = light->param[RSE::LIGHT_PARAM_SHADOW_NORMAL_BIAS] * shadow_texel_size * 10.0;
-
-			if (type == RSE::LIGHT_SPOT) {
-				light_data.shadow_bias = light->param[RSE::LIGHT_PARAM_SHADOW_BIAS] / 100.0;
-			} else { //omni or area
-				light_data.shadow_bias = light->param[RSE::LIGHT_PARAM_SHADOW_BIAS];
+				light_data.projector_rect[3] = rect.size.height;
+				Size2i texture_size = (rect.size * texture_storage->area_light_atlas_get_size()).ceil();
+				light_data.cos_spot_angle = MIN(Math::floor(Math::log2(MAX(MIN(texture_size.x, texture_size.y), 1.0f))), texture_storage->area_light_atlas_get_mipmaps()) - 1.0f; // max mipmaps
 			}
 
-			light_data.transmittance_bias = light->param[RSE::LIGHT_PARAM_TRANSMITTANCE_BIAS];
+			const bool needs_shadow =
+					p_using_shadows &&
+					owns_shadow_atlas(p_shadow_atlas) &&
+					shadow_atlas_owns_light_instance(p_shadow_atlas, light_instance->self) &&
+					light->shadow;
 
-			Vector2i omni_offset;
-			Rect2 rect = light_instance_get_shadow_atlas_rect(light_instance->self, p_shadow_atlas, omni_offset);
+			bool in_shadow_range = true;
+			if (needs_shadow && light->distance_fade) {
+				if (distance > light->distance_fade_shadow + light->distance_fade_length) {
+					// Out of range, don't draw shadows to improve performance.
+					in_shadow_range = false;
+				}
+			}
 
-			light_data.atlas_rect[0] = rect.position.x;
-			light_data.atlas_rect[1] = rect.position.y;
-			light_data.atlas_rect[2] = rect.size.width;
-			light_data.atlas_rect[3] = rect.size.height;
+			if (needs_shadow && in_shadow_range) {
+				// fill in the shadow information
 
-			light_data.soft_shadow_scale = light->param[RSE::LIGHT_PARAM_SHADOW_BLUR];
+				light_data.shadow_opacity = light->param[RSE::LIGHT_PARAM_SHADOW_OPACITY] * shadow_opacity_fade;
 
-			if (type == RSE::LIGHT_OMNI) {
-				Transform3D proj = (inverse_transform * light_transform).inverse();
+				float shadow_texel_size = light_instance_get_shadow_texel_size(light_instance->self, p_shadow_atlas);
+				light_data.shadow_normal_bias = light->param[RSE::LIGHT_PARAM_SHADOW_NORMAL_BIAS] * shadow_texel_size * 10.0;
 
-				RendererRD::MaterialStorage::store_transform(proj, light_data.shadow_matrix);
-
-				if (size > 0.0 && light_data.soft_shadow_scale > 0.0) {
-					// Only enable PCSS-like soft shadows if blurring is enabled.
-					// Otherwise, performance would decrease with no visual difference.
-					light_data.soft_shadow_size = size;
-				} else {
-					light_data.soft_shadow_size = 0.0;
-					light_data.soft_shadow_scale *= RendererSceneRenderRD::get_singleton()->shadows_quality_radius_get(); // Only use quality radius for PCF
+				if (type == RSE::LIGHT_SPOT) {
+					light_data.shadow_bias = light->param[RSE::LIGHT_PARAM_SHADOW_BIAS] / 100.0;
+				} else { //omni or area
+					light_data.shadow_bias = light->param[RSE::LIGHT_PARAM_SHADOW_BIAS];
 				}
 
-				light_data.direction[0] = omni_offset.x * float(rect.size.width);
-				light_data.direction[1] = omni_offset.y * float(rect.size.height);
-			} else if (type == RSE::LIGHT_AREA) {
-				Transform3D proj = (inverse_transform * light_transform).inverse();
+				light_data.transmittance_bias = light->param[RSE::LIGHT_PARAM_TRANSMITTANCE_BIAS];
 
-				RendererRD::MaterialStorage::store_transform(proj, light_data.shadow_matrix);
+				Vector2i omni_offset;
+				Rect2 rect = light_instance_get_shadow_atlas_rect(light_instance->self, p_shadow_atlas, omni_offset);
 
-				if (light_data.size > 0.0 && light_data.soft_shadow_scale > 0.0) {
-					// Only enable PCSS-like soft shadows if blurring is enabled.
-					// Otherwise, performance would decrease with no visual difference.
-					light_data.soft_shadow_size = light_data.size;
-				} else {
-					light_data.soft_shadow_size = 0.0;
-					light_data.soft_shadow_scale *= RendererSceneRenderRD::get_singleton()->shadows_quality_radius_get(); // Only use quality radius for PCF
+				light_data.atlas_rect[0] = rect.position.x;
+				light_data.atlas_rect[1] = rect.position.y;
+				light_data.atlas_rect[2] = rect.size.width;
+				light_data.atlas_rect[3] = rect.size.height;
+
+				light_data.soft_shadow_scale = light->param[RSE::LIGHT_PARAM_SHADOW_BLUR];
+
+				if (type == RSE::LIGHT_OMNI) {
+					Transform3D proj = (inverse_transform * light_transform).inverse();
+
+					RendererRD::MaterialStorage::store_transform(proj, light_data.shadow_matrix);
+
+					if (size > 0.0 && light_data.soft_shadow_scale > 0.0) {
+						// Only enable PCSS-like soft shadows if blurring is enabled.
+						// Otherwise, performance would decrease with no visual difference.
+						light_data.soft_shadow_size = size;
+					} else {
+						light_data.soft_shadow_size = 0.0;
+						light_data.soft_shadow_scale *= RendererSceneRenderRD::get_singleton()->shadows_quality_radius_get(); // Only use quality radius for PCF
+					}
+
+					light_data.direction[0] = omni_offset.x * float(rect.size.width);
+					light_data.direction[1] = omni_offset.y * float(rect.size.height);
+				} else if (type == RSE::LIGHT_AREA) {
+					Transform3D proj = (inverse_transform * light_transform).inverse();
+
+					RendererRD::MaterialStorage::store_transform(proj, light_data.shadow_matrix);
+
+					if (light_data.size > 0.0 && light_data.soft_shadow_scale > 0.0) {
+						// Only enable PCSS-like soft shadows if blurring is enabled.
+						// Otherwise, performance would decrease with no visual difference.
+						light_data.soft_shadow_size = light_data.size;
+					} else {
+						light_data.soft_shadow_size = 0.0;
+						light_data.soft_shadow_scale *= RendererSceneRenderRD::get_singleton()->shadows_quality_radius_get(); // Only use quality radius for PCF
+					}
+				} else if (type == RSE::LIGHT_SPOT) {
+					Transform3D modelview = (inverse_transform * light_transform).inverse();
+					Projection bias;
+					bias.set_light_bias();
+
+					Projection correction;
+					correction.set_depth_correction(false, true, false);
+					Projection cm = correction * light_instance->shadow_transform[0].camera;
+					Projection shadow_mtx = bias * cm * modelview;
+					RendererRD::MaterialStorage::store_camera(shadow_mtx, light_data.shadow_matrix);
+
+					if (size > 0.0 && light_data.soft_shadow_scale > 0.0) {
+						// Only enable PCSS-like soft shadows if blurring is enabled.
+						// Otherwise, performance would decrease with no visual difference.
+						float half_np = cm.get_z_near() * Math::tan(Math::deg_to_rad(spot_angle));
+						light_data.soft_shadow_size = (size * 0.5 / radius) / (half_np / cm.get_z_near()) * rect.size.width;
+					} else {
+						light_data.soft_shadow_size = 0.0;
+						light_data.soft_shadow_scale *= RendererSceneRenderRD::get_singleton()->shadows_quality_radius_get(); // Only use quality radius for PCF
+					}
+					light_data.shadow_bias *= light_data.soft_shadow_scale;
 				}
-			} else if (type == RSE::LIGHT_SPOT) {
-				Transform3D modelview = (inverse_transform * light_transform).inverse();
-				Projection bias;
-				bias.set_light_bias();
-
-				Projection correction;
-				correction.set_depth_correction(false, true, false);
-				Projection cm = correction * light_instance->shadow_transform[0].camera;
-				Projection shadow_mtx = bias * cm * modelview;
-				RendererRD::MaterialStorage::store_camera(shadow_mtx, light_data.shadow_matrix);
-
-				if (size > 0.0 && light_data.soft_shadow_scale > 0.0) {
-					// Only enable PCSS-like soft shadows if blurring is enabled.
-					// Otherwise, performance would decrease with no visual difference.
-					float half_np = cm.get_z_near() * Math::tan(Math::deg_to_rad(spot_angle));
-					light_data.soft_shadow_size = (size * 0.5 / radius) / (half_np / cm.get_z_near()) * rect.size.width;
-				} else {
-					light_data.soft_shadow_size = 0.0;
-					light_data.soft_shadow_scale *= RendererSceneRenderRD::get_singleton()->shadows_quality_radius_get(); // Only use quality radius for PCF
-				}
-				light_data.shadow_bias *= light_data.soft_shadow_scale;
+			} else {
+				light_data.shadow_opacity = 0.0;
 			}
-		} else {
-			light_data.shadow_opacity = 0.0;
-		}
 
+			RendererSceneRenderRD::get_singleton()->setup_added_light(type, light_transform, radius, spot_angle, area_size);
+			r_positional_light_count++;
+		}
+	};
+	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+	WorkerThreadPool::GroupID preparation_task = pool->add_native_group_task([](void *p_data, uint32_t) {
+		GodotProfileZone("LightBufferPreparation");
+		(*static_cast<decltype(prepare) *>(p_data))();
+	},
+			&prepare, 1, 1, true, SNAME("LightBufferPreparation"));
+	pool->wait_for_group_task_completion(preparation_task);
+
+	const uint64_t frame = RSG::rasterizer->get_frame_number();
+	for (LightInstance *light_instance : admitted_lights) {
+		light_instance->last_pass = frame;
+	}
+	ForwardIDStorage *forward_id_storage = ForwardIDStorage::get_singleton();
+	const bool using_forward_ids = forward_id_storage->uses_forward_ids();
+	for (uint32_t i = 0; i < r_positional_light_count; i++) {
+		const uint32_t index = i >= omni_light_count + spot_light_count ? i - omni_light_count - spot_light_count : (i >= omni_light_count ? i - omni_light_count : i);
+		const LightInstanceDepthSort &entry = i >= omni_light_count + spot_light_count ? area_light_sort[index] : (i >= omni_light_count ? spot_light_sort[index] : omni_light_sort[index]);
+		LightInstance *light_instance = entry.light_instance;
+		Light *light = entry.light;
+		if (using_forward_ids) {
+			forward_id_storage->map_forward_id(_light_type_to_forward_id_type(light_instance->light_type), light_instance->forward_id, index, frame);
+		}
 		light_instance->cull_mask = light->cull_mask;
-
-		// hook for subclass to do further processing.
-		RendererSceneRenderRD::get_singleton()->setup_added_light(type, light_transform, radius, spot_angle, area_size);
-
-		r_positional_light_count++;
 	}
 
 	//update without barriers

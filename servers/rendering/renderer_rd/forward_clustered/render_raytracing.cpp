@@ -3260,13 +3260,18 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 		const Surface *surface = nullptr;
 		RTDeformedGeometrySource deformation;
 	};
+	struct DiscoveryAsset {
+		Ref<MicroGeometryData> source;
+		bool ready = false;
+	};
 	struct DiscoveryBatch {
 		uint64_t worker = 0;
 		uint64_t begin_usec = 0;
 		uint64_t end_usec = 0;
 		HashMap<const void *, SurfaceRequest> surfaces;
 		HashMap<RID, HashSet<int32_t>> materials;
-		HashSet<RID> assets;
+		HashMap<RID, HashMap<uint32_t, RID>> mesh_materials;
+		HashMap<RID, DiscoveryAsset> assets;
 		HashSet<RID> multimeshes;
 		HashSet<RTProceduralState *> procedural;
 	};
@@ -3325,19 +3330,33 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 					material = instance->data->material_override;
 				} else if (surface->surface_index < instance->data->surface_materials.size() && instance->data->surface_materials[surface->surface_index].is_valid()) {
 					material = instance->data->surface_materials[surface->surface_index];
-				} else if (mesh.is_valid() && mesh_storage->owns_mesh(mesh)) {
-					material = mesh_storage->mesh_surface_get_material(mesh, surface->surface_index);
+				} else if (mesh.is_valid()) {
+					HashMap<uint32_t, RID> &mesh_materials = batch.mesh_materials[mesh];
+					const RID *resolved = mesh_materials.getptr(surface->surface_index);
+					if (!resolved) {
+						RID mesh_material;
+						if (mesh_storage->owns_mesh(mesh)) {
+							mesh_material = mesh_storage->mesh_surface_get_material(mesh, surface->surface_index);
+						}
+						resolved = &mesh_materials.insert(surface->surface_index, mesh_material)->value;
+					}
+					material = *resolved;
 				}
 				batch.materials[material].insert(instance->shader_uniforms_offset);
 				const auto *shader = surface->shader;
 				if (shader && instance->persistent_instance && surface->persistent_surface && instance->mesh_instance.is_null() && instance->instance_count && surface->primitive == RSE::PRIMITIVE_TRIANGLES && !shader->uses_alpha_pass() && !shader->uses_vertex && !shader->uses_position && !shader->uses_vertex_time && !shader->writes_modelview_or_projection && !shader->uses_particle_trails && !shader->uses_point_size && !shader->uses_z_clip_scale) {
 					RID asset = RID::from_uint64(persistent_instances[uint32_t(instance->persistent_instance) - 1].data.asset);
-					Ref<MicroGeometryData> source = mesh_storage->get_micro_geometry_storage()->get_source(asset);
-					if (source.is_valid()) {
-						batch.assets.insert(asset);
+					const DiscoveryAsset *asset_input = batch.assets.getptr(asset);
+					if (!asset_input) {
+						DiscoveryAsset input;
+						input.source = mesh_storage->get_micro_geometry_storage()->get_source(asset);
+						input.ready = mesh_storage->get_micro_geometry_storage()->is_ready(asset, true);
+						asset_input = &batch.assets.insert(asset, input)->value;
+					}
+					if (asset_input->source.is_valid()) {
 						batch.materials[surface->material_rid.is_valid() ? surface->material_rid : owner->scene_shader.default_material].insert(instance->shader_uniforms_offset);
-						bool found = !mesh_storage->get_micro_geometry_storage()->is_ready(asset, true);
-						for (const auto &entry : source->get_metadata().surfaces) {
+						bool found = !asset_input->ready;
+						for (const auto &entry : asset_input->source->get_metadata().surfaces) {
 							found |= entry.source_surface == surface->surface_index;
 						}
 						if (found) {
@@ -3401,8 +3420,15 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 					requests.materials[entry.key].insert(offset);
 				}
 			}
-			for (RID asset : batch.assets) {
-				requests.assets.insert(asset);
+			for (const auto &mesh : batch.mesh_materials) {
+				for (const auto &surface : mesh.value) {
+					requests.mesh_materials[mesh.key].insert(surface.key, surface.value);
+				}
+			}
+			for (const auto &asset : batch.assets) {
+				if (asset.value.source.is_valid() && !requests.assets.has(asset.key)) {
+					requests.assets.insert(asset.key, asset.value);
+				}
 			}
 			for (RID mm : batch.multimeshes) {
 				requests.multimeshes.insert(mm);
@@ -3440,10 +3466,11 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 	}
 	const RID micro_pool = mesh_storage->get_micro_geometry_storage()->get_pool();
 	const uint64_t micro_pool_address = requests.assets.is_empty() || micro_pool.is_null() ? 0 : RD::get_singleton()->buffer_get_device_address(micro_pool);
-	for (RID asset : requests.assets) {
+	for (const auto &asset_input : requests.assets) {
+		RID asset = asset_input.key;
 		auto *storage = mesh_storage->get_micro_geometry_storage();
 		MicroResource resource;
-		resource.source = storage->get_source(asset);
+		resource.source = asset_input.value.source;
 		if (storage->is_ready(asset, true)) {
 			resource.clas_address = RD::get_singleton()->buffer_get_device_address(storage->get_clas_addresses(asset));
 		}
@@ -3568,6 +3595,11 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 		auto get_material_content_generation = [&](RID p_material, int32_t p_offset) -> uint64_t {
 			return material_content_generations.get(p_material).get(p_offset);
 		};
+		auto resolve_mesh_material = [&](RID p_mesh, uint32_t p_surface) -> RID {
+			const HashMap<uint32_t, RID> *surfaces = requests.mesh_materials.getptr(p_mesh);
+			const RID *material = surfaces ? surfaces->getptr(p_surface) : nullptr;
+			return material ? *material : RID();
+		};
 		auto register_emissive_source = [&](const RenderForwardClustered::GeometryInstanceForwardClustered *p_instance,
 												RID p_resource, uint32_t p_surface_index, uint32_t p_surface_counter, uint32_t p_geometry_index,
 												uint32_t p_key_primitive_offset, uint32_t p_primitive_count, const Transform3D &p_transform, RTMaterialData *p_material) {
@@ -3620,10 +3652,10 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			RID asset = RID::from_uint64(record.asset);
 			auto *storage = mesh_storage->get_micro_geometry_storage();
 			const MicroResource *resource = micro_resources.getptr(asset);
-			Ref<MicroGeometryData> source = resource ? resource->source : Ref<MicroGeometryData>();
-			if (source.is_null()) {
+			if (!resource || resource->source.is_null()) {
 				return false;
 			}
+			const Ref<MicroGeometryData> &source = resource->source;
 			uses_time |= shader->rt_uses_time();
 			uses_previous_time |= shader->rt_uses_previous_time();
 			uses_gpu_instances |= instance->data->base_type == RSE::INSTANCE_MULTIMESH && mesh_storage->multimesh_has_gpu_updates(instance->data->base);
@@ -3856,9 +3888,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 						material_rid = mm_surf->owner->data->surface_materials[mm_surf->surface_index];
 					} else {
 						RID mesh_rid = mesh_storage->multimesh_get_mesh(mm_rid);
-						if (mesh_rid.is_valid() && mesh_storage->owns_mesh(mesh_rid)) {
-							material_rid = mesh_storage->mesh_surface_get_material(mesh_rid, mm_surf->surface_index);
-						}
+						material_rid = resolve_mesh_material(mesh_rid, mm_surf->surface_index);
 					}
 
 					hash_scene(material_rid.get_id());
@@ -3954,9 +3984,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 					material_rid = surf->owner->data->surface_materials[surf->surface_index];
 				} else {
 					RID mesh_rid = surf->owner->data->base;
-					if (mesh_rid.is_valid() && mesh_storage->owns_mesh(mesh_rid)) {
-						material_rid = mesh_storage->mesh_surface_get_material(mesh_rid, surf->surface_index);
-					}
+					material_rid = resolve_mesh_material(mesh_rid, surf->surface_index);
 				}
 
 				hash_scene(material_rid.get_id());

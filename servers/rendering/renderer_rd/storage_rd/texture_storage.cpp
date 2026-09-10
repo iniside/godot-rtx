@@ -31,6 +31,8 @@
 #include "texture_storage.h"
 
 #include "core/config/engine.h"
+#include "core/object/worker_thread_pool.h"
+#include "core/profiling/profiling.h"
 #include "servers/rendering/renderer_rd/effects/copy_effects.h"
 #include "servers/rendering/renderer_rd/framebuffer_cache_rd.h"
 #include "servers/rendering/renderer_rd/renderer_scene_render_rd.h"
@@ -4268,17 +4270,34 @@ bool TextureStorage::_pack_decal(const DecalInstanceSort &p_sort, const Transfor
 }
 
 void TextureStorage::update_decal_buffer(const PagedArray<RID> &p_decals, const Transform3D &p_camera_xform) {
-	ForwardIDStorage *forward_id_storage = ForwardIDStorage::get_singleton();
 	decal_count = 0;
-	for (uint32_t i = 0; i < p_decals.size() && decal_count < max_decals; i++) {
-		if (_get_decal_sort(p_decals[i], p_camera_xform, decal_sort[decal_count])) {
-			decal_count++;
+	if (p_decals.size() == 0) {
+		return;
+	}
+	auto prepare = [&]() {
+		for (uint32_t i = 0; i < p_decals.size() && decal_count < max_decals; i++) {
+			if (_get_decal_sort(p_decals[i], p_camera_xform, decal_sort[decal_count])) {
+				decal_count++;
+			}
 		}
-	}
-	if (decal_count > 0) {
-		SortArray<DecalInstanceSort>().sort(decal_sort, decal_count);
-	}
+		if (decal_count > 0) {
+			SortArray<DecalInstanceSort>().sort(decal_sort, decal_count);
+		}
+		for (uint32_t i = 0; i < decal_count; i++) {
+			if (_pack_decal(decal_sort[i], p_camera_xform, decals[i])) {
+				RendererSceneRenderRD::get_singleton()->setup_added_decal(decal_sort[i].decal_instance->transform, decal_sort[i].decal->size / 2);
+			}
+		}
+	};
+	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+	WorkerThreadPool::GroupID preparation_task = pool->add_native_group_task([](void *p_data, uint32_t) {
+		GodotProfileZone("DecalBufferPreparation");
+		(*static_cast<decltype(prepare) *>(p_data))();
+	},
+			&prepare, 1, 1, true, SNAME("DecalBufferPreparation"));
+	pool->wait_for_group_task_completion(preparation_task);
 
+	ForwardIDStorage *forward_id_storage = ForwardIDStorage::get_singleton();
 	const bool using_forward_ids = forward_id_storage->uses_forward_ids();
 	for (uint32_t i = 0; i < decal_count; i++) {
 		DecalInstance *decal_instance = decal_sort[i].decal_instance;
@@ -4286,9 +4305,6 @@ void TextureStorage::update_decal_buffer(const PagedArray<RID> &p_decals, const 
 			forward_id_storage->map_forward_id(FORWARD_ID_TYPE_DECAL, decal_instance->forward_id, i, RSG::rasterizer->get_frame_number());
 		}
 		decal_instance->cull_mask = decal_sort[i].decal->cull_mask;
-		if (_pack_decal(decal_sort[i], p_camera_xform, decals[i])) {
-			RendererSceneRenderRD::get_singleton()->setup_added_decal(decal_instance->transform, decal_sort[i].decal->size / 2);
-		}
 	}
 	if (decal_count > 0) {
 		RD::get_singleton()->buffer_update(decal_buffer, 0, sizeof(DecalData) * decal_count, decals);
