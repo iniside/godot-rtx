@@ -117,16 +117,43 @@ sun/environment to the Node scene. Their native replacements remain assigned
 to approved later steps; disabling old entry points does not complete them.
 GridMap authoring remains permanently excluded by the approved plan.
 
-## Step 4: native document implementation in progress
+## Step 4: native document committed, first review pending
 
 Implementation baseline: `2dd1bf401d93a724341355f9b55c5b9cc4f5e9da`.
-The document/format, prefab and transactional command step is delegated as
-one responsibility. Its source has not landed or passed review yet.
+Frozen task commit: `c1927f7324946c489b3f3d213b0cd491a96cff81`.
+The 18-file change introduces EntityScene catalog/resident-world ownership,
+addressable binary `.escn`, loader/saver and dependency metadata, native command
+history and prefab provenance/overrides. Runtime accepts native `.escn` paths
+and UID addresses; the old PackedScene ESCN importer is removed in this step.
+The implementation has not passed source review yet.
+
+Final ordinary/editor, double/editor and template_debug builds pass in 24.84s,
+43.36s and 30.28s. Local evidence under `gpuprofile/ecs_step4_document/` includes
+`build_editor07.log`, `build_double01.log`, `build_template01.log`,
+`staged-source.patch`, the owned path list and source/binary hash lists.
+Actual normal Vulkan editor and native empty game exit 0. Missing `.escn` and
+legacy `.tscn` input exit 1 with the intended startup diagnostics and cleanup.
+Named `editor`, `native-empty`, `missing-scene` and `wrong-type` receipts and
+stdout/stderr record those executions. Existing renderer diagnostics remain;
+no warning-free or visual correctness claim is made.
+
+After the frozen commit, the author identified a missing typed field-validation
+boundary in `EntityScene::_validate_fields`: unloaded-save validation can accept
+a valid Resource UID of the wrong subclass, or an incorrect nested field shape,
+until materialization. This is uncorrected in `c1927f7324` and is included in the
+ongoing first review. Source edits are held until the review's correction set.
+
+Successful nonempty `.escn` load/save, prefab apply/revert, undo/redo and subset
+round trips have not been executed. Their production authoring UI is step 6;
+complete renderer fixtures need later component/import work. These remain
+required final behavior validation through the real editor/native scenes.
+No new fixture, test harness, script, extra CLI proof API or automated test was
+introduced to stand in for that topology.
 
 ## Remaining work
 
-Document, renderer, editor,
-subsystems and native import/export steps have not landed. Existing Node-world
+The document step awaits review/correction. Renderer, editor, subsystems and
+native import/export steps have not landed. Existing Node-world
 operation is not evidence of the target entity model. The owner reiterated on
 2026-09-10 that static-mesh components are required for renderer validation.
 EntityMesh/EntityTransform already exist in the foundation; direct renderer
