@@ -510,6 +510,7 @@ void RendererSceneCull::scenario_add_viewport_visibility_mask(RID p_scenario, RI
 /* INSTANCING API */
 
 void RendererSceneCull::_instance_queue_update(Instance *p_instance, bool p_update_aabb, bool p_update_dependencies) const {
+	singleton->_instance_update_cull_domain(p_instance);
 	if (p_update_aabb) {
 		p_instance->update_aabb = true;
 	}
@@ -704,6 +705,8 @@ void RendererSceneCull::instance_set_base(RID p_instance, RID p_base) {
 				ERR_FAIL_NULL(geom->geometry_instance);
 
 				geom->geometry_instance->set_instance_rid(instance->self);
+				geom->geometry_instance->micro_geometry_routing_data = instance;
+				geom->geometry_instance->micro_geometry_routing_changed = _instance_micro_geometry_routing_changed;
 				geom->geometry_instance->set_skeleton(instance->skeleton);
 				geom->geometry_instance->set_material_override(instance->material_override);
 				geom->geometry_instance->set_material_overlay(instance->material_overlay);
@@ -1150,6 +1153,7 @@ void RendererSceneCull::instance_set_ignore_culling(RID p_instance, bool p_enabl
 	Instance *instance = instance_owner.get_or_null(p_instance);
 	ERR_FAIL_NULL(instance);
 	instance->ignore_all_culling = p_enabled;
+	_instance_update_cull_domain(instance);
 
 	if (instance->scenario && instance->array_index >= 0) {
 		InstanceData &idata = instance->scenario->instance_data[instance->array_index];
@@ -1308,6 +1312,7 @@ void RendererSceneCull::instance_geometry_set_flag(RID p_instance, RSE::Instance
 		default: {
 		}
 	}
+	_instance_update_cull_domain(instance);
 }
 
 void RendererSceneCull::instance_geometry_set_cast_shadows_setting(RID p_instance, RSE::ShadowCastingSetting p_shadow_casting_setting) {
@@ -1457,6 +1462,7 @@ bool RendererSceneCull::_update_instance_visibility_depth(Instance *p_instance) 
 }
 
 void RendererSceneCull::_update_instance_visibility_dependencies(Instance *p_instance) const {
+	_instance_update_cull_domain(p_instance);
 	bool is_geometry_instance = ((1 << p_instance->base_type) & RSE::INSTANCE_GEOMETRY_MASK) && p_instance->base_data;
 	bool has_visibility_range = p_instance->visibility_range_begin > 0.0 || p_instance->visibility_range_end > 0.0;
 	bool needs_visibility_cull = has_visibility_range && is_geometry_instance && p_instance->array_index != -1;
@@ -1723,6 +1729,7 @@ void RendererSceneCull::_update_instance(Instance *p_instance) const {
 
 		ERR_FAIL_NULL(geom->geometry_instance);
 
+		_instance_update_cull_domain(p_instance);
 		geom->geometry_instance->set_transform(*instance_xform, p_instance->aabb, p_instance->transformed_aabb);
 		if (p_instance->teleported) {
 			geom->geometry_instance->reset_motion_vectors();
@@ -1838,11 +1845,15 @@ void RendererSceneCull::_update_instance(Instance *p_instance) const {
 		}
 
 		p_instance->scenario->instance_data.push_back(idata);
+		_instance_update_cull_domain(p_instance);
 		p_instance->scenario->instance_aabbs.push_back(InstanceBounds(p_instance->transformed_aabb));
 		_update_instance_visibility_dependencies(p_instance);
 	} else {
 		if ((1 << p_instance->base_type) & RSE::INSTANCE_GEOMETRY_MASK) {
 			p_instance->scenario->indexers[Scenario::INDEXER_GEOMETRY].update(p_instance->indexer_id, bvh_aabb);
+			if (p_instance->conventional_indexer_id.is_valid()) {
+				p_instance->scenario->indexers[Scenario::INDEXER_CONVENTIONAL_GEOMETRY].update(p_instance->conventional_indexer_id, bvh_aabb);
+			}
 		} else {
 			p_instance->scenario->indexers[Scenario::INDEXER_VOLUMES].update(p_instance->indexer_id, bvh_aabb);
 		}
@@ -1927,6 +1938,7 @@ void RendererSceneCull::_unpair_instance(Instance *p_instance) {
 
 	p_instance->indexer_id = DynamicBVH::ID();
 
+	_instance_update_cull_domain(p_instance, true);
 	//replace this by last
 	int32_t swap_with_index = p_instance->scenario->instance_data.size() - 1;
 	if (swap_with_index != p_instance->array_index) {
@@ -2420,9 +2432,13 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 							CullConvex cull_convex;
 							cull_convex.result = &instance_shadow_cull_result;
 
-							p_scenario->indexers[Scenario::INDEXER_GEOMETRY].convex_query(planes.ptr(), planes.size(), points.ptr(), points.size(), cull_convex);
+							p_scenario->indexers[Scenario::INDEXER_CONVENTIONAL_GEOMETRY].convex_query(planes.ptr(), planes.size(), points.ptr(), points.size(), cull_convex);
 
 							RendererSceneRender::RenderShadowData &shadow_data = render_shadow_data[shadow_count++];
+							shadow_data.cull_planes = planes;
+							if (!light->is_shadow_update_full()) {
+								light_culler->append_caster_planes(shadow_data.cull_planes);
+							}
 
 							if (!light->is_shadow_update_full()) {
 								light_culler->cull_regular_light(instance_shadow_cull_result);
@@ -2501,9 +2517,13 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 							CullConvex cull_convex;
 							cull_convex.result = &instance_shadow_cull_result;
 
-							p_scenario->indexers[Scenario::INDEXER_GEOMETRY].convex_query(planes.ptr(), planes.size(), points.ptr(), points.size(), cull_convex);
+							p_scenario->indexers[Scenario::INDEXER_CONVENTIONAL_GEOMETRY].convex_query(planes.ptr(), planes.size(), points.ptr(), points.size(), cull_convex);
 
 							RendererSceneRender::RenderShadowData &shadow_data = render_shadow_data[shadow_count++];
+							shadow_data.cull_planes = planes;
+							if (!light->is_shadow_update_full()) {
+								light_culler->append_caster_planes(shadow_data.cull_planes);
+							}
 
 							if (!light->is_shadow_update_full()) {
 								light_culler->cull_regular_light(instance_shadow_cull_result);
@@ -2566,9 +2586,13 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 					CullConvex cull_convex;
 					cull_convex.result = &instance_shadow_cull_result;
 
-					p_scenario->indexers[Scenario::INDEXER_GEOMETRY].convex_query(planes.ptr(), planes.size(), points.ptr(), points.size(), cull_convex);
+					p_scenario->indexers[Scenario::INDEXER_CONVENTIONAL_GEOMETRY].convex_query(planes.ptr(), planes.size(), points.ptr(), points.size(), cull_convex);
 
 					RendererSceneRender::RenderShadowData &shadow_data = render_shadow_data[shadow_count++];
+					shadow_data.cull_planes = planes;
+					if (!light->is_shadow_update_full()) {
+						light_culler->append_caster_planes(shadow_data.cull_planes);
+					}
 
 					if (!light->is_shadow_update_full()) {
 						light_culler->cull_regular_light(instance_shadow_cull_result);
@@ -2630,9 +2654,13 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 					CullConvex cull_convex;
 					cull_convex.result = &instance_shadow_cull_result;
 
-					p_scenario->indexers[Scenario::INDEXER_GEOMETRY].convex_query(planes.ptr(), planes.size(), points.ptr(), points.size(), cull_convex);
+					p_scenario->indexers[Scenario::INDEXER_CONVENTIONAL_GEOMETRY].convex_query(planes.ptr(), planes.size(), points.ptr(), points.size(), cull_convex);
 
 					RendererSceneRender::RenderShadowData &shadow_data = render_shadow_data[shadow_count++];
+					shadow_data.cull_planes = planes;
+					if (!light->is_shadow_update_full()) {
+						light_culler->append_caster_planes(shadow_data.cull_planes);
+					}
 
 					if (!light->is_shadow_update_full()) {
 						light_culler->cull_regular_light(instance_shadow_cull_result);
@@ -2914,12 +2942,27 @@ void RendererSceneCull::_scene_cull_threaded(uint32_t p_thread, CullData *cull_d
 		result.worker = Thread::get_caller_id();
 		result.begin_usec = OS::get_singleton()->get_ticks_usec();
 	}
-	uint32_t cull_total = cull_data->scenario->instance_data.size();
+	uint32_t cull_total = cull_data->scenario->conventional_instances.size();
 	uint32_t total_threads = scene_cull_result_threads.size();
 	uint32_t cull_from = p_thread * cull_total / total_threads;
 	uint32_t cull_to = (p_thread + 1 == total_threads) ? cull_total : ((p_thread + 1) * cull_total / total_threads);
 
 	_scene_cull(*cull_data, result, cull_from, cull_to);
+	const auto &micro_instances = cull_data->scenario->micro_geometry_instances;
+	for (uint32_t index = p_thread * micro_instances.size() / total_threads; index < (p_thread + 1) * micro_instances.size() / total_threads; index++) {
+		Instance *instance = micro_instances[index];
+		if (!instance->visible) {
+			continue;
+		}
+		const bool receiver = (instance->layer_mask & cull_data->visible_layers) != 0 && instance->cast_shadows != RSE::SHADOW_CASTING_SETTING_SHADOWS_ONLY;
+		const bool caster = instance->cast_shadows != RSE::SHADOW_CASTING_SETTING_OFF;
+		if (receiver || caster) {
+			auto *geometry = static_cast<InstanceGeometryData *>(instance->base_data)->geometry_instance;
+			result.rt_geometry_instances.push_back(geometry);
+			result.rt_visibility.push_back({ geometry, receiver, caster, instance->cast_shadows == RSE::SHADOW_CASTING_SETTING_SHADOWS_ONLY });
+		}
+	}
+
 	if (cull_data->profile) {
 		result.end_usec = OS::get_singleton()->get_ticks_usec();
 	}
@@ -3182,7 +3225,8 @@ void RendererSceneCull::_scene_cull(CullData &cull_data, InstanceCullResult &cul
 	float z_near = cull_data.camera_matrix->get_z_near();
 	bool is_orthogonal = cull_data.camera_matrix->is_orthogonal();
 
-	for (uint64_t i = p_from; i < p_to; i++) {
+	for (uint64_t domain_index = p_from; domain_index < p_to; domain_index++) {
+		const uint64_t i = cull_data.scenario->conventional_instances[domain_index]->array_index;
 		bool mesh_visible = false;
 		bool in_frustum = false;
 
@@ -3497,9 +3541,9 @@ void RendererSceneCull::_render_scene(RID p_camera, const RendererSceneRender::C
 			String rows;
 			for (uint32_t index = 0; index < scene_cull_result_threads.size(); index++) {
 				const auto &result = scene_cull_result_threads[index];
-				const uint32_t total = scenario->instance_data.size();
+				const uint32_t total = scenario->conventional_instances.size();
 				const uint32_t count = scene_cull_result_threads.size();
-				rows += vformat("RenderPrep stage=RenderCullInstances frame=%d chunk=%d coordinator=%d queued_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d work=%d", frame, index, coordinator, queued, joined, result.worker, result.begin_usec, result.end_usec, (index + 1) * total / count - index * total / count) + "\n";
+				rows += vformat("RenderPrep stage=RenderCullInstances frame=%d chunk=%d coordinator=%d queued_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d work=%d conventional=%d micro_geometry=%d", frame, index, coordinator, queued, joined, result.worker, result.begin_usec, result.end_usec, (index + 1) * total / count - index * total / count, total, scenario->micro_geometry_instances.size()) + "\n";
 			}
 			print_line(rows);
 		}
@@ -3569,6 +3613,8 @@ void RendererSceneCull::_render_scene(RID p_camera, const RendererSceneRender::C
 				}
 				render_shadow_data[max_shadows_used].light = cull.shadows[i].light_instance;
 				render_shadow_data[max_shadows_used].pass = j;
+				render_shadow_data[max_shadows_used].cull_planes = cull.shadows[i].cascades[j].frustum.planes;
+				light_culler->append_caster_planes(render_shadow_data[max_shadows_used].cull_planes, i, j);
 				render_shadow_data[max_shadows_used].instances.merge_unordered(scene_cull_result.directional_shadows[i].cascade_geometry_instances[j]);
 				max_shadows_used++;
 			}
@@ -4136,6 +4182,7 @@ void RendererSceneCull::update() {
 		Scenario *s = scenario_owner.get_or_null(rids[i]);
 		s->indexers[Scenario::INDEXER_GEOMETRY].optimize_incremental(indexer_update_iterations);
 		s->indexers[Scenario::INDEXER_VOLUMES].optimize_incremental(indexer_update_iterations);
+		s->indexers[Scenario::INDEXER_CONVENTIONAL_GEOMETRY].optimize_incremental(indexer_update_iterations);
 	}
 	scene_render->update();
 	update_dirty_instances();
@@ -4316,7 +4363,54 @@ RendererSceneCull::~RendererSceneCull() {
 	}
 }
 
+void RendererSceneCull::_instance_micro_geometry_routing_changed(void *p_data, bool p_enabled) {
+	singleton->_instance_update_cull_domain(static_cast<Instance *>(p_data));
+}
+
+void RendererSceneCull::_instance_update_cull_domain(Instance *p_instance, bool p_remove) const {
+	bool micro_geometry = false;
+	const bool geometry_instance = ((1 << p_instance->base_type) & RSE::INSTANCE_GEOMETRY_MASK) && p_instance->base_data;
+	if (!p_remove && geometry_instance) {
+		auto *geometry = static_cast<InstanceGeometryData *>(p_instance->base_data)->geometry_instance;
+		if (geometry) {
+			const bool cpu_culling = p_instance->visibility_parent || p_instance->visibility_range_begin != 0 || p_instance->visibility_range_end != 0 || !p_instance->lightmap_sh.is_empty() || p_instance->ignore_all_culling || p_instance->ignore_occlusion_culling || p_instance->custom_aabb || p_instance->extra_margin != 0 || p_instance->redraw_if_visible;
+			if (geometry->micro_geometry_cpu_culling != cpu_culling) {
+				geometry->micro_geometry_cpu_culling = cpu_culling;
+				geometry->_mark_instance_data_dirty();
+			}
+			micro_geometry = geometry->micro_geometry_raster_only && !cpu_culling;
+		}
+	}
+	if (!p_instance->scenario || p_instance->array_index < 0) {
+		return;
+	}
+	auto *scenario = p_instance->scenario;
+	if (p_instance->conventional_indexer_id.is_valid() && (p_remove || micro_geometry)) {
+		scenario->indexers[Scenario::INDEXER_CONVENTIONAL_GEOMETRY].remove(p_instance->conventional_indexer_id);
+		p_instance->conventional_indexer_id = DynamicBVH::ID();
+	} else if (!p_remove && !micro_geometry && geometry_instance && !p_instance->conventional_indexer_id.is_valid()) {
+		p_instance->conventional_indexer_id = scenario->indexers[Scenario::INDEXER_CONVENTIONAL_GEOMETRY].insert(p_instance->transformed_aabb, p_instance);
+	}
+	if (p_instance->cull_domain_index != UINT32_MAX) {
+		if (!p_remove && p_instance->micro_geometry_domain == micro_geometry) {
+			return;
+		}
+		auto &previous = p_instance->micro_geometry_domain ? scenario->micro_geometry_instances : scenario->conventional_instances;
+		previous[p_instance->cull_domain_index] = previous[previous.size() - 1];
+		previous[p_instance->cull_domain_index]->cull_domain_index = p_instance->cull_domain_index;
+		previous.resize(previous.size() - 1);
+		p_instance->cull_domain_index = UINT32_MAX;
+	}
+	if (!p_remove) {
+		auto &domain = micro_geometry ? scenario->micro_geometry_instances : scenario->conventional_instances;
+		p_instance->micro_geometry_domain = micro_geometry;
+		p_instance->cull_domain_index = domain.size();
+		domain.push_back(p_instance);
+	}
+}
+
 void RendererSceneCull::_instance_update_scene_membership(Instance *p_instance) {
+	_instance_update_cull_domain(p_instance);
 	if (((1 << p_instance->base_type) & RSE::INSTANCE_GEOMETRY_MASK) && p_instance->base_data) {
 		InstanceGeometryData *geometry = static_cast<InstanceGeometryData *>(p_instance->base_data);
 		if (geometry->geometry_instance) {

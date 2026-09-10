@@ -80,7 +80,8 @@ public:
 		uint32_t hzb_mips = 0;
 		uint64_t lightmaps[8] = {};
 		uint32_t lightmap_sh = 0;
-		uint32_t pad = 0;
+		uint32_t cull_plane_count = 0;
+		float cull_planes[96] = {};
 	};
 	struct Unit {
 		uint32_t task = 0;
@@ -136,7 +137,8 @@ public:
 		};
 		Vector<Pin> pins;
 		Vector<RID> assets;
-		Vector<uint64_t> snapshot_key;
+		uint64_t input_version = 0;
+		uint32_t input_kind = 0;
 		bool frozen = false;
 		bool freeze_requested = false;
 		MicroGeometryRasterParameters raster_data;
@@ -230,6 +232,6 @@ private:
 
 static_assert(sizeof(MicroGeometrySelection::Task) == 64);
 static_assert(sizeof(MicroGeometrySelection::Unit) == 32);
-static_assert(sizeof(MicroGeometrySelection::Parameters) == 424);
+static_assert(sizeof(MicroGeometrySelection::Parameters) == 808);
 
 } //namespace RendererSceneRenderImplementation

@@ -290,6 +290,7 @@ public:
 	struct RenderShadowData {
 		RID light;
 		int pass = 0;
+		Vector<Plane> cull_planes;
 		PagedArray<RenderGeometryInstance *> instances;
 	};
 

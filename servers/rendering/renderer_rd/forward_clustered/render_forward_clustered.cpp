@@ -450,6 +450,7 @@ void RenderForwardClustered::_update_micro_geometry_instances(const LocalVector<
 		}
 		const bool raster_ready = source.is_valid() && storage->is_ready(asset);
 		const bool rt_ready = source.is_valid() && storage->is_ready(asset, true);
+		bool raster_only = instance->surface_caches != nullptr;
 		for (auto *surface = instance->surface_caches; surface; surface = surface->next) {
 			MicroGeometrySelection::Task task;
 			MicroGeometryRasterPass::Bin bins[2];
@@ -495,7 +496,8 @@ void RenderForwardClustered::_update_micro_geometry_instances(const LocalVector<
 					}
 				}
 			}
-			const bool raster_eligible = eligible && raster_ready && task.multimesh_count && !instance->fade_near && !instance->fade_far && instance->force_alpha >= 1 && instance->parent_fade_alpha >= 1;
+			const bool raster_eligible = eligible && !instance->micro_geometry_cpu_culling && !shader->uses_time && raster_ready && task.multimesh_count && !instance->fade_near && !instance->fade_far && instance->force_alpha >= 1 && instance->parent_fade_alpha >= 1;
+			raster_only &= raster_eligible;
 			if (memcmp(&surface->micro_geometry_task, &task, sizeof(task)) != 0 || !(surface->micro_geometry_bins[0] == bins[0]) || !(surface->micro_geometry_bins[1] == bins[1]) || surface->micro_geometry_element.in_list() != raster_eligible) {
 				micro_geometry_generation++;
 			}
@@ -513,152 +515,36 @@ void RenderForwardClustered::_update_micro_geometry_instances(const LocalVector<
 				surface->micro_geometry_element.remove_from_list();
 			}
 		}
+		instance->set_micro_geometry_raster_only(raster_only);
 	}
 }
 
 RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepare_micro_geometry(const RenderDataRD *p_render_data, PassMode p_pass) {
-	if (!raytracing) {
+	if (!raytracing || p_pass == PASS_MODE_SDF || p_pass == PASS_MODE_DEPTH_MATERIAL) {
 		return nullptr;
 	}
-	const uint64_t profile_frame = RSG::rasterizer->get_frame_number();
-	const bool profile_preparation = RSG::utilities->capturing_timestamps && profile_frame % 120 == 0;
-	const uint64_t coordinator = profile_preparation ? Thread::get_caller_id() : 0;
-	const uint64_t owner_begin = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	struct JobTiming {
-		uint64_t queued = 0;
-		uint64_t begin = 0;
-		uint64_t end = 0;
-		uint64_t wait = 0;
-		uint64_t joined = 0;
-		uint64_t worker = 0;
-	};
-	JobTiming timings[4];
-	uint64_t candidates = 0;
-	uint64_t eligible_surfaces = 0;
-	uint64_t source_lookups = 0;
-	uint64_t eligibility_samples = 0;
-	uint64_t eligibility_sample_usec = 0;
-	uint64_t merge_bin_comparisons = 0;
-	uint64_t compare_begin = 0;
-	uint64_t compare_end = 0;
-	auto begin_job = [&](uint32_t p_index) {
-		if (profile_preparation) {
-			timings[p_index].worker = Thread::get_caller_id();
-			timings[p_index].begin = OS::get_singleton()->get_ticks_usec();
-		}
-	};
-	auto end_job = [&](uint32_t p_index) {
-		if (profile_preparation) {
-			timings[p_index].end = OS::get_singleton()->get_ticks_usec();
-		}
-	};
 	const bool camera_pass = p_pass == PASS_MODE_RTXDI_SURFACE && p_render_data->render_buffers.is_valid();
-	MicroGeometryRasterPass *pass = memnew(MicroGeometryRasterPass);
-	Vector<MicroGeometrySelection::Task> tasks;
-	Vector<uint64_t> snapshot_key;
-	MicroGeometrySelection::Parameters parameters;
-	uint32_t levels = 0;
-	auto *storage = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage();
-	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
-	LocalVector<GeometryInstanceSurfaceDataCache *> surfaces;
-	HashMap<RID, Ref<MicroGeometryData>> sources;
-	HashSet<RID> commands;
-	HashSet<decltype(GeometryInstanceSurfaceDataCache::material)> material_usage;
-	auto discover = [&](uint32_t) {
-		begin_job(0);
-		auto append = [&](GeometryInstanceSurfaceDataCache *p_surface) {
-			if (profile_preparation) {
-				candidates++;
-			}
-			const bool sample_eligibility = profile_preparation && candidates % 64 == 1;
-			const uint64_t eligibility_begin = sample_eligibility ? OS::get_singleton()->get_ticks_usec() : 0;
-			const bool eligible = _micro_geometry_eligible(p_surface, p_pass);
-			if (sample_eligibility) {
-				eligibility_sample_usec += OS::get_singleton()->get_ticks_usec() - eligibility_begin;
-				eligibility_samples++;
-			}
-			if (profile_preparation && eligible) {
-				eligible_surfaces++;
-			}
-			if (!eligible || pass->surfaces.has(p_surface->persistent_surface)) {
-				return;
-			}
-			auto *instance = p_surface->owner;
-			const auto &record = raytracing->persistent_instances[uint32_t(instance->persistent_instance) - 1].data;
-			if (record.multimesh_address && !record.multimesh_count) {
-				return;
-			}
-			RID asset = RID::from_uint64(record.asset);
-			if (!sources.has(asset)) {
-				if (profile_preparation) {
-					source_lookups++;
-				}
-				sources.insert(asset, p_surface->micro_geometry_source);
-			}
-			if (sources[asset].is_null()) {
-				return;
-			}
-			if (instance->base_flags & INSTANCE_DATA_FLAG_MULTIMESH_INDIRECT) {
-				commands.insert(p_surface->micro_geometry_commands);
-			}
-			pass->surfaces.insert(p_surface->persistent_surface);
-			surfaces.push_back(p_surface);
-		};
-		if (camera_pass) {
-			for (auto *entry = micro_geometry_surface_list.first(); entry; entry = entry->next()) {
-				append(entry->self());
-			}
-		} else {
-			for (uint32_t index = 0; index < p_render_data->instances->size(); index++) {
-				auto *instance = static_cast<GeometryInstanceForwardClustered *>((*p_render_data->instances)[index]);
-				for (auto *surface = instance->surface_caches; surface; surface = surface->next) {
-					append(surface);
-				}
-			}
-		}
-		end_job(0);
-	};
-	timings[0].queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	auto job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
-		GodotProfileZone("MicrogeometryRasterDiscovery");
-		(*static_cast<decltype(discover) *>(p_data))(p_index);
-	},
-			&discover, 1, 1, true, SNAME("MicrogeometryRasterDiscovery"));
-	timings[0].wait = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	pool->wait_for_group_task_completion(job);
-	timings[0].joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	for (RID command : commands) {
-		pass->task_dependencies.push_back(command);
+	const bool shadow = p_pass == PASS_MODE_SHADOW || p_pass == PASS_MODE_SHADOW_DP;
+	auto &batch = micro_geometry_batches[p_pass];
+	Vector<RID> voxelgis;
+	for (uint32_t index = 0; index < scene_state.voxelgis_used; index++) {
+		voxelgis.push_back(scene_state.voxelgi_ids[index]);
 	}
-	const uint64_t resources_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	struct Batch {
-		uint64_t worker = 0;
-		uint64_t begin = 0;
-		uint64_t end = 0;
-		uint64_t bin_comparisons = 0;
-		LocalVector<MicroGeometryRasterPass::Bin> bins;
-		Vector<MicroGeometrySelection::Task> tasks;
-		uint32_t levels = 0;
-	};
-	LocalVector<Batch> batches;
-	batches.resize((surfaces.size() + 255) / 256);
-	auto prepare = [&](uint32_t p_chunk) {
-		Batch &batch = batches[p_chunk];
-		if (profile_preparation) {
-			batch.worker = Thread::get_caller_id();
-			batch.begin = OS::get_singleton()->get_ticks_usec();
-		}
-		for (uint32_t index = p_chunk * 256; index < MIN((p_chunk + 1) * 256, surfaces.size()); index++) {
-			GeometryInstanceSurfaceDataCache *surface = surfaces[index];
-			GeometryInstanceForwardClustered *instance = surface->owner;
-			const RTPersistentInstanceData &record = raytracing->persistent_instances[uint32_t(instance->persistent_instance) - 1].data;
-			RID asset = RID::from_uint64(record.asset);
-			Ref<MicroGeometryData> source = sources[asset];
-			if (source.is_null()) {
+	if (batch.generation != micro_geometry_generation || batch.debug_mode != get_debug_draw_mode() || batch.voxelgis != voxelgis) {
+		batch.tasks.clear();
+		batch.bins.clear();
+		batch.materials.clear();
+		batch.sources.clear();
+		batch.dependencies.clear();
+		batch.levels = 0;
+		HashSet<RID> commands;
+		HashSet<SceneShaderForwardClustered::MaterialData *> materials;
+		for (auto *entry = micro_geometry_surface_list.first(); entry; entry = entry->next()) {
+			auto *surface = entry->self();
+			if (!_micro_geometry_eligible(surface, p_pass)) {
 				continue;
 			}
-			const bool shadow = p_pass == PASS_MODE_SHADOW || p_pass == PASS_MODE_SHADOW_DP || p_pass == PASS_MODE_DEPTH;
-			MicroGeometryRasterPass::Bin bin = surface->micro_geometry_bins[shadow ? 1 : 0];
+			MicroGeometryRasterPass::Bin bin = surface->micro_geometry_bins[(shadow || p_pass == PASS_MODE_DEPTH) ? 1 : 0];
 #ifdef DEBUG_ENABLED
 			if (!shadow) {
 				if (get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_LIGHTING) {
@@ -673,38 +559,25 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 				}
 			}
 #endif
-			uint32_t bin_index = batch.bins.size();
-			for (uint32_t index = 0; index < batch.bins.size(); index++) {
-				if (profile_preparation) {
-					batch.bin_comparisons++;
-				}
-				const auto &existing = batch.bins[index];
-				if (existing.shader == bin.shader && existing.material == bin.material && existing.flags == bin.flags && existing.mirror == bin.mirror && existing.double_sided == bin.double_sided) {
-					bin_index = index;
-					break;
-				}
-			}
-			if (bin_index == batch.bins.size()) {
+			uint32_t bin_index = batch.bins.find(bin);
+			if (bin_index == uint32_t(-1)) {
+				bin_index = batch.bins.size();
 				batch.bins.push_back(bin);
 			}
-			uint32_t instances = record.multimesh_address != 0 ? record.multimesh_count : 1;
-			if (instances == 0) {
-				continue;
-			}
-			MicroGeometrySelection::Task task = surface->micro_geometry_task;
+			auto task = surface->micro_geometry_task;
 			task.bin = bin_index;
 			if (bin.shader->writes_depth) {
 				task.flags |= 16;
 			}
-			if (p_pass == PASS_MODE_SDF || p_pass == PASS_MODE_SHADOW_DP || p_render_data->scene_data->material_uv2_mode) {
+			if (p_pass == PASS_MODE_SHADOW_DP) {
 				task.flags |= 2;
 			}
 			task.gi_offset = UINT32_MAX;
-			if (instance->voxel_gi_instances[0].is_valid()) {
+			if (surface->owner->voxel_gi_instances[0].is_valid()) {
 				uint32_t probes[2] = { 0xffff, 0xffff };
 				for (uint32_t probe = 0; probe < scene_state.voxelgis_used; probe++) {
 					for (uint32_t slot = 0; slot < 2; slot++) {
-						if (scene_state.voxelgi_ids[probe] == instance->voxel_gi_instances[slot]) {
+						if (scene_state.voxelgi_ids[probe] == surface->owner->voxel_gi_instances[slot]) {
 							probes[slot] = probe;
 						}
 					}
@@ -715,181 +588,109 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 				task.gi_offset = probes[0] | (probes[1] << 16);
 				task.flags |= INSTANCE_DATA_FLAG_USE_VOXEL_GI;
 			}
-			batch.levels = MAX(batch.levels, surface->micro_geometry_levels);
+
 			batch.tasks.push_back(task);
-		}
-		if (profile_preparation) {
-			batch.end = OS::get_singleton()->get_ticks_usec();
-		}
-	};
-	timings[1].queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
-		GodotProfileZone("MicrogeometryRasterTasks");
-		(*static_cast<decltype(prepare) *>(p_data))(p_index);
-	},
-			&prepare, batches.size(), -1, true, SNAME("MicrogeometryRasterTasks"));
-	timings[1].wait = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	pool->wait_for_group_task_completion(job);
-	timings[1].joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	auto merge = [&](uint32_t) {
-		begin_job(2);
-		for (Batch &batch : batches) {
-			LocalVector<uint32_t> bins;
-			for (const auto &bin : batch.bins) {
-				uint32_t bin_index = pass->bins.size();
-				for (uint32_t index = 0; index < pass->bins.size(); index++) {
-					if (profile_preparation) {
-						merge_bin_comparisons++;
-					}
-					const auto &existing = pass->bins[index];
-					if (existing.shader == bin.shader && existing.material == bin.material && existing.flags == bin.flags && existing.mirror == bin.mirror && existing.double_sided == bin.double_sided) {
-						bin_index = index;
-						break;
-					}
-				}
-				if (bin_index == pass->bins.size()) {
-					pass->bins.push_back(bin);
-				}
-				bins.push_back(bin_index);
+			batch.levels = MAX(batch.levels, surface->micro_geometry_levels);
+			batch.sources.insert(RID::from_uint64(task.asset), surface->micro_geometry_source);
+			if (surface->micro_geometry_commands.is_valid()) {
+				commands.insert(surface->micro_geometry_commands);
 			}
-			for (uint32_t index = 0; index < uint32_t(batch.tasks.size()); index++) {
-				auto task = batch.tasks[index];
-				task.bin = bins[task.bin];
-				tasks.push_back(task);
-			}
-			levels = MAX(levels, batch.levels);
-		}
-		for (auto *surface : surfaces) {
 			if (surface->material) {
-				material_usage.insert(surface->material);
+				materials.insert(surface->material);
 			}
 		}
-		end_job(2);
-	};
-	timings[2].queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
-		GodotProfileZone("MicrogeometryRasterMerge");
-		(*static_cast<decltype(merge) *>(p_data))(p_index);
-	},
-			&merge, 1, 1, true, SNAME("MicrogeometryRasterMerge"));
-	timings[2].wait = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	pool->wait_for_group_task_completion(job);
-	timings[2].joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	for (auto *material : material_usage) {
+		for (RID command : commands) {
+			batch.dependencies.push_back(command);
+		}
+		for (auto *material : materials) {
+			batch.materials.push_back(material);
+		}
+		batch.generation = micro_geometry_generation;
+		batch.debug_mode = get_debug_draw_mode();
+		batch.voxelgis = voxelgis;
+		batch.version++;
+	}
+	for (auto *material : batch.materials) {
 		material->set_as_used();
 	}
-	const uint64_t materials_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+	RenderBufferDataForwardClustered *render_buffers = nullptr;
 	if (camera_pass) {
-		parameters.flags |= 1;
-		parameters.scenario = p_render_data->scenario.get_id();
 		Ref<RenderBufferDataForwardClustered> data = p_render_data->render_buffers->get_custom_data(RB_SCOPE_FORWARD_CLUSTERED);
-		pass->render_buffers = data.ptr();
+		render_buffers = data.ptr();
 	}
-
-	auto report_preparation = [&](bool p_same_snapshot) {
-		if (!profile_preparation) {
-			return;
+	MicroGeometrySelection::Pass **retained;
+	if (camera_pass) {
+		retained = &render_buffers->camera_micro_geometry;
+	} else {
+		const uint64_t frame = RSG::rasterizer->get_frame_number();
+		if (micro_geometry_pass_frame != frame) {
+			micro_geometry_pass_frame = frame;
+			micro_geometry_pass_cursor = 0;
 		}
-		const uint64_t owner_end = OS::get_singleton()->get_ticks_usec();
-		String rows;
-		const char *names[] = { "MicrogeometryRasterDiscovery", "MicrogeometryRasterTasks", "MicrogeometryRasterMerge", "MicrogeometryRasterParameters" };
-		for (uint32_t index : { 0u, 2u, 3u }) {
-			const JobTiming &timing = timings[index];
-			rows += vformat("RenderPrep stage=%s frame=%d pass=%d coordinator=%d jobs=%d work=%d queued_usec=%d wait_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d timing=elapsed", names[index], profile_frame, p_pass, coordinator, int(timing.begin != 0), index == 0 ? candidates : surfaces.size(), timing.queued, timing.wait, timing.joined, timing.worker, timing.begin, timing.end) + "\n";
+		if (micro_geometry_pass_cursor == micro_geometry_passes.size()) {
+			micro_geometry_passes.push_back(nullptr);
 		}
-		uint64_t first_begin = UINT64_MAX;
-		uint64_t last_end = 0;
-		uint64_t max_chunk = 0;
-		uint64_t bin_comparisons = 0;
-		for (uint32_t index = 0; index < batches.size(); index++) {
-			const Batch &batch = batches[index];
-			first_begin = MIN(first_begin, batch.begin);
-			last_end = MAX(last_end, batch.end);
-			max_chunk = MAX(max_chunk, batch.end - batch.begin);
-			bin_comparisons += batch.bin_comparisons;
-			rows += vformat("RenderPrep stage=MicrogeometryRasterTasks frame=%d pass=%d chunk=%d coordinator=%d jobs=1 work=%d tasks=%d bins=%d queued_usec=%d wait_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d timing=elapsed", profile_frame, p_pass, index, coordinator, MIN(256u, surfaces.size() - index * 256), batch.tasks.size(), batch.bins.size(), timings[1].queued, timings[1].wait, timings[1].joined, batch.worker, batch.begin, batch.end) + "\n";
-		}
-		rows += vformat("RenderPrep stage=MicrogeometryRasterInputs frame=%d pass=%d coordinator=%d jobs=%d candidates=%d eligible=%d surfaces=%d source_lookups=%d assets=%d commands=%d materials=%d tasks=%d bins=%d generation=%d reused=%d begin_usec=%d end_usec=%d resource_usec=%d material_usec=%d compare_usec=%d task_span_usec=%d task_max_chunk_usec=%d timing=elapsed", profile_frame, p_pass, coordinator, batches.size() + 2 + int(timings[3].begin != 0), candidates, eligible_surfaces, surfaces.size(), source_lookups, sources.size(), commands.size(), material_usage.size(), tasks.size(), pass->bins.size(), micro_geometry_generation, int(p_same_snapshot), owner_begin, owner_end, resources_end - timings[0].joined, materials_end - timings[2].joined, compare_end - compare_begin, batches.size() ? last_end - first_begin : 0, max_chunk) + "\n";
-		rows += vformat("RenderPrep stage=MicrogeometryRasterWork frame=%d pass=%d task_bytes=%d bin_comparisons=%d merge_bin_comparisons=%d eligibility_samples=%d eligibility_stride=64 eligibility_sample_usec=%d timing=elapsed", profile_frame, p_pass, uint64_t(tasks.size()) * sizeof(MicroGeometrySelection::Task), bin_comparisons, merge_bin_comparisons, eligibility_samples, eligibility_sample_usec);
-		print_line(rows);
-	};
-
-	if (pass->render_buffers && pass->render_buffers->camera_micro_geometry && (pass->render_buffers->camera_micro_geometry->freeze_requested != p_render_data->render_buffers->is_micro_geometry_debug_freeze() || tasks.is_empty())) {
-		memdelete(pass->render_buffers->camera_micro_geometry);
-		pass->render_buffers->camera_micro_geometry = nullptr;
+		retained = &micro_geometry_passes[micro_geometry_pass_cursor++];
 	}
-	if (tasks.is_empty()) {
-		if (pass->render_buffers) {
-			pass->render_buffers->micro_geometry_clusters = 0;
-			pass->render_buffers->micro_geometry_triangles = 0;
-			pass->render_buffers->micro_geometry_stats_epoch++;
-			pass->render_buffers->micro_geometry_stats_pending = false;
+	const bool freeze = camera_pass && p_render_data->render_buffers->is_micro_geometry_debug_freeze();
+	if (*retained && ((*retained)->input_version != batch.version || (*retained)->input_kind != uint32_t(p_pass) || (*retained)->freeze_requested != freeze || batch.tasks.is_empty())) {
+		memdelete(*retained);
+		*retained = nullptr;
+	}
+	if (batch.tasks.is_empty()) {
+		if (render_buffers) {
+			render_buffers->micro_geometry_clusters = 0;
+			render_buffers->micro_geometry_triangles = 0;
+			render_buffers->micro_geometry_stats_epoch++;
+			render_buffers->micro_geometry_stats_pending = false;
 		}
-		report_preparation(false);
-		memdelete(pass);
 		return nullptr;
 	}
-	Vector<RID> dependencies;
-	bool same_snapshot = false;
+	MicroGeometrySelection::Parameters parameters;
+	parameters.flags = 1 | 2 | (shadow ? 64 : 0);
+	parameters.scenario = p_render_data->scenario.get_id();
 	const uint32_t output_height = camera_pass ? p_render_data->render_buffers->get_target_size().y : MAX(1, micro_geometry_pass_size.y);
 	const Size2i hzb_size = camera_pass ? p_render_data->render_buffers->get_internal_size() : micro_geometry_pass_size.max(Size2i(1, 1));
-	auto prepare_parameters = [&](uint32_t) {
-		begin_job(3);
-		if (p_render_data->scene_data->view_count == 1) {
-			parameters.flags |= 2;
+	parameters.layer_mask = p_render_data->scene_data->camera_visible_layers;
+	parameters.near_plane = p_render_data->scene_data->cam_projection.get_z_near();
+	parameters.output_height = output_height;
+	parameters.hzb_width = hzb_size.x;
+	parameters.hzb_height = hzb_size.y;
+	const RenderSceneDataRD *scene = p_render_data->scene_data;
+	Vector<Plane> planes = shadow ? micro_geometry_shadow_planes : scene->cam_projection.get_projection_planes(Transform3D());
+	ERR_FAIL_COND_V(planes.size() > 24, nullptr);
+	parameters.cull_plane_count = planes.size();
+	const Transform3D inverse_view = scene->cam_transform.affine_inverse();
+	for (uint32_t index = 0; index < parameters.cull_plane_count; index++) {
+		const Plane plane = shadow ? inverse_view.xform(planes[index]) : planes[index];
+		for (uint32_t axis = 0; axis < 3; axis++) {
+			parameters.cull_planes[index * 4 + axis] = plane.normal[axis];
 		}
-		parameters.layer_mask = p_render_data->scene_data->camera_visible_layers;
-		parameters.near_plane = p_render_data->scene_data->cam_projection.get_z_near();
-		parameters.output_height = output_height;
-		parameters.hzb_width = hzb_size.x;
-		parameters.hzb_height = hzb_size.y;
-		const RenderSceneDataRD *scene = p_render_data->scene_data;
-		Projection correction;
-		correction.set_depth_correction(scene->flip_y);
-		correction.add_jitter_offset(scene->taa_jitter);
-		RendererRD::MaterialStorage::store_camera(correction * scene->cam_projection, parameters.projection);
-		correction.set_depth_correction(scene->flip_y);
-		correction.add_jitter_offset(scene->prev_taa_jitter);
-		RendererRD::MaterialStorage::store_camera(correction * scene->prev_cam_projection, parameters.previous_projection);
-		RendererRD::MaterialStorage::store_transform_transposed_3x4(Transform3D(scene->cam_transform.basis.inverse(), Vector3()), parameters.view_rotation);
-		RendererRD::MaterialStorage::store_transform_transposed_3x4(Transform3D(scene->prev_cam_transform.basis.inverse(), Vector3()), parameters.previous_view_rotation);
-		for (int axis = 0; axis < 3; axis++) {
-#ifdef REAL_T_IS_DOUBLE
-			RendererRD::MaterialStorage::split_double(scene->cam_transform.origin[axis], &parameters.camera[axis], &parameters.camera_low[axis]);
-			RendererRD::MaterialStorage::split_double(scene->prev_cam_transform.origin[axis], &parameters.previous_camera[axis], &parameters.previous_camera_low[axis]);
-#else
-			parameters.camera[axis] = scene->cam_transform.origin[axis];
-			parameters.previous_camera[axis] = scene->prev_cam_transform.origin[axis];
-#endif
-		}
-		for (uint32_t index = 0; index < scene_state.lightmaps_used; index++) {
-			parameters.lightmaps[index] = scene_state.lightmap_ids[index].get_id();
-			parameters.lightmap_sh |= uint32_t(scene_state.lightmap_has_sh[index]) << index;
-		}
-		raytracing->get_persistent_buffer_dependencies(dependencies);
-		snapshot_key.push_back(micro_geometry_generation);
-		snapshot_key.push_back(get_debug_draw_mode());
-		snapshot_key.push_back(p_render_data->scene_data->material_uv2_mode);
-		for (uint32_t index = 0; index < scene_state.voxelgis_used; index++) {
-			snapshot_key.push_back(scene_state.voxelgi_ids[index].get_id());
-		}
-		snapshot_key.push_back(parameters.scenario);
-		snapshot_key.push_back(parameters.layer_mask);
-		compare_begin = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-		same_snapshot = pass->render_buffers && pass->render_buffers->camera_micro_geometry && pass->render_buffers->camera_micro_geometry->snapshot_key == snapshot_key;
-		compare_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-		end_job(3);
-	};
-	timings[3].queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
-		GodotProfileZone("MicrogeometryRasterParameters");
-		(*static_cast<decltype(prepare_parameters) *>(p_data))(p_index);
-	},
-			&prepare_parameters, 1, 1, true, SNAME("MicrogeometryRasterParameters"));
-	timings[3].wait = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	pool->wait_for_group_task_completion(job);
-	timings[3].joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+		parameters.cull_planes[index * 4 + 3] = plane.d;
+	}
 
+	Projection correction;
+	correction.set_depth_correction(scene->flip_y);
+	correction.add_jitter_offset(scene->taa_jitter);
+	RendererRD::MaterialStorage::store_camera(correction * scene->cam_projection, parameters.projection);
+	correction.set_depth_correction(scene->flip_y);
+	correction.add_jitter_offset(scene->prev_taa_jitter);
+	RendererRD::MaterialStorage::store_camera(correction * scene->prev_cam_projection, parameters.previous_projection);
+	RendererRD::MaterialStorage::store_transform_transposed_3x4(Transform3D(scene->cam_transform.basis.inverse(), Vector3()), parameters.view_rotation);
+	RendererRD::MaterialStorage::store_transform_transposed_3x4(Transform3D(scene->prev_cam_transform.basis.inverse(), Vector3()), parameters.previous_view_rotation);
+	for (int axis = 0; axis < 3; axis++) {
+#ifdef REAL_T_IS_DOUBLE
+		RendererRD::MaterialStorage::split_double(scene->cam_transform.origin[axis], &parameters.camera[axis], &parameters.camera_low[axis]);
+		RendererRD::MaterialStorage::split_double(scene->prev_cam_transform.origin[axis], &parameters.previous_camera[axis], &parameters.previous_camera_low[axis]);
+#else
+		parameters.camera[axis] = scene->cam_transform.origin[axis];
+		parameters.previous_camera[axis] = scene->prev_cam_transform.origin[axis];
+#endif
+	}
+	for (uint32_t index = 0; index < scene_state.lightmaps_used; index++) {
+		parameters.lightmaps[index] = scene_state.lightmap_ids[index].get_id();
+		parameters.lightmap_sh |= uint32_t(scene_state.lightmap_has_sh[index]) << index;
+	}
 	if (!micro_geometry) {
 		micro_geometry = memnew(MicroGeometrySelection);
 		Vector<uint8_t> indices;
@@ -901,50 +702,43 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 		micro_geometry_index_buffer = RD::get_singleton()->index_buffer_create(384, RD::INDEX_BUFFER_FORMAT_UINT32, indices);
 		micro_geometry_index_array = RD::get_singleton()->index_array_create(micro_geometry_index_buffer, 0, 384);
 	}
-	report_preparation(same_snapshot);
-	RENDER_TIMESTAMP("Microgeometry Raster Dependencies");
-	if (pass->render_buffers && pass->render_buffers->camera_micro_geometry) {
-		auto *retained = pass->render_buffers->camera_micro_geometry;
-		if (same_snapshot) {
-			pass->gpu = retained;
-			pass->owns_gpu = false;
-			parameters.task_count = retained->data.task_count;
-			parameters.bin_count = retained->data.bin_count;
-			parameters.queue_work = retained->data.queue_work;
-			parameters.record_work = retained->data.record_work;
-			parameters.unit_count = retained->data.unit_count;
-			retained->data = parameters;
-			return pass;
+	if (!*retained) {
+		Vector<RID> dependencies;
+		raytracing->get_persistent_buffer_dependencies(dependencies);
+		*retained = micro_geometry->create(batch.tasks, batch.bins.size(), parameters, batch.levels, sizeof(SceneState::InstanceData), raytracing->get_persistent_instance_buffer(), raytracing->get_persistent_surface_buffer(), dependencies);
+		if (!*retained) {
+			return nullptr;
 		}
-		memdelete(retained);
-		pass->render_buffers->camera_micro_geometry = nullptr;
-	}
-	RENDER_TIMESTAMP("Microgeometry Raster Allocate");
-	pass->gpu = micro_geometry->create(tasks, pass->bins.size(), parameters, levels, sizeof(SceneState::InstanceData), raytracing->get_persistent_instance_buffer(), raytracing->get_persistent_surface_buffer(), dependencies);
-	if (pass->gpu && camera_pass) {
-		pass->gpu->freeze_requested = p_render_data->render_buffers->is_micro_geometry_debug_freeze();
-		pass->gpu->snapshot_key = snapshot_key;
-		for (const auto &source : sources) {
-			RID asset = source.key;
-			if (pass->gpu->assets.has(asset)) {
-				continue;
-			}
+		auto *gpu = *retained;
+		gpu->input_version = batch.version;
+		gpu->input_kind = p_pass;
+		gpu->freeze_requested = freeze;
+		auto *storage = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage();
+		for (const auto &source : batch.sources) {
 			storage->acquire(source.value);
-			pass->gpu->assets.push_back(asset);
-			for (uint32_t group = 0; pass->gpu->freeze_requested && group < uint32_t(source.value->get_metadata().groups.size()); group++) {
-				if (storage->is_group_ready(asset, group)) {
-					storage->pin_group(asset, group);
-					pass->gpu->pins.push_back({ asset, group });
+			gpu->assets.push_back(source.key);
+			for (uint32_t group = 0; freeze && group < uint32_t(source.value->get_metadata().groups.size()); group++) {
+				if (storage->is_group_ready(source.key, group)) {
+					storage->pin_group(source.key, group);
+					gpu->pins.push_back({ source.key, group });
 				}
 			}
 		}
-		pass->render_buffers->camera_micro_geometry = pass->gpu;
-		pass->owns_gpu = false;
+	} else {
+		auto *gpu = *retained;
+		parameters.task_count = gpu->data.task_count;
+		parameters.bin_count = gpu->data.bin_count;
+		parameters.queue_work = gpu->data.queue_work;
+		parameters.record_work = gpu->data.record_work;
+		parameters.unit_count = gpu->data.unit_count;
+		gpu->data = parameters;
 	}
-	if (!pass->gpu) {
-		memdelete(pass);
-		return nullptr;
-	}
+	auto *pass = memnew(MicroGeometryRasterPass);
+	pass->gpu = *retained;
+	pass->owns_gpu = false;
+	pass->bins = batch.bins;
+	pass->task_dependencies = batch.dependencies;
+	pass->render_buffers = render_buffers;
 	return pass;
 }
 
@@ -1739,14 +1533,8 @@ void RenderForwardClustered::_prepare_render_list_chunk(uint32_t p_batch, Render
 		float depth = 0.0f;
 		uint32_t gi_offset = UINT32_MAX;
 		GeometryInstanceForwardClustered *inst = static_cast<GeometryInstanceForwardClustered *>((*p_preparation->instances)[i]);
-		if (rl->last_micro_pass) {
-			bool legacy_surface = false;
-			for (auto *surface = inst->surface_caches; surface; surface = surface->next) {
-				legacy_surface |= !rl->last_micro_pass->surfaces.has(surface->persistent_surface);
-			}
-			if (!legacy_surface) {
-				continue;
-			}
+		if (rl->last_micro_pass && inst->micro_geometry_raster_only) {
+			continue;
 		}
 
 		Vector3 center = inst->transform.origin;
@@ -1910,7 +1698,7 @@ void RenderForwardClustered::_prepare_render_list_chunk(uint32_t p_batch, Render
 			element.flags = flags;
 			element.gi_offset = gi_offset;
 			element.sort.depth_layer = depth_layer;
-			if (rl->last_micro_pass && rl->last_micro_pass->surfaces.has(surf->persistent_surface)) {
+			if (rl->last_micro_pass && _micro_geometry_eligible(surf, p_preparation->pass_mode)) {
 				surf = surf->next;
 				continue;
 			}
@@ -2432,7 +2220,7 @@ void RenderForwardClustered::_pre_opaque_render(RenderDataRD *p_render_data) {
 			RENDER_TIMESTAMP("Render OmniLight Shadows");
 			// Cube shadows are rendered in their own way.
 			for (const int &index : p_render_data->cube_shadows) {
-				_render_shadow_pass(p_render_data->render_shadows[index].light, p_render_data->shadow_atlas, p_render_data->render_shadows[index].pass, p_render_data->render_shadows[index].instances, lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, true, true, true, p_render_data->render_info, viewport_size, p_render_data->scene_data->cam_transform);
+				_render_shadow_pass(p_render_data->render_shadows[index].light, p_render_data->shadow_atlas, p_render_data->render_shadows[index].pass, p_render_data->render_shadows[index].instances, lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, true, true, true, p_render_data->render_info, viewport_size, p_render_data->scene_data->cam_transform, p_render_data->render_shadows[index].cull_planes);
 			}
 		}
 
@@ -2457,11 +2245,11 @@ void RenderForwardClustered::_pre_opaque_render(RenderDataRD *p_render_data) {
 
 		//render directional shadows
 		for (uint32_t i = 0; i < p_render_data->directional_shadows.size(); i++) {
-			_render_shadow_pass(p_render_data->render_shadows[p_render_data->directional_shadows[i]].light, p_render_data->shadow_atlas, p_render_data->render_shadows[p_render_data->directional_shadows[i]].pass, p_render_data->render_shadows[p_render_data->directional_shadows[i]].instances, lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, false, i == p_render_data->directional_shadows.size() - 1, false, p_render_data->render_info, viewport_size, p_render_data->scene_data->cam_transform);
+			_render_shadow_pass(p_render_data->render_shadows[p_render_data->directional_shadows[i]].light, p_render_data->shadow_atlas, p_render_data->render_shadows[p_render_data->directional_shadows[i]].pass, p_render_data->render_shadows[p_render_data->directional_shadows[i]].instances, lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, false, i == p_render_data->directional_shadows.size() - 1, false, p_render_data->render_info, viewport_size, p_render_data->scene_data->cam_transform, p_render_data->render_shadows[p_render_data->directional_shadows[i]].cull_planes);
 		}
 		//render positional shadows
 		for (uint32_t i = 0; i < p_render_data->shadows.size(); i++) {
-			_render_shadow_pass(p_render_data->render_shadows[p_render_data->shadows[i]].light, p_render_data->shadow_atlas, p_render_data->render_shadows[p_render_data->shadows[i]].pass, p_render_data->render_shadows[p_render_data->shadows[i]].instances, lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, i == 0, i == p_render_data->shadows.size() - 1, true, p_render_data->render_info, viewport_size, p_render_data->scene_data->cam_transform);
+			_render_shadow_pass(p_render_data->render_shadows[p_render_data->shadows[i]].light, p_render_data->shadow_atlas, p_render_data->render_shadows[p_render_data->shadows[i]].pass, p_render_data->render_shadows[p_render_data->shadows[i]].instances, lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, i == 0, i == p_render_data->shadows.size() - 1, true, p_render_data->render_info, viewport_size, p_render_data->scene_data->cam_transform, p_render_data->render_shadows[p_render_data->shadows[i]].cull_planes);
 		}
 
 		_render_shadow_process();
@@ -2707,6 +2495,21 @@ void RenderForwardClustered::_render_3d_upscaling(const RenderDataRD *p_render_d
 }
 
 void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Color &p_default_bg_color) {
+	micro_geometry_scenario = p_render_data->scenario;
+	micro_geometry_visible_layers = p_render_data->scene_data->camera_visible_layers;
+	while (micro_geometry_passes.size() > micro_geometry_pass_cursor) {
+		if (micro_geometry_passes[micro_geometry_passes.size() - 1]) {
+			memdelete(micro_geometry_passes[micro_geometry_passes.size() - 1]);
+		}
+		micro_geometry_passes.resize(micro_geometry_passes.size() - 1);
+	}
+	micro_geometry_pass_cursor = 0;
+	micro_geometry_pass_frame = RSG::rasterizer->get_frame_number();
+	for (auto &batch : micro_geometry_batches) {
+		if (batch.generation != micro_geometry_generation) {
+			batch.sources.clear();
+		}
+	}
 	scene_state.used_uniform_buffer_count = 0;
 	ERR_FAIL_NULL(p_render_data);
 	Ref<RenderSceneBuffersRD> rb = p_render_data->render_buffers;
@@ -3187,12 +2990,14 @@ void RenderForwardClustered::_render_buffers_debug_draw(const RenderDataRD *p_re
 	}
 }
 
-void RenderForwardClustered::_render_shadow_pass(RID p_light, RID p_shadow_atlas, int p_pass, const PagedArray<RenderGeometryInstance *> &p_instances, float p_lod_distance_multiplier, float p_screen_mesh_lod_threshold, bool p_open_pass, bool p_close_pass, bool p_clear_region, RenderingServerTypes::RenderInfo *p_render_info, const Size2i &p_viewport_size, const Transform3D &p_main_cam_transform) {
+void RenderForwardClustered::_render_shadow_pass(RID p_light, RID p_shadow_atlas, int p_pass, const PagedArray<RenderGeometryInstance *> &p_instances, float p_lod_distance_multiplier, float p_screen_mesh_lod_threshold, bool p_open_pass, bool p_close_pass, bool p_clear_region, RenderingServerTypes::RenderInfo *p_render_info, const Size2i &p_viewport_size, const Transform3D &p_main_cam_transform, const Vector<Plane> &p_cull_planes) {
+	micro_geometry_shadow_planes = p_cull_planes;
 	RendererRD::LightStorage *light_storage = RendererRD::LightStorage::get_singleton();
 
 	ERR_FAIL_COND(!light_storage->owns_light_instance(p_light));
 
 	RID base = light_storage->light_instance_get_base_light(p_light);
+	micro_geometry_shadow_layers = micro_geometry_visible_layers & light_storage->light_get_shadow_caster_mask(base);
 
 	Rect2i atlas_rect;
 	uint32_t atlas_size = 1;
@@ -3419,9 +3224,11 @@ void RenderForwardClustered::_render_shadow_append(RID p_framebuffer, const Page
 	scene_data.time_step = time_step;
 	scene_data.main_cam_transform = p_main_cam_transform;
 	scene_data.shadow_pass = true;
+	scene_data.camera_visible_layers = micro_geometry_shadow_layers;
 
 	RenderDataRD render_data;
 	render_data.scene_data = &scene_data;
+	render_data.scenario = micro_geometry_scenario;
 	render_data.cluster_size = 1;
 	render_data.cluster_max_elements = 32;
 	render_data.instances = &p_instances;
@@ -3613,7 +3420,8 @@ void RenderForwardClustered::_render_particle_collider_heightfield(RID p_fb, con
 	scene_data.time = time;
 	scene_data.time_step = time_step;
 	scene_data.main_cam_transform = p_cam_transform;
-	scene_data.shadow_pass = true; // Not a shadow pass, but should be treated like one.
+	scene_data.shadow_pass = true;
+	scene_data.camera_visible_layers = micro_geometry_shadow_layers; // Not a shadow pass, but should be treated like one.
 
 	RenderDataRD render_data;
 	render_data.scene_data = &scene_data;
@@ -4787,6 +4595,7 @@ uint32_t RenderForwardClustered::sdfgi_get_pending_region_cascade(const Ref<Rend
 }
 
 void RenderForwardClustered::GeometryInstanceForwardClustered::_mark_dirty() {
+	set_micro_geometry_raster_only(false);
 	persistent_surfaces_dirty = true;
 	_mark_instance_data_dirty();
 	if (dirty_list_element.in_list()) {
@@ -5988,6 +5797,11 @@ RenderForwardClustered::~RenderForwardClustered() {
 	RD::get_singleton()->flush_and_stall();
 	for (auto &list : render_list) {
 		list.clear();
+	}
+	for (auto *pass : micro_geometry_passes) {
+		if (pass) {
+			memdelete(pass);
+		}
 	}
 	if (micro_geometry) {
 		memdelete(micro_geometry);

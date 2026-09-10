@@ -40,6 +40,20 @@
 class RenderGeometryInstance {
 public:
 	virtual ~RenderGeometryInstance() {}
+	bool micro_geometry_raster_only = false;
+	bool micro_geometry_cpu_culling = false;
+	void *micro_geometry_routing_data = nullptr;
+	void (*micro_geometry_routing_changed)(void *, bool) = nullptr;
+	void set_micro_geometry_raster_only(bool p_enabled) {
+		if (micro_geometry_raster_only == p_enabled) {
+			return;
+		}
+		micro_geometry_raster_only = p_enabled;
+		if (micro_geometry_routing_changed) {
+			micro_geometry_routing_changed(micro_geometry_routing_data, p_enabled);
+		}
+	}
+
 
 	virtual void _mark_dirty() = 0;
 	virtual void _mark_instance_data_dirty() {}

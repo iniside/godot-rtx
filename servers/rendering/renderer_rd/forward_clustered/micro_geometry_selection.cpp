@@ -228,7 +228,7 @@ bool MicroGeometrySelection::_resize(Pass *p_pass, const Vector<Unit> &p_units) 
 	const uint64_t bytes = queue_count * 20 + record_count * 108 + uint64_t(units.size()) * sizeof(Unit) + MAX(uint64_t(16), uint64_t(bins.size()) * sizeof(Bin)) + p_pass->dynamic_memory_bytes + p_pass->fixed_memory_bytes;
 	if (queue_count > UINT32_MAX / 16 || record_count > UINT32_MAX / sizeof(MicroGeometrySelectedCluster) || bytes > MAX_PASS_BYTES) {
 		p_pass->admission_failed = true;
-		ERR_PRINT(vformat("Microgeometry sparse selection admission failed: %d queue slots, %d cut slots, %d bytes requested (limit %d).", queue_count, record_count, bytes, MAX_PASS_BYTES));
+		ERR_PRINT(vformat("Microgeometry sparse selection admission failed: %d queue slots, %d cut slots, %d bytes requested (limit %d, flags %d, tasks %d).", queue_count, record_count, bytes, MAX_PASS_BYTES, p_pass->data.flags, p_pass->data.task_count));
 		return false;
 	}
 	Pass replacement;
@@ -281,6 +281,10 @@ bool MicroGeometrySelection::_resize(Pass *p_pass, const Vector<Unit> &p_units) 
 	p_pass->memory_bytes += replacement.memory_bytes;
 	p_pass->dynamic_memory_bytes = replacement.memory_bytes;
 	p_pass->unit_data = units;
+	p_pass->capacity_feedback->allocated.clear();
+	for (const Unit &unit : units) {
+		p_pass->capacity_feedback->allocated.push_back({ unit.queue_capacity, unit.record_capacity });
+	}
 	p_pass->bin_data = bins;
 	p_pass->data.queue_work = queue_count;
 	p_pass->data.record_work = record_count;
@@ -420,8 +424,7 @@ void MicroGeometrySelection::_dispatch(Pass *p_pass, uint32_t p_mode, uint32_t p
 
 void MicroGeometrySelection::select(Pass *p_pass, RID p_hzb) {
 	ERR_FAIL_NULL(p_pass);
-	needs_retry(p_pass);
-	if (!p_pass->admission_failed && !p_pass->capacity_feedback->pending) {
+	if (needs_retry(p_pass) && !p_pass->capacity_feedback->pending) {
 		Vector<Unit> units = p_pass->unit_data;
 		bool resize = false;
 		auto prepare_selection_capacity = [&](uint32_t) {
@@ -480,19 +483,6 @@ void MicroGeometrySelection::select(Pass *p_pass, RID p_hzb) {
 	_dispatch(p_pass, 10, p_pass->data.record_work, uniform_set);
 	rd->draw_command_end_label();
 	if (!p_pass->capacity_feedback->pending && !p_pass->admission_failed && !p_pass->capacity_feedback->failed) {
-		auto prepare_selection_feedback = [&](uint32_t) {
-			p_pass->capacity_feedback->allocated.clear();
-			for (const Unit &unit : p_pass->unit_data) {
-				p_pass->capacity_feedback->allocated.push_back({ unit.queue_capacity, unit.record_capacity });
-			}
-		};
-		WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
-		auto job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
-			GodotProfileZone("prepare_selection_feedback");
-			(*static_cast<decltype(prepare_selection_feedback) *>(p_data))(p_index);
-		},
-				&prepare_selection_feedback, 1, 1, true, SNAME("prepare_selection_feedback"));
-		pool->wait_for_group_task_completion(job);
 		p_pass->capacity_feedback->pending = true;
 		Ref<RefCounted> feedback = p_pass->capacity_feedback;
 		if (rd->buffer_get_data_async(p_pass->unit_states, callable_mp_static(&MicroGeometrySelection::_capacity_feedback).bind(feedback)) != OK) {

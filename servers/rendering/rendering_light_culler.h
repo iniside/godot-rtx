@@ -165,6 +165,16 @@ public:
 	// Return false if the instance is to be culled.
 	bool cull_directional_light(const RendererSceneCull::InstanceBounds &p_bound, int32_t p_directional_light_id, int32_t p_cascade);
 
+	void append_caster_planes(Vector<Plane> &r_planes, int32_t p_directional_light = -1, int32_t p_cascade = 0) const {
+		if (!data.is_active() || !is_caster_culling_active()) {
+			return;
+		}
+		const auto &planes = p_directional_light < 0 ? data.regular_cull_planes : data.directional_cull_planes[p_directional_light].planes[p_cascade];
+		for (int index = 0; index < planes.num_cull_planes; index++) {
+			r_planes.push_back(planes.cull_planes[index]);
+		}
+	}
+
 	// Can turn on and off from the engine if desired.
 	void set_caster_culling_active(bool p_active) { data.caster_culling_active = p_active; }
 	void set_light_culling_active(bool p_active) { data.light_culling_active = p_active; }

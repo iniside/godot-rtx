@@ -62,7 +62,8 @@ struct SelectionParameters {
 	uint hzb_mips;
 	uint64_t lightmaps[8];
 	uint lightmap_sh;
-	uint pad;
+	uint cull_plane_count;
+	float cull_planes[96];
 };
 struct RasterInstance {
 	float transform[12];
@@ -239,11 +240,19 @@ bool projected_bounds(float3 p_center, float p_radius, bool p_previous, out floa
 }
 
 bool frustum_visible(SelectionTask p_task, MicroGeometryInstance p_instance, uint p_multimesh, float p_center[3], float p_radius) {
-	if ((parameters.flags & 2) == 0 || (p_task.flags & 2) != 0) { return true; }
+	if ((parameters.flags & 2) == 0) { return true; }
 	float3 center;
 	float radius, nearest;
 	float2 low, high;
 	view_bounds(p_task, p_instance, p_multimesh, p_center, p_radius, false, center, radius);
+	if (parameters.cull_plane_count != 0) {
+		for (uint index = 0; index < parameters.cull_plane_count; index++) {
+			float3 normal = float3(parameters.cull_planes[index * 4], parameters.cull_planes[index * 4 + 1], parameters.cull_planes[index * 4 + 2]);
+			if (dot(normal, center) - parameters.cull_planes[index * 4 + 3] > radius) { return false; }
+		}
+		return true;
+	}
+	if ((p_task.flags & 2) != 0) { return true; }
 	if ((parameters.flags & 32) != 0 && center.z - radius >= 0) { return false; }
 	if (!projected_bounds(center, radius, false, low, high, nearest)) { return true; }
 	return all(high >= 0) && all(low <= 1) && nearest >= 0;
@@ -316,7 +325,7 @@ void main(uint3 id : SV_DispatchThreadID) {
 		MicroGeometryInstance instance = instances[uint(task.instance) - 1];
 		MicroGeometryInstanceSurface surface = surfaces[uint(task.surface) - 1];
 		bool valid = instance.handle == task.instance && surface.handle == task.surface && surface.instance == task.instance && instance.asset == task.asset && instance.asset_address != 0 && instance.deformed == 0;
-		if ((parameters.flags & 1) != 0) { valid = valid && instance.scenario == parameters.scenario && instance.visible != 0 && (instance.layer_mask & parameters.layer_mask) != 0 && ((parameters.flags & 32) != 0 || instance.shadows != 3); }
+		if ((parameters.flags & 1) != 0) { valid = valid && instance.scenario == parameters.scenario && instance.visible != 0 && (instance.layer_mask & parameters.layer_mask) != 0 && ((parameters.flags & 64) != 0 ? instance.shadows != 0 : ((parameters.flags & 32) != 0 || instance.shadows != 3)); }
 		if (valid) {
 			MicroGeometryAsset asset = *((MicroGeometryAsset*)instance.asset_address);
 			valid = asset.identity == instance.asset && (asset.ready & 1) != 0 && asset.group_count == task.group_count && asset.cluster_count == task.cluster_count;
@@ -388,6 +397,16 @@ void main(uint3 id : SV_DispatchThreadID) {
 		MicroGeometryInstance instance = instances[uint(task.instance) - 1];
 		MicroGeometryInstanceSurface surface = surfaces[uint(task.surface) - 1];
 		MicroGeometryAsset asset = *((MicroGeometryAsset*)instance.asset_address);
+		if ((parameters.flags & 32) == 0) {
+			float center[3];
+			for (uint axis = 0; axis < 3; axis++) { center[axis] = instance.aabb_position[axis] + instance.aabb_size[axis] * 0.5; }
+			float radius = length(float3(instance.aabb_size[0], instance.aabb_size[1], instance.aabb_size[2])) * 0.5;
+			if (!frustum_visible(task, instance, source_multimesh, center, radius)) {
+				unit_states[index].committed_count = 0;
+				return;
+			}
+		}
+
 		bool bootstrap = (unit_states[index].status & 8) != 0;
 		bool finest = (parameters.flags & 32) != 0 && surface.force_finest != 0;
 		if (bootstrap) { unit_states[index].committed_count = 0; }
@@ -442,6 +461,7 @@ void main(uint3 id : SV_DispatchThreadID) {
 		MicroGeometryGroup group = ((MicroGeometryGroup*)asset.groups)[group_id];
 		if (push.mode == 4) {
 			if (group.depth != push.level) { return; }
+			if ((parameters.flags & 32) == 0 && !frustum_visible(task, instance, source_multimesh, group.center, group.radius)) { return; }
 			float3 center;
 			float scale;
 			view_bounds(task, instance, source_multimesh, group.center, 1, false, center, scale);

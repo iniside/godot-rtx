@@ -328,6 +328,7 @@ public:
 		enum IndexerType {
 			INDEXER_GEOMETRY, //for geometry
 			INDEXER_VOLUMES, //for everything else
+			INDEXER_CONVENTIONAL_GEOMETRY,
 			INDEXER_MAX
 		};
 
@@ -351,11 +352,14 @@ public:
 
 		PagedArray<InstanceBounds> instance_aabbs;
 		PagedArray<InstanceData> instance_data;
+		LocalVector<Instance *> conventional_instances;
+		LocalVector<Instance *> micro_geometry_instances;
 		VisibilityArray instance_visibility;
 
 		Scenario() {
 			indexers[INDEXER_GEOMETRY].set_index(INDEXER_GEOMETRY);
 			indexers[INDEXER_VOLUMES].set_index(INDEXER_VOLUMES);
+			indexers[INDEXER_CONVENTIONAL_GEOMETRY].set_index(INDEXER_CONVENTIONAL_GEOMETRY);
 			used_viewport_visibility_bits = 0;
 		}
 	};
@@ -369,6 +373,8 @@ public:
 
 	void _instance_update_mesh_instance(Instance *p_instance) const;
 	void _instance_update_scene_membership(Instance *p_instance);
+	static void _instance_micro_geometry_routing_changed(void *p_data, bool p_enabled);
+	void _instance_update_cull_domain(Instance *p_instance, bool p_remove = false) const;
 
 	virtual RID scenario_allocate();
 	virtual void scenario_initialize(RID p_rid);
@@ -448,6 +454,9 @@ public:
 		RID self;
 		//scenario stuff
 		DynamicBVH::ID indexer_id;
+		DynamicBVH::ID conventional_indexer_id;
+		uint32_t cull_domain_index = UINT32_MAX;
+		bool micro_geometry_domain = false;
 		int32_t array_index = -1;
 		int32_t visibility_index = -1;
 		float visibility_range_begin = 0.0f;
