@@ -3259,8 +3259,9 @@ struct RenderRaytracing::LightingPreparation {
 	bool physical_light_units;
 	RID area_atlas;
 	RID projector_atlas;
-	uint32_t previous_index;
-	uint32_t current_index;
+	uint32_t previous_index = 0;
+	uint32_t current_index = 0;
+	bool history_valid = false;
 	SafeNumeric<uint32_t> pending_payloads{ 2 };
 	const uint64_t profile_frame = RSG::rasterizer->get_frame_number();
 	const bool profile_preparation = RSG::utilities->capturing_timestamps && profile_frame % 120 == 0;
@@ -3501,7 +3502,7 @@ struct RenderRaytracing::LightingPreparation {
 			}
 		}
 	}
-	void prepare_registry() {
+	void merge_payloads() {
 		GodotProfileZone("RTLightRegistryPayload");
 		begin_job(3);
 		for (uint32_t index = 0; index < emissive_keys.size(); index++) {
@@ -3521,14 +3522,16 @@ struct RenderRaytracing::LightingPreparation {
 			current_lights.push_back(environment_lights[i]);
 		}
 		end_job(3);
+	}
+	void prepare_history() {
+		GodotProfileZone("RTLightHistoryPayload");
 		if (current_lights.size() > 0x7FFFFFFFu || uint64_t(current_lights.size()) * sizeof(RT_LightData) > UINT32_MAX) {
 			return;
 		}
 		RTLightSnapshot &previous = p_state->light_snapshots[previous_index];
 		RTLightSnapshot &current = p_state->light_snapshots[current_index];
-		begin_job(4);
 		current_to_previous.resize(current_keys.size());
-		previous_to_current.resize(p_state->light_history_valid ? previous.keys.size() : 0);
+		previous_to_current.resize(history_valid ? previous.keys.size() : 0);
 		for (uint32_t i = 0; i < current_to_previous.size(); i++) {
 			current_to_previous[i] = UINT32_MAX;
 		}
@@ -3536,7 +3539,7 @@ struct RenderRaytracing::LightingPreparation {
 			previous_to_current[i] = UINT32_MAX;
 		}
 
-		if (p_state->light_history_valid) {
+		if (history_valid) {
 			HashMap<RTLightKey, uint32_t> previous_indices;
 			for (uint32_t i = 0; i < previous.keys.size(); i++) {
 				previous_indices.insert(previous.keys[i], i);
@@ -3559,8 +3562,7 @@ struct RenderRaytracing::LightingPreparation {
 		current.parameters.environment_index = local_lights.size() + infinite_lights.size();
 		current.parameters.environment_present = environment_lights.is_empty() ? 0 : 1;
 		current.parameters.total_count = current_lights.size();
-		current.parameters.previous_count = p_state->light_history_valid ? previous.keys.size() : 0;
-		end_job(4);
+		current.parameters.previous_count = history_valid ? previous.keys.size() : 0;
 	}
 	static void run(void *p_data, uint32_t) {
 		Task &task = *static_cast<Task *>(p_data);
@@ -3576,6 +3578,9 @@ struct RenderRaytracing::LightingPreparation {
 			case 2:
 				preparation.prepare_emissive();
 				break;
+			case 4:
+				preparation.prepare_history();
+				break;
 			case 5:
 				if (preparation.p_render_data->rt_decals && preparation.p_render_data->decals) {
 					preparation.decals = preparation.ts->build_rt_decal_snapshot(*preparation.p_render_data->rt_decals, *preparation.p_render_data->decals, preparation.p_render_data->scene_data->cam_transform, preparation.p_state->rt_origin);
@@ -3584,7 +3589,7 @@ struct RenderRaytracing::LightingPreparation {
 		}
 		preparation.end_job(task.index);
 		if ((task.index == 1 || task.index == 2) && preparation.pending_payloads.decrement() == 0) {
-			preparation.prepare_registry();
+			preparation.merge_payloads();
 		}
 	}
 	void start(uint32_t p_index, bool p_has_work, const StringName &p_name) {
@@ -3611,8 +3616,6 @@ struct RenderRaytracing::LightingPreparation {
 		physical_light_units = owner->is_using_physical_light_units();
 		area_atlas = ts->area_light_atlas_get_texture();
 		projector_atlas = ts->decal_atlas_get_texture_srgb();
-		previous_index = p_state->current_light_snapshot;
-		current_index = p_state->light_history_valid ? (previous_index ^ 1u) : previous_index;
 		start(0, p_render_data->rt_lights && p_render_data->rt_lights->size(), SNAME("RTLightResourceDiscovery"));
 		start(5, (p_render_data->rt_decals && p_render_data->rt_decals->size()) || (p_render_data->decals && p_render_data->decals->size()), SNAME("RTDecalSnapshot"));
 	}
@@ -3663,9 +3666,16 @@ struct RenderRaytracing::LightingPreparation {
 
 		start(2, !renderer->emissive_sources.is_empty() || (p_render_data->rt_lights && p_render_data->rt_lights->size()) || !environment_keys.is_empty(), SNAME("RTEmissivePayload"));
 	}
-	void publish_lights(uint64_t &r_scene_signature) {
+	void begin_history() {
 		join(1);
 		join(2);
+		history_valid = p_state->light_history_valid;
+		previous_index = p_state->current_light_snapshot;
+		current_index = history_valid ? (previous_index ^ 1u) : previous_index;
+		start(4, !current_keys.is_empty() || (history_valid && !p_state->light_snapshots[previous_index].keys.is_empty()), SNAME("RTLightHistoryPayload"));
+	}
+	void publish_lights(uint64_t &r_scene_signature) {
+		join(4);
 		ERR_FAIL_COND_MSG(current_lights.size() > 0x7FFFFFFFu, "The RTXDI light registry exceeds the reservoir light-index range.");
 		RTLightSnapshot &current = p_state->light_snapshots[current_index];
 		ERR_FAIL_COND_MSG(uint64_t(current_lights.size()) * sizeof(RT_LightData) > UINT32_MAX, "The RTXDI light registry exceeds RenderingDevice buffer limits.");
@@ -4868,6 +4878,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 	RENDER_TIMESTAMP("RT Finalize Buffers");
 	finalize_buffers(state);
 	ERR_FAIL_COND_V(!build_acceleration_structures(state, dirty_blas_list, dirty_blas_update_list), nullptr);
+	lighting.begin_history();
 	RENDER_TIMESTAMP("RT Decals and Lights");
 	state->decal_count = 0;
 	state->decal_generation = 0;
