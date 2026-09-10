@@ -133,6 +133,8 @@ func _process(delta: float) -> void:
 		var cpu_ms := RenderingServer.viewport_get_measured_render_time_cpu(viewport_rid)
 		var gpu_ms := RenderingServer.viewport_get_measured_render_time_gpu(viewport_rid)
 		$HUD/Performance.text = "FPS: %.1f | Frame: %.2f ms\nCPU render (incl. waits): %.2f ms | GPU: %.2f ms" % [fps, frame_ms, cpu_ms, gpu_ms]
+		if OS.is_stdout_verbose():
+			print("MICRO_STRESS_TIMING frame=%d fps=%.2f frame_ms=%.3f cpu_render_sample_ms=%.3f gpu_sample_ms=%.3f" % [Engine.get_process_frames(), fps, frame_ms, cpu_ms, gpu_ms])
 		hud_frames = 0
 		hud_sample_started_usec = now
 
