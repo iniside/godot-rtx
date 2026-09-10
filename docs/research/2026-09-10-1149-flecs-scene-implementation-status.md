@@ -549,6 +549,63 @@ an implementation sequencing boundary, not a final animation scope exclusion.
 
 ## Remaining work
 
+Native renderer/editor prerequisite source is checkpointed at `b839a4a17a`,
+explicitly unfinished. It records the preserved pre-usability source, excluding
+owner configuration/assets/docs and generated files. Renderer completion and
+its final proof/review remain deferred; this checkpoint is not acceptance.
+
+The owner-prioritized usability slice is implemented at `72506855cd`: a
+256-row paged/filterable native list, one selected EntityId shared with the
+typed component Inspector, and viewport mesh ray picking. Native transaction
+payloads enter EditorUndoRedoManager history without advancing a second native
+cursor. Native scene save and dirty-close checks are connected. Ordinary
+build04 passes (37.67s). Build03 crashed after the owner clicked an entity:
+selection rebuilt Tree while it blocked mouse-event mutation, then dereferenced
+a null item. Build04 defers selection with a document guard, resolves edit
+history from the owning document, and preserves the selected page. Corrected
+selection is now owner-confirmed without a crash. The owner requests clearer
+Inspector grouping by component; collapsible component sections are the next
+UI refinement. Full edit/undo/save behavior and first-click shared-mesh BVH
+cost remain unverified. Fresh exact/cumulative review round 1 rejects three
+concrete issues: text edits not committed on selection/save, wrong default type
+for numeric array additions, and ray picking clipping incorrectly against
+camera near/far planes. Correction `e4df780cf5` adds the requested collapsible
+component groups, commits pending text to its original document/entity, uses
+typed array defaults and picks against the actual near/far-plane segment.
+Ordinary usability build05 passes in 96.87s. The owner accepts the grouped
+Inspector as v1 ("inspector dziala jak na v1, to jest dobrze"). Fresh round 2
+rejects one remaining P2: typing a number into SpinBox and pressing Ctrl+S
+without Enter/focus loss saves the old value. The native flush sees only
+value_changed callbacks, while SpinBox has not evaluated its active text.
+Recommended correction: synchronously call the existing SpinBox::apply() on
+active numeric edits for their original document/entity before flushing and
+saving. No source correction was made after the second-round verdict; the
+two-round limit applies. The practical v1 acceptance is not a final source
+review pass or proof of every edit/undo/save branch. Evidence:
+`gpuprofile/ecs_native_editor/usability_build04/` and preserved build03 logs.
+Camera state and native scene hashes remain unchanged at launch. This is not
+completion of full Step 6 gizmos, creation/deletion or prefab authoring.
+
+The owner's normal close of build04 exposed a separate editor teardown crash;
+process disappearance was not an exit-0 result. Root relinked the untouched
+build04 libraries with the exact dry-run linker arguments plus a map file,
+without recompiling or replacing the live binary. Archived and mapped `.text`
+match at RVA 4096, raw size 99403776, SHA256
+`2c42d0009c3069d3da0bb254778c7913d36469e9ca582ea889ed9932bb62e2d0`.
+The stack resolves to Timer::stop, SceneImportSettingsDialog::_cleanup,
+its destructor, then Node predelete and SceneTree::finalize. Evidence is in
+`gpuprofile/ecs_native_editor/usability_build05/close_symbols/`.
+Correction `e4df780cf5` moves child-dependent cleanup into the dialog's
+PREDELETE notification, before Node deletes its children. The real Vulkan
+editor run with `--quit-after 120` exits 0 and exercises SceneTree finalization
+without the C++ crash. `usability_build05/close_receipt.json` confirms identical
+camera and scene bytes. Remaining draw-list/swap-chain and admission errors
+are recorded, not a claim of clean renderer shutdown. Ordinary interactive
+reopen is responsive (GUI 82004), and the owner accepts the grouped Inspector.
+Full edit/undo/save interaction remains unverified, with the numeric-save bug
+above explicitly open. The microgeometry admission limit remains a
+separate deferred problem.
+
 Owner sequencing decision 2026-09-10, working source over `20d7f5cbbacd`:
 advance the coherent Step 6 usability slice before completing Step 5. Deliver
 an entity list, an editable Inspector for the selected native entity, and
@@ -557,33 +614,21 @@ saved camera. Remaining renderer completion is deferred behind this slice;
 the microgeometry admission limit is a separate deferred problem. No new
 scripting, UI framework or streaming scope is added.
 
-Step 6 entry research at `a49e5c7b96` mapped document/tab ownership,
-open/save, Inspector and undo. Native document/tab opening and camera-state
-save now work; entity authoring, document-save UI and undo remain pending. Existing
-EntityScene/EntityWorld/schema/command APIs already provide the data substrate;
-no entity Object proxy is needed. Native tabs now own EntityScene and old world
-loading is rejected. Native document save must replace the old packing flags:
-the legacy `_save_scene` supplies
-`FLAG_REPLACE_SUBRESOURCE_PATHS`, rejected by ResourceFormatSaverEntityScene.
-Inspector field reads, defaults/revert and schema enumeration must resolve
-native addresses, while real shared Resource subinspectors remain supported.
+The Step 6 entry research at `a49e5c7b96` supplied the current document/tab,
+Inspector and undo boundaries. Native tabs own EntityScene, and native save
+uses ResourceSaver without the legacy PackedScene packing flags. Component
+edits use schema addresses and native transaction payloads under the existing
+EditorUndoRedoManager chronology. Native restore failure is checked before
+advancing history. Shared Resource inspection remains the existing editor path.
+These source integrations still need the bounded runtime verification above;
+they do not establish complete prefab, multi-edit, component add/remove, gizmo
+or create/delete workflows.
 
-Undo integration must preserve one chronological history across entity edits
-and shared-resource edits. Existing native commands advance a separate cursor;
-blindly wrapping execute/undo in UI MERGE_ENDS actions would undo a 0→1→2
-gesture only to 1. The approved document-service target should apply native
-transaction payloads under the existing EditorUndoRedoManager chronology,
-preserving atomic validation/restore. Native failure must not advance UI
-history: existing core UndoRedo ignores invoked method return values. These
-are source-backed implementation entry constraints, not executed editor proof.
-
-Renderer, editor, subsystems and
-native import/export steps have not landed. Existing Node-world
-operation is not evidence of the target entity model. The owner reiterated on
-2026-09-10 that static-mesh components are required for renderer validation.
-EntityMesh/EntityTransform already exist in the foundation; direct renderer
-ingress in step 5 and the nine native renderer scenes in step 8 remain required
-implementation and real-Vulkan validation, not optional follow-up work.
+Renderer completion, the remainder of Step 6, scene subsystems and native
+import/reimport/export remain open. The finite energy, main and stress native
+scenes provide the current renderer inputs; completing the retained nine-scene
+set and its editor Vulkan verification remains required later work. Existing
+Node-world operation is not evidence of the target entity model.
 
 Scope remains the approved plan: no scripting model, Node plugin compatibility,
 2D scenes, HTML/CSS game UI or automatic world streaming in this implementation.

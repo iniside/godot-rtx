@@ -25,7 +25,7 @@ Wymiana cyklu świata `9588beb0d4` z poprawką `7e4513db52` kompiluje się na
 trzech osiach; pełny edytor i pusta gra Vulkan kończą się kodem 0. Finalny
 source review tego etapu przeszedł. Dokument `c1927f7324` z poprawkami
 `22158a5585` i wznowioną przez właściciela `2a7768e58c` przeszedł świeży review,
-trzy buildy i start edytora/pustej gry Vulkan. Niecommitowane renderer/konwerter
+trzy buildy i start edytora/pustej gry Vulkan. Renderer i konwerter (checkpoint `b839a4a17a`)
 zapisują i odczytują już natywne energy_directional. Pierwsze klatki Vulkan
 ujawniły transpozycję transformacji konwertera i błędne flagi proceduralne;
 poprawki dają widoczną szarą płaszczyznę z natywną kamerą i materiałem.
@@ -46,10 +46,19 @@ sceny obciążeniowej (10004 rekordy) jest gotowa; pierwsza próba standalone
 pokazała samo niebo i nie stanowi poprawnego dowodu. Orientacje kamery/słońca
 poprawiono według źródłowych wartości Euler. Obraz rzeczywistego edytora pokazuje
 populację sceny; właściciel potwierdził nawigację oraz zapis i odtworzenie kamery
-po zamknięciu (build05, niecommitowane źródła nad `20d7f5cbbacd`). Decyzją
+po zamknięciu (display build05, następnie checkpoint `b839a4a17a`). Decyzją
 właściciela 2026-09-10 domknięcie renderera następuje po podstawowej używalności
 edytora: lista encji, edytowalny Inspector i zaznaczanie kliknięciem w viewporcie.
 Limit alokacji microgeometry pozostaje osobnym, odłożonym problemem.
+Commit `72506855cd` wprowadza stronicowaną listę, edycję natywnych pól i picking;
+właściciel potwierdził zaznaczanie bez crasha. Poprawka `e4df780cf5` grupuje pola
+według komponentów, naprawia zatwierdzanie tekstu, domyślne elementy tablic,
+granice promienia pickingu i sprzątanie dialogu importu. Usability build05
+przeszedł; ograniczony przebieg rzeczywistego edytora kończy się kodem 0 bez
+zmiany kamery/sceny. Właściciel akceptuje pogrupowany Inspector jako v1.
+Końcowy review (runda 2) odrzuca pozostającą lukę: wpisana liczba i Ctrl+S bez
+zatwierdzenia pola zapisują poprzednią wartość. Poprawka i pełna weryfikacja
+edycji/undo/zapisu pozostają otwarte; akceptacja v1 nie zamyka całego kroku 6.
 Operacje prefab/UI oraz cała integracja renderera pozostają nieukończone. Zobacz
 [status i granice dowodów](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
 Reakcja na zmianę energii światła, pozostałe przypadki renderowania i wydajność gęstego świata

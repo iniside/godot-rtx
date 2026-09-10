@@ -16,7 +16,7 @@ correction `7e4513db52` builds on all three axes; normal Vulkan editor and empty
 native game exit 0. Final lifecycle source review passes. Native document
 `c1927f7324` plus corrections `22158a5585` and owner-renewed `2a7768e58c`
 passes fresh exact/cumulative source review, ordinary/double/template builds
-and Vulkan editor/empty-game startup. The uncommitted renderer/converter now
+and Vulkan editor/empty-game startup. Renderer and converter, checkpointed at `b839a4a17a`,
 save and reload the finite native energy_directional scene. First Vulkan
 captures exposed transposed converter transforms and incorrect procedural
 flags; fixes produce a visible gray plane with its native camera/material.
@@ -38,11 +38,20 @@ fixing obsolete WorldEnvironment mutation. Native stress data conversion is
 complete (10004 records); its earlier standalone sky-only image failed and
 Camera/Sun conversion was corrected from source Euler properties. Corrected
 editor capture shows the populated stress grid. Ordinary editor navigation and
-camera save/close/reopen are now owner-confirmed with native editor build05
-(uncommitted source over `20d7f5cbbacd`). On 2026-09-10 the owner moves renderer
+camera save/close/reopen are owner-confirmed with native display build05,
+subsequently checkpointed at `b839a4a17a`. On 2026-09-10 the owner moves renderer
 completion after the next editor usability slice: entity list, editable native
 Inspector and viewport click selection. Full authoring remains pending. The
-microgeometry admission limit is deferred as a separate problem.
+microgeometry admission limit is deferred as a separate problem. Usability
+commit `72506855cd` adds a paged list, native field editing and viewport mesh
+selection; the owner confirms selection without a crash. Correction
+`e4df780cf5` groups fields by component and fixes text commits, array defaults,
+pick clipping and import-dialog teardown. Ordinary usability build05 passes;
+bounded real-editor startup/finalization exits 0 with camera/scene unchanged.
+The owner accepts the grouped Inspector as v1. Final source review round 2
+rejects one remaining numeric-edit save bug: Ctrl+S before SpinBox applies typed
+text saves the previous value. This fix and full edit/undo/save proof remain
+open; v1 UI acceptance does not close the full Step 6 or its source review.
 Prefab/UI workflows and full renderer integration remain incomplete. See
 [execution evidence and limits](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
 Scripting, Node plugins, 2D and HTML/CSS
