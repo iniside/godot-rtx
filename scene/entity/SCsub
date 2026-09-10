@@ -1,0 +1,23 @@
+#!/usr/bin/env python
+from misc.utility.scons_hints import *
+
+from misc.scripts import entity_component_codegen
+
+Import("env")
+
+env_entity = env.Clone()
+configuration = entity_component_codegen.configure(env_entity)
+generated = env_entity.Command(
+    ["entity_component_schema.gen.h", "entity_component_schema.gen.cpp", "entity_component_scan.gen.cpp"],
+    ["entity_components.h", "#misc/scripts/entity_component_codegen.py", env_entity.Value(configuration)],
+    env_entity.Action(entity_component_codegen.generate, "Generating native entity component schemas ..."),
+    source_scanner=CScanner,
+)
+env_entity.add_source_files(env.scene_sources, ["entity_id.cpp", "entity_world.cpp", "entity_component_schema.cpp"])
+env_entity.add_source_files(env.scene_sources, [generated[1]])
+
+env_flecs = env.Clone()
+env_flecs.disable_warnings()
+env_flecs.Append(CPPDEFINES=["FLECS_CONFIG_HEADER"])
+env_flecs.Prepend(CPPPATH=["#scene/entity"])
+env_flecs.add_source_files(env.scene_sources, "#thirdparty/flecs/flecs.c")

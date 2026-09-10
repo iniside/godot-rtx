@@ -1,0 +1,11 @@
+#pragma once
+
+#define FLECS_CUSTOM_BUILD
+#define FLECS_CPP
+#define FLECS_MODULE
+#define FLECS_SYSTEM
+#define FLECS_PIPELINE
+#define FLECS_META
+#define FLECS_PARSER
+#define FLECS_OS_API_IMPL
+#define FLECS_CPP_NO_ENUM_REFLECTION

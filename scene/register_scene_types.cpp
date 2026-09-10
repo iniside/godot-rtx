@@ -36,6 +36,9 @@
 #include "core/io/resource_saver.h"
 #include "core/object/class_db.h"
 #include "core/os/os.h"
+#ifndef _3D_DISABLED
+#include "scene/entity/entity_component_schema.h"
+#endif
 #include "scene/animation/animation_blend_space_1d.h"
 #include "scene/animation/animation_blend_space_2d.h"
 #include "scene/animation/animation_blend_tree.h"
@@ -394,6 +397,10 @@ static Ref<ResourceFormatLoaderShaderInclude> resource_loader_shader_include;
 
 void register_scene_types() {
 	OS::get_singleton()->benchmark_begin_measure("Scene", "Register Types");
+
+#ifndef _3D_DISABLED
+	initialize_entity_types();
+#endif
 
 	SceneStringNames::create();
 
