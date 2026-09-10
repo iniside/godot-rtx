@@ -652,13 +652,16 @@ void WorkerThreadPool::notify_yield_over(TaskID p_task_id) {
 	td.cond_var.notify_one();
 }
 
-WorkerThreadPool::GroupID WorkerThreadPool::_add_group_task(const Callable &p_callable, void (*p_func)(void *, uint32_t), void *p_userdata, BaseTemplateUserdata *p_template_userdata, int p_elements, int p_tasks, bool p_high_priority, const String &p_description) {
+WorkerThreadPool::GroupID WorkerThreadPool::_add_group_task(const Callable &p_callable, void (*p_func)(void *, uint32_t), void *p_userdata, BaseTemplateUserdata *p_template_userdata, int p_elements, int p_tasks, bool p_high_priority, const String &p_description, bool p_require_normal_runlevel) {
 	ERR_FAIL_COND_V(p_elements < 0, INVALID_TASK_ID);
 	if (p_tasks < 0) {
 		p_tasks = MAX(1u, threads.size());
 	}
 
 	MutexLock<BinaryMutex> lock(task_mutex);
+	if (p_require_normal_runlevel && runlevel != RUNLEVEL_NORMAL) {
+		return INVALID_TASK_ID;
+	}
 
 	Group *group = group_allocator.alloc();
 	GroupID id = last_task++;
@@ -701,6 +704,10 @@ WorkerThreadPool::GroupID WorkerThreadPool::_add_group_task(const Callable &p_ca
 
 WorkerThreadPool::GroupID WorkerThreadPool::add_native_group_task(void (*p_func)(void *, uint32_t), void *p_userdata, int p_elements, int p_tasks, bool p_high_priority, const String &p_description) {
 	return _add_group_task(Callable(), p_func, p_userdata, nullptr, p_elements, p_tasks, p_high_priority, p_description);
+}
+
+WorkerThreadPool::GroupID WorkerThreadPool::try_add_native_group_task(void (*p_func)(void *, uint32_t), void *p_userdata, int p_elements, int p_tasks, bool p_high_priority, const String &p_description) {
+	return _add_group_task(Callable(), p_func, p_userdata, nullptr, p_elements, p_tasks, p_high_priority, p_description, true);
 }
 
 WorkerThreadPool::GroupID WorkerThreadPool::add_group_task(const Callable &p_action, int p_elements, int p_tasks, bool p_high_priority, const String &p_description) {

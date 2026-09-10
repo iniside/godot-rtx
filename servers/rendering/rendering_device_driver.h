@@ -439,6 +439,7 @@ public:
 	virtual CommandQueueID command_queue_create(CommandQueueFamilyID p_cmd_queue_family, bool p_identify_as_main_queue = false) = 0;
 	virtual Error command_queue_execute_and_present(CommandQueueID p_cmd_queue, VectorView<SemaphoreID> p_wait_semaphores, VectorView<CommandBufferID> p_cmd_buffers, VectorView<SemaphoreID> p_cmd_semaphores, FenceID p_cmd_fence, VectorView<SwapChainID> p_swap_chains) = 0;
 	virtual void command_queue_free(CommandQueueID p_cmd_queue) = 0;
+	virtual bool supports_parallel_recording() const { return false; }
 
 	// ----- POOL -----
 
@@ -679,6 +680,7 @@ public:
 		RenderPassClearValue value;
 	};
 
+	virtual void command_prepare_framebuffer(CommandBufferID p_cmd_buffer, FramebufferID p_framebuffer) {}
 	virtual void command_begin_render_pass(CommandBufferID p_cmd_buffer, RenderPassID p_render_pass, FramebufferID p_framebuffer, CommandBufferType p_cmd_buffer_type, const Rect2i &p_rect, VectorView<RenderPassClearValue> p_clear_values) = 0;
 	virtual void command_end_render_pass(CommandBufferID p_cmd_buffer) = 0;
 	virtual void command_next_render_subpass(CommandBufferID p_cmd_buffer, CommandBufferType p_cmd_buffer_type) = 0;

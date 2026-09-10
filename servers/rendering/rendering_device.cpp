@@ -157,12 +157,6 @@ static RD::HitShaderBindingTableRange _encode_hit_sbt_range(uint32_t p_offset, u
 
 #define RENDER_GRAPH_FULL_BARRIERS 0
 
-// The command graph can automatically issue secondary command buffers and record them on background threads when they reach an arbitrary
-// size threshold. This can be very beneficial towards reducing the time the main thread takes to record all the rendering commands. However,
-// this setting is not enabled by default as it's been shown to cause some strange issues with certain IHVs that have yet to be understood.
-
-#define SECONDARY_COMMAND_BUFFERS_PER_FRAME 0
-
 RenderingDevice *RenderingDevice::singleton = nullptr;
 
 RenderingDevice *RenderingDevice::get_singleton() {
@@ -6262,7 +6256,7 @@ void RenderingDevice::draw_list_bind_render_pipeline(DrawListID p_list, RID p_re
 
 	draw_list.state.pipeline = p_render_pipeline;
 
-	draw_graph.add_draw_list_bind_pipeline(pipeline->driver_id, pipeline->stage_bits);
+	draw_graph.add_draw_list_bind_pipeline(pipeline->driver_id, pipeline->stage_bits, pipeline->shader_driver_id, pipeline->set_formats, pipeline->push_constant_size);
 
 	if (draw_list.state.pipeline_shader != pipeline->shader) {
 		// Shader changed, so descriptor sets may become incompatible.
@@ -7011,7 +7005,7 @@ void RenderingDevice::raytracing_list_bind_raytracing_pipeline(RaytracingListID 
 	raytracing_list.state.raygen_shader_count = pipeline->raygen_shader_count;
 	raytracing_list.state.miss_shader_count = pipeline->miss_shader_count;
 
-	draw_graph.add_raytracing_list_bind_pipeline(pipeline->driver_id);
+	draw_graph.add_raytracing_list_bind_pipeline(pipeline->driver_id, pipeline->layout_defining_shader_driver_id, pipeline->set_formats, pipeline->push_constant_size);
 
 	if (raytracing_list.state.layout_defining_shader != pipeline->layout_defining_shader) {
 		// Shader changed, so descriptor sets may become incompatible.
@@ -7306,7 +7300,7 @@ void RenderingDevice::compute_list_bind_compute_pipeline(ComputeListID p_list, R
 
 	compute_list.state.pipeline = p_compute_pipeline;
 
-	draw_graph.add_compute_list_bind_pipeline(pipeline->driver_id);
+	draw_graph.add_compute_list_bind_pipeline(pipeline->driver_id, pipeline->shader_driver_id, pipeline->set_formats, pipeline->push_constant_size);
 
 	if (compute_list.state.pipeline_shader != pipeline->shader) {
 		// Shader changed, so descriptor sets may become incompatible.
@@ -8696,6 +8690,7 @@ void RenderingDevice::_begin_frame(bool p_presented) {
 	GodotProfileZoneGroupedFirst(_profile_zone, "_stall_for_frame");
 	// Before writing to this frame, wait for it to be finished.
 	_stall_for_frame(frame);
+	draw_graph.recycle_frame(frame);
 
 	if (command_pool_reset_enabled) {
 		GodotProfileZoneGrouped(_profile_zone, "driver->command_pool_reset");
@@ -8771,7 +8766,7 @@ void RenderingDevice::_end_frame() {
 	_submit_transfer_barriers(command_buffer);
 
 	GodotProfileZoneGrouped(_profile_zone, "draw_graph.end");
-	draw_graph.end(RENDER_GRAPH_REORDER == 1, RENDER_GRAPH_FULL_BARRIERS == 1, command_buffer, frames[frame].command_buffer_pool);
+	draw_graph.end(RENDER_GRAPH_REORDER == 1, RENDER_GRAPH_FULL_BARRIERS == 1, command_buffer, frames[frame].command_buffer_pool, cpu_profile_enabled, frames_drawn);
 	GodotProfileZoneGrouped(_profile_zone, "driver->command_buffer_end");
 	driver->command_buffer_end(command_buffer);
 	GodotProfileZoneGrouped(_profile_zone, "driver->end_segment");
@@ -8783,31 +8778,39 @@ void RenderingDevice::_end_frame() {
 
 void RenderingDevice::execute_chained_cmds(bool p_present_swap_chain, RenderingDeviceDriver::FenceID p_draw_fence,
 		RenderingDeviceDriver::SemaphoreID p_dst_draw_semaphore_to_signal) {
-	// Execute command buffers and use semaphores to wait on the execution of the previous one.
-	// Normally there's only one command buffer, but driver workarounds can force situations where
-	// there'll be more.
-	uint32_t command_buffer_count = 1;
 	RDG::CommandBufferPool &buffer_pool = frames[frame].command_buffer_pool;
-	if (buffer_pool.buffers_used > 0) {
-		command_buffer_count += buffer_pool.buffers_used;
-		buffer_pool.buffers_used = 0;
-	}
+	uint32_t command_buffer_count = 1 + buffer_pool.execution_buffers.size();
+	buffer_pool.buffers_used = 0;
 
 	thread_local LocalVector<RDD::SwapChainID> swap_chains;
 	swap_chains.clear();
 
-	// Instead of having just one command; we have potentially many (which had to be split due to an
-	// Adreno workaround on mobile, only if the workaround is active). Thus we must execute all of them
-	// and chain them together via semaphores as dependent executions.
 	thread_local LocalVector<RDD::SemaphoreID> wait_semaphores;
 	wait_semaphores = frames[frame].semaphores_to_wait_on;
+	if (buffer_pool.batch_execution) {
+		thread_local LocalVector<RDD::CommandBufferID> command_buffers;
+		command_buffers.clear();
+		command_buffers.push_back(frames[frame].command_buffer);
+		for (RDD::CommandBufferID command_buffer : buffer_pool.execution_buffers) {
+			command_buffers.push_back(command_buffer);
+		}
+		if (p_present_swap_chain) {
+			swap_chains = frames[frame].swap_chains_to_present;
+		}
+		driver->command_queue_execute_and_present(main_queue, wait_semaphores, command_buffers,
+				p_dst_draw_semaphore_to_signal ? p_dst_draw_semaphore_to_signal : VectorView<RDD::SemaphoreID>(), p_draw_fence, swap_chains);
+		buffer_pool.execution_buffers.clear();
+		buffer_pool.batch_execution = false;
+		frames[frame].semaphores_to_wait_on.clear();
+		return;
+	}
 
 	for (uint32_t i = 0; i < command_buffer_count; i++) {
 		RDD::CommandBufferID command_buffer;
 		RDD::SemaphoreID signal_semaphore;
 		RDD::FenceID signal_fence;
 		if (i > 0) {
-			command_buffer = buffer_pool.buffers[i - 1];
+			command_buffer = buffer_pool.execution_buffers[i - 1];
 		} else {
 			command_buffer = frames[frame].command_buffer;
 		}
@@ -8835,6 +8838,7 @@ void RenderingDevice::execute_chained_cmds(bool p_present_swap_chain, RenderingD
 		wait_semaphores[0] = signal_semaphore;
 	}
 
+	buffer_pool.execution_buffers.clear();
 	frames[frame].semaphores_to_wait_on.clear();
 }
 
@@ -9212,7 +9216,7 @@ Error RenderingDevice::initialize(RenderingContextDriver *p_context, DisplayServ
 	driver->command_buffer_begin(frames[0].command_buffer);
 
 	// Create draw graph and start it initialized as well.
-	draw_graph.initialize(driver, &_render_pass_create_from_graph, frames.size(), main_queue_family, SECONDARY_COMMAND_BUFFERS_PER_FRAME);
+	draw_graph.initialize(driver, &_render_pass_create_from_graph, frames.size(), main_queue_family, is_main_instance);
 	draw_graph.begin();
 
 	for (uint32_t i = 0; i < frames.size(); i++) {

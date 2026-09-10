@@ -186,6 +186,8 @@ public:
 
 	struct ResourceTracker {
 		uint32_t reference_count = 0;
+		uint32_t command_references = 0;
+		bool free_pending = false;
 		uint64_t content_generation = 0;
 		int64_t command_frame = -1;
 		BitField<RDD::PipelineStageBits> previous_frame_stages = {};
@@ -256,7 +258,9 @@ public:
 		// Created internally by RenderingDeviceGraph.
 		LocalVector<RDD::CommandBufferID> buffers;
 		LocalVector<RDD::SemaphoreID> semaphores;
+		LocalVector<RDD::CommandBufferID> execution_buffers;
 		uint32_t buffers_used = 0;
+		bool batch_execution = false;
 	};
 
 	struct WorkaroundsState {
@@ -273,6 +277,71 @@ public:
 	};
 
 private:
+	struct PreparedShaderState {
+		RDD::PipelineID pipeline;
+		RDD::RaytracingPipelineID raytracing_pipeline;
+		RDD::ShaderID shader;
+		Vector<RDD::UniformSetID> uniform_sets;
+		Vector<uint32_t> uniform_dynamic_offsets;
+		Vector<uint8_t> push_constant;
+		uint64_t uniform_set_mask = 0;
+		uint32_t push_constant_size = 0;
+		bool prepare_uniform_sets = false;
+	};
+
+	struct PreparedDrawState : PreparedShaderState {
+		RDD::BufferID index_buffer;
+		RDD::IndexBufferFormat index_format = RDD::INDEX_BUFFER_FORMAT_UINT16;
+		uint32_t index_offset = 0;
+		Vector<RDD::BufferID> vertex_buffers;
+		Vector<uint64_t> vertex_offsets;
+		uint64_t vertex_dynamic_offsets = 0;
+		Rect2i viewport;
+		Rect2i scissor;
+		Color blend_constants;
+		float line_width = 1.0f;
+		bool viewport_set = false;
+		bool scissor_set = false;
+		bool blend_constants_set = false;
+		bool line_width_set = false;
+	};
+
+	struct PreparedDraw {
+		DrawListInstruction::Type type = DrawListInstruction::TYPE_NONE;
+		PreparedDrawState state;
+		uint32_t count = 0;
+		uint32_t instance_count = 0;
+		uint32_t first_index = 0;
+		RDD::BufferID indirect_buffer;
+		uint32_t indirect_offset = 0;
+		uint32_t indirect_stride = 0;
+		RDD::BufferID count_buffer;
+		uint32_t count_offset = 0;
+		Vector<RDD::AttachmentClear> clear_attachments;
+		Vector<Rect2i> clear_rects;
+		RDD::CommandBufferID command_buffer;
+		RDD::CommandBufferType command_buffer_type = RDD::COMMAND_BUFFER_TYPE_PRIMARY;
+	};
+
+	struct PreparedCompute {
+		PreparedShaderState state;
+		uint32_t x = 0;
+		uint32_t y = 0;
+		uint32_t z = 0;
+		RDD::BufferID indirect_buffer;
+		uint32_t indirect_offset = 0;
+	};
+
+	struct PreparedRaytracing {
+		PreparedShaderState state;
+		RDD::ShaderBindingTable raygen;
+		RDD::ShaderBindingTable miss;
+		RDD::ShaderBindingTable hit;
+		uint32_t width = 0;
+		uint32_t height = 0;
+		uint32_t depth = 0;
+	};
+
 	struct InstructionList {
 		LocalVector<uint8_t> data;
 		LocalVector<ResourceTracker *> command_trackers;
@@ -289,16 +358,36 @@ private:
 	};
 
 	struct ComputeInstructionList : InstructionList {
+		PreparedShaderState prepared_state;
+		LocalVector<PreparedCompute> prepared_dispatches;
+		void clear() {
+			InstructionList::clear();
+			prepared_state = PreparedShaderState();
+			prepared_dispatches.clear();
+		}
 #if defined(DEBUG_ENABLED) || defined(DEV_ENABLED)
 		uint32_t breadcrumb;
 #endif
 	};
 
 	struct RaytracingInstructionList : InstructionList {
-		// No extra contents.
+		PreparedShaderState prepared_state;
+		LocalVector<PreparedRaytracing> prepared_dispatches;
+		void clear() {
+			InstructionList::clear();
+			prepared_state = PreparedShaderState();
+			prepared_dispatches.clear();
+		}
 	};
 
 	struct DrawInstructionList : InstructionList {
+		PreparedDrawState prepared_state;
+		LocalVector<PreparedDraw> prepared_draws;
+		void clear() {
+			InstructionList::clear();
+			prepared_state = PreparedDrawState();
+			prepared_draws.clear();
+		}
 		FramebufferCache *framebuffer_cache = nullptr;
 		RDD::RenderPassID render_pass;
 		RDD::FramebufferID framebuffer;
@@ -417,34 +506,30 @@ private:
 
 	struct RecordedRaytracingListCommand : RecordedCommand {
 		uint32_t instruction_data_size = 0;
-
-		_FORCE_INLINE_ uint8_t *instruction_data() {
-			return reinterpret_cast<uint8_t *>(&this[1]);
-		}
+		const uint8_t *recorded_instructions = nullptr;
 
 		_FORCE_INLINE_ const uint8_t *instruction_data() const {
-			return reinterpret_cast<const uint8_t *>(&this[1]);
+			return recorded_instructions;
 		}
 	};
 
 	struct RecordedComputeListCommand : RecordedCommand {
 		uint32_t instruction_data_size = 0;
+		const uint8_t *recorded_instructions = nullptr;
 		uint32_t breadcrumb = 0;
 
-		_FORCE_INLINE_ uint8_t *instruction_data() {
-			return reinterpret_cast<uint8_t *>(&this[1]);
-		}
-
 		_FORCE_INLINE_ const uint8_t *instruction_data() const {
-			return reinterpret_cast<const uint8_t *>(&this[1]);
+			return recorded_instructions;
 		}
 	};
 
 	struct RecordedDrawListCommand : RecordedCommand {
+		uint32_t default_load_mask = 0;
 		FramebufferCache *framebuffer_cache = nullptr;
 		RDD::FramebufferID framebuffer;
 		RDD::RenderPassID render_pass;
 		uint32_t instruction_data_size = 0;
+		const uint8_t *recorded_instructions = nullptr;
 		RDD::CommandBufferType command_buffer_type;
 		Rect2i region;
 		uint32_t clear_values_count = 0;
@@ -487,12 +572,8 @@ private:
 			return reinterpret_cast<const RDD::AttachmentStoreOp *>(&load_ops()[trackers_count]);
 		}
 
-		_FORCE_INLINE_ uint8_t *instruction_data() {
-			return reinterpret_cast<uint8_t *>(&store_ops()[trackers_count]);
-		}
-
 		_FORCE_INLINE_ const uint8_t *instruction_data() const {
-			return reinterpret_cast<const uint8_t *>(&store_ops()[trackers_count]);
+			return recorded_instructions;
 		}
 	};
 
@@ -824,18 +905,63 @@ private:
 		}
 	};
 
-	struct SecondaryCommandBuffer {
-		LocalVector<uint8_t> instruction_data;
+	struct RecordingBuffer {
 		RDD::CommandBufferID command_buffer;
 		RDD::CommandPoolID command_pool;
-		RDD::RenderPassID render_pass;
-		RDD::FramebufferID framebuffer;
-		WorkerThreadPool::TaskID task;
 	};
 
 	struct Frame {
-		TightLocalVector<SecondaryCommandBuffer> secondary_command_buffers;
-		uint32_t secondary_command_buffers_used = 0;
+		TightLocalVector<RecordingBuffer> recording_buffers;
+		uint32_t recording_buffers_used = 0;
+	};
+
+	struct CompiledGroup {
+		uint32_t offset = 0;
+		uint32_t count = 0;
+		uint32_t level = 0;
+		BarrierGroup barriers;
+		bool worker = true;
+		bool split_before = false;
+	};
+
+	struct RecordingRange {
+		uint32_t first_group = 0;
+		uint32_t group_count = 0;
+		RDD::CommandBufferID command_buffer;
+		bool worker = false;
+		bool recorded = false;
+		uint64_t thread = 0;
+		uint64_t begin_usec = 0;
+		uint64_t end_usec = 0;
+		uint64_t queued_usec = 0;
+		uint64_t wait_usec = 0;
+		uint64_t joined_usec = 0;
+	};
+
+	struct CompileTask {
+		RenderingDeviceGraph *graph = nullptr;
+		bool reorder_commands = false;
+		bool full_barriers = false;
+		uint64_t thread = 0;
+		uint64_t begin_usec = 0;
+		uint64_t end_usec = 0;
+	};
+
+	struct FrontendList {
+		RecordedCommand::Type type = RecordedCommand::TYPE_NONE;
+		uint32_t index = 0;
+		uint32_t command_index = 0;
+		uint64_t thread = 0;
+		uint64_t begin_usec = 0;
+		uint64_t end_usec = 0;
+		uint32_t work = 0;
+		uint32_t bytes = 0;
+	};
+
+	struct PendingCommand {
+		LocalVector<ResourceTracker *> trackers;
+		LocalVector<ResourceUsage> usages;
+		bool synchronization = false;
 	};
 
 	RDD *driver = nullptr;
@@ -853,8 +979,14 @@ private:
 	LocalVector<uint32_t> command_label_offsets;
 	int32_t command_label_index = -1;
 	DrawInstructionList draw_instruction_list;
+	LocalVector<DrawInstructionList> draw_instruction_lists;
+	int32_t draw_list_sequence = 0;
 	ComputeInstructionList compute_instruction_list;
+	LocalVector<ComputeInstructionList> compute_instruction_lists;
+	int32_t compute_list_sequence = 0;
 	RaytracingInstructionList raytracing_instruction_list;
+	LocalVector<RaytracingInstructionList> raytracing_instruction_lists;
+	int32_t raytracing_list_sequence = 0;
 	uint32_t command_count = 0;
 	uint32_t command_label_count = 0;
 	LocalVector<RecordedCommandListNode> command_list_nodes;
@@ -863,7 +995,16 @@ private:
 	int32_t command_timestamp_index = -1;
 	int32_t command_synchronization_index = -1;
 	bool command_synchronization_pending = false;
-	BarrierGroup barrier_group;
+	LocalVector<RecordedCommandSort> compiled_commands;
+	LocalVector<PendingCommand> pending_commands;
+	LocalVector<ResourceTracker *> retained_resource_trackers;
+	LocalVector<FrontendList> frontend_lists;
+	LocalVector<CompiledGroup> compiled_groups;
+	LocalVector<RecordingRange> recording_ranges;
+	uint32_t recording_range_start = 0;
+	RDD::CommandQueueFamilyID recording_queue_family;
+	bool worker_recording_enabled = false;
+	bool profile_recording = false;
 	bool driver_honors_barriers : 1;
 	bool driver_clears_with_copy_engine : 1;
 	bool driver_buffers_require_transitions : 1;
@@ -886,27 +1027,69 @@ private:
 	int32_t _add_to_slice_read_list(int32_t p_command_index, Rect2i p_subresources, int32_t p_list_index);
 	int32_t _add_to_write_list(int32_t p_command_index, Rect2i p_subresources, int32_t p_list_index, bool p_partial_coverage);
 	RecordedCommand *_allocate_command(uint32_t p_command_size, int32_t &r_command_index);
-	DrawListInstruction *_allocate_draw_list_instruction(uint32_t p_instruction_size);
-	ComputeListInstruction *_allocate_compute_list_instruction(uint32_t p_instruction_size);
+	DrawListInstruction *_allocate_draw_list_instruction(DrawInstructionList &r_list, uint32_t p_instruction_size);
+	ComputeListInstruction *_allocate_compute_list_instruction(ComputeInstructionList &r_list, uint32_t p_instruction_size);
 	void _check_discardable_attachment_dependency(ResourceTracker *p_resource_tracker, int32_t p_previous_command_index, int32_t p_command_index);
-	RaytracingListInstruction *_allocate_raytracing_list_instruction(uint32_t p_instruction_size);
+	RaytracingListInstruction *_allocate_raytracing_list_instruction(RaytracingInstructionList &r_list, uint32_t p_instruction_size);
 	void _add_command_to_graph(ResourceTracker **p_resource_trackers, ResourceUsage *p_resource_usages, uint32_t p_resource_count, int32_t p_command_index, RecordedCommand *r_command);
+	void _retain_resource_tracker(ResourceTracker *p_tracker);
+	void _release_resource_trackers();
+	void _compile_command(ResourceTracker **p_resource_trackers, ResourceUsage *p_resource_usages, uint32_t p_resource_count, int32_t p_command_index, RecordedCommand *r_command);
 	void _add_texture_barrier_to_command(RDD::TextureID p_texture_id, BitField<RDD::BarrierAccessBits> p_src_access, BitField<RDD::BarrierAccessBits> p_dst_access, ResourceUsage p_prev_usage, ResourceUsage p_next_usage, RDD::TextureSubresourceRange p_subresources, LocalVector<RDD::TextureBarrier> &r_barrier_vector, int32_t &r_barrier_index, int32_t &r_barrier_count);
 #if USE_BUFFER_BARRIERS
 	void _add_buffer_barrier_to_command(RDD::BufferID p_buffer_id, BitField<RDD::BarrierAccessBits> p_src_access, BitField<RDD::BarrierAccessBits> p_dst_access, int32_t &r_barrier_index, int32_t &r_barrier_count);
 #endif
 	void _add_acceleration_structure_barrier_to_command(RDD::AccelerationStructureID p_acceleration_structure_id, BitField<RDD::BarrierAccessBits> p_src_access, BitField<RDD::BarrierAccessBits> p_dst_access, LocalVector<RDD::AccelerationStructureBarrier> &r_barrier_vector, int32_t &r_barrier_index, int32_t &r_barrier_count);
+	void _encode_compute_list_bind_pipeline(ComputeInstructionList &r_list, RDD::PipelineID p_pipeline);
+	void _encode_compute_list_bind_uniform_sets(ComputeInstructionList &r_list, RDD::ShaderID p_shader, VectorView<RDD::UniformSetID> p_uniform_set, uint32_t p_first_set_index, uint32_t p_set_count, uint32_t p_dynamic_offsets);
+	void _encode_compute_list_dispatch(ComputeInstructionList &r_list, uint32_t p_x_groups, uint32_t p_y_groups, uint32_t p_z_groups);
+	void _encode_compute_list_dispatch_indirect(ComputeInstructionList &r_list, RDD::BufferID p_buffer, uint32_t p_offset);
+	void _encode_compute_list_set_push_constant(ComputeInstructionList &r_list, RDD::ShaderID p_shader, const void *p_data, uint32_t p_data_size);
+	void _encode_compute_list_uniform_set_prepare_for_use(ComputeInstructionList &r_list, RDD::ShaderID p_shader, RDD::UniformSetID p_uniform_set, uint32_t set_index);
 	void _run_compute_list_command(RDD::CommandBufferID p_command_buffer, const uint8_t *p_instruction_data, uint32_t p_instruction_data_size);
 	void _get_draw_list_render_pass_and_framebuffer(const RecordedDrawListCommand *p_draw_list_command, RDD::RenderPassID &r_render_pass, RDD::FramebufferID &r_framebuffer);
+	void _encode_raytracing_list_bind_pipeline(RaytracingInstructionList &r_list, RDD::RaytracingPipelineID p_pipeline);
+	void _encode_raytracing_list_bind_uniform_set(RaytracingInstructionList &r_list, RDD::ShaderID p_shader, RDD::UniformSetID p_uniform_set, uint32_t set_index);
+	void _encode_raytracing_list_set_push_constant(RaytracingInstructionList &r_list, RDD::ShaderID p_shader, const void *p_data, uint32_t p_data_size);
+	void _encode_raytracing_list_trace_rays(RaytracingInstructionList &r_list, const RDD::ShaderBindingTable &p_raygen_sbt, const RDD::ShaderBindingTable &p_miss_sbt, const RDD::ShaderBindingTable &p_hit_sbt, uint32_t p_width, uint32_t p_height, uint32_t p_depth);
+	void _encode_raytracing_list_uniform_set_prepare_for_use(RaytracingInstructionList &r_list, RDD::ShaderID p_shader, RDD::UniformSetID p_uniform_set, uint32_t set_index);
 	void _run_raytracing_list_command(RDD::CommandBufferID p_command_buffer, const uint8_t *p_instruction_data, uint32_t p_instruction_data_size);
+	void _encode_draw_list_bind_index_buffer(DrawInstructionList &r_list, RDD::BufferID p_buffer, RDD::IndexBufferFormat p_format, uint32_t p_offset);
+	void _encode_draw_list_bind_pipeline(DrawInstructionList &r_list, RDD::PipelineID p_pipeline, BitField<RDD::PipelineStageBits> p_pipeline_stage_bits);
+	void _encode_draw_list_bind_uniform_sets(DrawInstructionList &r_list, RDD::ShaderID p_shader, VectorView<RDD::UniformSetID> p_uniform_set, uint32_t p_first_index, uint32_t p_set_count, uint32_t p_dynamic_offsets);
+	void _encode_draw_list_bind_vertex_buffers(DrawInstructionList &r_list, Span<RDD::BufferID> p_vertex_buffers, Span<uint64_t> p_vertex_buffer_offsets, uint64_t p_dynamic_offsets);
+	void _encode_draw_list_clear_attachments(DrawInstructionList &r_list, VectorView<RDD::AttachmentClear> p_attachments_clear, VectorView<Rect2i> p_attachments_clear_rect);
+	void _encode_draw_list_draw(DrawInstructionList &r_list, uint32_t p_vertex_count, uint32_t p_instance_count);
+	void _encode_draw_list_draw_indexed(DrawInstructionList &r_list, uint32_t p_index_count, uint32_t p_instance_count, uint32_t p_first_index);
+	void _encode_draw_list_draw_indirect(DrawInstructionList &r_list, RDD::BufferID p_buffer, uint32_t p_offset, uint32_t p_draw_count, uint32_t p_stride, RDD::BufferID p_count_buffer = RDD::BufferID(), uint32_t p_count_offset = 0);
+	void _encode_draw_list_draw_indexed_indirect(DrawInstructionList &r_list, RDD::BufferID p_buffer, uint32_t p_offset, uint32_t p_draw_count, uint32_t p_stride, RDD::BufferID p_count_buffer = RDD::BufferID(), uint32_t p_count_offset = 0);
+	void _encode_draw_list_execute_commands(DrawInstructionList &r_list, RDD::CommandBufferID p_command_buffer);
+	void _encode_draw_list_next_subpass(DrawInstructionList &r_list, RDD::CommandBufferType p_command_buffer_type);
+	void _encode_draw_list_set_blend_constants(DrawInstructionList &r_list, const Color &p_color);
+	void _encode_draw_list_set_line_width(DrawInstructionList &r_list, float p_width);
+	void _encode_draw_list_set_push_constant(DrawInstructionList &r_list, RDD::ShaderID p_shader, const void *p_data, uint32_t p_data_size);
+	void _encode_draw_list_set_scissor(DrawInstructionList &r_list, Rect2i p_rect);
+	void _encode_draw_list_set_viewport(DrawInstructionList &r_list, Rect2i p_rect);
+	void _encode_draw_list_uniform_set_prepare_for_use(DrawInstructionList &r_list, RDD::ShaderID p_shader, RDD::UniformSetID p_uniform_set, uint32_t set_index);
 	void _run_draw_list_command(RDD::CommandBufferID p_command_buffer, const uint8_t *p_instruction_data, uint32_t p_instruction_data_size);
 	void _add_draw_list_begin(FramebufferCache *p_framebuffer_cache, RDD::RenderPassID p_render_pass, RDD::FramebufferID p_framebuffer, Rect2i p_region, VectorView<AttachmentOperation> p_attachment_operations, VectorView<RDD::RenderPassClearValue> p_attachment_clear_values, BitField<RDD::PipelineStageBits> p_stages, uint32_t p_breadcrumb, bool p_split_cmd_buffer);
-	void _run_secondary_command_buffer_task(const SecondaryCommandBuffer *p_secondary);
-	void _wait_for_secondary_command_buffer_tasks();
-	void _run_render_commands(int32_t p_level, const RecordedCommandSort *p_sorted_commands, uint32_t p_sorted_commands_count, RDD::CommandBufferID &r_command_buffer, CommandBufferPool &r_command_buffer_pool, int32_t &r_current_label_index, int32_t &r_current_label_level);
+	static void _frontend_task(void *p_userdata, uint32_t p_index);
+	void _prepare_frontend_list(uint32_t p_index);
+	void _prepare_draw_list(DrawInstructionList &p_list);
+	void _prepare_compute_list(ComputeInstructionList &p_list);
+	void _prepare_raytracing_list(RaytracingInstructionList &p_list);
+	static void _prepare_shader_state(PreparedShaderState &r_state, RDD::ShaderID p_shader, VectorView<uint32_t> p_set_formats, uint32_t p_push_constant_size);
+	static void _compile_task(void *p_userdata, uint32_t p_index);
+	void _compile_render_commands(bool p_reorder_commands, bool p_full_barriers);
+	void _compile_groups(uint32_t p_offset, uint32_t p_count, uint32_t p_level, bool p_full_barriers);
+	static void _record_task(void *p_userdata, uint32_t p_index);
+	void _record_range(uint32_t p_index);
+	void _advance_command_buffer(RDD::CommandBufferID &r_command_buffer, CommandBufferPool &r_command_buffer_pool);
+	void _run_render_commands(int32_t p_level, const RecordedCommandSort *p_sorted_commands, uint32_t p_sorted_commands_count, RDD::CommandBufferID &r_command_buffer, CommandBufferPool &r_command_buffer_pool, int32_t &r_current_label_index, int32_t &r_current_label_level, bool p_allow_split = true);
 	void _run_label_command_change(RDD::CommandBufferID p_command_buffer, int32_t p_new_label_index, int32_t p_new_level, bool p_ignore_previous_value, bool p_use_label_for_empty, const RecordedCommandSort *p_sorted_commands, uint32_t p_sorted_commands_count, int32_t &r_current_label_index, int32_t &r_current_label_level);
 	void _boost_priority_for_render_commands(RecordedCommandSort *p_sorted_commands, uint32_t p_sorted_commands_count, uint32_t &r_boosted_priority);
-	void _group_barriers_for_render_commands(RDD::CommandBufferID p_command_buffer, const RecordedCommandSort *p_sorted_commands, uint32_t p_sorted_commands_count, bool p_full_memory_barrier);
+	void _group_barriers_for_render_commands(BarrierGroup &r_barrier_group, const RecordedCommandSort *p_sorted_commands, uint32_t p_sorted_commands_count, bool p_full_memory_barrier);
+	void _record_barriers(RDD::CommandBufferID p_command_buffer, const BarrierGroup &p_barrier_group);
 	void _print_render_commands(const RecordedCommandSort *p_sorted_commands, uint32_t p_sorted_commands_count);
 	void _print_draw_list(const uint8_t *p_instruction_data, uint32_t p_instruction_data_size);
 	void _print_compute_list(const uint8_t *p_instruction_data, uint32_t p_instruction_data_size);
@@ -915,8 +1098,9 @@ private:
 public:
 	RenderingDeviceGraph();
 	~RenderingDeviceGraph();
-	void initialize(RDD *p_driver, RenderPassCreationFunction p_render_pass_creation_function, uint32_t p_frame_count, RDD::CommandQueueFamilyID p_secondary_command_queue_family, uint32_t p_secondary_command_buffers_per_frame);
+	void initialize(RDD *p_driver, RenderPassCreationFunction p_render_pass_creation_function, uint32_t p_frame_count, RDD::CommandQueueFamilyID p_secondary_command_queue_family, bool p_worker_recording_enabled);
 	void finalize();
+	void recycle_frame(uint32_t p_frame);
 	void begin();
 	void add_blas_build(RDD::AccelerationStructureID p_blas, RDD::BufferID p_scratch_buffer, ResourceTracker *p_dst_tracker, VectorView<ResourceTracker *> p_src_trackers);
 	void add_blas_update(RDD::AccelerationStructureID p_blas, RDD::BufferID p_scratch_buffer, ResourceTracker *p_dst_tracker, VectorView<ResourceTracker *> p_src_trackers);
@@ -929,7 +1113,7 @@ public:
 	void add_buffer_update(RDD::BufferID p_dst, ResourceTracker *p_dst_tracker, VectorView<RecordedBufferCopy> p_buffer_copies);
 	void add_driver_callback(RDD::DriverCallback p_callback, void *p_userdata, VectorView<ResourceTracker *> p_trackers, VectorView<ResourceUsage> p_usages);
 	void add_raytracing_list_begin();
-	void add_raytracing_list_bind_pipeline(RDD::RaytracingPipelineID p_pipeline);
+	void add_raytracing_list_bind_pipeline(RDD::RaytracingPipelineID p_pipeline, RDD::ShaderID p_shader, VectorView<uint32_t> p_set_formats, uint32_t p_push_constant_size);
 	void add_raytracing_list_bind_uniform_set(RDD::ShaderID p_shader, RDD::UniformSetID p_uniform_set, uint32_t set_index);
 	void add_raytracing_list_set_push_constant(RDD::ShaderID p_shader, const void *p_data, uint32_t p_data_size);
 	void add_raytracing_list_trace_rays(const RDD::ShaderBindingTable &p_raygen_sbt, const RDD::ShaderBindingTable &p_miss_sbt, const RDD::ShaderBindingTable &p_hit_sbt, uint32_t p_width, uint32_t p_height, uint32_t p_depth);
@@ -938,7 +1122,7 @@ public:
 	void add_raytracing_list_usages(VectorView<ResourceTracker *> p_trackers, VectorView<ResourceUsage> p_usages);
 	void add_raytracing_list_end();
 	void add_compute_list_begin(RDD::BreadcrumbMarker p_phase = RDD::BreadcrumbMarker::NONE, uint32_t p_breadcrumb_data = 0);
-	void add_compute_list_bind_pipeline(RDD::PipelineID p_pipeline);
+	void add_compute_list_bind_pipeline(RDD::PipelineID p_pipeline, RDD::ShaderID p_shader, VectorView<uint32_t> p_set_formats, uint32_t p_push_constant_size);
 	void add_compute_list_bind_uniform_set(RDD::ShaderID p_shader, RDD::UniformSetID p_uniform_set, uint32_t set_index);
 	void add_compute_list_bind_uniform_sets(RDD::ShaderID p_shader, VectorView<RDD::UniformSetID> p_uniform_set, uint32_t p_first_set_index, uint32_t p_set_count);
 	void add_compute_list_dispatch(uint32_t p_x_groups, uint32_t p_y_groups, uint32_t p_z_groups);
@@ -951,7 +1135,7 @@ public:
 	void add_draw_list_begin(FramebufferCache *p_framebuffer_cache, Rect2i p_region, VectorView<AttachmentOperation> p_attachment_operations, VectorView<RDD::RenderPassClearValue> p_attachment_clear_values, BitField<RDD::PipelineStageBits> p_stages, uint32_t p_breadcrumb = 0, bool p_split_cmd_buffer = false);
 	void add_draw_list_begin(RDD::RenderPassID p_render_pass, RDD::FramebufferID p_framebuffer, Rect2i p_region, VectorView<AttachmentOperation> p_attachment_operations, VectorView<RDD::RenderPassClearValue> p_attachment_clear_values, BitField<RDD::PipelineStageBits> p_stages, uint32_t p_breadcrumb = 0, bool p_split_cmd_buffer = false);
 	void add_draw_list_bind_index_buffer(RDD::BufferID p_buffer, RDD::IndexBufferFormat p_format, uint32_t p_offset);
-	void add_draw_list_bind_pipeline(RDD::PipelineID p_pipeline, BitField<RDD::PipelineStageBits> p_pipeline_stage_bits);
+	void add_draw_list_bind_pipeline(RDD::PipelineID p_pipeline, BitField<RDD::PipelineStageBits> p_pipeline_stage_bits, RDD::ShaderID p_shader, VectorView<uint32_t> p_set_formats, uint32_t p_push_constant_size);
 	void add_draw_list_bind_uniform_set(RDD::ShaderID p_shader, RDD::UniformSetID p_uniform_set, uint32_t set_index);
 	void add_draw_list_bind_uniform_sets(RDD::ShaderID p_shader, VectorView<RDD::UniformSetID> p_uniform_set, uint32_t p_first_index, uint32_t p_set_count);
 	void add_draw_list_bind_vertex_buffers(Span<RDD::BufferID> p_vertex_buffers, Span<uint64_t> p_vertex_buffer_offsets);
@@ -981,7 +1165,7 @@ public:
 	void add_synchronization();
 	void begin_label(const Span<char> &p_label_name, const Color &p_color);
 	void end_label();
-	void end(bool p_reorder_commands, bool p_full_barriers, RDD::CommandBufferID &r_command_buffer, CommandBufferPool &r_command_buffer_pool);
+	void end(bool p_reorder_commands, bool p_full_barriers, RDD::CommandBufferID &r_command_buffer, CommandBufferPool &r_command_buffer_pool, bool p_profile, uint64_t p_frame_number);
 	static ResourceTracker *resource_tracker_create();
 	static void resource_tracker_free(ResourceTracker *p_tracker);
 	static FramebufferCache *framebuffer_cache_create();

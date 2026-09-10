@@ -5804,9 +5804,8 @@ void RenderingDeviceDriverVulkan::render_pass_free(RenderPassID p_render_pass) {
 
 static_assert(ARRAYS_COMPATIBLE_FIELDWISE(RDD::RenderPassClearValue, VkClearValue));
 
-void RenderingDeviceDriverVulkan::command_begin_render_pass(CommandBufferID p_cmd_buffer, RenderPassID p_render_pass, FramebufferID p_framebuffer, CommandBufferType p_cmd_buffer_type, const Rect2i &p_rect, VectorView<RenderPassClearValue> p_clear_values) {
+void RenderingDeviceDriverVulkan::command_prepare_framebuffer(CommandBufferID p_cmd_buffer, FramebufferID p_framebuffer) {
 	CommandBufferInfo *command_buffer = (CommandBufferInfo *)(p_cmd_buffer.id);
-	RenderPassInfo *render_pass = (RenderPassInfo *)(p_render_pass.id);
 	Framebuffer *framebuffer = (Framebuffer *)(p_framebuffer.id);
 
 	if (framebuffer->swap_chain_acquired) {
@@ -5822,6 +5821,13 @@ void RenderingDeviceDriverVulkan::command_begin_render_pass(CommandBufferID p_cm
 		vkCmdPipelineBarrier(command_buffer->vk_command_buffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_barrier);
 		framebuffer->swap_chain_acquired = false;
 	}
+}
+
+void RenderingDeviceDriverVulkan::command_begin_render_pass(CommandBufferID p_cmd_buffer, RenderPassID p_render_pass, FramebufferID p_framebuffer, CommandBufferType p_cmd_buffer_type, const Rect2i &p_rect, VectorView<RenderPassClearValue> p_clear_values) {
+	command_prepare_framebuffer(p_cmd_buffer, p_framebuffer);
+	CommandBufferInfo *command_buffer = (CommandBufferInfo *)(p_cmd_buffer.id);
+	RenderPassInfo *render_pass = (RenderPassInfo *)(p_render_pass.id);
+	Framebuffer *framebuffer = (Framebuffer *)(p_framebuffer.id);
 
 	VkRenderPassBeginInfo render_pass_begin = {};
 	render_pass_begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -6918,54 +6924,57 @@ VkStridedDeviceAddressRegionKHR RenderingDeviceDriverVulkan::_sbt_to_vk_strided_
 void RenderingDeviceDriverVulkan::command_build_blas(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer) {
 #if VULKAN_RAYTRACING_ENABLED
 	const CommandBufferInfo *command_buffer = (const CommandBufferInfo *)p_cmd_buffer.id;
-	AccelerationStructureInfo *accel_info = (AccelerationStructureInfo *)p_acceleration_structure.id;
+	const AccelerationStructureInfo *accel_info = (const AccelerationStructureInfo *)p_acceleration_structure.id;
 
-	VkAccelerationStructureBuildGeometryInfoKHR *build_info = &accel_info->build_info;
-	build_info->mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
-	build_info->srcAccelerationStructure = VK_NULL_HANDLE;
-	build_info->dstAccelerationStructure = accel_info->vk_acceleration_structure;
+	VkAccelerationStructureBuildGeometryInfoKHR build_info = accel_info->build_info;
+	build_info.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+	build_info.srcAccelerationStructure = VK_NULL_HANDLE;
+	build_info.dstAccelerationStructure = accel_info->vk_acceleration_structure;
 	VkDeviceAddress scratch_address = buffer_get_device_address(p_scratch_buffer);
-	build_info->scratchData.deviceAddress = _align_up_address(scratch_address, accel_info->scratch_alignment);
+	build_info.scratchData.deviceAddress = _align_up_address(scratch_address, accel_info->scratch_alignment);
 
 	const VkAccelerationStructureBuildRangeInfoKHR *range_infos = accel_info->range_infos.ptr();
 
-	vkCmdBuildAccelerationStructuresKHR(command_buffer->vk_command_buffer, 1, build_info, &range_infos);
+	vkCmdBuildAccelerationStructuresKHR(command_buffer->vk_command_buffer, 1, &build_info, &range_infos);
 #endif
 }
 
 void RenderingDeviceDriverVulkan::command_update_blas(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer) {
 #if VULKAN_RAYTRACING_ENABLED
 	const CommandBufferInfo *command_buffer = (const CommandBufferInfo *)p_cmd_buffer.id;
-	AccelerationStructureInfo *accel_info = (AccelerationStructureInfo *)p_acceleration_structure.id;
+	const AccelerationStructureInfo *accel_info = (const AccelerationStructureInfo *)p_acceleration_structure.id;
 
-	VkAccelerationStructureBuildGeometryInfoKHR *build_info = &accel_info->build_info;
-	build_info->mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
-	build_info->srcAccelerationStructure = accel_info->vk_acceleration_structure;
-	build_info->dstAccelerationStructure = accel_info->vk_acceleration_structure;
+	VkAccelerationStructureBuildGeometryInfoKHR build_info = accel_info->build_info;
+	build_info.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
+	build_info.srcAccelerationStructure = accel_info->vk_acceleration_structure;
+	build_info.dstAccelerationStructure = accel_info->vk_acceleration_structure;
 	VkDeviceAddress scratch_address = buffer_get_device_address(p_scratch_buffer);
-	build_info->scratchData.deviceAddress = _align_up_address(scratch_address, accel_info->scratch_alignment);
+	build_info.scratchData.deviceAddress = _align_up_address(scratch_address, accel_info->scratch_alignment);
 
 	const VkAccelerationStructureBuildRangeInfoKHR *range_infos = accel_info->range_infos.ptr();
 
-	device_functions.CmdBuildAccelerationStructuresKHR(command_buffer->vk_command_buffer, 1, build_info, &range_infos);
+	device_functions.CmdBuildAccelerationStructuresKHR(command_buffer->vk_command_buffer, 1, &build_info, &range_infos);
 #endif
 }
 
 void RenderingDeviceDriverVulkan::command_build_tlas(CommandBufferID p_cmd_buffer, AccelerationStructureID p_acceleration_structure, BufferID p_scratch_buffer, BufferID p_instance_buffer, uint32_t p_instance_offset, uint32_t p_instance_count) {
 #if VULKAN_RAYTRACING_ENABLED
 	const CommandBufferInfo *command_buffer = (const CommandBufferInfo *)p_cmd_buffer.id;
-	AccelerationStructureInfo *accel_info = (AccelerationStructureInfo *)p_acceleration_structure.id;
+	const AccelerationStructureInfo *accel_info = (const AccelerationStructureInfo *)p_acceleration_structure.id;
 
-	accel_info->geometries[0].geometry.instances.data.deviceAddress = buffer_get_device_address(p_instance_buffer) + p_instance_offset;
-	accel_info->range_infos[0].primitiveCount = p_instance_count;
+	VkAccelerationStructureGeometryKHR geometry = accel_info->geometries[0];
+	geometry.geometry.instances.data.deviceAddress = buffer_get_device_address(p_instance_buffer) + p_instance_offset;
+	VkAccelerationStructureBuildRangeInfoKHR range_info = accel_info->range_infos[0];
+	range_info.primitiveCount = p_instance_count;
 
-	VkAccelerationStructureBuildGeometryInfoKHR *build_info = &accel_info->build_info;
+	VkAccelerationStructureBuildGeometryInfoKHR build_info = accel_info->build_info;
+	build_info.pGeometries = &geometry;
 	VkDeviceAddress scratch_address = buffer_get_device_address(p_scratch_buffer);
-	build_info->scratchData.deviceAddress = _align_up_address(scratch_address, accel_info->scratch_alignment);
+	build_info.scratchData.deviceAddress = _align_up_address(scratch_address, accel_info->scratch_alignment);
 
-	const VkAccelerationStructureBuildRangeInfoKHR *range_infos = accel_info->range_infos.ptr();
+	const VkAccelerationStructureBuildRangeInfoKHR *range_infos = &range_info;
 
-	device_functions.CmdBuildAccelerationStructuresKHR(command_buffer->vk_command_buffer, 1, build_info, &range_infos);
+	device_functions.CmdBuildAccelerationStructuresKHR(command_buffer->vk_command_buffer, 1, &build_info, &range_infos);
 #endif
 }
 

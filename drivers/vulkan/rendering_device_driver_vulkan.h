@@ -401,6 +401,7 @@ private:
 public:
 	virtual CommandQueueID command_queue_create(CommandQueueFamilyID p_cmd_queue_family, bool p_identify_as_main_queue = false) override final;
 	virtual Error command_queue_execute_and_present(CommandQueueID p_cmd_queue, VectorView<SemaphoreID> p_wait_semaphores, VectorView<CommandBufferID> p_cmd_buffers, VectorView<SemaphoreID> p_cmd_semaphores, FenceID p_cmd_fence, VectorView<SwapChainID> p_swap_chains) override final;
+	bool supports_parallel_recording() const override final { return true; }
 	virtual void command_queue_free(CommandQueueID p_cmd_queue) override final;
 
 private:
@@ -652,6 +653,7 @@ public:
 
 	// ----- COMMANDS -----
 
+	virtual void command_prepare_framebuffer(CommandBufferID p_cmd_buffer, FramebufferID p_framebuffer) override final;
 	virtual void command_begin_render_pass(CommandBufferID p_cmd_buffer, RenderPassID p_render_pass, FramebufferID p_framebuffer, CommandBufferType p_cmd_buffer_type, const Rect2i &p_rect, VectorView<RenderPassClearValue> p_clear_values) override final;
 	virtual void command_end_render_pass(CommandBufferID p_cmd_buffer) override final;
 	virtual void command_next_render_subpass(CommandBufferID p_cmd_buffer, CommandBufferType p_cmd_buffer_type) override final;
