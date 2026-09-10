@@ -21,13 +21,18 @@ save and reload the finite native energy_directional scene. First Vulkan
 captures exposed transposed converter transforms and incorrect procedural
 flags; fixes produce a visible gray plane with its native camera/material.
 Existing GPU counters confirm sampled directional-light shading.
+The finite native main gallery now also renders recognizable meshes, materials
+and shadows, confirmed by the owner. Conversion and Vulkan capture exit 0;
+the same binary's ordinary static run reports 198–219 FPS at 1280x720 on
+RTX 4090 with VSync disabled. This is not dense-world or animation evidence;
+bounded main proof audit passes. Remaining implementation has resumed.
 Prefab/UI workflows and full renderer integration remain incomplete. See
 [execution evidence and limits](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
 Scripting, Node plugins, 2D and HTML/CSS
 game UI are excluded; old world scenes need no compatibility beyond the finite
 renderer migration. SoftBody/Generic6DOF and CSG/GridMap authoring are also
 excluded by the approved plan. Light-energy-change response, broader native rendering and
-performance remain unverified. Existing renderer GPU data ownership and change-only publication
+dense-world performance remain unverified. Existing renderer GPU data ownership and change-only publication
 remain the integration baseline.
 
 

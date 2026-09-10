@@ -30,9 +30,14 @@ zapisują i odczytują już natywne energy_directional. Pierwsze klatki Vulkan
 ujawniły transpozycję transformacji konwertera i błędne flagi proceduralne;
 poprawki dają widoczną szarą płaszczyznę z natywną kamerą i materiałem.
 Istniejące liczniki GPU potwierdzają próbkowane wykonanie światła kierunkowego.
+Natywna galeria main pokazuje również rozpoznawalne meshe, materiały i cienie;
+właściciel potwierdził obraz. Konwersja i przechwycenie Vulkan kończą się kodem
+0. Zwykły przebieg tej samej nieruchomej sceny bez zapisu PNG raportuje
+198–219 FPS przy 1280x720 na RTX 4090, bez VSync. Audyt ograniczonego dowodu main przeszedł;
+pozostała implementacja została wznowiona.
 Operacje prefab/UI oraz cała integracja renderera pozostają nieukończone. Zobacz
 [status i granice dowodów](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
-Reakcja na zmianę energii światła, pozostałe przypadki renderowania i wydajność
+Reakcja na zmianę energii światła, pozostałe przypadki renderowania i wydajność gęstego świata
 są niesprawdzone.
 
 

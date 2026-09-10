@@ -356,6 +356,38 @@ and unchanged asset hashes, original preserved scene/GLTF/wrapper inputs, and
 the corrected capture05 receipt. This is an intermediate proof acceptance;
 the unfinished source task still requires its full commit and hostile review.
 
+Owner clarification after seeing the plane: a gray rectangle is insufficient
+as the practical mesh-rendering checkpoint. The preceding proof remains valid
+only for its limited geometry/camera/material/light path. Broader refactoring
+was stopped again until the already-preserved renderer `main` scene was converted
+and shows recognizable 3D meshes, materials and shadows on the native path.
+This advances the next scene from the approved finite allowlist, not a new
+test harness or a claim that the entire gallery is already migrated.
+
+The main gallery checkpoint now renders recognizable shaded meshes, checker
+panels, a deformed mesh and cast shadows; root inspected capture02 and the
+owner confirmed the image. Native conversion saves 67 records, 60 mesh entities
+(15 visible), four lights, two cameras and one environment. Ordinary build
+passes (33.83s), conversion exits 0 and fresh Vulkan capture exits 0 with 120
+frames. Initial converter shutdown failure and the resulting missing persisted
+Environment UID were corrected using existing ResourceUID cache persistence
+and normal SceneTree quit. Evidence: `gpuprofile/ecs_main_converter/manifest.json`
+and `gpuprofile/ecs_main_first_image/capture02/main00000119.png`, at HEAD
+`fd59c0dcbc` plus the recorded uncommitted source; executable SHA256
+`aa66dd0691d2ef72e8f8ec9d9ba625f0e2e17216e8dc4ec981cfa5328dd4ab59`.
+Fresh bounded main proof audit PASS independently verifies 150 artifact hashes,
+138 checkpoint source entries, preserved population/input hashes, typed readback,
+the actual image and both execution logs. Full Step 5 source review remains open.
+
+The owner observed roughly 1 FPS during capture. A separate ordinary Vulkan
+run of the same binary and scene, without MovieWriter, with `--disable-vsync
+--print-fps --quit-after 3000`, exited 0 and reported 198–219 FPS across 13
+windows (`gpuprofile/ecs_main_first_image/normal01.log`). MovieWriter reported
+67 seconds for capture and 116.72ms/frame encoding alone; that elapsed duration
+is not ordinary runtime FPS. This verifies only the static gallery at 1280x720
+on RTX 4090, not dense-world performance, animation, or an old/new comparison.
+The owner authorized resuming the remaining implementation after this result.
+
 Bounded baseline artifact audit found historical stress logs, but no retained
 replayable exact pre-entity executable in their named artifact locations.
 `%TEMP%/godot-render-repair-20260909/micro-step4-history-final.log` and its
