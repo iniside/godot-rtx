@@ -177,11 +177,9 @@ Error EntityScene::_validate_fields(EntityId p_id, uint64_t p_type, const Dictio
 			return _fail(p_id, address, ERR_DOES_NOT_EXIST);
 		}
 		Variant value = p_fields[key];
-		if (!field.asset_reference && !field.nested_type_id) {
-			Error error = field.validate(value);
-			if (error != OK) {
-				return _fail(p_id, address, error);
-			}
+		Error validation_error = field.validate(value);
+		if (validation_error != OK) {
+			return _fail(p_id, address, validation_error);
 		}
 		if (field.nested_type_id) {
 			Array entries;

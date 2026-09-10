@@ -45,7 +45,7 @@ private:
 	Error _apply(EntityScene &p_scene, const Command &p_command, Vector<EntityId> &r_changed, Dictionary &r_remap);
 	Error _remap_record(Dictionary &r_record, const Dictionary &p_remap);
 	Error _remap_fields(uint64_t p_type, Dictionary &r_fields, const Dictionary &p_remap);
-	Error _refresh_instance(EntityScene &p_target, EntityId p_instance, EntityScene &p_source, Vector<EntityId> &r_changed);
+	Error _refresh_instance(EntityScene &p_target, EntityId p_instance, EntityScene &p_source, Vector<EntityId> &r_changed, EntityScene *p_source_changes = nullptr);
 	Error _prefab_record(EntityId p_id, Dictionary &r_record, bool &r_found);
 	Error _reconcile_prefab_catalog();
 	Error _override_record(Dictionary &r_record, const Dictionary &p_instance, const String &p_source);

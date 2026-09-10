@@ -5,7 +5,8 @@
 		Stores a persistent entity catalog and addressable records in the native [code].escn[/code] format. Loading the resource reads its catalog; native document operations explicitly load component subsets into Flecs. Resident components belong to that world. Shared mesh, material, and texture assets retain ResourceUID references.
 		This format does not load legacy Node scenes. Native editor commands use persistent document, entity, component, and field identities. A separate document and world are used for play.
 	</description>
-	<tutorials />
+	<tutorials>
+	</tutorials>
 	<methods>
 		<method name="get_document_id" qualifiers="const">
 			<return type="String" />

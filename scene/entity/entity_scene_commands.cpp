@@ -234,6 +234,7 @@ Error EntitySceneCommands::execute(const String &p_name, const Vector<Command> &
 	for (const Command &command : p_commands) {
 		ERR_FAIL_COND_V(command.document != document.document_id, ERR_INVALID_PARAMETER);
 		if (command.kind == CREATE) {
+			ERR_FAIL_COND_V(!command.entity.is_valid() || document.catalog.get_state(command.entity) != EntityReferenceState::MISSING || creating.has(command.entity), ERR_ALREADY_EXISTS);
 			creating.insert(command.entity);
 		}
 	}
@@ -620,6 +621,7 @@ Error EntitySceneCommands::_prefab_record(EntityId p_id, Dictionary &r_record, b
 }
 
 Error EntitySceneCommands::_reconcile_prefab_catalog() {
+	HashSet<EntityId, EntityIdHasher> conflicted;
 	for (const Variant &key : document.prefab_instances.get_key_list()) {
 		if (document.prefab_instances[key].get_type() != Variant::DICTIONARY) {
 			return ERR_FILE_CORRUPT;
@@ -709,6 +711,7 @@ Error EntitySceneCommands::_reconcile_prefab_catalog() {
 				conflict["entity"] = id.to_string();
 				conflict["reason"] = "Source element removed with local edits";
 				conflicts.push_back(conflict);
+				conflicted.insert(id);
 				continue;
 			}
 			document.catalog._unlink_parent(id);
@@ -723,19 +726,43 @@ Error EntitySceneCommands::_reconcile_prefab_catalog() {
 		instance["conflicts"] = conflicts;
 		document.prefab_instances[key] = instance;
 	}
+	Vector<EntityId> deleted;
+	for (EntityId id : document.catalog.get_ids()) {
+		if (document.catalog.get_state(id) == EntityReferenceState::DELETED) {
+			deleted.push_back(id);
+		}
+	}
+	for (int i = 0; i < deleted.size(); i++) {
+		for (EntityId child : document.catalog.get_children(deleted[i])) {
+			if (document.catalog.get_state(child) != EntityReferenceState::DELETED && !conflicted.has(child)) {
+				document.catalog.records[child].deleted = true;
+				document.catalog._unlink_parent(child);
+				deleted.push_back(child);
+			}
+		}
+	}
 	Vector<EntityId> ordered;
 	return document._collect_required(document.catalog.get_ids(), ordered);
 }
 
-Error EntitySceneCommands::_refresh_instance(EntityScene &p_target, EntityId p_instance, EntityScene &p_source, Vector<EntityId> &r_changed) {
+Error EntitySceneCommands::_refresh_instance(EntityScene &p_target, EntityId p_instance, EntityScene &p_source, Vector<EntityId> &r_changed, EntityScene *p_source_changes) {
 	String key = p_instance.to_string();
 	ERR_FAIL_COND_V(!p_target.prefab_instances.has(key), ERR_DOES_NOT_EXIST);
 	Dictionary instance = Dictionary(p_target.prefab_instances[key]).duplicate(true);
 	Dictionary mapping = instance["mapping"];
 	Dictionary records;
 	Array conflicts;
-	for (EntityId source : p_source.catalog.get_ids()) {
-		if (p_source.catalog.get_state(source) == EntityReferenceState::DELETED) {
+	Vector<EntityId> source_ids = p_source.catalog.get_ids();
+	if (p_source_changes) {
+		for (EntityId source : p_source_changes->catalog.get_ids()) {
+			if (p_source.catalog.get_state(source) == EntityReferenceState::MISSING) {
+				source_ids.push_back(source);
+			}
+		}
+	}
+	for (EntityId source : source_ids) {
+		EntityScene &source_scene = p_source_changes && p_source_changes->catalog.get_state(source) != EntityReferenceState::MISSING ? *p_source_changes : p_source;
+		if (source_scene.catalog.get_state(source) == EntityReferenceState::DELETED) {
 			continue;
 		}
 		String source_key = source.to_string();
@@ -755,7 +782,8 @@ Error EntitySceneCommands::_refresh_instance(EntityScene &p_target, EntityId p_i
 		EntityId::parse(source_key, source);
 		EntityId::parse(mapping[source_key], id);
 		Dictionary record;
-		EntityReferenceState state = p_source.catalog.get_state(source);
+		EntityScene &source_scene = p_source_changes && p_source_changes->catalog.get_state(source) != EntityReferenceState::MISSING ? *p_source_changes : p_source;
+		EntityReferenceState state = source_scene.catalog.get_state(source);
 		bool removed = state == EntityReferenceState::MISSING || state == EntityReferenceState::DELETED;
 		if (removed) {
 			bool added = false;
@@ -783,7 +811,7 @@ Error EntitySceneCommands::_refresh_instance(EntityScene &p_target, EntityId p_i
 			record["deleted"] = !added;
 			record["order"] = int64_t(0);
 		} else {
-			Error error = p_source._read_record(source, record);
+			Error error = source_scene._read_record(source, record);
 			if (error != OK) {
 				return error;
 			}
@@ -862,7 +890,7 @@ Error EntitySceneCommands::_refresh_instance(EntityScene &p_target, EntityId p_i
 			return error;
 		}
 	}
-	instance["revision"] = int64_t(p_source.revision);
+	instance["revision"] = int64_t(p_source_changes ? p_source_changes->revision : p_source.revision);
 	p_target.prefab_instances[key] = instance;
 	return OK;
 }
@@ -1027,6 +1055,31 @@ Error EntitySceneCommands::apply_overrides(EntityId p_instance, const Ref<Entity
 			source_ids.push_back(id);
 		}
 	}
+	HashSet<EntityId, EntityIdHasher> creating;
+	for (const Variant &value : Array(instance["overrides"])) {
+		Dictionary override = value;
+		EntityId id;
+		EntityId::parse(override["source"], id);
+		int kind = override["kind"];
+		if (kind == CREATE) {
+			ERR_FAIL_COND_V(!id.is_valid() || p_prefab->catalog.get_state(id) != EntityReferenceState::MISSING || creating.has(id), ERR_ALREADY_EXISTS);
+			creating.insert(id);
+		}
+		String parent_key = override["parent"];
+		EntityId parent;
+		EntityId::parse(reverse.get(parent_key, parent_key), parent);
+		if (parent.is_valid() && p_prefab->catalog.get_state(parent) != EntityReferenceState::MISSING) {
+			source_ids.push_back(parent);
+		}
+		if ((kind == DELETE || kind == REPARENT) && p_prefab->catalog.get_state(id) != EntityReferenceState::MISSING) {
+			Vector<EntityId> descendants;
+			descendants.push_back(id);
+			for (int i = 0; i < descendants.size(); i++) {
+				source_ids.push_back(descendants[i]);
+				descendants.append_array(p_prefab->catalog.get_children(descendants[i]));
+			}
+		}
+	}
 	Ref<EntityScene> source_prepared;
 	Error error = p_prefab->_prepare(source_ids, source_prepared);
 	if (error != OK) {
@@ -1145,7 +1198,7 @@ Error EntitySceneCommands::apply_overrides(EntityId p_instance, const Ref<Entity
 		}
 		Vector<EntityId> changed = prepared->catalog.get_ids();
 		for (EntityId instance_id : instances) {
-			error = _refresh_instance(**prepared, instance_id, **source_prepared, changed);
+			error = _refresh_instance(**prepared, instance_id, **p_prefab, changed, source_prepared.ptr());
 			if (error != OK) {
 				return error;
 			}
