@@ -151,6 +151,11 @@ aggregate limit, retaining checked RD buffer sizes and allocation rollback.
 Ordinary/double builds and editor launches pass; double editor admits70.76MiB
 with stress and dragon assets, without metadata/allocation errors. Both binaries
 are updated. See the [fix and validation limits](../research/2026-09-10-1025-microgeometry-metadata-admission-fix.md).
+Editable stress fixture (2026-09-10, `0af41a64e2`): 5000 Lucy and 5000 Thai
+instances are serialized in the scene; runtime generation is removed. Native
+Vulkan game reports 10000 mesh RIDs sharing two resources and exits 0 without
+ERROR. Standard GLB instances add Node3D parents; no performance gain is claimed.
+See [scene correction and limits](../research/2026-09-10-1102-editable-microgeometry-stress-fix.md).
 Actual dragon import/reimport passed in 82.66/67.04 seconds, yielding 17 DAG
 levels and 9737 pages with byte-identical reused `.mgdata`; the diagnostic
 reimport command had shutdown warnings. Import evidence uses an immutable
