@@ -117,7 +117,7 @@ sun/environment to the Node scene. Their native replacements remain assigned
 to approved later steps; disabling old entry points does not complete them.
 GridMap authoring remains permanently excluded by the approved plan.
 
-## Step 4: document correction committed, final review pending
+## Step 4: stopped after final review rejection
 
 Implementation baseline: `2dd1bf401d93a724341355f9b55c5b9cc4f5e9da`.
 Frozen task commit: `c1927f7324946c489b3f3d213b0cd491a96cff81`.
@@ -151,7 +151,8 @@ Round-one findings in `c1927f7324`:
 
 The fourth defect was independently identified by the author after committing
 and confirmed by review. Correction `22158a5585a2476c8cd87fc2a5a0f171f2139e10` addresses all four
-findings and is undergoing fresh final review. Complete source identity must be available without
+findings. Fresh final review confirmed those cases closed, but rejected two
+additional concrete prefab defects described below. Complete source identity must be available without
 materializing all component records; fixes preserve that partial-read contract.
 
 The correction's real editor run also exposed malformed `EntityScene.xml`:
@@ -178,6 +179,29 @@ resident world. No additional ownership defect was established for current
 native startup. This is clang-nav/source/XML/history evidence, not execution
 of a successful native document load or a threaded streaming contract.
 
+Final review REJECT at `22158a5585`, covering original `c1927f7324` and the
+cumulative `2dd1bf401d9..22158a5585`, leaves these required fixes:
+
+1. **P1 — KEEP_LOCAL reparent mode is lost when applying prefab overrides.**
+   Override creation at `entity_scene_commands.cpp:370` omits the selected mode;
+   reconstruction at `:1092` uses KEEP_WORLD. A at root x=1 reparented under
+   P at x=10 with KEEP_LOCAL should retain local1/world11, but apply produces
+   local-9/world1. Preserve/replay the selected mode or consistently apply the
+   authored parent/local-pose result.
+2. **P2 — newly inherited unloaded records fail refresh/revert/apply.**
+   Reopen a saved user after its source adds B: lazy reconciliation creates B's
+   metadata without local bytes. `refresh_prefab` at `:966` and apply at `:1185`
+   clear source provenance before preparation, so B reaches `_read_bytes` and
+   fails ERR_FILE_CORRUPT. Prepare new inherited records through their source
+   provenance while retaining stored snapshots where needed; do not require
+   loading or saving the whole instance as a workaround.
+
+Implementation is stopped under the repository's maximum-two-review-round
+rule in `.agents/shared/planning-dispatch.md`. No third review or further source
+correction has been started. Resume the two named corrections after owner
+renewal, then obtain a fresh review before dependent renderer work. Steps 1–3
+remain accepted. The full approved migration is incomplete.
+
 Successful nonempty `.escn` load/save, prefab apply/revert, undo/redo and subset
 round trips have not been executed. Their production authoring UI is step 6;
 complete renderer fixtures need later component/import work. These remain
@@ -187,7 +211,7 @@ introduced to stand in for that topology.
 
 ## Remaining work
 
-The document step awaits review/correction. Renderer, editor, subsystems and
+The document step requires the two final-review corrections and owner renewal. Renderer, editor, subsystems and
 native import/export steps have not landed. Existing Node-world
 operation is not evidence of the target entity model. The owner reiterated on
 2026-09-10 that static-mesh components are required for renderer validation.
