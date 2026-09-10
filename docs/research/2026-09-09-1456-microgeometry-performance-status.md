@@ -742,3 +742,28 @@ even after source review completes. No inline threading rewrite bypasses the
 required separate-context implementation rule. No automated tests ran.
 Step 6 worker command recording has not started; Step 7 async compute remains
 conditional on measured useful overlap after Step 6.
+
+
+## Node/SceneTree bottleneck check (2026-09-10)
+
+The owner asked whether the regression belongs to the separately planned scene
+architecture replacement. Re-reading both retained native logs gives last-ten
+window-mean medians of simulation 0.0385/0.136 ms and process/navigation
+0.1495/0.1215 ms for Step 4/Step 5. Admission wait is separately
+28.753/35.968 ms. `Main::iteration` (`main/main.cpp:4994`) starts the simulation
+clock after frame admission and encloses MainLoop process plus message queue
+flush in the process/navigation interval. These measured main-thread intervals
+do not support Node/SceneTree processing as the dominant steady-state bottleneck.
+The dense script creates and counts the 10000 MeshInstance3D nodes only in
+`_ready`; `_process` moves the camera and samples the HUD, without an instance
+loop. The compared engine range changes no `main/`, `scene/` or `core/` files.
+
+This evidence identifies a renderer-side regression under the same Node load;
+it does not isolate the expensive worker function or prove that all Godot
+renderer data structures are efficient. Renderer instance gathering/culling is
+separate from SceneTree processing, and replacing Nodes alone does not establish
+that those renderer costs disappear. No Node/SceneTree rewrite is warranted by
+these measurements. No new runtime launch or Node-free fixture was needed for
+this bounded check; conclusions use the retained matched runs, actual timing
+boundaries and current fixture source. Navigation used clang-nav for
+Main::iteration, direct source reads, scoped Git diff and raw log recalculation.
