@@ -1,0 +1,39 @@
+[
+  {
+    "section": "gd_resource",
+    "attributes": {
+      "type": "ArrayMesh",
+      "format": "4"
+    },
+    "properties": {}
+  },
+  {
+    "section": "sub_resource",
+    "attributes": {
+      "type": "StandardMaterial3D",
+      "id": "StandardMaterial3D_ewxfn"
+    },
+    "properties": {}
+  },
+  {
+    "section": "sub_resource",
+    "attributes": {
+      "type": "ArrayMesh",
+      "id": "ArrayMesh_dfcvy"
+    },
+    "properties": {
+      "_surfaces": "[{\n\"aabb\": AABB(-0.5, 0, -0.5, 1, 1e-05, 1),\n\"format\": 34359742465,\n\"index_count\": 6,\n\"index_data\": PackedByteArray(\"AAABAAIAAAACAAMA\"),\n\"primitive\": 3,\n\"uv_scale\": Vector4(0, 0, 0, 0),\n\"vertex_count\": 4,\n\"vertex_data\": PackedByteArray(\"AAAAvwAAAAAAAAC/AAAAPwAAAAAAAAC/AAAAPwAAAAAAAAA/AAAAvwAAAAAAAAA/\")\n}]",
+      "blend_shape_mode": "0"
+    }
+  },
+  {
+    "section": "resource",
+    "attributes": {},
+    "properties": {
+      "resource_name": "\"geometry_Plane\"",
+      "_surfaces": "[{\n\"aabb\": AABB(-0.5, 0, -0.5, 1, 1e-05, 1),\n\"attribute_data\": PackedByteArray(\"AAAAAAAAAAAAAIA/AAAAAAAAgD8AAIA/AAAAAAAAgD8=\"),\n\"cluster_data\": PackedByteArray(\"Q0xVUwEAAAABAAAAAgAAADAAAAA2AAAABAAAAAAAAAAAAAAAAAAAAAQCAAAAAAAAAAECAAIDAAAAvwAAAAAAAAC/AAAAPwAAAAAAAAC/AAAAPwAAAAAAAAA/AAAAvwAAAAAAAAA/\"),\n\"format\": 34359742487,\n\"index_count\": 6,\n\"index_data\": PackedByteArray(\"AAABAAIAAAACAAMA\"),\n\"material\": SubResource(\"StandardMaterial3D_ewxfn\"),\n\"primitive\": 3,\n\"uv_scale\": Vector4(0, 0, 0, 0),\n\"vertex_count\": 4,\n\"vertex_data\": PackedByteArray(\"AAAAvwAAAAAAAAC/AAAAPwAAAAAAAAC/AAAAPwAAAAAAAAA/AAAAvwAAAAAAAAA//3///////7//f///////v/9///////+//3///////78=\")\n}]",
+      "blend_shape_mode": "0",
+      "shadow_mesh": "SubResource(\"ArrayMesh_dfcvy\")"
+    }
+  }
+]

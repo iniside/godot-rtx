@@ -1,0 +1,576 @@
+[
+  {
+    "section": "gd_scene",
+    "attributes": {
+      "format": "3"
+    },
+    "properties": {}
+  },
+  {
+    "section": "ext_resource",
+    "attributes": {
+      "type": "Script",
+      "path": "res://main.gd",
+      "id": "1"
+    },
+    "properties": {}
+  },
+  {
+    "section": "ext_resource",
+    "attributes": {
+      "type": "PackedScene",
+      "path": "res://geometry_parts/cube.tscn",
+      "id": "2_fb4jd"
+    },
+    "properties": {}
+  },
+  {
+    "section": "ext_resource",
+    "attributes": {
+      "type": "PackedScene",
+      "path": "res://geometry_parts/plane.tscn",
+      "id": "3_cw06m"
+    },
+    "properties": {}
+  },
+  {
+    "section": "ext_resource",
+    "attributes": {
+      "type": "ArrayMesh",
+      "path": "res://geometry_parts/plane_mesh.tres",
+      "id": "4_plane_mesh"
+    },
+    "properties": {}
+  },
+  {
+    "section": "sub_resource",
+    "attributes": {
+      "type": "StandardMaterial3D",
+      "id": "Material_receiver"
+    },
+    "properties": {
+      "albedo_color": "Color(0.65, 0.65, 0.65, 1)",
+      "roughness": "0.65"
+    }
+  },
+  {
+    "section": "sub_resource",
+    "attributes": {
+      "type": "StandardMaterial3D",
+      "id": "Material_cull_0"
+    },
+    "properties": {
+      "albedo_color": "Color(0.2, 0.45, 0.6, 1)",
+      "roughness": "0.65",
+      "cull_mode": "0"
+    }
+  },
+  {
+    "section": "sub_resource",
+    "attributes": {
+      "type": "StandardMaterial3D",
+      "id": "Material_cull_1"
+    },
+    "properties": {
+      "albedo_color": "Color(0.2, 0.45, 0.6, 1)",
+      "roughness": "0.65",
+      "cull_mode": "1"
+    }
+  },
+  {
+    "section": "sub_resource",
+    "attributes": {
+      "type": "StandardMaterial3D",
+      "id": "Material_cull_2"
+    },
+    "properties": {
+      "albedo_color": "Color(0.2, 0.45, 0.6, 1)",
+      "roughness": "0.65",
+      "cull_mode": "2"
+    }
+  },
+  {
+    "section": "sub_resource",
+    "attributes": {
+      "type": "Environment",
+      "id": "Environment_6knsw"
+    },
+    "properties": {
+      "background_mode": "1",
+      "background_energy_multiplier": "0.3",
+      "tonemap_mode": "3",
+      "volumetric_fog_density": "0.025"
+    }
+  },
+  {
+    "section": "sub_resource",
+    "attributes": {
+      "type": "StandardMaterial3D",
+      "id": "StandardMaterial3D_ln455"
+    },
+    "properties": {
+      "albedo_color": "Color(0.6, 0.3, 0.1, 1)",
+      "roughness": "0.65"
+    }
+  },
+  {
+    "section": "sub_resource",
+    "attributes": {
+      "type": "MultiMesh",
+      "id": "MultiMesh_3ngad"
+    },
+    "properties": {
+      "transform_format": "1",
+      "mesh": "ExtResource(\"4_plane_mesh\")",
+      "instance_count": "2",
+      "buffer": "PackedFloat32Array(-2, 0, 0, 10, 0, 1, 0, 2.5, 0, 0, 2, -3, -2, 0, 0, 10, 0, -1, 8.742278e-08, 2.5, 0, -1.7484555e-07, -2, 3)"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "ShadowModesExpanded",
+      "type": "Node3D"
+    },
+    "properties": {
+      "script": "ExtResource(\"1\")",
+      "preset": "\"shadows\"",
+      "light_mode": "\"directional\"",
+      "expanded_multimesh": "true"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "WorldEnvironment",
+      "type": "WorldEnvironment",
+      "parent": "."
+    },
+    "properties": {
+      "environment": "SubResource(\"Environment_6knsw\")"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "HUD",
+      "type": "CanvasLayer",
+      "parent": "."
+    },
+    "properties": {}
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Label",
+      "type": "Label",
+      "parent": "HUD"
+    },
+    "properties": {
+      "offset_left": "18.0",
+      "offset_top": "14.0",
+      "offset_right": "18.0",
+      "offset_bottom": "14.0",
+      "theme_override_font_sizes/font_size": "18",
+      "text": "\"RTXDI / NRD manual demo  |  shadows / directional\nRMB + WASD/QE move  |  Space motion  C cut  V second view\nF fog  U FSR2  Z resize  L remove light  R reorder  B shadows\nO offscreen caster  Del remove deformer  F12 capture  Esc quit\n(1280.0, 720.0)  |  motion true\""
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Geometry",
+      "type": "Node3D",
+      "parent": "."
+    },
+    "properties": {}
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "ShadowReceiver",
+      "parent": "Geometry",
+      "instance": "ExtResource(\"2_fb4jd\")"
+    },
+    "properties": {
+      "transform": "Transform3D(30, 0, 0, 0, 0.3, 0, 0, 0, 18, 0, -0.15, 0)"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Cube",
+      "parent": "Geometry/ShadowReceiver",
+      "index": "0"
+    },
+    "properties": {
+      "material_override": "SubResource(\"Material_receiver\")"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Facing_0_0",
+      "parent": "Geometry",
+      "instance": "ExtResource(\"3_cw06m\")"
+    },
+    "properties": {
+      "transform": "Transform3D(2, 0, 0, 0, 1, 0, 0, 0, 2, -10, 2.5, -3)"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Plane",
+      "parent": "Geometry/Facing_0_0",
+      "index": "1"
+    },
+    "properties": {
+      "material_override": "SubResource(\"Material_cull_0\")"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Facing_0_1",
+      "parent": "Geometry",
+      "instance": "ExtResource(\"3_cw06m\")"
+    },
+    "properties": {
+      "transform": "Transform3D(2, 0, 0, 0, 1, 0, 0, 0, 2, -6, 2.5, -3)"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Plane",
+      "parent": "Geometry/Facing_0_1",
+      "index": "1"
+    },
+    "properties": {
+      "material_override": "SubResource(\"Material_cull_1\")"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Facing_0_2",
+      "parent": "Geometry",
+      "instance": "ExtResource(\"3_cw06m\")"
+    },
+    "properties": {
+      "transform": "Transform3D(2, 0, 0, 0, 1, 0, 0, 0, 2, -2, 2.5, -3)"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Plane",
+      "parent": "Geometry/Facing_0_2",
+      "index": "1"
+    },
+    "properties": {
+      "material_override": "SubResource(\"Material_cull_2\")"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Facing_0_3",
+      "parent": "Geometry",
+      "instance": "ExtResource(\"3_cw06m\")"
+    },
+    "properties": {
+      "transform": "Transform3D(2, 0, 0, 0, 1, 0, 0, 0, 2, 2, 2.5, -3)"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Plane",
+      "parent": "Geometry/Facing_0_3",
+      "index": "1"
+    },
+    "properties": {
+      "material_override": "SubResource(\"Material_cull_0\")",
+      "cast_shadow": "2"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Facing_0_4",
+      "parent": "Geometry",
+      "instance": "ExtResource(\"3_cw06m\")"
+    },
+    "properties": {
+      "transform": "Transform3D(-2, 0, 0, 0, 1, 0, 0, 0, 2, 6, 2.5, -3)"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Plane",
+      "parent": "Geometry/Facing_0_4",
+      "index": "1"
+    },
+    "properties": {
+      "material_override": "SubResource(\"Material_cull_0\")"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Facing_1_0",
+      "parent": "Geometry",
+      "instance": "ExtResource(\"3_cw06m\")"
+    },
+    "properties": {
+      "transform": "Transform3D(-2, 8.742278e-08, 0, -1.7484555e-07, -1, 0, 0, 0, 2, -10, 2.5, 3)"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Plane",
+      "parent": "Geometry/Facing_1_0",
+      "index": "1"
+    },
+    "properties": {
+      "material_override": "SubResource(\"Material_cull_0\")"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Facing_1_1",
+      "parent": "Geometry",
+      "instance": "ExtResource(\"3_cw06m\")"
+    },
+    "properties": {
+      "transform": "Transform3D(-2, 8.742278e-08, 0, -1.7484555e-07, -1, 0, 0, 0, 2, -6, 2.5, 3)"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Plane",
+      "parent": "Geometry/Facing_1_1",
+      "index": "1"
+    },
+    "properties": {
+      "material_override": "SubResource(\"Material_cull_1\")"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Facing_1_2",
+      "parent": "Geometry",
+      "instance": "ExtResource(\"3_cw06m\")"
+    },
+    "properties": {
+      "transform": "Transform3D(-2, 8.742278e-08, 0, -1.7484555e-07, -1, 0, 0, 0, 2, -2, 2.5, 3)"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Plane",
+      "parent": "Geometry/Facing_1_2",
+      "index": "1"
+    },
+    "properties": {
+      "material_override": "SubResource(\"Material_cull_2\")"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Facing_1_3",
+      "parent": "Geometry",
+      "instance": "ExtResource(\"3_cw06m\")"
+    },
+    "properties": {
+      "transform": "Transform3D(-2, 8.742278e-08, 0, -1.7484555e-07, -1, 0, 0, 0, 2, 2, 2.5, 3)"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Plane",
+      "parent": "Geometry/Facing_1_3",
+      "index": "1"
+    },
+    "properties": {
+      "material_override": "SubResource(\"Material_cull_0\")",
+      "cast_shadow": "2"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Facing_1_4",
+      "parent": "Geometry",
+      "instance": "ExtResource(\"3_cw06m\")"
+    },
+    "properties": {
+      "transform": "Transform3D(2, 8.742278e-08, 0, 1.7484555e-07, -1, 0, 0, 0, 2, 6, 2.5, 3)"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Plane",
+      "parent": "Geometry/Facing_1_4",
+      "index": "1"
+    },
+    "properties": {
+      "material_override": "SubResource(\"Material_cull_0\")"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "MirroredMultiMesh",
+      "type": "MultiMeshInstance3D",
+      "parent": "Geometry"
+    },
+    "properties": {
+      "material_override": "SubResource(\"StandardMaterial3D_ln455\")",
+      "multimesh": "SubResource(\"MultiMesh_3ngad\")"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Lights",
+      "type": "Node3D",
+      "parent": "."
+    },
+    "properties": {}
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Directional",
+      "type": "DirectionalLight3D",
+      "parent": "Lights"
+    },
+    "properties": {
+      "transform": "Transform3D(0.9396927, 0.29619813, -0.17101005, 0, 0.49999997, 0.86602545, 0.34202015, -0.8137977, 0.46984628, 0, 0, 0)",
+      "shadow_enabled": "true"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Cameras",
+      "type": "Node3D",
+      "parent": "."
+    },
+    "properties": {}
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Camera",
+      "type": "Camera3D",
+      "parent": "Cameras"
+    },
+    "properties": {
+      "transform": "Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 22, 0)",
+      "projection": "1",
+      "current": "true",
+      "size": "22.0",
+      "far": "100.0"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "AlternateCamera",
+      "type": "Camera3D",
+      "parent": "Cameras"
+    },
+    "properties": {
+      "transform": "Transform3D(0.7071068, 0.19245009, -0.68041384, 0, 0.9622505, 0.27216554, 0.7071068, -0.19245009, 0.68041384, -10, 5, 9)"
+    }
+  },
+  {
+    "section": "editable",
+    "attributes": {
+      "path": "Geometry/ShadowReceiver"
+    },
+    "properties": {}
+  },
+  {
+    "section": "editable",
+    "attributes": {
+      "path": "Geometry/Facing_0_0"
+    },
+    "properties": {}
+  },
+  {
+    "section": "editable",
+    "attributes": {
+      "path": "Geometry/Facing_0_1"
+    },
+    "properties": {}
+  },
+  {
+    "section": "editable",
+    "attributes": {
+      "path": "Geometry/Facing_0_2"
+    },
+    "properties": {}
+  },
+  {
+    "section": "editable",
+    "attributes": {
+      "path": "Geometry/Facing_0_3"
+    },
+    "properties": {}
+  },
+  {
+    "section": "editable",
+    "attributes": {
+      "path": "Geometry/Facing_0_4"
+    },
+    "properties": {}
+  },
+  {
+    "section": "editable",
+    "attributes": {
+      "path": "Geometry/Facing_1_0"
+    },
+    "properties": {}
+  },
+  {
+    "section": "editable",
+    "attributes": {
+      "path": "Geometry/Facing_1_1"
+    },
+    "properties": {}
+  },
+  {
+    "section": "editable",
+    "attributes": {
+      "path": "Geometry/Facing_1_2"
+    },
+    "properties": {}
+  },
+  {
+    "section": "editable",
+    "attributes": {
+      "path": "Geometry/Facing_1_3"
+    },
+    "properties": {}
+  },
+  {
+    "section": "editable",
+    "attributes": {
+      "path": "Geometry/Facing_1_4"
+    },
+    "properties": {}
+  }
+]

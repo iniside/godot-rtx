@@ -1,0 +1,60 @@
+[
+  {
+    "section": "gd_scene",
+    "attributes": {
+      "load_steps": "2",
+      "format": "3"
+    },
+    "properties": {}
+  },
+  {
+    "section": "ext_resource",
+    "attributes": {
+      "type": "PackedScene",
+      "path": "res://geometry.gltf",
+      "id": "1_geometry"
+    },
+    "properties": {}
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "CubePart",
+      "instance": "ExtResource(\"1_geometry\")"
+    },
+    "properties": {}
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Plane",
+      "parent": ".",
+      "index": "1"
+    },
+    "properties": {
+      "visible": "false"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Sphere",
+      "parent": ".",
+      "index": "2"
+    },
+    "properties": {
+      "visible": "false"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Deformer",
+      "parent": ".",
+      "index": "3"
+    },
+    "properties": {
+      "visible": "false"
+    }
+  }
+]

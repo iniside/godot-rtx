@@ -1,0 +1,55 @@
+{
+  "scope": "Approved native-scene plan step1: finite source-data preservation only",
+  "date_utc": "2026-09-10",
+  "task_start_revision": "e4f73a8286cf8cd8a57ee9397d228c5100fe83c0",
+  "authoring_command": "python misc/scripts/preserve_renderer_scenes.py",
+  "observations": {
+    "parsed_scene_count": 9,
+    "parsed_wrappers": ["geometry_parts/cube.tscn", "geometry_parts/sphere.tscn", "geometry_parts/plane.tscn", "geometry_parts/deformer.tscn"],
+    "parsed_extra_resource": "geometry_parts/plane_mesh.tres",
+    "gltf_source_metadata_count": 6,
+    "source_sha256_matches_at_inspection": {"matched": 47, "total": 47},
+    "visible_meshes_before_startup_recipes": {
+      "main.tscn": 15, "test.tscn": 4, "shadows_merged.tscn": 11, "shadows_expanded.tscn": 11,
+      "energy_directional.tscn": 1, "energy_emission.tscn": 1, "unsupported.tscn": 18,
+      "microgeometry/scene.tscn": 7, "microgeometry_stress/scene.tscn": 10001
+    },
+    "stress": {"lucy_mesh_references": 5000, "thai_mesh_references": 5000, "shared_population_mesh_assets": 2, "additional_floor": 1, "source": "Current serialized population from 0af41a64e2, not the historical runtime generator"},
+    "inspected_effective_overrides": [
+      "test.tscn Cameras/Camera/Box/Cube: layers=2, gi_mode=0",
+      "test.tscn Cameras/Camera/ReflectiveSphere/Sphere: layers=2, gi_mode=0, Material_camera_sphere",
+      "test.tscn Geometry/GlowingBox/Cube: surface_material_override/0=StandardMaterial3D_emission",
+      "main.tscn Geometry/DeformingCaster/Deformer: blend_shapes/Stretch=0.65 and Material_deformer",
+      "Both shadow scenes: two-instance 24-float MultiMesh buffers and cast_shadow=2 on Facing_0_3 and Facing_1_3"
+    ],
+    "native_recipe_inspection": ["DDGI phases 8/40/8/40 rendered frames", "Microgeometry three explicit MultiMesh transforms", "Stress orbit delta*0.08 with setup outside timing", "HUD and secondary viewport excluded from native world controls"]
+  },
+  "methods": {
+    "data": "Targeted full text-scene/GDScript reads; bounded section parser; six source GLB/glTF JSON reads without reading import caches or creating Nodes; direct parsed-output inspection and streamed SHA256 source identity comparison.",
+    "defaults": "XML parser retained current inherited property metadata/defaults/constants with each XML SHA. clang-nav find/def resolved Environment::raytracing_rendering_mode at environment.h:176 and ResourceImporterScene::_generate_meshes at resource_importer_scene.cpp:2699 / .h:214. Direct header, implementation, binding and XML reads confirmed fork lighting defaults and GI_MODE_STATIC=1 for all six light_baking=1 imports.",
+    "source_anchors": [
+      "scene/resources/environment.h:176-190 and Environment::_bind_methods in environment.cpp",
+      "editor/import/3d/resource_importer_scene.cpp:2842-2853",
+      "doc/classes/GeometryInstance3D.xml: gi_mode and GI_MODE_STATIC",
+      "servers/rendering/rendering_server.cpp:3862: merged threshold default65536",
+      "doc/classes/ProjectSettings.xml:3272: merged threshold default65536",
+      "doc/classes/Node3D.xml: rotation_order default2/YXZ"
+    ],
+    "history": "git log confirms wrapper authoring b32e62a7a3 and current serialized stress fix 0af41a64e2; environment fork integration ec9a584644. No upstream API changed.",
+    "text_search_boundary": "rg used only for bounded serialized/settings/XML inventory or source anchors; semantic C++ lookup used clang-nav against repository-root compile_commands.json."
+  },
+  "validation_boundary": {
+    "automated_tests": "None authored or run",
+    "builds_or_formatters": "None required or run for this data-only step",
+    "godot_or_game_script_execution": "None",
+    "gpu_runtime": "Not exercised; no visual, runtime, performance or native conversion correctness claim",
+    "defaults": "Pinned documented defaults plus targeted fork source confirmation, not an exhaustive constructor/ClassDB dump",
+    "siblings": "All nine authorized scenes and four wrappers swept. Renderer/backends/SCons/bindings unchanged; native startup/control execution awaits later implementation steps.",
+    "external_asset_retention": "Dragon/Lucy/Thai source GLBs remain owner-untracked at their original paths (202136944/785561992/280001084 bytes); their hashes and import settings are retained. Binary asset bytes are not duplicated in this commit. They must remain available through native import/export.",
+    "future_dependency": "Step4 must map retained fields/resources to its native schema and fail unknown mappings. These files are intermediate authoring input, never a generic .tscn compatibility route."
+  },
+  "failure_taxonomy": [1, 4, 5, 6, 8, 9],
+  "comments": "default NONE",
+  "executing_model": "gpt-6-astra",
+  "selection_reason": "Effective instance overrides, serialized scene semantics and bounded source-data preservation"
+}

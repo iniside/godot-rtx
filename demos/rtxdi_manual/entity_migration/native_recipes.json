@@ -1,0 +1,155 @@
+{
+  "purpose": "Finite authoring instructions for the nine manifest entries; these records are not an executable expression language or runtime loader.",
+  "application": {
+    "order": ["class_defaults", "imported_assets", "serialized_properties_in_order", "resolved_wrapper_overrides", "native_startup", "requested_controls", "frame_motion", "post_draw_capture"],
+    "world_viewports": 1,
+    "drop_subtrees": ["HUD", "SecondaryView"],
+    "drop_script_features": ["main.gd --dual / V / _toggle_secondary", "microgeometry/scene.gd --secondary / V / _set_secondary_visible"],
+    "diagnostic_destination": ["native fixture controls", "editor panel", "logs"],
+    "grouping": "Serialized Node3D groups are source provenance. Flatten static mesh transforms. Retain actual camera attachments and motion-target relationships, without per-entity Node/Object wrappers.",
+    "hidden_wrapper_siblings": "Resolved records preserve every hidden Cube/Plane/Sphere/Deformer. Do not accidentally publish them as visible geometry; source records remain available for explicit visibility edits.",
+    "shared_assets": "Resolve identical mesh_asset.path + gltf_mesh to one mesh resource. Keep source morph targets. Per-instance morph weights and overrides must not mutate shared asset data.",
+    "resource_references": "Serialized ExtResource IDs are local to their file; SubResource IDs are local to their file. Resolved values qualify paths and subresource identities. Do not execute script properties retained in serialized provenance.",
+    "startup_vs_authored": "Resolved rows describe authored pre-_ready state. Apply the following startup and motion recipes separately; --still preserves authored poses.",
+    "capture": {"format": "PNG", "ordering": "Apply pose before rendering; read image only after that rendered frame completes.", "failure": "Log save result and path; do not claim capture success on error."}
+  },
+  "gallery_family": {
+    "scenes": ["main.tscn", "shadows_merged.tscn", "shadows_expanded.tscn", "energy_directional.tscn", "energy_emission.tscn", "unsupported.tscn"],
+    "source": "main.gd",
+    "defaults": {"preset": "gallery", "light_mode": "all", "expanded_multimesh": false, "renderer_mode": "hybrid_nrd", "animate": true, "elapsed_seconds": 0, "capture_delay_seconds": 10, "nrd_dlss_sr": false},
+    "scene_overrides": {
+      "shadows_merged.tscn": {"preset": "shadows", "light_mode": "directional"},
+      "shadows_expanded.tscn": {"preset": "shadows", "light_mode": "directional", "expanded_multimesh": true},
+      "energy_directional.tscn": {"preset": "energy", "light_mode": "directional"},
+      "energy_emission.tscn": {"preset": "energy", "light_mode": "emission"},
+      "unsupported.tscn": {"preset": "unsupported"}
+    },
+    "startup": [
+      {"target": "rendering/raytracing/multimesh_merged_blas_max_triangles", "value_if_expanded": 0, "merged_default": 65536, "source": "doc/classes/ProjectSettings.xml:3272", "apply_before_first_rt_use": true},
+      {"target": "Lights/*", "visible": "light_mode == all OR lowercase(light name) == light_mode", "light_order": "Serialized child order"},
+      {"target": "WorldEnvironment.environment", "when": "light_mode not in [all, environment]", "properties": {"background_mode": 1, "sky": null}},
+      {"target": "Geometry/TexturedEmitter", "if_present": true, "visible": "light_mode in [all, emission]"},
+      {"target": "Geometry/DeformingCaster/Deformer", "if_present": true, "morph_state": "Instance-owned weights; original script duplicated ArrayMesh before changing weight 0."},
+      {"target": "game viewport", "measure_render_time": true}
+    ],
+    "renderer_modes": {
+      "common": {"use_taa": false, "frame_generation": false, "scaling_3d_scale": 1.0},
+      "hybrid_nrd": {"raytracing_rendering_mode": 0, "raytracing_denoiser": 0, "scaling": "bilinear"},
+      "hybrid_rr": {"raytracing_rendering_mode": 0, "raytracing_denoiser": 1, "scaling": "DLSS"},
+      "pt_nrd": {"raytracing_rendering_mode": 1, "raytracing_denoiser": 0, "scaling": "bilinear"},
+      "pt_rr": {"raytracing_rendering_mode": 1, "raytracing_denoiser": 1, "scaling": "DLSS"},
+      "pt_raw": {"raytracing_rendering_mode": 1, "raytracing_denoiser": 2, "scaling": "bilinear", "animate": false, "pathtracing_accumulate": true},
+      "switch": "Reset nrd_dlss_sr and scale on selection. Selecting a non-raw mode does not automatically resume previously paused motion.",
+      "sr": "Only NRD modes toggle ordinary DLSS SR. Reconfigure viewport at scale 1.0.",
+      "resolution": "Raw PT stays native. Other modes toggle scale 1.0/0.67; use FSR2 when neither RR nor ordinary DLSS SR is selected."
+    },
+    "motion": [
+      {"target": "Geometry/MovingCaster", "if_present": true, "when": "animate", "position_x": "sin(elapsed_seconds) * 2.0", "rotation_y_radians": "elapsed_seconds", "preserve": ["position_y", "position_z", "scale"]},
+      {"target": "Geometry/DeformingCaster/Deformer", "if_present": true, "when": "animate", "blend_shape": "Stretch", "index": 0, "weight": "sin(elapsed_seconds * 1.3) * 0.5 + 0.5"}
+    ],
+    "camera_controls": {"poses": ["Cameras/Camera", "Cameras/AlternateCamera"], "C": "Switch active pose on the same viewport", "mouse": "RMB: global Y rotation -relative.x * 0.003, local X rotation -relative.y * 0.003", "movement": "WASD/QE, unnormalized local vector, active_camera.basis * direction * delta * 6.0"},
+    "commands": {
+      "1..5": "Select renderer mode in listed order", "T": "Toggle SR", "U": "Toggle resolution",
+      "Space": "Toggle animate; elapsed time still advances", "F": "Toggle volumetric fog",
+      "L": "Remove first remaining light and its render membership", "R": "Reverse remaining lights and republish their order",
+      "B": "Toggle shadow_enabled for every remaining light", "O": "Toggle Geometry/OffscreenCaster visibility if present",
+      "Delete": "Delete deformer mesh target if present", "Z": "If window width is 1280 set 1024x640, otherwise 1280x720",
+      "F12": "Post-draw user://manual-<unix>.png capture, continue", "Escape": "Quit"
+    },
+    "arguments": ["--capture=<path>", "--delay=<seconds>", "--light=all|directional|point|spot|area|environment|emission", "--mode=hybrid_nrd|hybrid_rr|pt_nrd|pt_rr|pt_raw", "--still", "--expanded", "--fog", "--sr", "--upscale"],
+    "automatic_capture": "Once elapsed >= delay, capture after draw, log measured GPU and video/texture/buffer memory, then quit.",
+    "shadow_matrix": {"rows": ["up", "down"], "columns": ["back cull", "front cull", "culling disabled", "double-sided shadow", "mirrored transform", "negative-local MultiMesh"], "multimesh": "Retain each serialized 24-float two-instance buffer verbatim: three row-major vec4 rows per instance, distinct from Transform3D column-vector serialization."},
+    "unsupported_materials": ["Shader_custom custom light()", "Material_anisotropy anisotropy=0.7", "Material_blend alpha=0.5 transparency=1"]
+  },
+  "ddgi": {
+    "scene": "test.tscn",
+    "sources": ["migrated/test.gd", "migrated/camera.gd"],
+    "defaults": {"animate": true, "elapsed_seconds": 0, "capture_delay_seconds": 8, "distance_m": 4.0, "motion_frames": 8, "hold_frames": 40},
+    "attachments": ["Cameras/Camera/Box/Cube", "Cameras/Camera/ReflectiveSphere/Sphere"],
+    "attachment_contract": "Keep the exact serialized camera-relative parent transforms, layers=2 and gi_mode=0 overrides, and reflective material. They follow every camera pose including DDGI trajectory.",
+    "motion": {"target": "Geometry/GlowingBox", "when": "animate", "position_y": "-0.108265 + sin(elapsed_seconds * 1.2) * 0.6", "rotation_y_radians": "sin(elapsed_seconds * 0.4) * 0.25", "preserve": ["position_x", "position_z", "scale"]},
+    "camera_controls": {"mouse_captured_on_start": true, "mouse_sensitivity": 0.002, "pitch_clamp_radians": [-1.57, 1.57], "mouse": "screen_relative changes Euler yaw/pitch; assign Basis.from_euler", "movement": "Normalize WASD/arrows/QE vector; velocity += 6.0 * delta * basis * motion; velocity *= 0.85; position += velocity", "Escape_or_F10": "Toggle captured mouse"},
+    "debug_views": {"0": "normal", "6": "DDGI probes", "7": "DDGI probe state", "8": "DDGI cascade weights", "9": "DDGI indirect"},
+    "commands": {"G": "Toggle DDGI anchor freeze", "Space": "Toggle cube motion", "B": "Toggle all light shadows", "F": "Toggle volumetric fog"},
+    "arguments": ["--capture=<path>.png", "--delay=<seconds>", "--ddgi-view=normal|probes|state|weights|indirect", "--ddgi-freeze", "--ddgi-motion=forward-return|rotation", "--ddgi-distance=<positive metres>", "--ddgi-motion-frames=<positive integer>"],
+    "sequence": {
+      "start": "At setup snapshot camera global pose and prior animate/input/process flags; disable cube animation and free camera input/process before the delay.",
+      "phases": [
+        {"name": "outbound", "frames": 8, "amount_for_local_frame_j": "(j + 1) / motion_frames"},
+        {"name": "destination_hold", "frames": 40, "amount": 1.0},
+        {"name": "return", "frames": 8, "amount_for_local_frame_j": "(motion_frames - j - 1) / motion_frames"},
+        {"name": "recovery", "frames": 40, "amount": 0.0}
+      ],
+      "frame_counts": "CLI motion_frames replaces both 8-frame phases; hold/recovery remain 40 each. Default total is 96 rendered frames.",
+      "forward_return": "initial.origin - normalize(initial.basis.z) * distance_m * amount; initial basis unchanged",
+      "rotation": "Basis(world_up, radians(24.0 * amount)) * initial.basis; initial origin unchanged",
+      "capture": "Apply each pose before its post-draw await; capture every rendered frame as <basename>-000.png through -095.png by default. Log phase, sequence/frame IDs, timestamps, delta, pose and actual DDGI/render settings.",
+      "finish": "Restore exact initial pose and prior animation/camera flags; log completion and quit.",
+      "reject": ["Unknown motion/view", "Non-positive distance or non-positive/noninteger motion_frames", "Motion without capture", "Non-PNG motion capture", "Missing capture parent directory"]
+    },
+    "single_capture": "Without a motion sequence, capture once after elapsed >= delay and frame_post_draw; log pose/settings and quit."
+  },
+  "microgeometry": {
+    "scene": "microgeometry/scene.tscn",
+    "source": "microgeometry/scene.gd",
+    "defaults": {"animate": true, "emissive": false, "frozen": false, "dragons_loaded": true, "elapsed_seconds": 0, "orbit": false, "capture_delay_seconds": 10, "freeze_after_seconds": -1, "rt_error_index": 1, "offscreen_multiplier_index": 1},
+    "startup": [
+      {"target": "Geometry/MovingDragon/xyzrgb_dragon", "material_override": "res://microgeometry/scene.tscn::Material_masked"},
+      {"target": "Geometry/DeformingCaster/Deformer", "morph_state": "Instance-owned weights; preserve imported Stretch target"},
+      {"target": "Cameras/Camera", "look_at_world": [0.0, 1.2, 0.0]},
+      {"target": "game viewport", "measure_render_time": true}
+    ],
+    "multimesh": {
+      "target": "Geometry/DragonMultiMesh", "transform_format": "3D", "instance_count": 3,
+      "mesh": {"same_as": "Geometry/Dragon/xyzrgb_dragon", "path": "res://microgeometry/xyzrgb_dragon.glb", "gltf_mesh": 0},
+      "instances": [
+        {"position": [-3.0, 0.39209, -4.5], "uniform_scale": 0.007, "rotation_y_radians": 0.0},
+        {"position": [0.0, 0.39209, -4.5], "uniform_scale": 0.007, "rotation_y_radians": 2.1},
+        {"position": [3.0, 0.39209, -4.5], "uniform_scale": 0.007, "rotation_y_radians": 4.2}
+      ]
+    },
+    "motion": [
+      {"target": "Geometry/MovingDragon", "when": "animate and resident", "position": ["-4.5 + sin(elapsed_seconds) * 2.0", "saved_moving_transform.origin.y", 2.0], "rotation_y_radians": "elapsed_seconds * 0.5", "preserve_scale": true},
+      {"target": "Geometry/DragonMultiMesh", "instance_index": 0, "when": "animate and multimesh exists", "position": [-3.0, "0.39209 + sin(elapsed_seconds * 1.7) * 0.15", -4.5], "rotation_y_radians": "elapsed_seconds", "uniform_scale": 0.007},
+      {"target": "Geometry/DeformingCaster/Deformer", "when": "animate", "blend_shape": "Stretch", "index": 0, "weight": "sin(elapsed_seconds * 1.3) * 0.5 + 0.5"},
+      {"target": "Cameras/Camera", "when": "orbit (independent of animate)", "position": ["sin(elapsed_seconds * 0.25) * 8.0", 2.8, "cos(elapsed_seconds * 0.25) * 8.0"], "look_at_world": [0.0, 1.2, 0.0]}
+    ],
+    "camera_controls": "Without orbit use gallery RMB/WASD/QE movement; one viewport.",
+    "rt_errors": [0.5, 4.0, 16.0],
+    "offscreen_multipliers": [1.0, 2.0, 8.0],
+    "commands": {
+      "F1": "Normal view", "F2": "Microgeometry raster debug", "F3": "Microgeometry RT debug", "F4": "Toggle selection freeze",
+      "Space": "Toggle object/morph motion; elapsed time advances", "M": "Toggle MultiMesh visibility", "I": "Toggle primary mesh Material_dragon_emissive/null override",
+      "O": "Toggle resident offscreen dragon visibility", "G": "Increment rt_error_index modulo 3 then assign value", "H": "Increment offscreen_multiplier_index modulo 3 then assign value",
+      "P": "If far >18 set 18, otherwise 200", "U": "Unload/reload three dragons plus MultiMesh", "N": "Native ArrayMesh roundtrip",
+      "F12": "Post-draw user://microgeometry-<unix>.png capture, continue", "Escape": "Quit"
+    },
+    "unload_reload": {
+      "saved_poses": ["Geometry/Dragon", "Geometry/MovingDragon", "Geometry/OffscreenDragon"],
+      "unload": "Clear MultiMesh, remove the three instances and their render membership, release their mesh references. Keep saved authored transforms and material configuration.",
+      "reload": "Reload the shared dragon asset with replace semantics. Recreate three instances at saved authored transforms, restore moving masked override and current primary emissive flag; rebuild the same three-element MultiMesh. No PackedScene or Node creation in native implementation.",
+      "failure": "Missing asset is explicit failure; do not claim loaded state or publish partial instances."
+    },
+    "mesh_roundtrip": {"default_path": "res://microgeometry/native_roundtrip.res", "type": "ArrayMesh", "allowed": "res:// path with .res extension", "operation": "Save primary shared mesh and microgeometry, reload as ArrayMesh with replace semantics, assign to primary, rebuild MultiMesh using that mesh; moving/offscreen keep their current imported mesh.", "log": ["save/load result", "surfaces", "vertices", "triangles", "microgeometry statistics"], "existing_output": "Do not use or retain the current untracked native_roundtrip.res as a required input."},
+    "arguments": ["--capture=<path>", "--delay=<seconds>", "--freeze-after=<seconds>", "--save-native=<res://path.res>", "--rt-error=<pixels>", "--offscreen-multiplier=<factor>", "--far=<metres>", "--view=normal|raster|rt", "--freeze", "--still", "--emissive", "--orbit"],
+    "freeze_after": "One-shot when enabled and elapsed >= freeze_after, before motion/capture processing.",
+    "automatic_capture": "After elapsed >= delay capture once after draw and quit.",
+    "diagnostics": ["raster/RT clusters and triangles", "resident/pending pages", "page pool/geometry/AS KiB", "CLAS/BLAS builds", "residency pressure", "completed GPU ms", "RT error/offscreen multiplier/far", "freeze/motion/orbit flags"]
+  },
+  "stress": {
+    "scene": "microgeometry_stress/scene.tscn",
+    "source": "microgeometry_stress/scene.gd",
+    "serialized_population_revision": "0af41a64e2a69741588de7b6fbbfa913a73959ea",
+    "population": {"rows": 100, "columns": 100, "pattern": "checkerboard", "lucy": 5000, "thai": 5000, "shared_mesh_assets": 2, "native_mesh_instances": 10000},
+    "authoring": "Use the 10000 retained serialized instance transforms exactly. There is no runtime population-generation recipe in the current source. Flatten each imported root and its single mesh into one native record while preserving the composed transform.",
+    "normalization": {"height_m": 2.0, "clearance_m": 0.25, "lucy_rotation_x_radians": -1.5707963267948966, "lucy_uniform_scale": 0.00125231757, "thai_uniform_scale": 0.00504997965, "placement": "Exact origin values are retained per instance; do not rederive from rounded AABBs or replace owner edits with a fresh grid."},
+    "floor": {"size": [147.787591, 0.2, 131.596043], "position": [0.0, -0.1, 0.0]},
+    "camera": {"position": [0.0, 115.030073, 143.787591], "rotation_degrees": [-38.41601, 0.0, 0.0], "fov_degrees": 55.0, "far_m": 575.150363},
+    "orbit": {"enabled_default": false, "initial_angle_radians": 0, "initial_radius": "length(initial_camera.position.xz)", "advance_radians": "delta * 0.08", "position": ["sin(angle) * radius", "radius * 0.8", "cos(angle) * radius"], "look_at_world": [0.0, 1.0, 0.0]},
+    "setup": "Resolve two imported mesh assets, check each has nonempty levels/pages, count 5000+5000 native instances and two shared resources. Enable frame timing only after setup; no imported PackedScene inspection instantiation in the native path.",
+    "arguments": ["--inspect-import", "--orbit", "--capture=<path>", "--delay=<seconds>"],
+    "inspect_import": "Report native asset metadata and exit without frame timing.",
+    "timing": {"sample_interval_usec": 250000, "fps": "frames * 1000000 / elapsed_usec", "frame_ms": "elapsed_usec / (frames * 1000)", "cpu": "CPU render sample includes waits", "gpu": "Completed GPU render sample", "print_condition": "Verbose logging", "destination": "Native fixture panel/log, no CanvasLayer/Label"},
+    "capture": {"default_delay_seconds": 10, "delay_minimum": 0, "ordering": "Wait requested delay after setup, then post-draw capture", "quit_after": false}
+  }
+}

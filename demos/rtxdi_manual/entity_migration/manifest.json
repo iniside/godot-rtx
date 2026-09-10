@@ -1,0 +1,149 @@
+{
+  "step": 1,
+  "source_revision": "0e00313be550b3b45af7bc355fef6ef96ca49eb8",
+  "working_tree_inputs": true,
+  "recipes": "native_recipes.json",
+  "source_identity_and_import_config": "sources.json",
+  "imported_asset_metadata": "imported_assets.json",
+  "documented_defaults": "class_defaults.json",
+  "interpretation": {
+    "serialized": "Lossless property-value text and ordered sections, including authored hierarchy and resource identity. JSON strings contain Godot Variant text, not evaluated Python.",
+    "resolved": "One JSONL record per renderer-relevant leaf, with scoped resource references and composed authored transform/visibility. Hidden imported siblings are retained. HUD and secondary viewport are omitted here, retained only in source provenance.",
+    "transforms": "12 binary64 numbers: basis columns x/y/z then origin. Source decimal text remains in serialized records. glTF quaternion normalized before conversion; degree rotations use Godot YXZ order. These are authored poses before native startup recipes.",
+    "defaults": "Merge inherited class members base-first, then derived documented defaults, imported data and explicit properties. Null resource defaults may be implicit. The full source XML SHA and metadata are pinned; this is not a ClassDB runtime dump.",
+    "assets": "Keep source files at their original paths and verify SHA256 before conversion. GLB JSON metadata does not replace its binary buffers. Untracked source assets are explicitly marked and must remain available.",
+    "conversion": "Step4 consumes these fixed inputs using its native component schema and EntityScene IO. This step introduces no .escn format or compatibility loader. Step8 completes target scene/import/export authoring; delete the temporary tool after conversion, with final cleanup in step9.",
+    "regeneration": "From repo root: python misc/scripts/preserve_renderer_scenes.py. This overwrites only extraction artifacts in entity_migration and reads the fixed allowlist; native_recipes.json and validation.json are authored separately. Reinspect owner input changes before recapturing.",
+    "unknown_data": "Unplanned section/node/instance/glTF topology and unresolved overrides fail extraction. All property values are retained literally; component-field mapping and any unsupported property errors belong to step4 conversion."
+  },
+  "scenes": [
+    {
+      "source": "res://main.tscn",
+      "target": "res://main.escn",
+      "serialized": "serialized/main.tscn.json",
+      "resolved": "resolved/main.tscn.jsonl",
+      "counts": {
+        "WorldEnvironment": 1,
+        "MeshInstance3D": 60,
+        "DirectionalLight3D": 1,
+        "OmniLight3D": 1,
+        "SpotLight3D": 1,
+        "AreaLight3D": 1,
+        "Camera3D": 2
+      },
+      "visible_meshes": 15
+    },
+    {
+      "source": "res://test.tscn",
+      "target": "res://test.escn",
+      "serialized": "serialized/test.tscn.json",
+      "resolved": "resolved/test.tscn.jsonl",
+      "counts": {
+        "WorldEnvironment": 1,
+        "MeshInstance3D": 10,
+        "DirectionalLight3D": 1,
+        "OmniLight3D": 2,
+        "SpotLight3D": 1,
+        "Camera3D": 1
+      },
+      "visible_meshes": 4
+    },
+    {
+      "source": "res://shadows_merged.tscn",
+      "target": "res://shadows_merged.escn",
+      "serialized": "serialized/shadows_merged.tscn.json",
+      "resolved": "resolved/shadows_merged.tscn.jsonl",
+      "counts": {
+        "WorldEnvironment": 1,
+        "MeshInstance3D": 44,
+        "MultiMeshInstance3D": 1,
+        "DirectionalLight3D": 1,
+        "Camera3D": 2
+      },
+      "visible_meshes": 11
+    },
+    {
+      "source": "res://shadows_expanded.tscn",
+      "target": "res://shadows_expanded.escn",
+      "serialized": "serialized/shadows_expanded.tscn.json",
+      "resolved": "resolved/shadows_expanded.tscn.jsonl",
+      "counts": {
+        "WorldEnvironment": 1,
+        "MeshInstance3D": 44,
+        "MultiMeshInstance3D": 1,
+        "DirectionalLight3D": 1,
+        "Camera3D": 2
+      },
+      "visible_meshes": 11
+    },
+    {
+      "source": "res://energy_directional.tscn",
+      "target": "res://energy_directional.escn",
+      "serialized": "serialized/energy_directional.tscn.json",
+      "resolved": "resolved/energy_directional.tscn.jsonl",
+      "counts": {
+        "WorldEnvironment": 1,
+        "MeshInstance3D": 4,
+        "DirectionalLight3D": 1,
+        "Camera3D": 2
+      },
+      "visible_meshes": 1
+    },
+    {
+      "source": "res://energy_emission.tscn",
+      "target": "res://energy_emission.escn",
+      "serialized": "serialized/energy_emission.tscn.json",
+      "resolved": "resolved/energy_emission.tscn.jsonl",
+      "counts": {
+        "WorldEnvironment": 1,
+        "MeshInstance3D": 4,
+        "Camera3D": 2
+      },
+      "visible_meshes": 1
+    },
+    {
+      "source": "res://unsupported.tscn",
+      "target": "res://unsupported.escn",
+      "serialized": "serialized/unsupported.tscn.json",
+      "resolved": "resolved/unsupported.tscn.jsonl",
+      "counts": {
+        "WorldEnvironment": 1,
+        "MeshInstance3D": 72,
+        "DirectionalLight3D": 1,
+        "OmniLight3D": 1,
+        "SpotLight3D": 1,
+        "AreaLight3D": 1,
+        "Camera3D": 2
+      },
+      "visible_meshes": 18
+    },
+    {
+      "source": "res://microgeometry/scene.tscn",
+      "target": "res://microgeometry/scene.escn",
+      "serialized": "serialized/microgeometry/scene.tscn.json",
+      "resolved": "resolved/microgeometry/scene.tscn.jsonl",
+      "counts": {
+        "WorldEnvironment": 1,
+        "MeshInstance3D": 10,
+        "MultiMeshInstance3D": 1,
+        "DirectionalLight3D": 1,
+        "OmniLight3D": 1,
+        "Camera3D": 1
+      },
+      "visible_meshes": 7
+    },
+    {
+      "source": "res://microgeometry_stress/scene.tscn",
+      "target": "res://microgeometry_stress/scene.escn",
+      "serialized": "serialized/microgeometry_stress/scene.tscn.json",
+      "resolved": "resolved/microgeometry_stress/scene.tscn.jsonl",
+      "counts": {
+        "WorldEnvironment": 1,
+        "MeshInstance3D": 10001,
+        "DirectionalLight3D": 1,
+        "Camera3D": 1
+      },
+      "visible_meshes": 10001
+    }
+  ]
+}

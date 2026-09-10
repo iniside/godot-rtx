@@ -1,0 +1,331 @@
+[
+  {
+    "path": "res://energy_directional.tscn",
+    "bytes": 2155,
+    "sha256": "1142514966aad400a10625b59793a5f9f1dd20e8eb2040ee4a5357f45b0cbb7b",
+    "tracked": true,
+    "disposition": "parsed_records_retained"
+  },
+  {
+    "path": "res://energy_emission.tscn",
+    "bytes": 2026,
+    "sha256": "075a7b0ef4d3cbc8fa0b41c9289cb24fb8a4264ce470da0775ffc2f1c54bb37f",
+    "tracked": true,
+    "disposition": "parsed_records_retained"
+  },
+  {
+    "path": "res://export_presets.cfg",
+    "bytes": 363,
+    "sha256": "524417ba2f5016649c9314fcac7f9ac913267e5292de9b2780ad850371458154",
+    "tracked": false,
+    "text": "[preset.0]\n\nname=\"Microgeometry Selected Scene\"\nplatform=\"Windows Desktop\"\ndedicated_server=false\ncustom_features=\"\"\nexport_filter=\"scenes\"\nexport_files=PackedStringArray(\"res://microgeometry/scene.tscn\")\ninclude_filter=\"\"\nexclude_filter=\"microgeometry/manual_export.gd\"\nexport_path=\"\"\n\n[preset.0.options]\n\nbinary_format/embed_pck=false\nshader_baker/enabled=true\n"
+  },
+  {
+    "path": "res://geometry.gltf",
+    "bytes": 103381,
+    "sha256": "4e0a6641b1f7c5b270b73176f958f933db676279ae6f50f8b05b69eb03167313",
+    "tracked": true,
+    "disposition": "retain_shared_source_asset_at_original_path"
+  },
+  {
+    "path": "res://geometry.gltf.import",
+    "bytes": 1141,
+    "sha256": "c4eb3ccc32bd82764a1efad1a6be056572518d73a742809f717e28ef6b31d9de",
+    "tracked": true,
+    "text": "[remap]\n\nimporter=\"scene\"\nimporter_version=1\ntype=\"PackedScene\"\nuid=\"uid://bi7mf42nouwbr\"\npath=\"res://.godot/imported/geometry.gltf-0ac33f4b86ee737ce983357aaf0b3395.scn\"\n\n[deps]\n\nsource_file=\"res://geometry.gltf\"\ndest_files=[\"res://.godot/imported/geometry.gltf-0ac33f4b86ee737ce983357aaf0b3395.scn\"]\n\n[params]\n\nnodes/root_type=\"\"\nnodes/root_name=\"\"\nnodes/root_script=null\nmesh_library/use_node_names_as_mesh_names=false\narray_mesh/deduplicate_surfaces=true\nnodes/apply_root_scale=true\nnodes/root_scale=1.0\nnodes/import_as_skeleton_bones=false\nnodes/use_name_suffixes=true\nnodes/use_node_type_suffixes=true\nmeshes/ensure_tangents=true\nmeshes/generate_lods=true\nmeshes/create_shadow_meshes=true\nmeshes/light_baking=1\nmeshes/lightmap_texel_size=0.2\nmeshes/force_disable_compression=true\nskins/use_named_skins=true\nanimation/import=true\nanimation/fps=30\nanimation/trimming=false\nanimation/remove_immutable_tracks=true\nanimation/import_rest_as_RESET=false\nimport_script/path=\"\"\nmaterials/extract=0\nmaterials/extract_format=0\nmaterials/extract_path=\"\"\n_subresources={}\ngltf/naming_version=2\ngltf/embedded_image_handling=1\ngltf/texture_map_mode=1\n"
+  },
+  {
+    "path": "res://geometry_parts/cube.tscn",
+    "bytes": 348,
+    "sha256": "484f4b552674f760a45ecf8b76e2b3835cd4272ab60e11c241ab94ff0fdac157",
+    "tracked": true,
+    "disposition": "parsed_records_retained"
+  },
+  {
+    "path": "res://geometry_parts/deformer.tscn",
+    "bytes": 348,
+    "sha256": "fb0b090c60c4012656af798acd0a522eddb37aaa5d92b12b8cb2e79bed5d35e7",
+    "tracked": true,
+    "disposition": "parsed_records_retained"
+  },
+  {
+    "path": "res://geometry_parts/plane.tscn",
+    "bytes": 348,
+    "sha256": "c4d32027e7ebd4c2e7cd55152d99d4cc3bbb2ce9b3ca31b28c322c78d6d64073",
+    "tracked": true,
+    "disposition": "parsed_records_retained"
+  },
+  {
+    "path": "res://geometry_parts/plane_mesh.tres",
+    "bytes": 1289,
+    "sha256": "8af4072e14c697ec542513e8f79f9af91aed5cb5b4a5596d1c2347fe124665a0",
+    "tracked": true,
+    "disposition": "parsed_records_retained"
+  },
+  {
+    "path": "res://geometry_parts/sphere.tscn",
+    "bytes": 348,
+    "sha256": "6c6b3d60a2d143d53073c5e552bab66a46d25d2f87fb84a476fcd22470175ec2",
+    "tracked": true,
+    "disposition": "parsed_records_retained"
+  },
+  {
+    "path": "res://main.gd",
+    "bytes": 10739,
+    "sha256": "da37c38e088114fb03e132400d977afd2b9458a5980d28fc0ce46e5d09f09f8a",
+    "tracked": true,
+    "disposition": "recipe_source_only_do_not_execute_or_port"
+  },
+  {
+    "path": "res://main.gd.uid",
+    "bytes": 20,
+    "sha256": "d514f66b05deb080c7115ab068184e18ab73d49bf00770cc418cbbf95723a0c2",
+    "tracked": true,
+    "text": "uid://d33h2gaq7cdq1\n"
+  },
+  {
+    "path": "res://main.tscn",
+    "bytes": 10815,
+    "sha256": "bdabcfda44113f90b8bd17629e4678d2d74cb9164903ca6d9e37c72c5ee0aff6",
+    "tracked": true,
+    "disposition": "parsed_records_retained"
+  },
+  {
+    "path": "res://microgeometry/export_presets.cfg.example",
+    "bytes": 363,
+    "sha256": "524417ba2f5016649c9314fcac7f9ac913267e5292de9b2780ad850371458154",
+    "tracked": true,
+    "text": "[preset.0]\n\nname=\"Microgeometry Selected Scene\"\nplatform=\"Windows Desktop\"\ndedicated_server=false\ncustom_features=\"\"\nexport_filter=\"scenes\"\nexport_files=PackedStringArray(\"res://microgeometry/scene.tscn\")\ninclude_filter=\"\"\nexclude_filter=\"microgeometry/manual_export.gd\"\nexport_path=\"\"\n\n[preset.0.options]\n\nbinary_format/embed_pck=false\nshader_baker/enabled=true\n"
+  },
+  {
+    "path": "res://microgeometry/scene.gd",
+    "bytes": 15297,
+    "sha256": "c105a70d32e29b5943c7aaba11e36a9336d4371a357bf7f2dc4195814c8449dd",
+    "tracked": true,
+    "disposition": "recipe_source_only_do_not_execute_or_port"
+  },
+  {
+    "path": "res://microgeometry/scene.gd.uid",
+    "bytes": 19,
+    "sha256": "2d88dbe81ec12a3e330da52b67584fb6c805ccd08ceb7e6fcb9b1bec62a519da",
+    "tracked": true,
+    "text": "uid://excwwnruh6yg\n"
+  },
+  {
+    "path": "res://microgeometry/scene.tscn",
+    "bytes": 5001,
+    "sha256": "eeaa788354a0be4b7ca3f536f833cd9fa79644ae7697c11fd41ab32432980ac1",
+    "tracked": true,
+    "disposition": "parsed_records_retained"
+  },
+  {
+    "path": "res://microgeometry/seam_grid.mtl",
+    "bytes": 280,
+    "sha256": "60c995516bd61fd73af211457eadea7df975ea794ef662cdac9a17f5b4723803",
+    "tracked": true,
+    "disposition": "retain_shared_source_asset_at_original_path"
+  },
+  {
+    "path": "res://microgeometry/seam_grid.obj",
+    "bytes": 27020,
+    "sha256": "7a2c8d49bb03c621c024b49e07f67ea544ae33d48840f9cebe284ac677e1342b",
+    "tracked": true,
+    "disposition": "retain_shared_source_asset_at_original_path"
+  },
+  {
+    "path": "res://microgeometry/seam_grid.obj.import",
+    "bytes": 1005,
+    "sha256": "ff8d8303e7f33eed5bd5fc4366ea233292e587a63cad7403e31ab180a041dd66",
+    "tracked": false,
+    "text": "[remap]\n\nimporter=\"wavefront_obj\"\nimporter_version=3\ntype=\"Mesh\"\nuid=\"uid://bhekjhpfp0oi\"\npath=\"res://.godot/imported/seam_grid.obj-b674ddbc26723d54031ce38c576c0f27.mesh\"\n\n[deps]\n\nfiles=[\"res://.godot/imported/seam_grid.obj-b674ddbc26723d54031ce38c576c0f27-3211f7895cd335b79ac07af89450b83070437fe29aaef7b8aa1c59465160f6ff.mgdata\", \"res://.godot/imported/seam_grid.obj-b674ddbc26723d54031ce38c576c0f27.mesh\"]\n\nsource_file=\"res://microgeometry/seam_grid.obj\"\ndest_files=[\"res://.godot/imported/seam_grid.obj-b674ddbc26723d54031ce38c576c0f27.mesh\", \"res://.godot/imported/seam_grid.obj-b674ddbc26723d54031ce38c576c0f27-3211f7895cd335b79ac07af89450b83070437fe29aaef7b8aa1c59465160f6ff.mgdata\", \"res://.godot/imported/seam_grid.obj-b674ddbc26723d54031ce38c576c0f27.mesh\"]\n\n[params]\n\ngenerate_tangents=true\ngenerate_lods=true\ngenerate_shadow_mesh=true\ngenerate_lightmap_uv2=false\ngenerate_lightmap_uv2_texel_size=0.2\nscale_mesh=Vector3(1, 1, 1)\noffset_mesh=Vector3(0, 0, 0)\nforce_disable_mesh_compression=false\n"
+  },
+  {
+    "path": "res://microgeometry/xyzrgb_dragon.glb",
+    "bytes": 202136944,
+    "sha256": "6992f4b0f141f8c30ae9fc911d9d8ee34f24ff18bb2db9feefac795e291fe0c2",
+    "tracked": false,
+    "disposition": "retain_shared_source_asset_at_original_path"
+  },
+  {
+    "path": "res://microgeometry/xyzrgb_dragon.glb.import",
+    "bytes": 1472,
+    "sha256": "6a87b9f56d4b02703bc8a085f0564ba5e5fe1132354fec452f36428b60f4ded8",
+    "tracked": false,
+    "text": "[remap]\n\nimporter=\"scene\"\nimporter_version=3\ntype=\"PackedScene\"\nuid=\"uid://dy2q2d3fhwolk\"\npath=\"res://.godot/imported/xyzrgb_dragon.glb-8237b62ed42d71de21ec99a3c56dd152.scn\"\n\n[deps]\n\nfiles=[\"res://.godot/imported/xyzrgb_dragon.glb-8237b62ed42d71de21ec99a3c56dd152-76ac234b449448d86aea2ff49ddaf47bab21866ce9394523115f065e6007595f.mgdata\"]\n\nsource_file=\"res://microgeometry/xyzrgb_dragon.glb\"\ndest_files=[\"res://.godot/imported/xyzrgb_dragon.glb-8237b62ed42d71de21ec99a3c56dd152.scn\", \"res://.godot/imported/xyzrgb_dragon.glb-8237b62ed42d71de21ec99a3c56dd152-76ac234b449448d86aea2ff49ddaf47bab21866ce9394523115f065e6007595f.mgdata\"]\n\n[params]\n\nnodes/root_type=\"\"\nnodes/root_name=\"\"\nnodes/root_script=null\nmesh_library/use_node_names_as_mesh_names=false\narray_mesh/deduplicate_surfaces=true\nnodes/apply_root_scale=true\nnodes/root_scale=1.0\nnodes/import_as_skeleton_bones=false\nnodes/use_name_suffixes=true\nnodes/use_node_type_suffixes=true\nmeshes/ensure_tangents=true\nmeshes/generate_lods=true\nmeshes/create_shadow_meshes=true\nmeshes/light_baking=1\nmeshes/lightmap_texel_size=0.2\nmeshes/force_disable_compression=false\nskins/use_named_skins=true\nanimation/import=true\nanimation/fps=30\nanimation/trimming=false\nanimation/remove_immutable_tracks=true\nanimation/import_rest_as_RESET=false\nimport_script/path=\"\"\nmaterials/extract=0\nmaterials/extract_format=0\nmaterials/extract_path=\"\"\n_subresources={}\ngltf/naming_version=2\ngltf/embedded_image_handling=1\ngltf/texture_map_mode=1\n"
+  },
+  {
+    "path": "res://microgeometry_stress/lucy.glb",
+    "bytes": 785561992,
+    "sha256": "ab6d71b655b68ce3164d375a83d7a63091b88da2d2ce735c55d62775ff474e82",
+    "tracked": false,
+    "disposition": "retain_shared_source_asset_at_original_path"
+  },
+  {
+    "path": "res://microgeometry_stress/lucy.glb.import",
+    "bytes": 1434,
+    "sha256": "f7a35cde1fd4a88dd93f211e208cfb427b13df6429c9bd73b40326d69b696bad",
+    "tracked": false,
+    "text": "[remap]\n\nimporter=\"scene\"\nimporter_version=3\ntype=\"PackedScene\"\nuid=\"uid://cc37fs4886eqx\"\npath=\"res://.godot/imported/lucy.glb-fac5db374d8a4c33bdbe8538cee714bf.scn\"\n\n[deps]\n\nfiles=[\"res://.godot/imported/lucy.glb-fac5db374d8a4c33bdbe8538cee714bf-1da9dd08343174cbd84988b595e3d2aaa4c5f8b79c2ccff7bf39467e50a4b597.mgdata\"]\n\nsource_file=\"res://microgeometry_stress/lucy.glb\"\ndest_files=[\"res://.godot/imported/lucy.glb-fac5db374d8a4c33bdbe8538cee714bf.scn\", \"res://.godot/imported/lucy.glb-fac5db374d8a4c33bdbe8538cee714bf-1da9dd08343174cbd84988b595e3d2aaa4c5f8b79c2ccff7bf39467e50a4b597.mgdata\"]\n\n[params]\n\nnodes/root_type=\"\"\nnodes/root_name=\"\"\nnodes/root_script=null\nmesh_library/use_node_names_as_mesh_names=false\narray_mesh/deduplicate_surfaces=true\nnodes/apply_root_scale=true\nnodes/root_scale=1.0\nnodes/import_as_skeleton_bones=false\nnodes/use_name_suffixes=true\nnodes/use_node_type_suffixes=true\nmeshes/ensure_tangents=true\nmeshes/generate_lods=true\nmeshes/create_shadow_meshes=true\nmeshes/light_baking=1\nmeshes/lightmap_texel_size=0.2\nmeshes/force_disable_compression=false\nskins/use_named_skins=true\nanimation/import=true\nanimation/fps=30\nanimation/trimming=false\nanimation/remove_immutable_tracks=true\nanimation/import_rest_as_RESET=false\nimport_script/path=\"\"\nmaterials/extract=0\nmaterials/extract_format=0\nmaterials/extract_path=\"\"\n_subresources={}\ngltf/naming_version=2\ngltf/embedded_image_handling=1\ngltf/texture_map_mode=1\n"
+  },
+  {
+    "path": "res://microgeometry_stress/scene.gd",
+    "bytes": 5216,
+    "sha256": "5685ec76a66597f0343e9b8c7f60da794b12f81648ad6b2dcb83e6bba6252a7b",
+    "tracked": true,
+    "disposition": "recipe_source_only_do_not_execute_or_port"
+  },
+  {
+    "path": "res://microgeometry_stress/scene.gd.uid",
+    "bytes": 20,
+    "sha256": "ba253b2fc5e0bb83cb5cee5921eed12a7959790a55c7fcbaecb266c70e1095b4",
+    "tracked": true,
+    "text": "uid://bnj1fq6lbli7b\n"
+  },
+  {
+    "path": "res://microgeometry_stress/scene.tscn",
+    "bytes": 1956048,
+    "sha256": "54869e44a56b4fda29eaecda3db9f5c6d2a6e6c0bf7a2fac2deb812a43cbc8cc",
+    "tracked": true,
+    "disposition": "parsed_records_retained"
+  },
+  {
+    "path": "res://microgeometry_stress/thai_statuette.glb",
+    "bytes": 280001084,
+    "sha256": "29a8a750d19778a8bb8a46436d29238c7c3fcbf73b3a9a15bffa6b8173321d24",
+    "tracked": false,
+    "disposition": "retain_shared_source_asset_at_original_path"
+  },
+  {
+    "path": "res://microgeometry_stress/thai_statuette.glb.import",
+    "bytes": 1483,
+    "sha256": "3a413ad7dca7183b95479d85bbf453a7106259f848a09197745bcdfa77b7bb48",
+    "tracked": false,
+    "text": "[remap]\n\nimporter=\"scene\"\nimporter_version=3\ntype=\"PackedScene\"\nuid=\"uid://ucse4tm5b5ri\"\npath=\"res://.godot/imported/thai_statuette.glb-630b4e8d5625dcf2ab682f8d8d846d8d.scn\"\n\n[deps]\n\nfiles=[\"res://.godot/imported/thai_statuette.glb-630b4e8d5625dcf2ab682f8d8d846d8d-01cd040e38f190013d41b7fd8811bd6fd044b3594d0ef36affa81dca6c6039f3.mgdata\"]\n\nsource_file=\"res://microgeometry_stress/thai_statuette.glb\"\ndest_files=[\"res://.godot/imported/thai_statuette.glb-630b4e8d5625dcf2ab682f8d8d846d8d.scn\", \"res://.godot/imported/thai_statuette.glb-630b4e8d5625dcf2ab682f8d8d846d8d-01cd040e38f190013d41b7fd8811bd6fd044b3594d0ef36affa81dca6c6039f3.mgdata\"]\n\n[params]\n\nnodes/root_type=\"\"\nnodes/root_name=\"\"\nnodes/root_script=null\nmesh_library/use_node_names_as_mesh_names=false\narray_mesh/deduplicate_surfaces=true\nnodes/apply_root_scale=true\nnodes/root_scale=1.0\nnodes/import_as_skeleton_bones=false\nnodes/use_name_suffixes=true\nnodes/use_node_type_suffixes=true\nmeshes/ensure_tangents=true\nmeshes/generate_lods=true\nmeshes/create_shadow_meshes=true\nmeshes/light_baking=1\nmeshes/lightmap_texel_size=0.2\nmeshes/force_disable_compression=false\nskins/use_named_skins=true\nanimation/import=true\nanimation/fps=30\nanimation/trimming=false\nanimation/remove_immutable_tracks=true\nanimation/import_rest_as_RESET=false\nimport_script/path=\"\"\nmaterials/extract=0\nmaterials/extract_format=0\nmaterials/extract_path=\"\"\n_subresources={}\ngltf/naming_version=2\ngltf/embedded_image_handling=1\ngltf/texture_map_mode=1\n"
+  },
+  {
+    "path": "res://migrated/camera.gd",
+    "bytes": 1425,
+    "sha256": "9cb679077e6588a49cb8c7daa6bdf919710758567d8511b5972ca21bb2e5b0e2",
+    "tracked": true,
+    "disposition": "recipe_source_only_do_not_execute_or_port"
+  },
+  {
+    "path": "res://migrated/camera.gd.uid",
+    "bytes": 20,
+    "sha256": "9a1acbb202bb138c127abcf35435920106c68d2806f7bad4c6fcb5c3f08807a7",
+    "tracked": true,
+    "text": "uid://bw4xipnyn74em\n"
+  },
+  {
+    "path": "res://migrated/cube.glb",
+    "bytes": 1672,
+    "sha256": "6ad6f379b9e1af6abbed14ced3ac1829ccedbbbed79f15e11953c34bc2333487",
+    "tracked": true,
+    "disposition": "retain_shared_source_asset_at_original_path"
+  },
+  {
+    "path": "res://migrated/cube.glb.import",
+    "bytes": 1135,
+    "sha256": "760f0d2efecc877f31414792d47f84ba36735bdd3be3691b7720885ba1ee2d5d",
+    "tracked": true,
+    "text": "[remap]\n\nimporter=\"scene\"\nimporter_version=1\ntype=\"PackedScene\"\nuid=\"uid://olmqvw4xvg3a\"\npath=\"res://.godot/imported/cube.glb-1b625e46b464f5c938f6ca496e1c76ea.scn\"\n\n[deps]\n\nsource_file=\"res://migrated/cube.glb\"\ndest_files=[\"res://.godot/imported/cube.glb-1b625e46b464f5c938f6ca496e1c76ea.scn\"]\n\n[params]\n\nnodes/root_type=\"\"\nnodes/root_name=\"\"\nnodes/root_script=null\nmesh_library/use_node_names_as_mesh_names=false\narray_mesh/deduplicate_surfaces=true\nnodes/apply_root_scale=true\nnodes/root_scale=1.0\nnodes/import_as_skeleton_bones=false\nnodes/use_name_suffixes=true\nnodes/use_node_type_suffixes=true\nmeshes/ensure_tangents=true\nmeshes/generate_lods=true\nmeshes/create_shadow_meshes=true\nmeshes/light_baking=1\nmeshes/lightmap_texel_size=0.2\nmeshes/force_disable_compression=false\nskins/use_named_skins=true\nanimation/import=true\nanimation/fps=30\nanimation/trimming=false\nanimation/remove_immutable_tracks=true\nanimation/import_rest_as_RESET=false\nimport_script/path=\"\"\nmaterials/extract=0\nmaterials/extract_format=0\nmaterials/extract_path=\"\"\n_subresources={}\ngltf/naming_version=2\ngltf/embedded_image_handling=1\ngltf/texture_map_mode=1\n"
+  },
+  {
+    "path": "res://migrated/test.gd",
+    "bytes": 10635,
+    "sha256": "bdfd5150f8351b11fd8883f28740257524b35d5952ef260424e24ea5cdf45d92",
+    "tracked": true,
+    "disposition": "recipe_source_only_do_not_execute_or_port"
+  },
+  {
+    "path": "res://migrated/test.gd.uid",
+    "bytes": 20,
+    "sha256": "afe95263290306b5065038597c13ab67919f6a4f587a690c11e7757ea38fa06a",
+    "tracked": true,
+    "text": "uid://cofop514wrhun\n"
+  },
+  {
+    "path": "res://migrated/zdm2.glb",
+    "bytes": 3516596,
+    "sha256": "d099555ac483c420f4bc7112e43f829f4394cef0152af35921c3f0e5ec998239",
+    "tracked": true,
+    "disposition": "retain_shared_source_asset_at_original_path"
+  },
+  {
+    "path": "res://migrated/zdm2.glb.import",
+    "bytes": 1136,
+    "sha256": "6c6c69a1a32e04c7547701d2ed95bdb4765622a8f8a1955977719361b1832cb5",
+    "tracked": true,
+    "text": "[remap]\n\nimporter=\"scene\"\nimporter_version=1\ntype=\"PackedScene\"\nuid=\"uid://docsag6ajqwvx\"\npath=\"res://.godot/imported/zdm2.glb-a794572017ff1ebd41559decc0223409.scn\"\n\n[deps]\n\nsource_file=\"res://migrated/zdm2.glb\"\ndest_files=[\"res://.godot/imported/zdm2.glb-a794572017ff1ebd41559decc0223409.scn\"]\n\n[params]\n\nnodes/root_type=\"\"\nnodes/root_name=\"\"\nnodes/root_script=null\nmesh_library/use_node_names_as_mesh_names=false\narray_mesh/deduplicate_surfaces=true\nnodes/apply_root_scale=true\nnodes/root_scale=1.0\nnodes/import_as_skeleton_bones=false\nnodes/use_name_suffixes=true\nnodes/use_node_type_suffixes=true\nmeshes/ensure_tangents=true\nmeshes/generate_lods=true\nmeshes/create_shadow_meshes=true\nmeshes/light_baking=1\nmeshes/lightmap_texel_size=0.2\nmeshes/force_disable_compression=false\nskins/use_named_skins=true\nanimation/import=true\nanimation/fps=30\nanimation/trimming=false\nanimation/remove_immutable_tracks=true\nanimation/import_rest_as_RESET=false\nimport_script/path=\"\"\nmaterials/extract=0\nmaterials/extract_format=0\nmaterials/extract_path=\"\"\n_subresources={}\ngltf/naming_version=2\ngltf/embedded_image_handling=1\ngltf/texture_map_mode=1\n"
+  },
+  {
+    "path": "res://override.cfg",
+    "bytes": 78,
+    "sha256": "e931b51c405573d21d9c4fb809d8f5b995a742f33ce1acd3a6e7ca41228087ef",
+    "tracked": false,
+    "text": "config_version=5\n\n[debug]\nsettings/profiler/max_timestamp_query_elements=2048\n"
+  },
+  {
+    "path": "res://project.godot",
+    "bytes": 696,
+    "sha256": "172e2036886048dca9d2b9e3784d7f973379d61eaf5d5466ec662b1b02e58fea",
+    "tracked": true,
+    "text": "; Engine configuration file.\n; It's best edited using the editor UI and not directly,\n; since the parameters that go here are not all obvious.\n;\n; Format:\n;   [section] ; section goes between []\n;   param=value ; assign values to parameters\n\nconfig_version=5\n\n[application]\n\nconfig/name=\"RTXDI manual rendering demonstration\"\nrun/main_scene=\"res://main.tscn\"\nconfig/features=PackedStringArray(\"4.8\", \"Double Precision\")\n\n[display]\n\nwindow/size/viewport_width=1280\nwindow/size/viewport_height=720\nwindow/size/window_width_override=1280\nwindow/size/window_height_override=720\n\n[rendering]\n\nglobal_illumination/voxel_gi/quality=1\nenvironment/defaults/default_clear_color=Color(0.015, 0.02, 0.03, 1)\n"
+  },
+  {
+    "path": "res://shadows_expanded.tscn",
+    "bytes": 6464,
+    "sha256": "b42e8ddba9d160c10e4c6038b50ed40e1f8f4f4d18d2480a6c6ad4fc25d3b75e",
+    "tracked": true,
+    "disposition": "parsed_records_retained"
+  },
+  {
+    "path": "res://shadows_merged.tscn",
+    "bytes": 6436,
+    "sha256": "d88e4cc3c8be0b394ebc31daec697dd36f2c68c32e5e1d678723c3589bfc2489",
+    "tracked": true,
+    "disposition": "parsed_records_retained"
+  },
+  {
+    "path": "res://test.tscn",
+    "bytes": 5664,
+    "sha256": "0bbc5063c68ce95bba6ec00889780a3c6541e6f46fa54b23fae499509e354fcb",
+    "tracked": true,
+    "disposition": "parsed_records_retained"
+  },
+  {
+    "path": "res://textures/emission_checker.svg",
+    "bytes": 283,
+    "sha256": "cf5d3de59ecc532184947e0067679591f92ea5fca21364e0a3a32645b48aad0e",
+    "tracked": true,
+    "disposition": "retain_shared_source_asset_at_original_path"
+  },
+  {
+    "path": "res://textures/emission_checker.svg.import",
+    "bytes": 1135,
+    "sha256": "40b5e8154962e8432f4d82a8c306231d60762e1cfee8c0d55eadf918d1cbb040",
+    "tracked": true,
+    "text": "[remap]\n\nimporter=\"texture\"\ntype=\"CompressedTexture2D\"\nuid=\"uid://bwfy2m8roa33h\"\npath.s3tc=\"res://.godot/imported/emission_checker.svg-b8aacb6940468ddb3bc4d829e3c24b28.s3tc.ctex\"\nmetadata={\n\"imported_formats\": [\"s3tc_bptc\"],\n\"vram_texture\": true\n}\n\n[deps]\n\nsource_file=\"res://textures/emission_checker.svg\"\ndest_files=[\"res://.godot/imported/emission_checker.svg-b8aacb6940468ddb3bc4d829e3c24b28.s3tc.ctex\"]\n\n[params]\n\ncompress/mode=2\ncompress/high_quality=false\ncompress/high_quality_mode=0\ncompress/lossy_quality=0.7\ncompress/uastc_level=0\ncompress/rdo_quality_loss=0.0\ncompress/hdr_compression=1\ncompress/normal_map=0\ncompress/channel_pack=0\nmipmaps/generate=true\nmipmaps/limit=-1\nroughness/mode=0\nroughness/src_normal=\"\"\nprocess/channel_remap/red=0\nprocess/channel_remap/green=1\nprocess/channel_remap/blue=2\nprocess/channel_remap/alpha=3\nprocess/fix_alpha_border=true\nprocess/premult_alpha=false\nprocess/normal_map_invert_y=false\nprocess/hdr_as_srgb=false\nprocess/hdr_clamp_exposure=false\nprocess/size_limit=0\ndetect_3d/compress_to=0\nsvg/scale=1.0\neditor/scale_with_editor_scale=false\neditor/convert_colors_with_editor_theme=false\n"
+  },
+  {
+    "path": "res://textures/masked_checker.svg",
+    "bytes": 240,
+    "sha256": "e20a1000cdf202024a75cce5d77bd78efc8faddf24a9b6579d57e255ec70cda4",
+    "tracked": true,
+    "disposition": "retain_shared_source_asset_at_original_path"
+  },
+  {
+    "path": "res://textures/masked_checker.svg.import",
+    "bytes": 1128,
+    "sha256": "0b73c28db543969b6873c0093c5188c47fd8f35c1d5c2962c1ec499608ec1d5a",
+    "tracked": true,
+    "text": "[remap]\n\nimporter=\"texture\"\ntype=\"CompressedTexture2D\"\nuid=\"uid://rr4ip5h50mwu\"\npath.s3tc=\"res://.godot/imported/masked_checker.svg-6747ea2abd378a293e74c8b46905e412.s3tc.ctex\"\nmetadata={\n\"imported_formats\": [\"s3tc_bptc\"],\n\"vram_texture\": true\n}\n\n[deps]\n\nsource_file=\"res://textures/masked_checker.svg\"\ndest_files=[\"res://.godot/imported/masked_checker.svg-6747ea2abd378a293e74c8b46905e412.s3tc.ctex\"]\n\n[params]\n\ncompress/mode=2\ncompress/high_quality=false\ncompress/high_quality_mode=0\ncompress/lossy_quality=0.7\ncompress/uastc_level=0\ncompress/rdo_quality_loss=0.0\ncompress/hdr_compression=1\ncompress/normal_map=0\ncompress/channel_pack=0\nmipmaps/generate=true\nmipmaps/limit=-1\nroughness/mode=0\nroughness/src_normal=\"\"\nprocess/channel_remap/red=0\nprocess/channel_remap/green=1\nprocess/channel_remap/blue=2\nprocess/channel_remap/alpha=3\nprocess/fix_alpha_border=true\nprocess/premult_alpha=false\nprocess/normal_map_invert_y=false\nprocess/hdr_as_srgb=false\nprocess/hdr_clamp_exposure=false\nprocess/size_limit=0\ndetect_3d/compress_to=0\nsvg/scale=1.0\neditor/scale_with_editor_scale=false\neditor/convert_colors_with_editor_theme=false\n"
+  },
+  {
+    "path": "res://unsupported.tscn",
+    "bytes": 11296,
+    "sha256": "d731193c33d02f3c3b84fc559c633df7a09b4c267a6d13381fc2bd456acb1b1c",
+    "tracked": true,
+    "disposition": "parsed_records_retained"
+  }
+]

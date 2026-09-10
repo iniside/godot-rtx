@@ -1,0 +1,439 @@
+[
+  {
+    "section": "gd_scene",
+    "attributes": {
+      "load_steps": "14",
+      "format": "3"
+    },
+    "properties": {}
+  },
+  {
+    "section": "ext_resource",
+    "attributes": {
+      "type": "Script",
+      "path": "res://microgeometry/scene.gd",
+      "id": "1_script"
+    },
+    "properties": {}
+  },
+  {
+    "section": "ext_resource",
+    "attributes": {
+      "type": "PackedScene",
+      "path": "res://microgeometry/xyzrgb_dragon.glb",
+      "id": "2_dragon"
+    },
+    "properties": {}
+  },
+  {
+    "section": "ext_resource",
+    "attributes": {
+      "type": "PackedScene",
+      "path": "res://geometry_parts/deformer.tscn",
+      "id": "3_deformer"
+    },
+    "properties": {}
+  },
+  {
+    "section": "ext_resource",
+    "attributes": {
+      "type": "Texture2D",
+      "path": "res://textures/masked_checker.svg",
+      "id": "4_masked"
+    },
+    "properties": {}
+  },
+  {
+    "section": "ext_resource",
+    "attributes": {
+      "type": "Mesh",
+      "path": "res://microgeometry/seam_grid.obj",
+      "id": "5_seam_grid"
+    },
+    "properties": {}
+  },
+  {
+    "section": "sub_resource",
+    "attributes": {
+      "type": "ProceduralSkyMaterial",
+      "id": "ProceduralSkyMaterial_micro"
+    },
+    "properties": {
+      "sky_top_color": "Color(0.08, 0.12, 0.2, 1)",
+      "sky_horizon_color": "Color(0.42, 0.5, 0.62, 1)",
+      "ground_bottom_color": "Color(0.025, 0.03, 0.04, 1)",
+      "ground_horizon_color": "Color(0.32, 0.36, 0.42, 1)",
+      "sun_angle_max": "20.0"
+    }
+  },
+  {
+    "section": "sub_resource",
+    "attributes": {
+      "type": "Sky",
+      "id": "Sky_micro"
+    },
+    "properties": {
+      "sky_material": "SubResource(\"ProceduralSkyMaterial_micro\")"
+    }
+  },
+  {
+    "section": "sub_resource",
+    "attributes": {
+      "type": "Environment",
+      "id": "Environment_micro"
+    },
+    "properties": {
+      "raytracing_geometry_error": "4.0",
+      "raytracing_geometry_offscreen_multiplier": "2.0",
+      "rtxdi_resolution": "2",
+      "ddgi_resolution": "2",
+      "ddgi_cascade_count": "4",
+      "ddgi_updates_per_frame": "2",
+      "background_mode": "2",
+      "sky": "SubResource(\"Sky_micro\")",
+      "tonemap_mode": "4"
+    }
+  },
+  {
+    "section": "sub_resource",
+    "attributes": {
+      "type": "StandardMaterial3D",
+      "id": "Material_floor"
+    },
+    "properties": {
+      "albedo_color": "Color(0.24, 0.27, 0.31, 1)",
+      "roughness": "0.78"
+    }
+  },
+  {
+    "section": "sub_resource",
+    "attributes": {
+      "type": "BoxMesh",
+      "id": "Mesh_floor"
+    },
+    "properties": {
+      "material": "SubResource(\"Material_floor\")",
+      "size": "Vector3(32, 0.2, 32)"
+    }
+  },
+  {
+    "section": "sub_resource",
+    "attributes": {
+      "type": "StandardMaterial3D",
+      "id": "Material_masked"
+    },
+    "properties": {
+      "transparency": "2",
+      "alpha_scissor_threshold": "0.5",
+      "alpha_antialiasing_mode": "0",
+      "cull_mode": "2",
+      "albedo_texture": "ExtResource(\"4_masked\")",
+      "roughness": "0.65"
+    }
+  },
+  {
+    "section": "sub_resource",
+    "attributes": {
+      "type": "QuadMesh",
+      "id": "Mesh_masked"
+    },
+    "properties": {
+      "material": "SubResource(\"Material_masked\")",
+      "size": "Vector2(3, 3)"
+    }
+  },
+  {
+    "section": "sub_resource",
+    "attributes": {
+      "type": "StandardMaterial3D",
+      "id": "Material_dragon_emissive"
+    },
+    "properties": {
+      "albedo_color": "Color(0.02, 0.02, 0.02, 1)",
+      "roughness": "0.4",
+      "emission_enabled": "true",
+      "emission": "Color(0.1, 0.45, 1, 1)",
+      "emission_energy_multiplier": "4.0"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "MicrogeometryManual",
+      "type": "Node3D"
+    },
+    "properties": {
+      "script": "ExtResource(\"1_script\")",
+      "dragon_emissive_material": "SubResource(\"Material_dragon_emissive\")",
+      "dragon_masked_material": "SubResource(\"Material_masked\")"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "WorldEnvironment",
+      "type": "WorldEnvironment",
+      "parent": "."
+    },
+    "properties": {
+      "environment": "SubResource(\"Environment_micro\")"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Geometry",
+      "type": "Node3D",
+      "parent": "."
+    },
+    "properties": {}
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Floor",
+      "type": "MeshInstance3D",
+      "parent": "Geometry"
+    },
+    "properties": {
+      "position": "Vector3(0, -0.1, 0)",
+      "mesh": "SubResource(\"Mesh_floor\")"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Dragon",
+      "parent": "Geometry",
+      "instance": "ExtResource(\"2_dragon\")"
+    },
+    "properties": {
+      "transform": "Transform3D(0.025, 0, 0, 0, 0.025, 0, 0, 0, 0.025, 0, 1.40033, 0)"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "MovingDragon",
+      "parent": "Geometry",
+      "instance": "ExtResource(\"2_dragon\")"
+    },
+    "properties": {
+      "transform": "Transform3D(0.012, 0, 0, 0, 0.012, 0, 0, 0, 0.012, -4.5, 0.67216, 2)"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "OffscreenDragon",
+      "parent": "Geometry",
+      "instance": "ExtResource(\"2_dragon\")"
+    },
+    "properties": {
+      "transform": "Transform3D(0.0170502, 0, 0.0104537, 0, 0.02, 0, -0.0104537, 0, 0.0170502, 10, 1.12027, -1)"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "DragonMultiMesh",
+      "type": "MultiMeshInstance3D",
+      "parent": "Geometry"
+    },
+    "properties": {}
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "ImportedMaterialSeam",
+      "type": "MeshInstance3D",
+      "parent": "Geometry"
+    },
+    "properties": {
+      "position": "Vector3(0, 0.05, -5.5)",
+      "mesh": "ExtResource(\"5_seam_grid\")"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "MaskedPanel",
+      "type": "MeshInstance3D",
+      "parent": "Geometry"
+    },
+    "properties": {
+      "position": "Vector3(-4, 2, -1.5)",
+      "mesh": "SubResource(\"Mesh_masked\")"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "DeformingCaster",
+      "parent": "Geometry",
+      "instance": "ExtResource(\"3_deformer\")"
+    },
+    "properties": {
+      "position": "Vector3(6, 0.8, -1.5)",
+      "scale": "Vector3(0.75, 0.75, 0.75)"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Lights",
+      "type": "Node3D",
+      "parent": "."
+    },
+    "properties": {}
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Sun",
+      "type": "DirectionalLight3D",
+      "parent": "Lights"
+    },
+    "properties": {
+      "rotation_degrees": "Vector3(-55, -35, 0)",
+      "light_energy": "1.2",
+      "shadow_enabled": "true",
+      "directional_shadow_max_distance": "80.0"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Fill",
+      "type": "OmniLight3D",
+      "parent": "Lights"
+    },
+    "properties": {
+      "position": "Vector3(-4, 5, 5)",
+      "light_color": "Color(0.45, 0.65, 1, 1)",
+      "light_energy": "6.0",
+      "shadow_enabled": "true",
+      "omni_range": "14.0"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Cameras",
+      "type": "Node3D",
+      "parent": "."
+    },
+    "properties": {}
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Camera",
+      "type": "Camera3D",
+      "parent": "Cameras"
+    },
+    "properties": {
+      "position": "Vector3(0, 2.8, 8)",
+      "current": "true",
+      "fov": "55.0",
+      "far": "200.0"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "SecondaryView",
+      "type": "SubViewportContainer",
+      "parent": "."
+    },
+    "properties": {
+      "visible": "false",
+      "offset_left": "880.0",
+      "offset_top": "484.0",
+      "offset_right": "1264.0",
+      "offset_bottom": "700.0"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "SubViewport",
+      "type": "SubViewport",
+      "parent": "SecondaryView"
+    },
+    "properties": {
+      "handle_input_locally": "false",
+      "size": "Vector2i(384, 216)",
+      "render_target_update_mode": "0"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "Camera",
+      "type": "Camera3D",
+      "parent": "SecondaryView/SubViewport"
+    },
+    "properties": {
+      "position": "Vector3(-8, 4.5, 7)",
+      "current": "true",
+      "fov": "60.0",
+      "far": "200.0"
+    }
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "HUD",
+      "type": "CanvasLayer",
+      "parent": "."
+    },
+    "properties": {}
+  },
+  {
+    "section": "node",
+    "attributes": {
+      "name": "State",
+      "type": "Label",
+      "parent": "HUD"
+    },
+    "properties": {
+      "offset_left": "16.0",
+      "offset_top": "14.0",
+      "offset_right": "900.0",
+      "offset_bottom": "230.0",
+      "theme_override_colors/font_outline_color": "Color(0, 0, 0, 1)",
+      "theme_override_constants/outline_size": "4",
+      "theme_override_font_sizes/font_size": "16",
+      "text": "\"Microgeometry manual fixture loading...\""
+    }
+  },
+  {
+    "section": "editable",
+    "attributes": {
+      "path": "Geometry/Dragon"
+    },
+    "properties": {}
+  },
+  {
+    "section": "editable",
+    "attributes": {
+      "path": "Geometry/MovingDragon"
+    },
+    "properties": {}
+  },
+  {
+    "section": "editable",
+    "attributes": {
+      "path": "Geometry/OffscreenDragon"
+    },
+    "properties": {}
+  },
+  {
+    "section": "editable",
+    "attributes": {
+      "path": "Geometry/DeformingCaster"
+    },
+    "properties": {}
+  }
+]
