@@ -2738,18 +2738,47 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	const char *deformation_reason = "none";
 	uint32_t deformation_instance = UINT32_MAX;
 	int32_t deformation_surface = -1;
+	uint32_t skipped_deformation_surfaces = 0;
+	uint32_t skipped_deformation_instance = UINT32_MAX;
+	int32_t skipped_deformation_surface = -1;
+	uint32_t skipped_deformation_flags = 0;
+	const SceneShaderForwardClustered::ShaderData *skipped_deformation_shader = nullptr;
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
 	auto prepare_deformation_validity = [&](uint32_t) {
 		for (uint32_t i = 0; i < p_render_data->instances->size() && !invalid_deformation; i++) {
 			GeometryInstanceForwardClustered *instance = static_cast<GeometryInstanceForwardClustered *>((*p_render_data->instances)[i]);
-			invalid_deformation = instance->transform_status == GeometryInstanceForwardClustered::TransformStatus::TELEPORTED || instance->rt_procedural != nullptr;
+			const bool instance_invalid_deformation = instance->transform_status == GeometryInstanceForwardClustered::TransformStatus::TELEPORTED || instance->rt_procedural != nullptr;
+			invalid_deformation = path_traced && instance_invalid_deformation;
 			if (profile_deformation && invalid_deformation) {
 				deformation_reason = instance->transform_status == GeometryInstanceForwardClustered::TransformStatus::TELEPORTED ? "teleported" : "procedural";
 			}
 			for (GeometryInstanceSurfaceDataCache *surface = instance->surface_caches; surface && !invalid_deformation; surface = surface->next) {
-				invalid_deformation = bool(surface->rtxdi_material_flags & GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_DEFORMED);
+				const SceneShaderForwardClustered::ShaderData *shader = surface->shader;
+#ifdef DEBUG_ENABLED
+				if (unlikely(get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_LIGHTING)) {
+					shader = scene_shader.default_material_shader_ptr;
+				} else if (unlikely(get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_OVERDRAW)) {
+					shader = scene_shader.overdraw_material_shader_ptr;
+				} else if (unlikely(get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_PSSM_SPLITS)) {
+					shader = scene_shader.debug_shadow_splits_material_shader_ptr;
+				}
+#endif
+				const bool material_deformed = bool(surface->rtxdi_material_flags & GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_DEFORMED);
+				if (!path_traced && (shader->depth_draw == SceneShaderForwardClustered::ShaderData::DEPTH_DRAW_DISABLED || shader->depth_test == SceneShaderForwardClustered::ShaderData::DEPTH_TEST_DISABLED)) {
+					if (profile_deformation && (instance_invalid_deformation || material_deformed)) {
+						skipped_deformation_surfaces++;
+						if (!skipped_deformation_shader) {
+							skipped_deformation_instance = instance->persistent_instance;
+							skipped_deformation_surface = surface->surface_index;
+							skipped_deformation_flags = surface->rtxdi_material_flags;
+							skipped_deformation_shader = shader;
+						}
+					}
+					continue;
+				}
+				invalid_deformation = instance_invalid_deformation || material_deformed;
 				if (profile_deformation && invalid_deformation) {
-					deformation_reason = "material_deformed";
+					deformation_reason = instance_invalid_deformation ? (instance->transform_status == GeometryInstanceForwardClustered::TransformStatus::TELEPORTED ? "teleported" : "procedural") : "material_deformed";
 					deformation_surface = surface->surface_index;
 				}
 				if (!invalid_deformation && instance->scene_data->mesh_instance.is_valid() && mesh_storage->mesh_instance_get_last_change(instance->scene_data->mesh_instance, surface->surface_index) == engine_frame) {
@@ -2872,6 +2901,9 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	}
 	if (profile_deformation) {
 		print_line(vformat("Microgeometry deformation: frame=%d camera=%d invalid=%s subtype=%s persistent_instance=%d surface=%d", engine_frame, p_render_data->scene_data->camera.get_id(), invalid_deformation, deformation_reason, deformation_instance, deformation_surface));
+		if (skipped_deformation_shader) {
+			print_line(vformat("Microgeometry deformation non-depth: frame=%d skipped_surfaces=%d persistent_instance=%d surface=%d material_flags=%d depth_draw=%d depth_test=%d shader_path=%s shader_prefix=%s", engine_frame, skipped_deformation_surfaces, skipped_deformation_instance, skipped_deformation_surface, skipped_deformation_flags, int(skipped_deformation_shader->depth_draw), int(skipped_deformation_shader->depth_test), skipped_deformation_shader->path, skipped_deformation_shader->code.left(180).replace("\r", " ").replace("\n", " ")));
+		}
 	}
 	color_framebuffer = rb_data->prepare_rtxdi_surface(p_render_data->scene_data, invalid_deformation);
 	_render_shadows(p_render_data);
