@@ -57,12 +57,71 @@ cache/ownership contracts. Final correction builds pass in all three axes:
 `logs/entity-step2-asset-fix-template.log` (26.12s).
 Actual cold-load and native-world execution remain unverified.
 
+## Step 3: lifecycle correction committed, final review pending
+
+Committed at `9588beb0d4c01d5a6da844c64edc29bffecac95c`, from `4e2db6d6ab`.
+Native game MainLoop/window/viewport and EntityWorld services replace game
+PackedScene/autoload/current-scene ingress. Catalog relationships map to Flecs
+Parent; native transforms maintain separate simulation and presentation poses.
+First real world construction exposed a nullable Flecs strdup callback error;
+the corrected callback now allows native startup and shutdown.
+
+Ordinary/double/template builds pass. Latest empty native Vulkan launch exits
+0; nonempty scene startup exits 1 with the expected missing-native-loader error
+and completes cleanup. ProjectManager UI launch exits 0. Logs are local under
+`gpuprofile/ecs_step3_runtime/`. These runs do not prove normal editor startup,
+nonempty native scenes, hierarchy behavior or performance. Renderer-field
+StringName orphan diagnostics remain disclosed in the native logs.
+
+Fresh source review REJECT identified three required corrections: active
+editor root-World3D dereferences after that owner was removed; KEEP_WORLD
+moving transformed descendants when the moved group has no transform; and
+default-environment setting registration absent from fresh editor startup.
+Correction commit `7e4513db52a8a174e9505917ec138530d159af30` gives the editor
+its direct EntityWorld, replaces preview Nodes with renderer-owned UI data,
+registers the retained setting during common initialization, and precomputes
+KEEP_WORLD changes across transform-less groups before relationship mutation.
+Required unloaded frontier records reject the operation before mutation; later
+document commands load the required subset. Hierarchy correctness here is
+source/math evidence, not executed native hierarchy proof.
+
+Normal editor execution also exposed Camera3D registration and GridMap editor
+startup dereferences. Matching binary/map stacks identified both; nullable-world
+camera registration is corrected and excluded GridMap authoring no longer
+automatically registers its plugin. No World3D fallback was introduced.
+
+Final ordinary/editor, double/editor and template_debug builds pass, respectively
+27.77s, 27.30s and 29.33s. Local evidence is in `gpuprofile/ecs_step3_fixes/`:
+`editor-build6-map.log`, `double-build3.log`, `template-build.log`, source/binary
+hash lists and the exact source patch. Ordinary diagnostics add `linkflags=/MAP`.
+Actual normal `--editor --path rawcontent --rendering-driver vulkan --quit-after
+180 --verbose` reaches the main window, completes existing Lucy/Thai imports,
+and exits 0. `native-empty` exits 0; `partial-start` exits 1 with the expected
+missing EntityScene loader error and completes cleanup. Their named receipts
+and stdout/stderr are retained in the same local directory.
+
+SPIR-V parser/OpDemote diagnostics, RTXDI magenta-material warnings and renderer
+StringName orphan messages remain disclosed. Earlier native logs contain the
+same shader diagnostic category, but do not establish identical materials or
+visual correctness. No warning-free, nonempty native rendering, performance or
+automated-test result is claimed. The second fresh source review is pending.
+
+Until native editor/physics/import replacements, the following old UI routes
+are explicitly unavailable: ruler, snap object to floor, curve collider snap,
+3D viewport file drops (scene/mesh/audio/material/texture), and adding preview
+sun/environment to the Node scene. Their native replacements remain assigned
+to approved later steps; disabling old entry points does not complete them.
+GridMap authoring remains permanently excluded by the approved plan.
+
 ## Remaining work
 
-Step 3 world lifecycle/hierarchy/transform replacement is in progress from
-`4e2db6d6ab`. Document, renderer, editor,
+Document, renderer, editor,
 subsystems and native import/export steps have not landed. Existing Node-world
-operation is not evidence of the target entity model.
+operation is not evidence of the target entity model. The owner reiterated on
+2026-09-10 that static-mesh components are required for renderer validation.
+EntityMesh/EntityTransform already exist in the foundation; direct renderer
+ingress in step 5 and the nine native renderer scenes in step 8 remain required
+implementation and real-Vulkan validation, not optional follow-up work.
 
 Scope remains the approved plan: no scripting model, Node plugin compatibility,
 2D scenes, HTML/CSS game UI or automatic world streaming in this implementation.
