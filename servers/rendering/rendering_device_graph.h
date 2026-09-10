@@ -919,6 +919,9 @@ private:
 		uint32_t offset = 0;
 		uint32_t count = 0;
 		uint32_t level = 0;
+#if defined(DEBUG_ENABLED) || defined(DEV_ENABLED)
+		uint32_t breadcrumb_count = 0;
+#endif
 		BarrierGroup barriers;
 		bool worker = true;
 		bool split_before = false;
@@ -927,6 +930,9 @@ private:
 	struct RecordingRange {
 		uint32_t first_group = 0;
 		uint32_t group_count = 0;
+#if defined(DEBUG_ENABLED) || defined(DEV_ENABLED)
+		uint32_t breadcrumb_count = 0;
+#endif
 		RDD::CommandBufferID command_buffer;
 		bool worker = false;
 		bool recorded = false;

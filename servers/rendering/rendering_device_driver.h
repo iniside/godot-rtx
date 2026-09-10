@@ -951,6 +951,7 @@ public:
 	/**** DEBUG *****/
 	/****************/
 	virtual void command_insert_breadcrumb(CommandBufferID p_cmd_buffer, uint32_t p_data) = 0;
+	virtual void command_buffer_reserve_breadcrumbs(CommandBufferID p_cmd_buffer, uint32_t p_count) {}
 
 	/// Returns the underlying native command buffer handle (e.g. ID3D12GraphicsCommandList* or VkCommandBuffer).
 	virtual void *command_buffer_get_native_handle(CommandBufferID p_cmd_buffer) { return nullptr; }

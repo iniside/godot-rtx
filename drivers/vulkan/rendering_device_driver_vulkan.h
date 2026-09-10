@@ -425,6 +425,12 @@ private:
 		VkCommandBuffer vk_command_buffer = VK_NULL_HANDLE;
 		Framebuffer *active_framebuffer = nullptr;
 		RenderPassInfo *active_render_pass = nullptr;
+#if defined(DEBUG_ENABLED) || defined(DEV_ENABLED)
+		bool breadcrumbs_reserved = false;
+		uint32_t breadcrumbs_remaining = 0;
+		uint32_t breadcrumb_offset = 0;
+		uint32_t breadcrumb_id = 0;
+#endif
 	};
 
 public:
@@ -809,6 +815,7 @@ public:
 	/**** DEBUG *****/
 	/****************/
 	virtual void command_insert_breadcrumb(CommandBufferID p_cmd_buffer, uint32_t p_data) override final;
+	virtual void command_buffer_reserve_breadcrumbs(CommandBufferID p_cmd_buffer, uint32_t p_count) override final;
 	virtual void *command_buffer_get_native_handle(CommandBufferID p_cmd_buffer) override final;
 	void print_lost_device_info();
 	void on_device_lost() const;

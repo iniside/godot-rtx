@@ -1124,6 +1124,17 @@ void RenderingDeviceGraph::_run_render_commands(int32_t p_level, const RecordedC
 		const uint32_t command_index = p_sorted_commands[i].index;
 		const uint32_t command_data_offset = command_data_offsets[command_index];
 		const RecordedCommand *command = reinterpret_cast<const RecordedCommand *>(&command_data[command_data_offset]);
+		if (p_allow_split) {
+			bool split = command->type == RecordedCommand::TYPE_DRAW_LIST && static_cast<const RecordedDrawListCommand *>(command)->split_cmd_buffer;
+			if (command->type == RecordedCommand::TYPE_COMPUTE_LIST && driver_workarounds.avoid_compute_after_draw && workarounds_state.draw_list_found) {
+				workarounds_state.draw_list_found = false;
+				split = true;
+			}
+			if (split) {
+				_run_label_command_change(r_command_buffer, -1, -1, false, false, nullptr, 0, r_current_label_index, r_current_label_level);
+				_advance_command_buffer(r_command_buffer, r_command_buffer_pool);
+			}
+		}
 		_run_label_command_change(r_command_buffer, command->label_index, p_level, false, true, &p_sorted_commands[i], p_sorted_commands_count - i, r_current_label_index, r_current_label_level);
 
 		switch (command->type) {
@@ -1175,13 +1186,6 @@ void RenderingDeviceGraph::_run_render_commands(int32_t p_level, const RecordedC
 				_run_raytracing_list_command(r_command_buffer, raytracing_list_command->instruction_data(), raytracing_list_command->instruction_data_size);
 			} break;
 			case RecordedCommand::TYPE_COMPUTE_LIST: {
-				if (p_allow_split && driver_workarounds.avoid_compute_after_draw && workarounds_state.draw_list_found) {
-					// Avoid compute after draw workaround. Refer to the comment that enables this in the Vulkan driver for more information.
-					workarounds_state.draw_list_found = false;
-
-					_advance_command_buffer(r_command_buffer, r_command_buffer_pool);
-				}
-
 				const RecordedComputeListCommand *compute_list_command = reinterpret_cast<const RecordedComputeListCommand *>(command);
 				_run_compute_list_command(r_command_buffer, compute_list_command->instruction_data(), compute_list_command->instruction_data_size);
 			} break;
@@ -1192,10 +1196,6 @@ void RenderingDeviceGraph::_run_render_commands(int32_t p_level, const RecordedC
 				}
 
 				const RecordedDrawListCommand *draw_list_command = reinterpret_cast<const RecordedDrawListCommand *>(command);
-
-				if (p_allow_split && draw_list_command->split_cmd_buffer) {
-					_advance_command_buffer(r_command_buffer, r_command_buffer_pool);
-				}
 
 				const VectorView clear_values(draw_list_command->clear_values(), draw_list_command->clear_values_count);
 #if defined(DEBUG_ENABLED) || defined(DEV_ENABLED)
@@ -1264,9 +1264,11 @@ void RenderingDeviceGraph::_run_label_command_change(RDD::CommandBufferID p_comm
 	}
 
 	if (p_ignore_previous_value || p_new_label_index != r_current_label_index || p_new_level != r_current_label_level) {
-		if (!p_ignore_previous_value && (p_use_label_for_empty || r_current_label_index >= 0 || r_current_label_level >= 0)) {
+		if (!p_ignore_previous_value && (r_current_label_index >= 0 || r_current_label_level >= 0)) {
 			// End the current label.
 			driver->command_end_label(p_command_buffer);
+			r_current_label_index = -1;
+			r_current_label_level = -1;
 		}
 
 		String label_name;
@@ -3247,6 +3249,14 @@ void RenderingDeviceGraph::_compile_groups(uint32_t p_offset, uint32_t p_count, 
 		group.level = p_level;
 		group.worker = worker;
 		group.split_before = first->type == RecordedCommand::TYPE_DRAW_LIST && static_cast<const RecordedDrawListCommand *>(first)->split_cmd_buffer;
+#if defined(DEBUG_ENABLED) || defined(DEV_ENABLED)
+		for (uint32_t i = start; i < stop; i++) {
+			const RecordedCommand *command = reinterpret_cast<const RecordedCommand *>(&command_data[command_data_offsets[compiled_commands[i].index]]);
+			if (command->type == RecordedCommand::TYPE_DRAW_LIST && static_cast<const RecordedDrawListCommand *>(command)->breadcrumb != RDD::BreadcrumbMarker::NONE) {
+				group.breadcrumb_count++;
+			}
+		}
+#endif
 		start = stop;
 	}
 	_group_barriers_for_render_commands(compiled_groups[first_group].barriers, &compiled_commands[p_offset], p_count, p_full_barriers);
@@ -3515,15 +3525,24 @@ void RenderingDeviceGraph::end(bool p_reorder_commands, bool p_full_barriers, RD
 			const CompiledGroup &first = compiled_groups[start];
 			uint32_t stop = start + 1;
 			uint32_t range_commands = first.count;
+#if defined(DEBUG_ENABLED) || defined(DEV_ENABLED)
+			uint32_t breadcrumb_count = first.breadcrumb_count;
+#endif
 			if (first.worker) {
 				while (stop < compiled_groups.size() && compiled_groups[stop].worker && !compiled_groups[stop].split_before && range_commands < target_commands) {
 					range_commands += compiled_groups[stop].count;
+#if defined(DEBUG_ENABLED) || defined(DEV_ENABLED)
+					breadcrumb_count += compiled_groups[stop].breadcrumb_count;
+#endif
 					stop++;
 				}
 			}
 			RecordingRange range;
 			range.first_group = start;
 			range.group_count = stop - start;
+#if defined(DEBUG_ENABLED) || defined(DEV_ENABLED)
+			range.breadcrumb_count = breadcrumb_count;
+#endif
 			range.worker = first.worker;
 			recording_ranges.push_back(range);
 			start = stop;
@@ -3567,6 +3586,12 @@ void RenderingDeviceGraph::end(bool p_reorder_commands, bool p_full_barriers, RD
 			while (i < recording_ranges.size() && recording_ranges[i].worker) {
 				i++;
 			}
+#if defined(DEBUG_ENABLED) || defined(DEV_ENABLED)
+			for (uint32_t index = recording_range_start; index < i; index++) {
+				const RecordingRange &range = recording_ranges[index];
+				driver->command_buffer_reserve_breadcrumbs(range.command_buffer, range.breadcrumb_count);
+			}
+#endif
 			if (profile_recording) {
 				uint64_t queued = OS::get_singleton()->get_ticks_usec();
 				for (uint32_t index = recording_range_start; index < i; index++) {

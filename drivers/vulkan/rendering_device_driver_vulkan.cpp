@@ -3668,6 +3668,10 @@ bool RenderingDeviceDriverVulkan::command_buffer_begin_secondary(CommandBufferID
 void RenderingDeviceDriverVulkan::command_buffer_end(CommandBufferID p_cmd_buffer) {
 	CommandBufferInfo *command_buffer = (CommandBufferInfo *)(p_cmd_buffer.id);
 	vkEndCommandBuffer(command_buffer->vk_command_buffer);
+#if defined(DEBUG_ENABLED) || defined(DEV_ENABLED)
+	DEV_ASSERT(!command_buffer->breadcrumbs_reserved || command_buffer->breadcrumbs_remaining == 0);
+	command_buffer->breadcrumbs_reserved = false;
+#endif
 }
 
 void RenderingDeviceDriverVulkan::command_buffer_execute_secondary(CommandBufferID p_cmd_buffer, VectorView<CommandBufferID> p_secondary_cmd_buffers) {
@@ -7394,13 +7398,31 @@ void RenderingDeviceDriverVulkan::command_end_label(CommandBufferID p_cmd_buffer
 /****************/
 /**** DEBUG *****/
 /****************/
+void RenderingDeviceDriverVulkan::command_buffer_reserve_breadcrumbs(CommandBufferID p_cmd_buffer, uint32_t p_count) {
+#if defined(DEBUG_ENABLED) || defined(DEV_ENABLED)
+	CommandBufferInfo *command_buffer = (CommandBufferInfo *)p_cmd_buffer.id;
+	command_buffer->breadcrumbs_reserved = true;
+	command_buffer->breadcrumbs_remaining = p_count;
+	command_buffer->breadcrumb_offset = breadcrumb_offset;
+	command_buffer->breadcrumb_id = breadcrumb_id;
+	breadcrumb_id += p_count;
+	breadcrumb_offset = uint32_t((breadcrumb_offset + uint64_t(p_count) * sizeof(uint32_t) * 2u) % (BREADCRUMB_BUFFER_ENTRIES * sizeof(uint32_t) * 2u));
+#endif
+}
+
 void RenderingDeviceDriverVulkan::command_insert_breadcrumb(CommandBufferID p_cmd_buffer, uint32_t p_data) {
 #if defined(DEBUG_ENABLED) || defined(DEV_ENABLED)
 	if (p_data == BreadcrumbMarker::NONE) {
 		return;
 	}
 
-	const CommandBufferInfo *command_buffer = (const CommandBufferInfo *)p_cmd_buffer.id;
+	CommandBufferInfo *command_buffer = (CommandBufferInfo *)p_cmd_buffer.id;
+	if (command_buffer->breadcrumbs_reserved) {
+		ERR_FAIL_COND(command_buffer->breadcrumbs_remaining == 0);
+		command_buffer->breadcrumbs_remaining--;
+	}
+	uint32_t &offset = command_buffer->breadcrumbs_reserved ? command_buffer->breadcrumb_offset : breadcrumb_offset;
+	uint32_t &id = command_buffer->breadcrumbs_reserved ? command_buffer->breadcrumb_id : breadcrumb_id;
 	if (Engine::get_singleton()->is_accurate_breadcrumbs_enabled()) {
 		// Force a full barrier so commands are not executed in parallel.
 		// This will mean that the last breadcrumb to see was actually the
@@ -7448,11 +7470,11 @@ void RenderingDeviceDriverVulkan::command_insert_breadcrumb(CommandBufferID p_cm
 
 	// We write to a circular buffer. If you're getting barrier sync errors here,
 	// increase the value of BREADCRUMB_BUFFER_ENTRIES.
-	vkCmdFillBuffer(command_buffer->vk_command_buffer, ((BufferInfo *)breadcrumb_buffer.id)->vk_buffer, breadcrumb_offset, sizeof(uint32_t), breadcrumb_id++);
-	vkCmdFillBuffer(command_buffer->vk_command_buffer, ((BufferInfo *)breadcrumb_buffer.id)->vk_buffer, breadcrumb_offset + sizeof(uint32_t), sizeof(uint32_t), p_data);
-	breadcrumb_offset += sizeof(uint32_t) * 2u;
-	if (breadcrumb_offset >= BREADCRUMB_BUFFER_ENTRIES * sizeof(uint32_t) * 2u) {
-		breadcrumb_offset = 0u;
+	vkCmdFillBuffer(command_buffer->vk_command_buffer, ((BufferInfo *)breadcrumb_buffer.id)->vk_buffer, offset, sizeof(uint32_t), id++);
+	vkCmdFillBuffer(command_buffer->vk_command_buffer, ((BufferInfo *)breadcrumb_buffer.id)->vk_buffer, offset + sizeof(uint32_t), sizeof(uint32_t), p_data);
+	offset += sizeof(uint32_t) * 2u;
+	if (offset >= BREADCRUMB_BUFFER_ENTRIES * sizeof(uint32_t) * 2u) {
+		offset = 0u;
 	}
 #endif
 }
