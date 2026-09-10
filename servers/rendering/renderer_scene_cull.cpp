@@ -2948,20 +2948,6 @@ void RendererSceneCull::_scene_cull_threaded(uint32_t p_thread, CullData *cull_d
 	uint32_t cull_to = (p_thread + 1 == total_threads) ? cull_total : ((p_thread + 1) * cull_total / total_threads);
 
 	_scene_cull(*cull_data, result, cull_from, cull_to);
-	const auto &micro_instances = cull_data->scenario->micro_geometry_instances;
-	for (uint32_t index = p_thread * micro_instances.size() / total_threads; index < (p_thread + 1) * micro_instances.size() / total_threads; index++) {
-		Instance *instance = micro_instances[index];
-		if (!instance->visible) {
-			continue;
-		}
-		const bool receiver = (instance->layer_mask & cull_data->visible_layers) != 0 && instance->cast_shadows != RSE::SHADOW_CASTING_SETTING_SHADOWS_ONLY;
-		const bool caster = instance->cast_shadows != RSE::SHADOW_CASTING_SETTING_OFF;
-		if (receiver || caster) {
-			auto *geometry = static_cast<InstanceGeometryData *>(instance->base_data)->geometry_instance;
-			result.rt_geometry_instances.push_back(geometry);
-			result.rt_visibility.push_back({ geometry, receiver, caster, instance->cast_shadows == RSE::SHADOW_CASTING_SETTING_SHADOWS_ONLY });
-		}
-	}
 
 	if (cull_data->profile) {
 		result.end_usec = OS::get_singleton()->get_ticks_usec();

@@ -693,6 +693,7 @@ protected:
 		uint32_t micro_geometry_levels = 0;
 		uint32_t micro_geometry_surface_index = UINT32_MAX;
 		bool micro_geometry_rt_ready = false;
+		uint64_t micro_geometry_rt_material_generation = 0;
 
 		void *surface = nullptr;
 		RID material_rid;
@@ -712,9 +713,10 @@ protected:
 		SelfList<GeometryInstanceSurfaceDataCache> compilation_dirty_element;
 		SelfList<GeometryInstanceSurfaceDataCache> compilation_all_element;
 		SelfList<GeometryInstanceSurfaceDataCache> micro_geometry_element;
+		SelfList<GeometryInstanceSurfaceDataCache> micro_geometry_rt_element;
 
 		GeometryInstanceSurfaceDataCache() :
-				compilation_dirty_element(this), compilation_all_element(this), micro_geometry_element(this) {}
+				compilation_dirty_element(this), compilation_all_element(this), micro_geometry_element(this), micro_geometry_rt_element(this) {}
 	};
 
 	class GeometryInstanceForwardClustered : public RenderGeometryInstanceBase {
@@ -799,6 +801,8 @@ protected:
 	SelfList<GeometryInstanceSurfaceDataCache>::List geometry_surface_compilation_all_list;
 	SelfList<GeometryInstanceSurfaceDataCache>::List micro_geometry_surface_list;
 	uint64_t micro_geometry_generation = 1;
+	SelfList<GeometryInstanceSurfaceDataCache>::List micro_geometry_rt_surface_list;
+	uint64_t micro_geometry_rt_generation = 1;
 
 	PagedAllocator<GeometryInstanceForwardClustered> geometry_instance_alloc;
 	PagedAllocator<GeometryInstanceSurfaceDataCache> geometry_instance_surface_alloc;

@@ -501,6 +501,17 @@ void RenderForwardClustered::_update_micro_geometry_instances(const LocalVector<
 			if (memcmp(&surface->micro_geometry_task, &task, sizeof(task)) != 0 || !(surface->micro_geometry_bins[0] == bins[0]) || !(surface->micro_geometry_bins[1] == bins[1]) || surface->micro_geometry_element.in_list() != raster_eligible) {
 				micro_geometry_generation++;
 			}
+			const bool rt_eligible = eligible && rt_ready && task.multimesh_count && !(surface->rt_pass_flags & GeometryInstanceSurfaceDataCache::FLAG_PASS_ALPHA);
+			const uint64_t material_generation = surface->persistent_surface ? raytracing->persistent_surfaces[uint32_t(surface->persistent_surface) - 1].data.material_generation : 0;
+			if (surface->micro_geometry_rt_element.in_list() != rt_eligible || (rt_eligible && (memcmp(&surface->micro_geometry_task, &task, sizeof(task)) != 0 || surface->micro_geometry_rt_material_generation != material_generation))) {
+				micro_geometry_rt_generation++;
+			}
+			surface->micro_geometry_rt_material_generation = material_generation;
+			if (rt_eligible && !surface->micro_geometry_rt_element.in_list()) {
+				micro_geometry_rt_surface_list.add(&surface->micro_geometry_rt_element);
+			} else if (!rt_eligible) {
+				surface->micro_geometry_rt_element.remove_from_list();
+			}
 			surface->micro_geometry_task = task;
 			surface->micro_geometry_bins[0] = bins[0];
 			surface->micro_geometry_bins[1] = bins[1];
@@ -4610,6 +4621,9 @@ void RenderForwardClustered::GeometryInstanceForwardClustered::_mark_dirty() {
 		if (surf->micro_geometry_element.in_list()) {
 			RenderForwardClustered::get_singleton()->micro_geometry_generation++;
 		}
+		if (surf->micro_geometry_rt_element.in_list()) {
+			RenderForwardClustered::get_singleton()->micro_geometry_rt_generation++;
+		}
 		RenderForwardClustered::get_singleton()->geometry_instance_surface_alloc.free(surf);
 		surf = next;
 	}
@@ -5508,6 +5522,9 @@ void RenderForwardClustered::geometry_instance_free(RenderGeometryInstance *p_ge
 		GeometryInstanceSurfaceDataCache *next = surf->next;
 		if (surf->micro_geometry_element.in_list()) {
 			micro_geometry_generation++;
+		}
+		if (surf->micro_geometry_rt_element.in_list()) {
+			micro_geometry_rt_generation++;
 		}
 		geometry_instance_surface_alloc.free(surf);
 		surf = next;

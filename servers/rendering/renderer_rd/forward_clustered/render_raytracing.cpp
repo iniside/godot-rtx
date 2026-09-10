@@ -822,7 +822,6 @@ RTSurfaceData *RenderRaytracing::process_surface(
 
 	_populate_surface_blas(p_mesh_surface, RID(), false, cache_key, surf_data, r_dirty_blas_list);
 
-
 	if (!surf_data->blas.is_valid()) {
 		return surf_data;
 	}
@@ -963,7 +962,6 @@ RTSurfaceData *RenderRaytracing::process_deformed_surface(
 		entry.ptr->geometry.prev_vertex_buffer_address_lo = static_cast<uint32_t>(prev_addr & 0xFFFFFFFFULL);
 		entry.ptr->geometry.prev_vertex_buffer_address_hi = static_cast<uint32_t>(prev_addr >> 32);
 	}
-
 
 	entry.cached_change_stamp = p_source.change_stamp;
 	entry.cached_key_version = p_source.cache_version;
@@ -1733,6 +1731,9 @@ void RenderRaytracing::_cancel_micro_epoch(RTMicroGeometryBuild *p_build) {
 }
 
 void RenderRaytracing::_free_micro_geometry(RTMicroGeometryBuild *p_build) {
+	if (p_build->tlas_instances.is_valid()) {
+		RD::get_singleton()->free_rid(p_build->tlas_instances);
+	}
 	_cancel_micro_epoch(p_build);
 	for (uint32_t slot = 1; slot < uint32_t(p_build->cuts.size()); slot++) {
 		_free_micro_cut(p_build, slot);
@@ -1787,7 +1788,7 @@ bool RenderRaytracing::_micro_dispatch(RTViewportState *p_state, uint32_t p_mode
 	LocalVector<RD::Uniform> uniforms;
 	uint32_t binding = 0;
 	RID record_buffer = p_mode == 16 ? build->cuts[build->representatives[build->page_representative].slot].records : build->records;
-	for (RID buffer : { build->tasks, build->segments, build->selection->committed, build->selection->unit_states, persistent_instance_buffer, build->pool, record_buffer, build->pages, build->states, build->buckets, build->links, build->usage, build->feedback, build->tlas_instances, p_state->motion_transform_buffer, build->geometry_slots, build->representative_slots }) {
+	for (RID buffer : { build->tasks, build->segments, build->selection->committed, build->selection->unit_states, persistent_instance_buffer, build->pool, record_buffer, build->pages, build->states, build->buckets, build->links, build->usage, build->feedback, build->tlas_instances, p_state->motion_transform_buffer, build->geometry_slots, build->representative_slots, persistent_surface_buffer, p_state->geometry_buffer, p_state->material_buffer, p_state->motion_index_buffer, persistent_material_buffer }) {
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, binding++, buffer));
 	}
 	struct Parameters {
@@ -1805,8 +1806,10 @@ bool RenderRaytracing::_micro_dispatch(RTViewportState *p_state, uint32_t p_mode
 		uint32_t representative;
 		uint32_t bootstrap;
 		uint32_t layer_mask;
+		uint64_t scenario;
+		uint64_t page_pool;
 	} parameters;
-	static_assert(sizeof(Parameters) == 80);
+	static_assert(sizeof(Parameters) == 96);
 	for (uint32_t axis = 0; axis < 3; axis++) {
 #ifdef REAL_T_IS_DOUBLE
 		RendererRD::MaterialStorage::split_double(p_state->rt_origin[axis], &parameters.origin[axis], &parameters.origin_low[axis]);
@@ -1826,6 +1829,8 @@ bool RenderRaytracing::_micro_dispatch(RTViewportState *p_state, uint32_t p_mode
 	parameters.representative = build->page_representative < uint32_t(build->representatives.size()) ? build->representatives[build->page_representative].unit : 0;
 	parameters.bootstrap = build->bootstrap;
 	parameters.layer_mask = build->selection->data.layer_mask;
+	parameters.scenario = build->selection->data.scenario;
+	parameters.page_pool = rd->buffer_get_device_address(RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage()->get_pool());
 	RID uniform = UniformSetCacheRD::get_singleton()->get_cache_vec(micro_rt_shader.version_get_shader(micro_rt_version, 0), 0, uniforms);
 	if (uniform.is_null()) {
 		build->dispatch_failed = true;
@@ -1849,89 +1854,18 @@ bool RenderRaytracing::_micro_dispatch(RTViewportState *p_state, uint32_t p_mode
 	return true;
 }
 
-bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const RenderDataRD *p_render_data, const Vector<MicroGeometrySelection::Task> &p_tasks, const Vector<RTMicroGeometryTask> &p_rt_tasks, uint32_t p_levels) {
-	const uint64_t profile_frame = RSG::rasterizer->get_frame_number();
-	const bool profile_preparation = RSG::utilities->capturing_timestamps && profile_frame % 120 == 0;
-	const uint64_t coordinator = profile_preparation ? Thread::get_caller_id() : 0;
-	const uint64_t owner_begin = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	struct JobTiming {
-		uint64_t queued = 0;
-		uint64_t begin = 0;
-		uint64_t end = 0;
-		uint64_t wait = 0;
-		uint64_t joined = 0;
-		uint64_t worker = 0;
-	};
-	JobTiming timings[3];
-	uint64_t task_hash_end = 0;
-	uint64_t persistent_hash_end = 0;
-	uint64_t motion_end = 0;
-	uint64_t parameters_end = 0;
-	uint64_t instance_hash_end = 0;
-	uint64_t assets_end = 0;
-	bool dependencies_changed = false;
-	auto begin_job = [&](uint32_t p_index) {
-		if (profile_preparation) {
-			timings[p_index].worker = Thread::get_caller_id();
-			timings[p_index].begin = OS::get_singleton()->get_ticks_usec();
-		}
-	};
-	auto end_job = [&](uint32_t p_index) {
-		if (profile_preparation) {
-			timings[p_index].end = OS::get_singleton()->get_ticks_usec();
-		}
-	};
+bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const RenderDataRD *p_render_data) {
 	RD *rd = RD::get_singleton();
-	auto *storage = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage();
-	if (p_tasks.is_empty()) {
-		_retire_micro_geometry(p_state->micro_geometry);
-		p_state->micro_geometry = nullptr;
-		if (profile_preparation) {
-			print_line(vformat("RenderPrep stage=MicrogeometryRTInputs frame=%d coordinator=%d jobs=0 tasks=0 rt_tasks=%d reused=0 empty=1 begin_usec=%d end_usec=%d timing=elapsed", profile_frame, coordinator, p_rt_tasks.size(), owner_begin, OS::get_singleton()->get_ticks_usec()));
+	auto *mesh_storage = RendererRD::MeshStorage::get_singleton();
+	auto *material_storage = RendererRD::MaterialStorage::get_singleton();
+	auto *storage = mesh_storage->get_micro_geometry_storage();
+	const uint64_t signature = owner->micro_geometry_rt_generation;
+	if (!p_state->micro_geometry || p_state->micro_geometry->signature != signature) {
+		if (!owner->micro_geometry_rt_surface_list.first()) {
+			_retire_micro_geometry(p_state->micro_geometry);
+			p_state->micro_geometry = nullptr;
+			return true;
 		}
-		return true;
-	}
-	uint64_t signature = blass.size();
-	auto prepare_signature = [&](uint32_t) {
-		begin_job(0);
-		signature = _rt_scene_hash(p_tasks.ptr(), p_tasks.size() * sizeof(MicroGeometrySelection::Task), signature);
-		task_hash_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-		signature = _rt_scene_hash(&p_state->settings.mode_generation, sizeof(p_state->settings.mode_generation), signature);
-		const uint64_t environment = p_state->settings_environment.get_id();
-		signature = _rt_scene_hash(&environment, sizeof(environment), signature);
-		signature = _rt_scene_hash(&p_state->settings.geometry_error, sizeof(p_state->settings.geometry_error), signature);
-		signature = _rt_scene_hash(&p_state->settings.geometry_offscreen_multiplier, sizeof(p_state->settings.geometry_offscreen_multiplier), signature);
-		signature = _rt_scene_hash(&p_state->settings_visible_layers, sizeof(p_state->settings_visible_layers), signature);
-		for (const auto &task : p_tasks) {
-			const auto &instance = persistent_instances[uint32_t(task.instance) - 1].data;
-			const auto &surface = persistent_surfaces[uint32_t(task.surface) - 1].data;
-			for (uint64_t value : { instance.asset, instance.asset_address, instance.scenario, uint64_t(instance.visible), uint64_t(instance.layer_mask), uint64_t(instance.shadows), uint64_t(instance.deformed) }) {
-				signature = _rt_scene_hash(&value, sizeof(value), signature);
-			}
-			signature = _rt_scene_hash(&surface.material, sizeof(surface.material), signature);
-			signature = _rt_scene_hash(&surface.material_generation, sizeof(surface.material_generation), signature);
-		}
-		persistent_hash_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-		for (auto task : p_rt_tasks) {
-			task.motion_base = 0;
-			signature = _rt_scene_hash(&task, sizeof(task), signature);
-		}
-		end_job(0);
-	};
-	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
-	timings[0].queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	WorkerThreadPool::GroupID signature_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
-		GodotProfileZone("MicrogeometryInputSignature");
-		(*static_cast<decltype(prepare_signature) *>(p_data))(p_index);
-	},
-			&prepare_signature, 1, 1, true, SNAME("MicrogeometryInputSignature"));
-	timings[0].wait = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	pool->wait_for_group_task_completion(signature_job);
-	timings[0].joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	bool valid = p_state->micro_geometry && p_state->micro_geometry->signature == signature;
-	if (!valid) {
-		_retire_micro_geometry(p_state->micro_geometry);
-		p_state->micro_geometry = nullptr;
 		if (!micro_selection) {
 			micro_selection = memnew(MicroGeometrySelection);
 			Vector<String> modes;
@@ -1942,194 +1876,201 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 		}
 		RTMicroGeometryBuild *build = memnew(RTMicroGeometryBuild);
 		build->signature = signature;
-		build->selection_tasks = p_tasks;
-		build->task_data = p_rt_tasks;
 		build->cuts.resize(1);
-		auto prepare_resources = [&](uint32_t) {
-			begin_job(1);
-			HashMap<RID, HashSet<uint32_t>> finest_surfaces;
-			for (const auto &task : p_tasks) {
-				RID asset = RID::from_uint64(task.asset);
-				if (!build->assets.has(asset)) {
-					build->assets.push_back(asset);
+		uint32_t levels = 0;
+		HashMap<RID, RTMaterialData *> materials;
+		HashMap<RID, HashSet<uint32_t>> finest_surfaces;
+		for (auto *element = owner->micro_geometry_rt_surface_list.first(); element; element = element->next()) {
+			const auto *surface = element->self();
+			const auto *instance = surface->owner;
+			const auto *shader = surface->shader;
+			const auto &record = persistent_instances[uint32_t(instance->persistent_instance) - 1].data;
+			const auto &surface_record = persistent_surfaces[uint32_t(surface->persistent_surface) - 1].data;
+			const auto &metadata = surface->micro_geometry_source->get_metadata();
+			RID asset = RID::from_uint64(record.asset);
+			if (!build->assets.has(asset)) {
+				build->assets.push_back(asset);
+			}
+			RID material = RID::from_uint64(surface_record.material);
+			if (!materials.has(material)) {
+				materials.insert(material, process_material(material, material_storage->material_get_rt_invalidation_counter(material)));
+			}
+			RTMaterialData *native_material = materials[material];
+			MicroGeometrySelection::Task task = surface->micro_geometry_task;
+			task.bin = build->selection_tasks.size();
+			RTMicroGeometryTask rt_task;
+			rt_task.clas_addresses = rd->buffer_get_device_address(storage->get_clas_addresses(asset));
+			rt_task.instance = task.instance;
+			rt_task.surface = task.surface;
+			rt_task.selection_bin = task.bin;
+			rt_task.geometry_base = build->admitted_count;
+			rt_task.motion_base = build->admitted_count;
+			rt_task.instance_count = task.multimesh_count;
+			rt_task.cluster_count = task.cluster_count;
+			rt_task.source_surface = surface_record.source_surface;
+			rt_task.force_finest = surface_record.force_finest;
+			rt_task.group_count = task.group_count;
+			rt_task.indirect_command = task.indirect_command;
+			if (surface->micro_geometry_commands.is_valid() && !build->command_dependencies.has(surface->micro_geometry_commands)) {
+				build->command_dependencies.push_back(surface->micro_geometry_commands);
+			}
+			rt_task.micro_surface = surface->micro_geometry_surface_index;
+			rt_task.primitive_lookup = storage->get_primitive_lookup(asset, rt_task.micro_surface);
+			rt_task.geometry_flags = RT_GEOM_FLAG_CLUSTERED;
+			if (shader->cull_mode == RSE::CULL_MODE_DISABLED) {
+				rt_task.instance_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT;
+			} else if (!(surface->flags & RenderForwardClustered::GeometryInstanceSurfaceDataCache::FLAG_USES_DOUBLE_SIDED_SHADOWS)) {
+				rt_task.geometry_flags |= RT_GEOM_FLAG_SHADOW_CULL_ENABLED;
+			}
+			if (shader->cull_mode != RSE::CULL_MODE_FRONT) {
+				rt_task.instance_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FLIP_FACING_BIT;
+			}
+			if (!shader->uses_alpha_clip && !shader->uses_alpha && !shader->uses_blend_alpha) {
+				rt_task.instance_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_FORCE_OPAQUE_BIT;
+			}
+			if (record.multimesh_address) {
+				rt_task.multimesh_flags = uint32_t(mesh_storage->multimesh_uses_colors(instance->data->base)) | (uint32_t(mesh_storage->multimesh_uses_custom_data(instance->data->base)) << 1) | ((record.flags & (1u << 13)) ? 4u : 0u);
+				build->uses_gpu_instances |= mesh_storage->multimesh_has_gpu_updates(instance->data->base);
+			}
+			build->uses_time |= shader->rt_uses_time();
+			build->uses_previous_time |= shader->rt_uses_previous_time();
+			build->uses_gpu_instances |= task.indirect_command != 0;
+			build->selection_tasks.push_back(task);
+			build->task_data.push_back(rt_task);
+			levels = MAX(levels, surface->micro_geometry_levels);
+			const auto &mat = native_material->data;
+			const bool emissive = !native_material->is_custom_shader && mat.emission_strength != 0 && ((mat.flags & RT_MAT_FLAG_HAS_EMISSION_TEX) || mat.emission_color[0] != 0 || mat.emission_color[1] != 0 || mat.emission_color[2] != 0);
+			for (uint32_t ordinal = 0; ordinal < task.multimesh_count; ordinal++) {
+				build->material_programs.push_back(native_material->hit_shader);
+				if (emissive) {
+					RTEmissiveSource source;
+					source.instance_id = instance->get_instance_rid().get_id();
+					source.resource_id = instance->data->base.get_id();
+					source.surface_generation = (uint64_t(mesh_storage->mesh_surface_get_rt_invalidation_counter(surface->surface)) << 32) | surface->surface_index;
+					source.geometry_index = build->admitted_count + ordinal;
+					source.primitive_count = metadata.surfaces[rt_task.micro_surface].source_triangle_count;
+					source.key_primitive_offset = ordinal * source.primitive_count;
+					source.topology_generation = hash_murmur3_one_64(source.resource_id, hash_murmur3_one_64(source.surface_generation));
+					source.material = native_material;
+					build->emissive_sources.push_back(source);
+					build->emissive_instances.push_back(task.instance);
 				}
-				const auto &surface = persistent_surfaces[uint32_t(task.surface) - 1].data;
-				if (surface.force_finest != 0 && !finest_surfaces[asset].has(surface.source_surface)) {
-					finest_surfaces[asset].insert(surface.source_surface);
-					const auto &metadata = storage->get_source(asset)->get_metadata();
-					HashSet<uint32_t> groups;
-					for (const auto &cluster : metadata.clusters) {
-						if (cluster.refined_group == UINT32_MAX && metadata.surfaces[cluster.surface].source_surface == surface.source_surface && !groups.has(cluster.group)) {
-							groups.insert(cluster.group);
-							build->finest_pins.push_back({ asset, cluster.group });
-						}
+			}
+			build->admitted_count += task.multimesh_count;
+			build->admitted_triangles += uint64_t(task.multimesh_count) * metadata.surfaces[rt_task.micro_surface].source_triangle_count;
+			if (surface_record.force_finest && !finest_surfaces[asset].has(surface_record.source_surface)) {
+				finest_surfaces[asset].insert(surface_record.source_surface);
+				HashSet<uint32_t> groups;
+				for (const auto &cluster : metadata.clusters) {
+					if (cluster.refined_group == UINT32_MAX && metadata.surfaces[cluster.surface].source_surface == surface_record.source_surface && !groups.has(cluster.group)) {
+						groups.insert(cluster.group);
+						build->finest_pins.push_back({ asset, cluster.group });
 					}
 				}
 			}
-			end_job(1);
-		};
-		timings[1].queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-		auto resource_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
-			GodotProfileZone("MicrogeometryResourceInputs");
-			(*static_cast<decltype(prepare_resources) *>(p_data))(p_index);
-		},
-				&prepare_resources, 1, 1, true, SNAME("MicrogeometryResourceInputs"));
-		timings[1].wait = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-		pool->wait_for_group_task_completion(resource_job);
-		timings[1].joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-		for (RID asset : build->assets) {
-			storage->acquire(storage->get_source(asset));
 		}
-		for (const auto &pin : build->finest_pins) {
-			storage->pin_group(pin.asset, pin.group);
+		RTMicroGeometryBuild *previous = p_state->micro_geometry;
+		const bool same_layout = previous && previous->task_data.size() == build->task_data.size() && previous->selection_tasks.size() == build->selection_tasks.size() && memcmp(previous->task_data.ptr(), build->task_data.ptr(), build->task_data.size() * sizeof(RTMicroGeometryTask)) == 0 && memcmp(previous->selection_tasks.ptr(), build->selection_tasks.ptr(), build->selection_tasks.size() * sizeof(MicroGeometrySelection::Task)) == 0;
+		if (same_layout) {
+			previous->signature = signature;
+			previous->material_programs = build->material_programs;
+			previous->emissive_sources = build->emissive_sources;
+			previous->emissive_instances = build->emissive_instances;
+			previous->uses_time = build->uses_time;
+			previous->uses_previous_time = build->uses_previous_time;
+			previous->uses_gpu_instances = build->uses_gpu_instances;
+			memdelete(build);
+		} else {
+			_retire_micro_geometry(previous);
+			p_state->micro_geometry = nullptr;
+			for (RID asset : build->assets) {
+				storage->acquire(storage->get_source(asset));
+			}
+			for (const auto &pin : build->finest_pins) {
+				storage->pin_group(pin.asset, pin.group);
+			}
+			get_persistent_buffer_dependencies(build->dependencies);
+			for (RID asset : build->assets) {
+				storage->get_dependencies(asset, build->dependencies);
+			}
+			MicroGeometrySelection::Parameters parameters;
+			build->selection = micro_selection->create(build->selection_tasks, build->selection_tasks.size(), parameters, levels, sizeof(RenderForwardClustered::SceneState::InstanceData), persistent_instance_buffer, persistent_surface_buffer, build->dependencies);
+			auto allocate = [&](uint64_t p_size, const void *p_data = nullptr) {
+				p_size = MAX(p_size, uint64_t(16));
+				if (p_size > UINT32_MAX) {
+					return RID();
+				}
+				Span<uint8_t> bytes;
+				if (p_data) {
+					bytes = { (const uint8_t *)p_data, p_size };
+				}
+				RID buffer = rd->storage_buffer_create(p_size, bytes, 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT | RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT);
+				if (buffer.is_valid()) {
+					build->resources.push_back(buffer);
+					build->memory_bytes += p_size;
+				}
+				return buffer;
+			};
+			build->tasks = allocate(uint64_t(build->task_data.size()) * sizeof(RTMicroGeometryTask), build->task_data.ptr());
+			build->geometry_slots = allocate(uint64_t(build->admitted_count) * 8);
+			build->feedback = allocate(32 + uint64_t(65536) * 32);
+			if (!build->selection || micro_rt_pipeline.is_null() || build->tasks.is_null() || build->geometry_slots.is_null() || build->feedback.is_null()) {
+				_retire_micro_geometry(build);
+				ERR_FAIL_V_MSG(false, "Unable to allocate persistent RT microgeometry inputs.");
+			}
+			build->memory_bytes += build->selection->memory_bytes;
+			rd->buffer_clear(build->geometry_slots, 0, MAX(build->admitted_count * 8, 16u));
+			p_state->micro_geometry = build;
+			p_state->micro_geometry_transforms_dirty = true;
 		}
+	}
+	RTMicroGeometryBuild *build = p_state->micro_geometry;
+	build->frozen = p_render_data->render_buffers->is_micro_geometry_debug_freeze();
+	build->conservative_updates = build->uses_time || build->uses_previous_time || build->uses_gpu_instances;
+	auto &parameters = build->selection->data;
+	parameters.flags = 1 | 2 | 16 | 32;
+	parameters.cull_plane_count = 0;
+	parameters.scenario = owner->micro_geometry_scenario.get_id();
+	parameters.layer_mask = p_render_data->scene_data->camera_visible_layers;
+	parameters.error = p_state->settings.geometry_error;
+	parameters.offscreen_multiplier = p_state->settings.geometry_offscreen_multiplier;
+	parameters.output_height = p_render_data->render_buffers->get_target_size().y;
+	parameters.near_plane = p_render_data->scene_data->cam_projection.get_z_near();
+	Projection correction;
+	correction.set_depth_correction(p_render_data->scene_data->flip_y);
+	RendererRD::MaterialStorage::store_camera(correction * p_render_data->scene_data->cam_projection, parameters.projection);
+	RendererRD::MaterialStorage::store_transform_transposed_3x4(Transform3D(p_state->camera_transform.basis.inverse(), Vector3()), parameters.view_rotation);
+	for (uint32_t axis = 0; axis < 3; axis++) {
+#ifdef REAL_T_IS_DOUBLE
+		RendererRD::MaterialStorage::split_double(p_state->camera_transform.origin[axis], &parameters.camera[axis], &parameters.camera_low[axis]);
+#else
+		parameters.camera[axis] = p_state->camera_transform.origin[axis];
+#endif
+	}
+	build->selection->persistent_instances = persistent_instance_buffer;
+	build->selection->persistent_surfaces = persistent_surface_buffer;
+	uint64_t input_signature = _rt_scene_hash(&parameters, sizeof(parameters), persistent_scene_generation);
+	uint64_t dependency_signature = persistent_scene_generation;
+	for (RID asset : build->assets) {
+		const auto descriptor = storage->get_asset(asset);
+		input_signature = _rt_scene_hash(&descriptor.residency_generation, sizeof(descriptor.residency_generation), input_signature);
+		dependency_signature = _rt_scene_hash(&descriptor, sizeof(descriptor), dependency_signature);
+	}
+	build->input_signature = input_signature;
+	if (build->dependency_signature != dependency_signature) {
+		build->dependencies.clear();
 		get_persistent_buffer_dependencies(build->dependencies);
 		for (RID asset : build->assets) {
 			storage->get_dependencies(asset, build->dependencies);
 		}
-		MicroGeometrySelection::Parameters parameters;
-		build->selection = micro_selection->create(p_tasks, p_tasks.size(), parameters, p_levels, sizeof(RenderForwardClustered::SceneState::InstanceData), persistent_instance_buffer, persistent_surface_buffer, build->dependencies);
-		auto allocate = [&](uint64_t p_size, const void *p_data = nullptr) {
-			p_size = MAX(p_size, uint64_t(16));
-			if (p_size > UINT32_MAX) {
-				return RID();
-			}
-			Span<uint8_t> bytes;
-			if (p_data) {
-				bytes = { (const uint8_t *)p_data, p_size };
-			}
-			RID buffer = rd->storage_buffer_create(p_size, bytes, 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT | RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT);
-			if (buffer.is_valid()) {
-				build->resources.push_back(buffer);
-				build->memory_bytes += p_size;
-			}
-			return buffer;
-		};
-		build->tasks = allocate(uint64_t(p_rt_tasks.size()) * sizeof(RTMicroGeometryTask), p_rt_tasks.ptr());
-		build->geometry_slots = allocate(uint64_t(blass.size()) * 8);
-		build->tlas_instances = allocate(uint64_t(blass.size()) * sizeof(RD::AccelerationStructureGPUInstance));
-		build->feedback = allocate(32 + uint64_t(65536) * 32);
-		if (!build->selection || micro_rt_pipeline.is_null() || build->tasks.is_null() || build->geometry_slots.is_null() || build->tlas_instances.is_null() || build->feedback.is_null()) {
-			_retire_micro_geometry(build);
-			ERR_FAIL_V_MSG(false, "Unable to allocate compact RT microgeometry instance storage.");
+		for (RID buffer : build->command_dependencies) {
+			build->dependencies.push_back(buffer);
 		}
-		build->memory_bytes += build->selection->memory_bytes;
-		rd->buffer_clear(build->geometry_slots, 0, MAX(uint32_t(blass.size() * 8), 16u));
-		p_state->micro_geometry = build;
+		build->selection->dependencies = build->dependencies;
+		build->dependency_signature = dependency_signature;
 	}
-	RTMicroGeometryBuild *build = p_state->micro_geometry;
-	const uint64_t previous_input_signature = profile_preparation ? build->input_signature : 0;
-	const uint64_t record_scene_generation = persistent_scene_generation;
-	const bool record_hash_reused = build->record_signature_valid && build->record_scene_generation == record_scene_generation;
-	build->frozen = p_render_data->render_buffers->is_micro_geometry_debug_freeze();
-	auto prepare_dependencies = [&](uint32_t) {
-		begin_job(2);
-		for (uint32_t index = 0; index < uint32_t(p_rt_tasks.size()); index++) {
-			build->task_data.write[index].motion_base = p_rt_tasks[index].motion_base;
-		}
-		motion_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-		auto &parameters = build->selection->data;
-		parameters.flags = 1 | 16 | 32;
-		if (p_render_data->scene_data->view_count == 1) {
-			parameters.flags |= 2;
-		}
-		parameters.scenario = persistent_instances[uint32_t(p_tasks[0].instance) - 1].data.scenario;
-		parameters.layer_mask = p_render_data->scene_data->camera_visible_layers;
-		parameters.error = p_state->settings.geometry_error;
-		parameters.offscreen_multiplier = p_state->settings.geometry_offscreen_multiplier;
-		parameters.output_height = p_render_data->render_buffers->get_target_size().y;
-		parameters.near_plane = p_render_data->scene_data->cam_projection.get_z_near();
-		Projection correction;
-		correction.set_depth_correction(p_render_data->scene_data->flip_y);
-		RendererRD::MaterialStorage::store_camera(correction * p_render_data->scene_data->cam_projection, parameters.projection);
-		RendererRD::MaterialStorage::store_transform_transposed_3x4(Transform3D(p_state->camera_transform.basis.inverse(), Vector3()), parameters.view_rotation);
-		for (uint32_t axis = 0; axis < 3; axis++) {
-#ifdef REAL_T_IS_DOUBLE
-			RendererRD::MaterialStorage::split_double(p_state->camera_transform.origin[axis], &parameters.camera[axis], &parameters.camera_low[axis]);
-#else
-			parameters.camera[axis] = p_state->camera_transform.origin[axis];
-#endif
-		}
-		build->selection->persistent_instances = persistent_instance_buffer;
-		build->selection->persistent_surfaces = persistent_surface_buffer;
-		MicroGeometrySelection::Parameters selection_parameters = parameters;
-		uint64_t input_signature = _rt_scene_hash(&selection_parameters, sizeof(selection_parameters), signature);
-		input_signature = _rt_scene_hash(&p_state->rt_origin, sizeof(p_state->rt_origin), input_signature);
-		input_signature = _rt_scene_hash(&build->frozen, sizeof(build->frozen), input_signature);
-		uint64_t dependency_signature = 0x9e3779b97f4a7c15ULL;
-		parameters_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-		if (!record_hash_reused) {
-			uint64_t record_signature = 0x9e3779b97f4a7c15ULL;
-			bool record_conservative_updates = false;
-			for (const auto &task : p_tasks) {
-				const auto &instance = persistent_instances[uint32_t(task.instance) - 1].data;
-				const auto &surface = persistent_surfaces[uint32_t(task.surface) - 1].data;
-				record_signature = _rt_scene_hash(&instance, sizeof(instance), record_signature);
-				record_signature = _rt_scene_hash(&surface, sizeof(surface), record_signature);
-				record_conservative_updates |= task.indirect_command != 0 || instance.deformed != 0;
-			}
-			build->record_signature = record_signature;
-			build->record_conservative_updates = record_conservative_updates;
-			build->record_scene_generation = record_scene_generation;
-			build->record_signature_valid = true;
-		}
-		input_signature = _rt_scene_hash(&build->record_signature, sizeof(build->record_signature), input_signature);
-		build->conservative_updates = build->record_conservative_updates;
-		instance_hash_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-		for (RID asset : build->assets) {
-			const auto descriptor = storage->get_asset(asset);
-			input_signature = _rt_scene_hash(&descriptor.residency_generation, sizeof(descriptor.residency_generation), input_signature);
-			dependency_signature = _rt_scene_hash(&descriptor, sizeof(descriptor), dependency_signature);
-		}
-		assets_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-		build->input_signature = input_signature;
-		Vector<RID> dependencies;
-		get_persistent_buffer_dependencies(dependencies);
-		for (RID buffer : dependencies) {
-			const uint64_t id = buffer.get_id();
-			dependency_signature = _rt_scene_hash(&id, sizeof(id), dependency_signature);
-		}
-		for (RID buffer : geometry_buffer_dependencies) {
-			const uint64_t id = buffer.get_id();
-			dependency_signature = _rt_scene_hash(&id, sizeof(id), dependency_signature);
-			dependencies.push_back(buffer);
-		}
-		if (build->dependency_signature != dependency_signature) {
-			if (profile_preparation) {
-				dependencies_changed = true;
-			}
-			build->dependencies = dependencies;
-			for (RID asset : build->assets) {
-				storage->get_dependencies(asset, build->dependencies);
-			}
-			build->selection->dependencies = build->dependencies;
-			build->dependency_signature = dependency_signature;
-		}
-		for (RID buffer : build->dependencies) {
-			geometry_buffer_dependencies.insert(buffer);
-		}
-		end_job(2);
-	};
-	timings[2].queued = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	WorkerThreadPool::GroupID dependency_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
-		GodotProfileZone("MicrogeometryInputDependencies");
-		(*static_cast<decltype(prepare_dependencies) *>(p_data))(p_index);
-	},
-			&prepare_dependencies, 1, 1, true, SNAME("MicrogeometryInputDependencies"));
-	timings[2].wait = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	pool->wait_for_group_task_completion(dependency_job);
-	timings[2].joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
-	if (profile_preparation) {
-		const uint64_t owner_end = OS::get_singleton()->get_ticks_usec();
-		const char *names[] = { "MicrogeometryInputSignature", "MicrogeometryResourceInputs", "MicrogeometryInputDependencies" };
-		String rows;
-		for (uint32_t index = 0; index < 3; index++) {
-			const JobTiming &timing = timings[index];
-			rows += vformat("RenderPrep stage=%s frame=%d coordinator=%d jobs=%d tasks=%d queued_usec=%d wait_usec=%d joined_usec=%d worker=%d begin_usec=%d end_usec=%d timing=elapsed", names[index], profile_frame, coordinator, int(index != 1 || !valid), p_tasks.size(), timing.queued, timing.wait, timing.joined, timing.worker, timing.begin, timing.end) + "\n";
-		}
-		rows += vformat("RenderPrep stage=MicrogeometryRTInputs frame=%d coordinator=%d jobs=%d tasks=%d rt_tasks=%d assets=%d dependencies=%d reused=%d same_inputs=%d dependency_rebuild=%d conservative=%d frozen=%d begin_usec=%d end_usec=%d rebuild_owner_usec=%d timing=elapsed", profile_frame, coordinator, valid ? 2 : 3, p_tasks.size(), p_rt_tasks.size(), build->assets.size(), build->dependencies.size(), int(valid), int(previous_input_signature == build->input_signature), int(dependencies_changed), int(build->conservative_updates), int(build->frozen), owner_begin, owner_end, valid ? 0 : timings[1].queued - timings[0].joined + timings[2].queued - timings[1].joined) + "\n";
-		rows += vformat("RenderPrep stage=MicrogeometryRTHashPhases frame=%d task_bytes=%d signature_record_bytes=%d rt_task_bytes=%d dependency_record_bytes=%d record_hash_hits=%d record_hash_misses=%d record_scene_generation=%d task_hash_usec=%d signature_records_usec=%d rt_task_hash_usec=%d motion_usec=%d parameters_usec=%d instance_hash_usec=%d assets_usec=%d dependencies_usec=%d timing=elapsed", profile_frame, uint64_t(p_tasks.size()) * sizeof(MicroGeometrySelection::Task), uint64_t(p_tasks.size()) * 9 * sizeof(uint64_t), uint64_t(p_rt_tasks.size()) * sizeof(RTMicroGeometryTask), record_hash_reused ? uint64_t(0) : uint64_t(p_tasks.size()) * (sizeof(RTPersistentInstanceData) + sizeof(RTPersistentSurfaceData)), int(record_hash_reused), int(!record_hash_reused), record_scene_generation, task_hash_end - timings[0].begin, persistent_hash_end - task_hash_end, timings[0].end - persistent_hash_end, motion_end - timings[2].begin, parameters_end - motion_end, instance_hash_end - parameters_end, assets_end - instance_hash_end, timings[2].end - assets_end);
-		print_line(rows);
+	for (RID buffer : build->dependencies) {
+		geometry_buffer_dependencies.insert(buffer);
 	}
 	return true;
 }
@@ -2139,6 +2080,19 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 	RD *rd = RD::get_singleton();
 	auto *storage = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage();
 	bool published = false;
+	const uint32_t total_instances = build->admitted_count + blass.size();
+	if (total_instances > build->tlas_capacity) {
+		if (build->tlas_instances.is_valid()) {
+			rd->free_rid(build->tlas_instances);
+			build->memory_bytes -= uint64_t(build->tlas_capacity) * sizeof(RD::AccelerationStructureGPUInstance);
+		}
+		build->tlas_capacity = Math::nearest_power_of_2_templated(MAX(total_instances, 1u));
+		build->tlas_instances = rd->storage_buffer_create(uint64_t(build->tlas_capacity) * sizeof(RD::AccelerationStructureGPUInstance), Span<uint8_t>(), 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT | RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT);
+		ERR_FAIL_COND_V(build->tlas_instances.is_null(), false);
+		build->memory_bytes += uint64_t(build->tlas_capacity) * sizeof(RD::AccelerationStructureGPUInstance);
+		rd->buffer_clear(build->tlas_instances, 0, build->tlas_capacity * sizeof(RD::AccelerationStructureGPUInstance));
+		p_state->micro_geometry_transforms_dirty = true;
+	}
 	if (build->epoch == RTMicroGeometryBuild::IDLE && build->pending_feedback == 0) {
 		for (uint32_t slot = 1; slot < uint32_t(build->cuts.size()); slot++) {
 			const auto &cut = build->cuts[slot];
@@ -2243,15 +2197,21 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 				build->selection_retry = !build->selection->feedback_active;
 				micro_selection->submit_feedback(build->selection);
 			}
-			Vector<RTMicroGeometrySegment> segments;
-			uint64_t record_work = 0;
-			uint32_t max_capacity = 0;
-			for (uint32_t index = 0; index < uint32_t(build->selection->unit_data.size()); index++) {
-				const auto &unit = build->selection->unit_data[index];
-				uint32_t capacity = Math::nearest_power_of_2_templated(MAX(unit.record_capacity, 1u));
-				segments.push_back({ unit.task, unit.ordinal, unit.record_offset, capacity, uint32_t(record_work), build->task_data[unit.task].geometry_base + unit.ordinal, index, 0 });
-				record_work += capacity;
-				max_capacity = MAX(max_capacity, capacity);
+			const bool layout_changed = build->segment_units != build->selection->units;
+			Vector<RTMicroGeometrySegment> segments = build->segment_data;
+			uint64_t record_work = build->record_work;
+			uint32_t max_capacity = build->max_capacity;
+			if (layout_changed) {
+				segments.clear();
+				record_work = 0;
+				max_capacity = 0;
+				for (uint32_t index = 0; index < uint32_t(build->selection->unit_data.size()); index++) {
+					const auto &unit = build->selection->unit_data[index];
+					uint32_t capacity = Math::nearest_power_of_2_templated(MAX(unit.record_capacity, 1u));
+					segments.push_back({ unit.task, unit.ordinal, unit.record_offset, capacity, uint32_t(record_work), build->task_data[unit.task].geometry_base + unit.ordinal, index, 0 });
+					record_work += capacity;
+					max_capacity = MAX(max_capacity, capacity);
+				}
 			}
 			uint32_t pool_count = build->cuts.size();
 			uint32_t bucket_count = Math::nearest_power_of_2_templated(MAX(uint32_t(segments.size()) * 2, 16u));
@@ -2260,21 +2220,6 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 				_cancel_micro_epoch(build);
 				ERR_FAIL_V_MSG(false, "Compact RT cut working storage exceeds the device admission budget.");
 			}
-			Vector<RID> resources;
-			uint64_t allocated = 0;
-			auto allocate = [&](uint64_t p_size, const void *p_data = nullptr) {
-				p_size = MAX(p_size, uint64_t(16));
-				Span<uint8_t> bytes;
-				if (p_data) {
-					bytes = { (const uint8_t *)p_data, p_size };
-				}
-				RID buffer = rd->storage_buffer_create(p_size, bytes, 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT | RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT);
-				if (buffer.is_valid()) {
-					resources.push_back(buffer);
-					allocated += p_size;
-				}
-				return buffer;
-			};
 			Vector<RTMicroGeometryCutDescriptor> descriptors;
 			for (const auto &cut : build->cuts) {
 				auto descriptor = cut.descriptor;
@@ -2283,49 +2228,69 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 				}
 				descriptors.push_back(descriptor);
 			}
-			RID segment_buffer = allocate(uint64_t(segments.size()) * sizeof(RTMicroGeometrySegment), segments.ptr());
-			RID pool = allocate(uint64_t(pool_count) * sizeof(RTMicroGeometryCutDescriptor), descriptors.ptr());
-			RID records = allocate(record_work * 8);
-			RID pages = allocate(record_work * 8);
-			RID states = allocate(uint64_t(segments.size()) * 32);
-			RID buckets = allocate(uint64_t(bucket_count) * 4);
-			RID links = allocate(uint64_t(pool_count) * 4);
-			RID usage = allocate(uint64_t(pool_count) * 4);
-			RID mapping = allocate(uint64_t(segments.size()) * 8);
-			bool complete = true;
-			for (RID buffer : { segment_buffer, pool, records, pages, states, buckets, links, usage, mapping }) {
-				complete &= buffer.is_valid();
-			}
-			if (!complete) {
-				for (RID resource : resources) {
+			if (layout_changed || pool_count != build->epoch_pool_capacity) {
+				Vector<RID> resources;
+				uint64_t allocated = 0;
+				auto allocate = [&](uint64_t p_size, const void *p_data = nullptr) {
+					p_size = MAX(p_size, uint64_t(16));
+					Span<uint8_t> bytes;
+					if (p_data) {
+						bytes = { (const uint8_t *)p_data, p_size };
+					}
+					RID buffer = rd->storage_buffer_create(p_size, bytes, 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT | RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT);
+					if (buffer.is_valid()) {
+						resources.push_back(buffer);
+						allocated += p_size;
+					}
+					return buffer;
+				};
+				RID segment_buffer = allocate(uint64_t(segments.size()) * sizeof(RTMicroGeometrySegment), segments.ptr());
+				RID pool = allocate(uint64_t(pool_count) * sizeof(RTMicroGeometryCutDescriptor), descriptors.ptr());
+				RID records = allocate(record_work * 8);
+				RID pages = allocate(record_work * 8);
+				RID states = allocate(uint64_t(segments.size()) * 32);
+				RID buckets = allocate(uint64_t(bucket_count) * 4);
+				RID links = allocate(uint64_t(pool_count) * 4);
+				RID usage = allocate(uint64_t(pool_count) * 4);
+				RID mapping = allocate(uint64_t(segments.size()) * 8);
+				bool complete = true;
+				for (RID buffer : { segment_buffer, pool, records, pages, states, buckets, links, usage, mapping }) {
+					complete &= buffer.is_valid();
+				}
+				if (!complete) {
+					for (RID resource : resources) {
+						rd->free_rid(resource);
+					}
+					_cancel_micro_epoch(build);
+					ERR_FAIL_V_MSG(false, "Unable to allocate compact RT cut working storage.");
+				}
+				for (RID resource : build->epoch_resources) {
 					rd->free_rid(resource);
 				}
-				_cancel_micro_epoch(build);
-				ERR_FAIL_V_MSG(false, "Unable to allocate compact RT cut working storage.");
+				build->memory_bytes = build->memory_bytes - build->epoch_bytes + allocated;
+				build->epoch_bytes = allocated;
+				build->epoch_resources = resources;
+				build->segment_data = segments;
+				build->segments = segment_buffer;
+				build->pool = pool;
+				build->records = records;
+				build->pages = pages;
+				build->states = states;
+				build->buckets = buckets;
+				build->links = links;
+				build->usage = usage;
+				build->representative_slots = mapping;
+				build->record_work = record_work;
+				build->max_capacity = max_capacity;
+				build->bucket_count = bucket_count;
+				build->pool_count = pool_count;
+				build->epoch_pool_capacity = pool_count;
+				build->segment_units = build->selection->units;
+			} else {
+				rd->buffer_update(build->pool, 0, descriptors.size() * sizeof(RTMicroGeometryCutDescriptor), descriptors.ptr());
 			}
-			for (RID resource : build->epoch_resources) {
-				rd->free_rid(resource);
-			}
-			build->memory_bytes = build->memory_bytes - build->epoch_bytes + allocated;
-			build->epoch_bytes = allocated;
-			build->epoch_resources = resources;
-			build->segment_data = segments;
-			build->segments = segment_buffer;
-			build->pool = pool;
-			build->records = records;
-			build->pages = pages;
-			build->states = states;
-			build->buckets = buckets;
-			build->links = links;
-			build->usage = usage;
-			build->representative_slots = mapping;
-			build->record_work = record_work;
-			build->max_capacity = max_capacity;
-			build->bucket_count = bucket_count;
-			build->pool_count = pool_count;
 			build->candidate_users.resize_initialized(pool_count);
 			build->cut_generation++;
-			rd->buffer_update(build->tasks, 0, build->task_data.size() * sizeof(RTMicroGeometryTask), build->task_data.ptr());
 			_micro_dispatch(p_state, 0, build->record_work);
 			_micro_dispatch(p_state, 1, segments.size(), true);
 			for (uint32_t width = 2; width <= max_capacity; width <<= 1) {
@@ -2390,8 +2355,7 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 	if (build->epoch == RTMicroGeometryBuild::PUBLISH && build->pending_feedback == 0 && (!build->frozen || !build->has_committed_cut)) {
 		RENDER_TIMESTAMP("Microgeometry RT Publish Shared Cuts");
 		bool valid = true;
-		Vector<uint32_t> representative_slots;
-		representative_slots.resize_initialized(build->segment_data.size() * 2);
+		rd->buffer_clear(build->representative_slots, 0, build->segment_data.size() * 8);
 		uint64_t scratch_bytes = 0;
 		for (auto &representative : build->representatives) {
 			uint32_t slot = 1;
@@ -2430,8 +2394,8 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 				break;
 			}
 			valid &= rd->buffer_copy(build->records, cut.records, uint64_t(segment.offset) * 8, 0, uint64_t(representative.count) * 8) == OK;
-			representative_slots.write[representative.unit * 2] = slot;
-			representative_slots.write[representative.unit * 2 + 1] = cut.descriptor.generation;
+			const uint32_t mapping[2] = { slot, cut.descriptor.generation };
+			rd->buffer_update(build->representative_slots, representative.unit * 8, sizeof(mapping), mapping);
 			RD::ClusterBottomLevelBuildInput input;
 			input.max_acceleration_structure_count = 1;
 			input.max_total_cluster_count = representative.count;
@@ -2445,14 +2409,22 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 		for (const auto &cut : build->cuts) {
 			descriptors.push_back(cut.descriptor);
 		}
-		RID pool = rd->storage_buffer_create(uint64_t(descriptors.size()) * sizeof(RTMicroGeometryCutDescriptor), Span<uint8_t>((const uint8_t *)descriptors.ptr(), descriptors.size() * sizeof(RTMicroGeometryCutDescriptor)));
-		valid &= pool.is_valid();
-		if (pool.is_valid()) {
-			build->pool = pool;
-			build->pool_count = descriptors.size();
-			build->epoch_resources.push_back(pool);
-			build->epoch_bytes += descriptors.size() * sizeof(RTMicroGeometryCutDescriptor);
-			build->memory_bytes += descriptors.size() * sizeof(RTMicroGeometryCutDescriptor);
+		const uint64_t descriptor_bytes = uint64_t(descriptors.size()) * sizeof(RTMicroGeometryCutDescriptor);
+		if (uint32_t(descriptors.size()) > build->pool_count) {
+			RID pool = rd->storage_buffer_create(descriptor_bytes, Span<uint8_t>((const uint8_t *)descriptors.ptr(), descriptor_bytes));
+			valid &= pool.is_valid();
+			if (pool.is_valid()) {
+				const uint64_t previous_bytes = uint64_t(build->pool_count) * sizeof(RTMicroGeometryCutDescriptor);
+				rd->free_rid(build->pool);
+				build->epoch_resources.erase(build->pool);
+				build->pool = pool;
+				build->pool_count = descriptors.size();
+				build->epoch_resources.push_back(pool);
+				build->epoch_bytes += descriptor_bytes - previous_bytes;
+				build->memory_bytes += descriptor_bytes - previous_bytes;
+			}
+		} else {
+			rd->buffer_update(build->pool, 0, descriptor_bytes, descriptors.ptr());
 		}
 		if (scratch_bytes > build->scratch_bytes && scratch_bytes <= UINT32_MAX) {
 			RID scratch = rd->storage_buffer_create(scratch_bytes, Vector<uint8_t>(), 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
@@ -2472,7 +2444,6 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 			}
 		}
 		valid &= scratch_bytes <= build->scratch_bytes;
-		rd->buffer_update(build->representative_slots, 0, representative_slots.size() * 4, representative_slots.ptr());
 		for (uint32_t index = 0; valid && index < uint32_t(build->representatives.size()); index++) {
 			const auto &representative = build->representatives[index];
 			auto &cut = build->cuts.write[representative.slot];
@@ -2553,7 +2524,7 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 			ERR_PRINT("Unable to publish a complete shared RT microgeometry cut.");
 		}
 	}
-	uint64_t transform_signature = _rt_scene_hash(&p_state->rt_origin, sizeof(p_state->rt_origin), blass.size());
+	uint64_t transform_signature = _rt_scene_hash(&p_state->rt_origin, sizeof(p_state->rt_origin), build->input_signature);
 	auto prepare_signature = [&](uint32_t) {
 		for (uint32_t index = 0; index < blass.size(); index++) {
 			transform_signature = _rt_scene_hash(&blas_transforms[index], sizeof(Transform3D), transform_signature);
@@ -2562,11 +2533,7 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 			transform_signature = _rt_scene_hash(&instance_flags[index], sizeof(instance_flags[index]), transform_signature);
 			transform_signature = _rt_scene_hash(&instance_masks[index], sizeof(instance_masks[index]), transform_signature);
 		}
-		for (const auto &task : build->task_data) {
-			const auto &instance = persistent_instances[uint32_t(task.instance) - 1].data;
-			transform_signature = _rt_scene_hash(&instance, sizeof(instance), transform_signature);
-			transform_signature = _rt_scene_hash(&task.motion_base, sizeof(task.motion_base), transform_signature);
-		}
+
 	};
 	WorkerThreadPool::GroupID transform_job = WorkerThreadPool::get_singleton()->add_native_group_task([](void *p_data, uint32_t p_index) {
 		GodotProfileZone("MicrogeometryTransformSignature");
@@ -2608,8 +2575,8 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 			Transform3D transform = blas_transforms[index];
 			transform.origin -= p_state->rt_origin;
 			RendererRD::MaterialStorage::store_transform_transposed_3x4(transform, instances[index].transform);
-			instances[index].custom_index_and_mask = index | (uint32_t(instance_masks[index]) << 24);
-			instances[index].sbt_offset_and_flags = index | (instance_flags[index] << 24);
+			instances[index].custom_index_and_mask = (build->admitted_count + index) | (uint32_t(instance_masks[index]) << 24);
+			instances[index].sbt_offset_and_flags = (build->admitted_count + index) | (instance_flags[index] << 24);
 			instances[index].acceleration_structure_reference = blass[index].is_valid() ? addresses.get(blass[index]) : 0;
 		}
 	};
@@ -2637,15 +2604,16 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 	},
 			&dependencies, 1, 1, true, SNAME("MicrogeometryBLASDependencies"));
 	pool->wait_for_group_task_completion(dependency_job);
-	rd->buffer_update(build->tlas_instances, 0, instances.size() * sizeof(RD::AccelerationStructureGPUInstance), instances.ptr());
-	rd->buffer_update(build->tasks, 0, build->task_data.size() * sizeof(RTMicroGeometryTask), build->task_data.ptr());
+	if (!instances.is_empty()) {
+		rd->buffer_update(build->tlas_instances, build->admitted_count * sizeof(RD::AccelerationStructureGPUInstance), instances.size() * sizeof(RD::AccelerationStructureGPUInstance), instances.ptr());
+	}
 	if (build->segments.is_valid()) {
 		ERR_FAIL_COND_V(!_micro_dispatch(p_state, 15, build->segment_data.size()), false);
 	}
 	build->transform_signature = transform_signature;
 	p_state->micro_geometry_transforms_dirty = false;
 	RENDER_TIMESTAMP("Microgeometry RT TLAS Build");
-	const bool success = rd->tlas_build_from_buffer(p_state->tlas, build->tlas_instances, 0, blass.size(), build->blas_dependencies) == OK;
+	const bool success = rd->tlas_build_from_buffer(p_state->tlas, build->tlas_instances, 0, total_instances, build->blas_dependencies) == OK;
 	RENDER_TIMESTAMP("Microgeometry RT AS Complete");
 	return success;
 }
@@ -2667,7 +2635,7 @@ bool RenderRaytracing::build_acceleration_structures(RTViewportState *p_state, c
 
 	RENDER_TIMESTAMP("TLAS Build");
 
-	uint32_t needed = MAX(blass.size(), (uint32_t)1);
+	uint32_t needed = MAX(blass.size() + (p_state->micro_geometry ? p_state->micro_geometry->admitted_count : 0u), 1u);
 	if (!p_state->tlas.is_valid() || needed > p_state->tlas_max_instances) {
 		if (p_state->tlas.is_valid()) {
 			if (p_state->micro_geometry) {
@@ -2755,6 +2723,8 @@ bool RenderRaytracing::build_acceleration_structures(RTViewportState *p_state, c
 }
 
 void RenderRaytracing::finalize_buffers(RTViewportState *p_state) {
+	const uint32_t prefix = p_state->micro_geometry ? p_state->micro_geometry->admitted_count : 0;
+	const bool layout_changed = prefix != p_state->upload_prefix;
 	RT_GeometryData empty_geometry = {};
 	RT_MaterialData empty_material = {};
 	const int32_t empty_motion_index = -1;
@@ -2765,16 +2735,18 @@ void RenderRaytracing::finalize_buffers(RTViewportState *p_state) {
 		Vector<uint8_t> *uploaded;
 		const void *data;
 		uint32_t size;
+		uint32_t offset;
+		bool layout_changed;
 		uint32_t first = 0;
 		uint32_t end = 0;
 		bool changed = false;
 		Vector<uint8_t> payload;
 	};
 	Upload uploads[] = {
-		{ &p_state->geometry_buffer, &p_state->geometry_buffer_capacity, &p_state->geometry_upload, geometry_data.is_empty() ? &empty_geometry : geometry_data.ptr(), MAX(geometry_data.size(), 1u) * sizeof(RT_GeometryData) },
-		{ &p_state->material_buffer, &p_state->material_buffer_capacity, &p_state->material_upload, material_data.is_empty() ? &empty_material : material_data.ptr(), MAX(material_data.size(), 1u) * sizeof(RT_MaterialData) },
-		{ &p_state->motion_index_buffer, &p_state->motion_index_buffer_capacity, &p_state->motion_index_upload, motion_indices.is_empty() ? &empty_motion_index : motion_indices.ptr(), MAX(motion_indices.size(), 1u) * sizeof(int32_t) },
-		{ &p_state->motion_transform_buffer, &p_state->motion_transform_buffer_capacity, &p_state->motion_transform_upload, motion_transforms.is_empty() ? &empty_motion_transform : motion_transforms.ptr(), MAX(motion_transforms.size(), 1u) * sizeof(RT_InstanceMotionData) },
+		{ &p_state->geometry_buffer, &p_state->geometry_buffer_capacity, &p_state->geometry_upload, geometry_data.is_empty() ? &empty_geometry : geometry_data.ptr(), MAX(geometry_data.size(), 1u) * sizeof(RT_GeometryData), prefix * sizeof(RT_GeometryData), layout_changed },
+		{ &p_state->material_buffer, &p_state->material_buffer_capacity, &p_state->material_upload, material_data.is_empty() ? &empty_material : material_data.ptr(), MAX(material_data.size(), 1u) * sizeof(RT_MaterialData), prefix * sizeof(RT_MaterialData), layout_changed },
+		{ &p_state->motion_index_buffer, &p_state->motion_index_buffer_capacity, &p_state->motion_index_upload, motion_indices.is_empty() ? &empty_motion_index : motion_indices.ptr(), MAX(motion_indices.size(), 1u) * sizeof(int32_t), prefix * sizeof(int32_t), layout_changed },
+		{ &p_state->motion_transform_buffer, &p_state->motion_transform_buffer_capacity, &p_state->motion_transform_upload, motion_transforms.is_empty() ? &empty_motion_transform : motion_transforms.ptr(), MAX(motion_transforms.size(), 1u) * sizeof(RT_InstanceMotionData), prefix * sizeof(RT_InstanceMotionData), layout_changed },
 	};
 	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
 	WorkerThreadPool::GroupID job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
@@ -2782,7 +2754,7 @@ void RenderRaytracing::finalize_buffers(RTViewportState *p_state) {
 		const Vector<uint8_t> &previous = *upload.uploaded;
 		const uint8_t *bytes = static_cast<const uint8_t *>(upload.data);
 		upload.end = upload.size;
-		if (upload.buffer->is_valid() && previous.size() == int64_t(upload.size)) {
+		if (!upload.layout_changed && upload.buffer->is_valid() && previous.size() == int64_t(upload.size)) {
 			while (upload.first < upload.end && memcmp(previous.ptr() + upload.first, bytes + upload.first, 4) == 0) {
 				upload.first += 4;
 			}
@@ -2802,18 +2774,21 @@ void RenderRaytracing::finalize_buffers(RTViewportState *p_state) {
 		if (!upload.changed) {
 			continue;
 		}
-		if (upload.buffer->is_null() || upload.size > *upload.capacity) {
+		if (upload.buffer->is_null() || upload.offset + upload.size > *upload.capacity) {
 			if (upload.buffer->is_valid()) {
 				RD::get_singleton()->free_rid(*upload.buffer);
 			}
-			*upload.capacity = upload.size;
-			*upload.buffer = RD::get_singleton()->storage_buffer_create(upload.size, upload.payload);
-		} else {
-			RD::get_singleton()->buffer_update(*upload.buffer, upload.first, upload.end - upload.first, upload.payload.ptr() + upload.first);
+			*upload.capacity = Math::nearest_power_of_2_templated(upload.offset + upload.size);
+			*upload.buffer = RD::get_singleton()->storage_buffer_create(*upload.capacity);
+			upload.first = 0;
+			upload.end = upload.size;
+			p_state->micro_geometry_transforms_dirty = true;
 		}
+		RD::get_singleton()->buffer_update(*upload.buffer, upload.offset + upload.first, upload.end - upload.first, upload.payload.ptr() + upload.first);
 		*upload.uploaded = upload.payload;
 	}
-	p_state->micro_geometry_transforms_dirty |= uploads[3].changed;
+	p_state->micro_geometry_transforms_dirty |= uploads[3].changed || layout_changed;
+	p_state->upload_prefix = prefix;
 }
 
 // ---------------------------------------------------------------------------
@@ -3267,6 +3242,9 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 
 	RENDER_TIMESTAMP("RT Frame Prepare");
 	prepare_frame();
+	RENDER_TIMESTAMP("Microgeometry RT Prepare");
+	ERR_FAIL_COND_V(!_prepare_micro_geometry(state, p_render_data), nullptr);
+	const uint32_t micro_count = state->micro_geometry ? state->micro_geometry->admitted_count : 0;
 	RENDER_TIMESTAMP("RT Scene Gather");
 
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
@@ -3294,9 +3272,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 	};
 	LocalVector<RID> dirty_blas_list;
 	LocalVector<RID> dirty_blas_update_list;
-	Vector<MicroGeometrySelection::Task> micro_tasks;
-	Vector<RTMicroGeometryTask> micro_rt_tasks;
-	uint32_t micro_levels = 0;
 	uint64_t scene_signature = 0x9e3779b97f4a7c15ULL;
 	auto hash_scene = [&](const auto &p_value) {
 		scene_signature = _rt_scene_hash(&p_value, sizeof(p_value), scene_signature);
@@ -3306,8 +3281,8 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 	bool uses_gpu_instances = false;
 
 #ifdef TOOLS_ENABLED
-	uint32_t tlas_instance_count = 0;
-	uint32_t tlas_primitive_count = 0;
+	uint32_t tlas_instance_count = micro_count;
+	uint32_t tlas_primitive_count = state->micro_geometry ? state->micro_geometry->admitted_triangles : 0;
 	uint32_t rt_blas_builds = 0;
 	uint32_t rt_blas_refits = 0;
 	uint32_t rt_triangles_built = 0;
@@ -3341,10 +3316,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 		const Surface *surface = nullptr;
 		RTDeformedGeometrySource deformation;
 	};
-	struct DiscoveryAsset {
-		Ref<MicroGeometryData> source;
-		bool ready = false;
-	};
 	struct DiscoveryBatch {
 		uint64_t worker = 0;
 		uint64_t begin_usec = 0;
@@ -3352,14 +3323,8 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 		HashMap<const void *, SurfaceRequest> surfaces;
 		HashMap<RID, HashSet<int32_t>> materials;
 		HashMap<RID, HashMap<uint32_t, RID>> mesh_materials;
-		HashMap<RID, DiscoveryAsset> assets;
 		HashSet<RID> multimeshes;
 		HashSet<RTProceduralState *> procedural;
-	};
-	struct MicroResource {
-		Ref<MicroGeometryData> source;
-		uint64_t clas_address = 0;
-		Vector<uint64_t> primitive_lookups;
 	};
 	struct MMResource {
 		RID buffer;
@@ -3403,7 +3368,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 				mesh = mesh_storage->multimesh_get_mesh(mesh);
 			}
 			for (const Surface *surface = instance->surface_caches; surface; surface = surface->next) {
-				if (surface->rt_pass_flags & Surface::FLAG_PASS_ALPHA) {
+				if ((surface->rt_pass_flags & Surface::FLAG_PASS_ALPHA) || surface->micro_geometry_source.is_valid()) {
 					continue;
 				}
 				RID material;
@@ -3424,27 +3389,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 					material = *resolved;
 				}
 				batch.materials[material].insert(instance->shader_uniforms_offset);
-				const auto *shader = surface->shader;
-				if (shader && instance->persistent_instance && surface->persistent_surface && instance->mesh_instance.is_null() && instance->instance_count && surface->primitive == RSE::PRIMITIVE_TRIANGLES && !shader->uses_alpha_pass() && !shader->uses_vertex && !shader->uses_position && !shader->uses_vertex_time && !shader->writes_modelview_or_projection && !shader->uses_particle_trails && !shader->uses_point_size && !shader->uses_z_clip_scale) {
-					RID asset = RID::from_uint64(persistent_instances[uint32_t(instance->persistent_instance) - 1].data.asset);
-					const DiscoveryAsset *asset_input = batch.assets.getptr(asset);
-					if (!asset_input) {
-						DiscoveryAsset input;
-						input.source = mesh_storage->get_micro_geometry_storage()->get_source(asset);
-						input.ready = mesh_storage->get_micro_geometry_storage()->is_ready(asset, true);
-						asset_input = &batch.assets.insert(asset, input)->value;
-					}
-					if (asset_input->source.is_valid()) {
-						batch.materials[surface->material_rid.is_valid() ? surface->material_rid : owner->scene_shader.default_material].insert(instance->shader_uniforms_offset);
-						bool found = !asset_input->ready;
-						for (const auto &entry : asset_input->source->get_metadata().surfaces) {
-							found |= entry.source_surface == surface->surface_index;
-						}
-						if (found) {
-							continue;
-						}
-					}
-				}
+
 				SurfaceRequest request;
 				request.surface = surface;
 				request.required = instance->data->base_type != RSE::INSTANCE_MULTIMESH;
@@ -3506,11 +3451,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 					requests.mesh_materials[mesh.key].insert(surface.key, surface.value);
 				}
 			}
-			for (const auto &asset : batch.assets) {
-				if (asset.value.source.is_valid() && !requests.assets.has(asset.key)) {
-					requests.assets.insert(asset.key, asset.value);
-				}
-			}
+
 			for (RID mm : batch.multimeshes) {
 				requests.multimeshes.insert(mm);
 			}
@@ -3527,7 +3468,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 	pool->wait_for_group_task_completion(requests_job);
 	HashMap<const void *, RTSurfaceData> resolved_surfaces;
 	HashMap<void *, Vector<RID>> resolved_dependencies;
-	HashMap<RID, MicroResource> micro_resources;
 	HashMap<RID, MMResource> mm_resources;
 	for (const auto &entry : requests.materials) {
 		resolve_material(entry.key);
@@ -3544,22 +3484,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			resource.command_address = RD::get_singleton()->buffer_get_device_address(resource.commands);
 		}
 		mm_resources.insert(mm, resource);
-	}
-	const RID micro_pool = mesh_storage->get_micro_geometry_storage()->get_pool();
-	const uint64_t micro_pool_address = requests.assets.is_empty() || micro_pool.is_null() ? 0 : RD::get_singleton()->buffer_get_device_address(micro_pool);
-	for (const auto &asset_input : requests.assets) {
-		RID asset = asset_input.key;
-		auto *storage = mesh_storage->get_micro_geometry_storage();
-		MicroResource resource;
-		resource.source = asset_input.value.source;
-		if (storage->is_ready(asset, true)) {
-			resource.clas_address = RD::get_singleton()->buffer_get_device_address(storage->get_clas_addresses(asset));
-		}
-		resource.primitive_lookups.resize(resource.source->get_metadata().surfaces.size());
-		for (uint32_t index = 0; index < uint32_t(resource.primitive_lookups.size()); index++) {
-			resource.primitive_lookups.write[index] = storage->is_ready(asset, true) ? storage->get_primitive_lookup(asset, index) : 0;
-		}
-		micro_resources.insert(asset, resource);
 	}
 	for (RTProceduralState *procedural : requests.procedural) {
 		if (procedural->dirty) {
@@ -3620,13 +3544,10 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 		LocalVector<uint32_t> instance_flags;
 		LocalVector<uint8_t> instance_masks;
 		LocalVector<RTEmissiveSource> emissive_sources;
-		Vector<MicroGeometrySelection::Task> micro_tasks;
-		Vector<RTMicroGeometryTask> micro_rt_tasks;
-		LocalVector<PendingMMSurface> pending_mm_surfaces;
+				LocalVector<PendingMMSurface> pending_mm_surfaces;
 		LocalVector<uint8_t> hash_bytes;
 		LocalVector<Pair<uint32_t, uint32_t>> hash_ranges;
-		uint32_t micro_levels = 0;
-		bool uses_time = false;
+			bool uses_time = false;
 		bool uses_previous_time = false;
 		bool uses_gpu_instances = false;
 #ifdef TOOLS_ENABLED
@@ -3653,10 +3574,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 		auto &instance_flags = batch.instance_flags;
 		auto &instance_masks = batch.instance_masks;
 		auto &emissive_sources = batch.emissive_sources;
-		auto &micro_tasks = batch.micro_tasks;
-		auto &micro_rt_tasks = batch.micro_rt_tasks;
 		auto &pending_mm_surfaces = batch.pending_mm_surfaces;
-		auto &micro_levels = batch.micro_levels;
 		auto &uses_time = batch.uses_time;
 		auto &uses_previous_time = batch.uses_previous_time;
 		auto &uses_gpu_instances = batch.uses_gpu_instances;
@@ -3721,107 +3639,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 				geometry.flags |= RT_GEOM_FLAG_SHADOW_CULL_ENABLED;
 			}
 			return geometry;
-		};
-
-		auto append_micro_surface = [&](const RenderForwardClustered::GeometryInstanceSurfaceDataCache *p_surface) {
-			const auto *instance = p_surface->owner;
-			const auto *shader = p_surface->shader;
-			if (p_surface->micro_geometry_source.is_null()) {
-				return false;
-			}
-			const auto &record = persistent_instances[uint32_t(instance->persistent_instance) - 1].data;
-			RID asset = RID::from_uint64(record.asset);
-			const MicroResource *resource = micro_resources.getptr(asset);
-			if (!resource || resource->source.is_null()) {
-				return false;
-			}
-			const Ref<MicroGeometryData> &source = resource->source;
-			uses_time |= shader->rt_uses_time();
-			uses_previous_time |= shader->rt_uses_previous_time();
-			uses_gpu_instances |= instance->data->base_type == RSE::INSTANCE_MULTIMESH && mesh_storage->multimesh_has_gpu_updates(instance->data->base);
-			if (!p_surface->micro_geometry_rt_ready) {
-				return true;
-			}
-			const auto &metadata = source->get_metadata();
-			const uint32_t surface_index = p_surface->micro_geometry_surface_index;
-			const uint32_t count = record.multimesh_address != 0 ? record.multimesh_count : 1;
-			if (!count) {
-				return true;
-			}
-			RID material = p_surface->material_rid.is_valid() ? p_surface->material_rid : owner->scene_shader.default_material;
-			RTMaterialData *native_material = resolve_material(material);
-			hash_scene(material.get_id());
-			hash_scene(get_material_content_generation(material, instance->shader_uniforms_offset));
-			hash_scene(asset.get_id());
-			uint32_t flags = 0;
-			if (shader->cull_mode == RSE::CULL_MODE_DISABLED) {
-				flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT;
-			}
-			if (shader->cull_mode != RSE::CULL_MODE_FRONT) {
-				flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_TRIANGLE_FLIP_FACING_BIT;
-			}
-			if (!shader->uses_alpha_clip && !shader->uses_alpha && !shader->uses_blend_alpha) {
-				flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_FORCE_OPAQUE_BIT;
-			}
-			MicroGeometrySelection::Task task = p_surface->micro_geometry_task;
-			task.bin = micro_tasks.size();
-			if (p_render_data->scene_data->view_count != 1) {
-				task.flags |= 2;
-			}
-			if (instance->base_flags & RenderForwardClustered::INSTANCE_DATA_FLAG_MULTIMESH_INDIRECT) {
-				geometry_buffer_dependencies.insert(p_surface->micro_geometry_commands);
-			}
-			const auto &surface_record = persistent_surfaces[uint32_t(task.surface) - 1].data;
-			RTMicroGeometryTask rt_task;
-			rt_task.clas_addresses = resource->clas_address;
-			rt_task.instance = task.instance;
-			rt_task.surface = task.surface;
-			rt_task.selection_bin = task.bin;
-			rt_task.geometry_base = geometry_data.size();
-			rt_task.motion_base = motion_transforms.size();
-			rt_task.instance_count = count;
-			rt_task.cluster_count = task.cluster_count;
-			rt_task.source_surface = surface_record.source_surface;
-			rt_task.force_finest = surface_record.force_finest;
-			rt_task.group_count = task.group_count;
-			rt_task.instance_flags = flags;
-			rt_task.indirect_command = task.indirect_command;
-			micro_levels = MAX(micro_levels, p_surface->micro_geometry_levels);
-			micro_tasks.push_back(task);
-			micro_rt_tasks.push_back(rt_task);
-			for (uint32_t ordinal = 0; ordinal < count; ordinal++) {
-				RT_GeometryData geometry = {};
-				geometry.flags = RT_GEOM_FLAG_CLUSTERED;
-				geometry.micro_asset_address = record.asset_address;
-				geometry.micro_page_pool = micro_pool_address;
-				geometry.micro_primitive_lookup = resource->primitive_lookups[surface_index];
-				geometry.micro_surface = surface_index;
-				geometry.primitive_count = metadata.surfaces[surface_index].source_triangle_count;
-				geometry.source_vertex_count = metadata.surfaces[surface_index].source_vertex_count;
-				geometry.instance_index = ordinal;
-				for (uint32_t channel = 0; channel < 4; channel++) {
-					geometry.instance_color[channel] = 1;
-				}
-				geometry.multimesh_address = record.multimesh_address;
-				geometry.multimesh_stride = record.multimesh_stride;
-				geometry.multimesh_offset = record.multimesh_current_offset;
-				geometry.micro_multimesh_previous_offset = record.multimesh_previous_offset;
-				if (record.multimesh_address != 0) {
-					geometry.multimesh_flags = (mesh_storage->multimesh_uses_colors(instance->data->base) ? 1u : 0u) | (mesh_storage->multimesh_uses_custom_data(instance->data->base) ? 2u : 0u) | ((record.flags & (1u << 13)) ? 4u : 0u);
-				}
-				geometry = instance_geometry(instance, geometry, p_surface);
-				register_emissive_source(instance, instance->data->base, p_surface->surface_index, mesh_storage->mesh_surface_get_rt_invalidation_counter(p_surface->surface), geometry_data.size(), ordinal * geometry.primitive_count, geometry.primitive_count, instance->transform, native_material);
-				geometry_data.push_back(geometry);
-				material_data.push_back(native_material->data);
-				geometry_material_programs.push_back(native_material->hit_shader);
-				blass.push_back(RID());
-				blas_transforms.push_back(instance->transform);
-				instance_flags.push_back(flags);
-				instance_masks.push_back(255);
-				motion_indices.push_back(motion_transforms.size());
-				motion_transforms.push_back(RT_InstanceMotionData());
-			}
-			return true;
 		};
 
 		const uint32_t from = p_batch * 256;
@@ -3929,7 +3746,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 						continue;
 					}
 
-					if (append_micro_surface(mm_surf)) {
+					if (mm_surf->micro_geometry_source.is_valid()) {
 						mm_surf = mm_surf->next;
 						continue;
 					}
@@ -4014,7 +3831,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 					continue;
 				}
 
-				if (append_micro_surface(surf)) {
+				if (surf->micro_geometry_source.is_valid()) {
 					surf = surf->next;
 					continue;
 				}
@@ -4151,20 +3968,10 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 		for (GatherBatch &batch : batches) {
 			const uint32_t geometry_offset = geometry_data.size();
 			const uint32_t motion_offset = motion_transforms.size();
-			const uint32_t task_offset = micro_tasks.size();
 			for (const auto &range : batch.hash_ranges) {
 				scene_signature = _rt_scene_hash(batch.hash_bytes.ptr() + range.first, range.second, scene_signature);
 			}
-			for (auto &task : batch.micro_tasks) {
-				task.bin += task_offset;
-				micro_tasks.push_back(task);
-			}
-			for (auto &task : batch.micro_rt_tasks) {
-				task.selection_bin += task_offset;
-				task.geometry_base += geometry_offset;
-				task.motion_base += motion_offset;
-				micro_rt_tasks.push_back(task);
-			}
+
 			for (int32_t index : batch.motion_indices) {
 				motion_indices.push_back(index < 0 ? index : index + motion_offset);
 			}
@@ -4202,7 +4009,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			for (const auto &pending : batch.pending_mm_surfaces) {
 				pending_mm_surfaces.push_back(pending);
 			}
-			micro_levels = MAX(micro_levels, batch.micro_levels);
 			uses_time |= batch.uses_time;
 			uses_previous_time |= batch.uses_previous_time;
 			uses_gpu_instances |= batch.uses_gpu_instances;
@@ -4545,11 +4351,36 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 	}
 #endif
 
-
-	RENDER_TIMESTAMP("Microgeometry RT Prepare");
-	ERR_FAIL_COND_V(!_prepare_micro_geometry(state, p_render_data, micro_tasks, micro_rt_tasks, micro_levels), nullptr);
 	if (state->micro_geometry) {
 		state->micro_geometry->conservative_updates |= uses_time || uses_previous_time || uses_gpu_instances;
+	}
+	for (int32_t &index : motion_indices) {
+		if (index >= 0) {
+			index += micro_count;
+		}
+	}
+	for (auto &source : emissive_sources) {
+		source.geometry_index += micro_count;
+	}
+	if (state->micro_geometry) {
+		uses_time |= state->micro_geometry->uses_time;
+		uses_previous_time |= state->micro_geometry->uses_previous_time;
+		uses_gpu_instances |= state->micro_geometry->uses_gpu_instances;
+		hash_scene(persistent_scene_generation);
+		for (uint32_t index = 0; index < uint32_t(state->micro_geometry->emissive_sources.size()); index++) {
+			const auto &record = persistent_instances[uint32_t(state->micro_geometry->emissive_instances[index]) - 1].data;
+			if (!record.visible || record.scenario != owner->micro_geometry_scenario.get_id() || !(record.layer_mask & state->settings_visible_layers) || record.shadows == RSE::SHADOW_CASTING_SETTING_SHADOWS_ONLY) {
+				continue;
+			}
+			auto source = state->micro_geometry->emissive_sources[index];
+			for (uint32_t row = 0; row < 3; row++) {
+				for (uint32_t column = 0; column < 3; column++) {
+					source.transform.basis.rows[row][column] = record.transform[row * 4 + column];
+				}
+				source.transform.origin[row] = real_t(record.transform[row * 4 + 3]) + real_t(record.origin_low[row]);
+			}
+			emissive_sources.push_back(source);
+		}
 	}
 	RENDER_TIMESTAMP("RT Material Pipeline");
 	ERR_FAIL_COND_V(!update_material_pipeline(state), nullptr);
@@ -5187,12 +5018,28 @@ bool RenderRaytracing::create_material_pipeline(const RTViewportState *p_state, 
 }
 
 bool RenderRaytracing::update_material_pipeline(RTViewportState *p_state) {
+	RD *rd = RD::get_singleton();
+	const uint64_t generation = p_state->micro_geometry ? p_state->micro_geometry->signature : 0;
+	bool conventional_changed = p_state->conventional_material_programs.size() != int64_t(geometry_material_programs.size());
+	if (!conventional_changed) {
+		for (uint32_t index = 0; index < geometry_material_programs.size(); index++) {
+			conventional_changed |= p_state->conventional_material_programs[index] != geometry_material_programs[index];
+		}
+	}
+	if (!conventional_changed && p_state->material_input_generation == generation && rd->raytracing_pipeline_is_valid(p_state->material_pipeline)) {
+		return true;
+	}
+	p_state->conventional_material_programs.resize(geometry_material_programs.size());
+	for (uint32_t index = 0; index < geometry_material_programs.size(); index++) {
+		p_state->conventional_material_programs.write[index] = geometry_material_programs[index];
+	}
+	p_state->material_input_generation = generation;
 	Vector<RID> programs;
 	Vector<uint32_t> indices;
 	bool valid = true;
 	auto prepare = [&](uint32_t) {
 		HashMap<RID, uint32_t> program_indices;
-		for (RID shader : geometry_material_programs) {
+		auto append = [&](RID shader) {
 			if (shader.is_null()) {
 				valid = false;
 				return;
@@ -5202,6 +5049,14 @@ bool RenderRaytracing::update_material_pipeline(RTViewportState *p_state) {
 				programs.push_back(shader);
 			}
 			indices.push_back(program_indices[shader]);
+		};
+		if (p_state->micro_geometry) {
+			for (RID shader : p_state->micro_geometry->material_programs) {
+				append(shader);
+			}
+		}
+		for (RID shader : geometry_material_programs) {
+			append(shader);
 		}
 	};
 	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
@@ -5217,7 +5072,6 @@ bool RenderRaytracing::update_material_pipeline(RTViewportState *p_state) {
 	if (programs.is_empty()) {
 		programs.push_back(default_program);
 	}
-	RD *rd = RD::get_singleton();
 	if (p_state->hit_programs == programs && p_state->geometry_hit_groups == indices && rd->raytracing_pipeline_is_valid(p_state->material_pipeline)) {
 		return true;
 	}

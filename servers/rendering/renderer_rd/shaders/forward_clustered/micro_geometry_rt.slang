@@ -17,12 +17,63 @@ struct MicroRTTask {
 	uint instance_flags;
 	uint instance_mask;
 	uint64_t indirect_command;
+	uint64_t primitive_lookup;
+	uint geometry_flags;
+	uint multimesh_flags;
+	uint micro_surface;
+	uint pad;
 };
 struct Segment { uint task; uint ordinal; uint source_offset; uint capacity; uint offset; uint geometry; uint unit; uint pad; };
 struct Cut { uint64_t asset; uint64_t records; uint64_t address; uint count; uint source_surface; uint flags; uint generation; uint hash; uint pad; };
 struct State { uint count; uint representative; uint cursor; uint hash; uint invalid; uint triangles; uint page_count; uint pad; };
 struct MicroRTTLASInstance { float transform[12]; uint custom_index_mask; uint sbt_offset_flags; uint64_t blas_address; };
 struct MicroRTMotion { float previous_transform[12]; };
+struct MicroRTGeometry {
+	uint64_t vertex_buffer_address;
+	uint64_t attribute_buffer_address;
+	uint64_t index_buffer_address;
+	uint vertex_count;
+	uint position_stride;
+	uint normal_byte_offset;
+	uint normal_stride;
+	uint tangent_byte_offset;
+	uint tangent_stride;
+	uint attribute_stride;
+	uint uv_byte_offset;
+	uint uv_scale_packed;
+	uint index_format;
+	uint primitive_count;
+	uint flags;
+	uint color_byte_offset;
+	uint prev_vertex_buffer_address_lo;
+	uint prev_vertex_buffer_address_hi;
+	uint padding[3];
+	float position_offset[3];
+	uint instance_layer_mask;
+	float position_scale[3];
+	uint uv2_byte_offset;
+	uint uv2_scale_packed;
+	uint custom_byte_offsets[4];
+	uint custom_formats;
+	uint instance_uniforms_offset;
+	uint instance_index;
+	float instance_custom[4];
+	float instance_color[4];
+	uint64_t multimesh_address;
+	uint multimesh_stride;
+	uint multimesh_offset;
+	uint source_vertex_count;
+	uint multimesh_flags;
+	uint64_t source_vertex_address;
+	uint64_t skin_address;
+	uint skin_stride;
+	uint skin_weight_offset;
+	uint64_t micro_asset_address;
+	uint64_t micro_page_pool;
+	uint64_t micro_primitive_lookup;
+	uint micro_surface;
+	uint micro_multimesh_previous_offset;
+};
 struct Parameters {
 	float4 rt_origin;
 	float4 rt_origin_low;
@@ -38,6 +89,8 @@ struct Parameters {
 	uint representative;
 	uint bootstrap;
 	uint layer_mask;
+	uint64_t scenario;
+	uint64_t page_pool;
 };
 [[vk::binding(0, 0)]] StructuredBuffer<MicroRTTask> tasks;
 [[vk::binding(1, 0)]] StructuredBuffer<Segment> segments;
@@ -56,6 +109,11 @@ struct Parameters {
 [[vk::binding(14, 0)]] RWStructuredBuffer<MicroRTMotion> motion;
 [[vk::binding(15, 0)]] RWStructuredBuffer<uint2> geometry_slots;
 [[vk::binding(16, 0)]] StructuredBuffer<uint2> representative_slots;
+[[vk::binding(17, 0)]] StructuredBuffer<MicroGeometryInstanceSurface> surfaces;
+[[vk::binding(18, 0)]] RWStructuredBuffer<MicroRTGeometry> geometries;
+[[vk::binding(19, 0)]] RWByteAddressBuffer materials;
+[[vk::binding(20, 0)]] RWStructuredBuffer<int> motion_indices;
+[[vk::binding(21, 0)]] ByteAddressBuffer persistent_materials;
 [[vk::push_constant]] ConstantBuffer<Parameters> parameters;
 
 static const uint INVALID = 0xffffffffu;
@@ -103,10 +161,10 @@ bool resolve(Segment segment, out MicroGeometryInstance instance, out MicroGeome
 	instance = instances[uint(task.instance) - 1];
 	asset = (MicroGeometryAsset)0;
 	source_ordinal = INVALID;
-	if (instance.handle != task.instance || instance.asset_address == 0) { return false; }
+	if (instance.handle != task.instance || instance.asset_address == 0 || surfaces[uint(task.surface) - 1].handle != task.surface) { return false; }
 	asset = *((MicroGeometryAsset*)instance.asset_address);
 	if (asset.identity != instance.asset || (asset.ready & 3) != 3) { return false; }
-	if (instance.visible == 0 || (instance.layer_mask & parameters.layer_mask) == 0 || instance.deformed != 0 || segment.ordinal >= task.instance_count) { return true; }
+	if (instance.visible == 0 || instance.scenario != parameters.scenario || ((instance.layer_mask & parameters.layer_mask) == 0 && instance.shadows == 0) || instance.deformed != 0 || segment.ordinal >= task.instance_count) { return true; }
 	uint ordinal = segment.ordinal;
 	if (task.indirect_command != 0) {
 		uint* command = (uint*)task.indirect_command;
@@ -370,6 +428,30 @@ void main(uint3 group_id : SV_GroupID, uint lane : SV_GroupIndex) {
 		uint source_ordinal;
 		if (resolve(segment, instance, asset, source_ordinal) && source_ordinal != INVALID) {
 			uint geometry = task.geometry_base + source_ordinal;
+			MicroGeometryInstanceSurface surface = surfaces[uint(task.surface) - 1];
+			MicroGeometrySurface source = ((MicroGeometrySurface*)asset.surfaces)[task.micro_surface];
+			MicroRTGeometry data = (MicroRTGeometry)0;
+			data.flags = task.geometry_flags | (instance.shadows != 0 ? 16u : 0u) | (instance.shadows == 3 || (instance.layer_mask & parameters.layer_mask) == 0 ? 32u : 0u);
+			data.micro_asset_address = instance.asset_address;
+			data.micro_page_pool = parameters.page_pool;
+			data.micro_primitive_lookup = task.primitive_lookup;
+			data.micro_surface = task.micro_surface;
+			data.primitive_count = source.source_triangle_count;
+			data.source_vertex_count = source.source_vertex_count;
+			data.instance_index = source_ordinal;
+			for (uint channel = 0; channel < 4; channel++) { data.instance_color[channel] = 1.0; }
+			data.multimesh_address = instance.multimesh_address;
+			data.multimesh_stride = instance.multimesh_stride;
+			data.multimesh_offset = instance.multimesh_current_offset;
+			data.micro_multimesh_previous_offset = instance.multimesh_previous_offset;
+			data.multimesh_flags = task.multimesh_flags;
+			data.instance_layer_mask = instance.layer_mask;
+			data.instance_uniforms_offset = instance.instance_uniforms_offset;
+			geometries[geometry] = data;
+			for (uint word = 0; word < 28; word++) {
+				materials.Store(geometry * 112 + word * 4, persistent_materials.Load(surface.material_slot * 128 + 16 + word * 4));
+			}
+			motion_indices[geometry] = int(task.motion_base + source_ordinal);
 			output.custom_index_mask = geometry | ((task.instance_mask & 255) << 24);
 			float4x4 multimesh = micro_rt_multimesh_transform(instance, source_ordinal, false);
 			micro_rt_transform(instance, multimesh, false, output.transform);

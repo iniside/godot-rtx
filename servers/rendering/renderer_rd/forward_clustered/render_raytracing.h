@@ -485,8 +485,13 @@ struct RTMicroGeometryTask {
 	uint32_t instance_flags = 0;
 	uint32_t instance_mask = 255;
 	uint64_t indirect_command = 0;
+	uint64_t primitive_lookup = 0;
+	uint32_t geometry_flags = 0;
+	uint32_t multimesh_flags = 0;
+	uint32_t micro_surface = 0;
+	uint32_t pad = 0;
 };
-static_assert(sizeof(RTMicroGeometryTask) == 72);
+static_assert(sizeof(RTMicroGeometryTask) == 96);
 
 struct RTMicroGeometrySegment {
 	uint32_t task = 0;
@@ -541,8 +546,17 @@ struct RTMicroGeometryBuild {
 	};
 	uint64_t signature = 0;
 	uint64_t input_signature = 0;
-	uint64_t record_signature = 0;
-	uint64_t record_scene_generation = 0;
+	uint64_t admitted_triangles = 0;
+	uint32_t admitted_count = 0;
+	uint32_t tlas_capacity = 0;
+	RID segment_units;
+	Vector<RID> material_programs;
+	Vector<RID> command_dependencies;
+	Vector<RTEmissiveSource> emissive_sources;
+	Vector<uint64_t> emissive_instances;
+	bool uses_time = false;
+	bool uses_previous_time = false;
+	bool uses_gpu_instances = false;
 	uint64_t selected_input_signature = 0;
 	uint64_t producing_signature = 0;
 	uint64_t dependency_signature = 0;
@@ -567,9 +581,8 @@ struct RTMicroGeometryBuild {
 	uint32_t feedback_items = 0;
 	uint32_t page_representative = 0;
 	uint32_t pool_count = 0;
+	uint32_t epoch_pool_capacity = 0;
 	bool has_committed_cut = false;
-	bool record_signature_valid = false;
-	bool record_conservative_updates = false;
 	bool conservative_updates = false;
 	bool selection_retry = false;
 	bool frozen = false;
@@ -668,6 +681,9 @@ struct RTViewportState {
 	uint32_t motion_transform_buffer_capacity = 0;
 	Vector<RID> hit_programs;
 	Vector<uint32_t> geometry_hit_groups;
+	Vector<RID> conventional_material_programs;
+	uint64_t material_input_generation = 0;
+	uint32_t upload_prefix = 0;
 	RID material_pipeline;
 	RID material_sbt;
 	RID material_frame_buffer;
@@ -710,7 +726,7 @@ class RenderRaytracing {
 	void _free_micro_cut(RTMicroGeometryBuild *p_build, uint32_t p_slot);
 	bool _micro_dispatch(RTViewportState *p_state, uint32_t p_mode, uint32_t p_count, bool p_groups = false, uint32_t p_step = 0, uint32_t p_width = 0);
 	bool _micro_feedback(RTMicroGeometryBuild *p_build, uint32_t p_bytes);
-	bool _prepare_micro_geometry(RTViewportState *p_state, const RenderDataRD *p_render_data, const Vector<MicroGeometrySelection::Task> &p_tasks, const Vector<RTMicroGeometryTask> &p_rt_tasks, uint32_t p_levels);
+	bool _prepare_micro_geometry(RTViewportState *p_state, const RenderDataRD *p_render_data);
 	bool _build_micro_geometry(RTViewportState *p_state);
 	RendererRD::DDGIEffect *ddgi_effect = nullptr;
 	RenderPathtracing *pathtracing = nullptr;
