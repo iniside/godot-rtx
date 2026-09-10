@@ -56,9 +56,10 @@ według komponentów, naprawia zatwierdzanie tekstu, domyślne elementy tablic,
 granice promienia pickingu i sprzątanie dialogu importu. Usability build05
 przeszedł; ograniczony przebieg rzeczywistego edytora kończy się kodem 0 bez
 zmiany kamery/sceny. Właściciel akceptuje pogrupowany Inspector jako v1.
-Końcowy review (runda 2) odrzuca pozostającą lukę: wpisana liczba i Ctrl+S bez
-zatwierdzenia pola zapisują poprzednią wartość. Poprawka i pełna weryfikacja
-edycji/undo/zapisu pozostają otwarte; akceptacja v1 nie zamyka całego kroku 6.
+Końcowy review (runda 2) wykazał lukę zapisu aktywnego pola liczbowego.
+Właściciel wznowił poprawkę; lokalny fix `e093f5eb88` zatwierdza SpinBox przed
+serializacją i kompiluje się. Dokładny przebieg liczba/Ctrl+S/reopen oraz pełna
+weryfikacja edycji/undo/zapisu pozostają otwarte; akceptacja v1 nie zamyka kroku 6.
 Operacje prefab/UI oraz cała integracja renderera pozostają nieukończone. Zobacz
 [status i granice dowodów](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
 Reakcja na zmianę energii światła, pozostałe przypadki renderowania i wydajność gęstego świata

@@ -49,9 +49,11 @@ selection; the owner confirms selection without a crash. Correction
 pick clipping and import-dialog teardown. Ordinary usability build05 passes;
 bounded real-editor startup/finalization exits 0 with camera/scene unchanged.
 The owner accepts the grouped Inspector as v1. Final source review round 2
-rejects one remaining numeric-edit save bug: Ctrl+S before SpinBox applies typed
-text saves the previous value. This fix and full edit/undo/save proof remain
-open; v1 UI acceptance does not close the full Step 6 or its source review.
+found a numeric-edit save bug: Ctrl+S before SpinBox applies typed text saves
+the previous value. Owner-renewed local fix `e093f5eb88` applies the active
+Inspector SpinBox before serialization; ordinary build passes. Exact numeric
+save/reopen and full edit/undo/save proof remain open; v1 UI acceptance does
+not close the full Step 6 or constitute a final source review pass.
 Prefab/UI workflows and full renderer integration remain incomplete. See
 [execution evidence and limits](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
 Scripting, Node plugins, 2D and HTML/CSS

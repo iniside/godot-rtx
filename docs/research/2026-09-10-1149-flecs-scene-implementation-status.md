@@ -603,8 +603,21 @@ camera and scene bytes. Remaining draw-list/swap-chain and admission errors
 are recorded, not a claim of clean renderer shutdown. Ordinary interactive
 reopen is responsive (GUI 82004), and the owner accepts the grouped Inspector.
 Full edit/undo/save interaction remains unverified, with the numeric-save bug
-above explicitly open. The microgeometry admission limit remains a
+above awaiting the owner-renewed correction below. The microgeometry admission limit remains a
 separate deferred problem.
+
+The owner explicitly renewed the numeric-save fix ("ok to zrob"). Commit
+`e093f5eb88` makes a local change within commit_pending_edits: flush previous
+pending fields, apply the focused SpinBox belonging to the native Inspector,
+and flush its numeric callback before returning to document serialization.
+It uses the existing SpinBox::apply() and does not affect unrelated controls.
+This one-function fix plus its direct include is within the inline threshold;
+no new subagent or review round was used. Ordinary editor build passes in
+34.21s. Source, exact GUI/wrapper binaries and preserved camera/scene hashes
+are recorded in `gpuprofile/ecs_native_editor/numeric_save_fix/`. The normal
+Vulkan editor is reopened with the saved camera. The native Computer Use pipe
+is still unavailable (OS error 2), so the exact type-number/Ctrl+S/reopen user
+interaction remains unverified; compilation is not that proof.
 
 Owner sequencing decision 2026-09-10, working source over `20d7f5cbbacd`:
 advance the coherent Step 6 usability slice before completing Step 5. Deliver
