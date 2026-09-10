@@ -85,16 +85,18 @@ Final source round 2 REJECT finds synchronous RT decal snapshot preparation at
 a joined worker before publication/uploads; it is separate from the corrected
 conventional decal path and is not blamed for the decal-free dense regression.
 The owner explicitly renews the closure on 2026-09-10 and requests finer
-instrumentation. Measured correction `617a3abca7` moves nonempty RT decal
-snapshot preparation to a joined worker, eliminates repeated motion traversal
-and empty canvas jobs, and batches dependent phases. Ordinary/double/template
-builds and dense/moving/gallery Vulkan runs pass. Local owner elapsed medians
-are 389.5 versus 90 us for the RT registry and 380 versus 212.5 us for canvas
-batching, but compiler overlap in the candidate profile prevents an isolated
-timing claim. Structural work/job reductions are verified. Dense no-profile
-medians of control 34, candidate 38 and repeat 34 FPS
-do not establish a durable whole-frame gain. Fresh source review and named
-Step 5 engine proof audit remain open; nonempty RT decal runtime is unverified.
+instrumentation. Measured correction `617a3abca7` eliminates repeated motion
+traversal and empty canvas jobs, and batches dependent phases. Final correction
+`030fa486b5` retains decal CPU preparation on a worker while resolving guarded
+texture generations on the owner, also covering analytic projector/area inputs.
+Ordinary/double/template builds and current dense/moving/gallery Vulkan runs
+pass. Final renewed source round 2 and named refreshed proof audit PASS close
+Step 5 CPU preparation. Nonempty textured-decal/projector runtime is unverified.
+Historical local owner elapsed medians are 389.5 versus 90 us for the RT registry
+and 380 versus 212.5 us for canvas batching, but partial telemetry/compiler
+overlap prevents an isolated timing claim. Structural work/job reductions are
+verified. Dense no-profile medians of control 34, candidate 38 and repeat 34 FPS
+do not establish a durable whole-frame gain.
 Dense HUD `1f339891f9` displays wall FPS/frame, CPU rendering including waits,
 and completed GPU time; native PNG inspection and the independent HUD-specific
 proof audit pass with the recorded single-frame and diagnostic-log limits.

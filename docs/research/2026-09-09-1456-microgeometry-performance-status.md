@@ -1018,3 +1018,81 @@ recording research. Its scope remains actual isolated frontend production,
 worker graph compilation and draw/compute/RT driver recording, with one graph
 barrier authority and joined CPU jobs before command-pool reuse. No Step 6
 implementation, build, overlap or performance acceptance is claimed yet.
+
+Renewed source round 1 returns REJECT for a concrete moved-call boundary:
+`render_raytracing.cpp:4512` executes `build_rt_decal_snapshot` on a worker, but
+the snapshot generation loop at `texture_storage.cpp:4384` calls
+`texture_get_content_generation`, which reaches render-thread-guarded RD texture
+validity/content-generation APIs. A valid textured decal therefore emits thread
+errors and hashes zero instead of live texture content generation. The named fix
+keeps CPU sorting/packing on the worker and resolves only RD-dependent texture
+generations on the render owner. RD guards remain intact. No nonempty-decal
+runtime result was claimed by the earlier zero-decal captures.
+
+Named `step5_measured_proof` returns PASS for bounded frozen `617a3abca7`
+evidence: eighteen source identities, exact patch, 26 candidate/22 control
+binary artifacts, eight runtime inputs, seven native receipts, actual job/count
+reductions and overlapping preparation intervals on 47 distinct workers.
+This does not accept the source defect, prove active CPU utilization or establish
+whole-frame improvement. Moving/gallery logs contain 40/48 lowercase SPIR-V
+diagnostics respectively, despite zero Godot ERROR and normal exit. The source
+fix and refreshed build evidence remain pending; renewed round 2 will review
+the correction and cumulative task range.
+
+Final-profile main-thread counters reinforce the earlier SceneTree boundary.
+Medians of the last ten reported window means are simulation 0.0375 ms,
+process/navigation 0.108 ms, transfer 0.007 ms, script/audio tail 0.004 ms and
+admission/callback active 0.011 ms, versus admission wait 32.4515 ms. These are
+elapsed profiler observations with the host limits above, not active CPU samples
+or frame percentiles. The wait must not be described as 32 ms of Node logic.
+`step5-batched01-main-summary.json` retains the extraction; remaining coarse
+renderer intervals are separately recorded in `step5-batched01-coarse-summary.json`.
+Startup-only one/two-sample entries in that file are not steady-state costs.
+
+The first decal-owner correction builds ordinary editor in 50.72 seconds but
+is superseded before runtime/commit: author source closure finds the same guarded
+texture-content-generation query in the analytic-light worker for textured
+projector/area inputs. The same round-one correction therefore also resolves
+those generations in the existing owner resource phase before worker consumption.
+Default untextured lights do not exercise that query. This is a known source
+defect being corrected, not an inference from the zero-error gallery launch.
+
+Correction `030fa486b560436a86ad622973407f3b08520841` changes only RT code and
+TextureStorage source/header (26 additions, seven deletions). CPU decal byte
+hashing and ordered texture/atlas inputs stay on the worker; guarded generations
+are folded on the owner after joining, in the prior order. Analytic workers read
+an immutable map resolved in the existing owner resource phase. No RD guard,
+bound API, shader, backend or persistent cache changes. Final02 ordinary/double/
+template builds pass in 31.58/52.03/41.30 seconds. All nineteen held source LF
+hashes match the commit; `step5-decal-owner02-source.json`, `.patch`,
+`-commit-map.json` and `-binaries.json` retain source/build identity. Ordinary,
+double and template executable SHA256 values are respectively
+`7e1e54d29bce2699a4ad2e514095bff4b1c2860e5b744858e57088396eee5d59`,
+`6224ddb607268f7e1f5d6077cb89c1963184d4cc650956288b45ec40e320c8fc`, and
+`cac978f70014b5894362fd3d873ca60e08c1478cb3cd910222c667be637ac704`.
+Fresh final source round 2 and refreshed native checks are pending. These native
+checks are for current-binary execution, not a new matched speedup comparison;
+parallel source research is allowed and its load is not controlled.
+
+Final02 dense600, moving300 and gallery300 complete on the pinned ordinary
+binary, each native/wrapper exit 0 without timeout or Godot ERROR. Logs retain
+32/40/48 lowercase SPIR-V parsing diagnostics. Named `step5_measured_proof`
+refreshes its bounded PASS at `030fa486b5`, verifying all nineteen source files,
+26 binary artifacts, eight runtime inputs and the three current receipts.
+The final dense capture retains the same 10000 native instances, 47 distinct
+preparation workers and actual structural reductions at sampled frames
+120/240/360/480/600. Nonempty textured-decal and textured projector/area runtime
+branches remain unverified. Earlier timing comparisons belong to `617a3abca7`;
+the final correction has no new matched performance or appearance claim.
+
+Fresh final `step5_measured_review2` returns PASS at `030fa486b5`, covering the
+exact correction, renewed `daa4003f7e..030fa486b5` range and full Step 5
+`9f42b239e3..030fa486b5` range. It verifies worker/owner generation-query
+separation, hash ordering, analytic discovery coverage, task-local lifetimes,
+deterministic merges, motion invalidation, canvas ordering and removal of old
+state. Step 5 CPU preparation is closed with final source and bounded proof
+PASS. Whole-frame performance remains unresolved; Step 6 actual frontend/driver
+recording is in progress and conditional Step 7 async compute has not started.
+The existing recording research is reused. A separate read-only source check
+maps the remaining coarse microgeometry prepare intervals to actual CPU work
+and missing counter boundaries; it does not reopen SceneTree or paging design.
