@@ -563,7 +563,8 @@ The exact Streamline source at commit
 `e8aaa6eaac968711fb62473d4ae8256dde20919b`, `source/core/sl.api/sl.cpp:1125`,
 was refreshed and retained as `streamline-e8aaa6-sl-api.cpp` (SHA256
 `665bb44d9f41b00609c26a9cb5117abb85a803033e417509cf97efcb945d9f1b`).
-`slGetNewFrameToken` advances the six-slot ring at line 1141; supplying an old
+`slGetNewFrameToken` advances a modulo ring at line 1141; the retained source
+does not include its size definition. Supplying an old
 counter does not pin a token. Step 4 limits admitted outer CPU iteration owners
 to two, with FIFO retirement after their queued draws. This is separate from
 GPU resource retirement and does not establish worker recording.
@@ -767,3 +768,21 @@ these measurements. No new runtime launch or Node-free fixture was needed for
 this bounded check; conclusions use the retained matched runs, actual timing
 boundaries and current fixture source. Navigation used clang-nav for
 Main::iteration, direct source reads, scoped Git diff and raw log recalculation.
+
+
+## Step 4 independent proof closure (2026-09-10)
+
+Fresh named `step4_evidence_audit` returns PASS on the bounded final Step 4
+proof at `9f42b239e3`, baseline `e319cca724`. Exact/cumulative patches match Git;
+all 22 source identities reconcile to frozen blobs, including three mixed-line-
+ending files. All 23 pinned executables/DLLs match their manifest. The six final
+native receipts and logs verify ordinary Vulkan completion without ERROR or
+timeout, 5000+5000 dense population, SR/RR capture callbacks, bare editor and
+no-draw execution. The auditor independently recomputes all six reported dense
+medians and finds positive main/render overlap in six windows. Double/template
+proof remains compile-only; PNG appearance and exhaustive nesting-depth coverage
+are not claimed. Earlier timeout and zero-exit ownership errors remain preserved.
+The SDK ring's exact size is unverified because its definition is absent from
+the retained external source; modulo recycling and the local two-owner bound
+are independently supported. This closes the previously harness-blocked Step 4
+proof audit, not Step 5/6 architecture or performance acceptance.
