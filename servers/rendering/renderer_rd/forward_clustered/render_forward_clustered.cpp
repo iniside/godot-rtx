@@ -127,7 +127,7 @@ RID RenderForwardClustered::RenderBufferDataForwardClustered::prepare_rtxdi_surf
 		reject(rtxdi_surface_camera_orthogonal != p_scene_data->prev_cam_orthogonal, "previous_orthogonal_mismatch");
 		reject(p_scene_data->cam_orthogonal != p_scene_data->prev_cam_orthogonal, "orthogonal_changed");
 		reject(!p_scene_data->cam_projection.is_same(p_scene_data->prev_cam_projection), "projection_changed");
-		print_line(vformat("Microgeometry history: frame=%d last_rendered_frame=%d surface_frame=%d camera=%d previous_camera=%d stored_camera=%d size=%s previous_size=%s valid=%d rejected=%s", engine_frame, rtxdi_surface_last_engine_frame, rtxdi_surface_frame_index, p_scene_data->camera.get_id(), p_scene_data->prev_camera.get_id(), rtxdi_surface_camera.get_id(), surface_size, rtxdi_surface_size, rtxdi_surface_history_valid, rejected.is_empty() ? String("none") : rejected));
+		print_line(vformat("Microgeometry history: frame=%d last_rendered_frame=%d surface_frame=%d camera=%d previous_camera=%d stored_camera=%d size=%s previous_size=%s valid=%s rejected=%s", engine_frame, rtxdi_surface_last_engine_frame, rtxdi_surface_frame_index, p_scene_data->camera.get_id(), p_scene_data->prev_camera.get_id(), rtxdi_surface_camera.get_id(), surface_size, rtxdi_surface_size, rtxdi_surface_history_valid, rejected.is_empty() ? String("none") : rejected));
 	}
 	rtxdi_surface_set ^= 1;
 	rtxdi_surface_depth_valid[rtxdi_surface_set] = false;
@@ -813,7 +813,7 @@ void RenderForwardClustered::_select_micro_geometry(MicroGeometryRasterPass *p_p
 		depth = p_pass->render_buffers->micro_geometry_depth.texture;
 	}
 	if (RSG::utilities->capturing_timestamps && RSG::rasterizer->get_frame_number() % 120 == 0) {
-		print_line(vformat("Microgeometry HZB: frame=%d pass=%s owner=%d camera_eligible=%d history_valid=%d pyramid_valid=%d enabled=%d frozen=%d", RSG::rasterizer->get_frame_number(), p_pass->render_buffers ? "camera" : "shadow", p_pass->gpu->capacity_feedback->owner, p_pass->render_buffers && (p_pass->gpu->data.flags & 2) != 0, p_pass->render_buffers && p_pass->render_buffers->is_rtxdi_surface_history_valid(), p_pass->render_buffers && p_pass->render_buffers->micro_geometry_depth.texture.is_valid(), (p_pass->gpu->data.flags & 4) != 0, p_pass->gpu->frozen));
+		print_line(vformat("Microgeometry HZB: frame=%d pass=%s owner=%d camera_eligible=%s history_valid=%s pyramid_valid=%s enabled=%s frozen=%s", RSG::rasterizer->get_frame_number(), p_pass->render_buffers ? "camera" : "shadow", p_pass->gpu->capacity_feedback->owner, p_pass->render_buffers && (p_pass->gpu->data.flags & 2) != 0, p_pass->render_buffers && p_pass->render_buffers->is_rtxdi_surface_history_valid(), p_pass->render_buffers && p_pass->render_buffers->micro_geometry_depth.texture.is_valid(), (p_pass->gpu->data.flags & 4) != 0, p_pass->gpu->frozen));
 	}
 	micro_geometry->select(p_pass->gpu, depth);
 	p_pass->dispatched = true;
@@ -1276,7 +1276,7 @@ void RenderForwardClustered::_render_list_with_draw_list(RenderListParameters *p
 	}
 	if (RSG::utilities->capturing_timestamps && RSG::rasterizer->get_frame_number() % 120 == 0) {
 		const RenderBufferDataForwardClustered *data = pass ? pass->render_buffers : nullptr;
-		print_line(vformat("Microgeometry raster draw: frame=%d pass=%s mode=%d owner=%d conventional_elements=%d micro_bins=%d hzb_enabled=%d recovery=%d raster_stats_available=%d raster_stats_frame=%d raster_clusters=%d raster_triangles=%d", RSG::rasterizer->get_frame_number(), shadow_pass ? "shadow" : "camera", p_params->pass_mode, pass ? pass->gpu->capacity_feedback->owner : 0, p_params->element_count, pass ? pass->bins.size() : 0, pass && (pass->gpu->data.flags & 4) != 0, pass && pass->gpu->recovered, data && data->micro_geometry_stats_frame != 0, data ? data->micro_geometry_stats_frame : 0, data ? data->micro_geometry_clusters : 0, data ? data->micro_geometry_triangles : 0));
+		print_line(vformat("Microgeometry raster draw: frame=%d pass=%s mode=%d owner=%d conventional_elements=%d micro_bins=%d hzb_enabled=%s recovery=%s raster_stats_available=%s raster_stats_frame=%d raster_clusters=%d raster_triangles=%d", RSG::rasterizer->get_frame_number(), shadow_pass ? "shadow" : "camera", p_params->pass_mode, pass ? pass->gpu->capacity_feedback->owner : 0, p_params->element_count, pass ? pass->bins.size() : 0, pass && (pass->gpu->data.flags & 4) != 0, pass && pass->gpu->recovered, data && data->micro_geometry_stats_frame != 0, data ? data->micro_geometry_stats_frame : 0, data ? data->micro_geometry_clusters : 0, data ? data->micro_geometry_triangles : 0));
 	}
 }
 
@@ -2871,7 +2871,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		WorkerThreadPool::get_singleton()->wait_for_group_task_completion(prepare_deformation_validity_job);
 	}
 	if (profile_deformation) {
-		print_line(vformat("Microgeometry deformation: frame=%d camera=%d invalid=%d subtype=%s persistent_instance=%d surface=%d", engine_frame, p_render_data->scene_data->camera.get_id(), invalid_deformation, deformation_reason, deformation_instance, deformation_surface));
+		print_line(vformat("Microgeometry deformation: frame=%d camera=%d invalid=%s subtype=%s persistent_instance=%d surface=%d", engine_frame, p_render_data->scene_data->camera.get_id(), invalid_deformation, deformation_reason, deformation_instance, deformation_surface));
 	}
 	color_framebuffer = rb_data->prepare_rtxdi_surface(p_render_data->scene_data, invalid_deformation);
 	_render_shadows(p_render_data);
