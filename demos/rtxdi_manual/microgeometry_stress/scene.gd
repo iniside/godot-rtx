@@ -1,10 +1,7 @@
 extends Node3D
 
 const INSTANCES_PER_MESH := 5000
-const COLUMNS := 100
-const ROWS := 100
 const OBJECT_HEIGHT := 2.0
-const CELL_MARGIN := 0.25
 
 @export var lucy_scene: PackedScene
 @export var thai_scene: PackedScene
@@ -41,39 +38,11 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 	var setup_started := Time.get_ticks_usec()
-	var lucy_basis := Basis(Vector3.RIGHT, -PI / 2.0)
-	var lucy_bounds: AABB = Transform3D(lucy_basis, Vector3.ZERO) * lucy.get_aabb()
-	var thai_bounds := thai.get_aabb()
-	if lucy_bounds.size.y <= 0.0 or thai_bounds.size.y <= 0.0:
-		push_error("MICRO_STRESS: imported mesh has no height")
-		get_tree().quit(1)
-		return
-	lucy_basis = lucy_basis.scaled(Vector3.ONE * OBJECT_HEIGHT / lucy_bounds.size.y)
-	var thai_basis := Basis.IDENTITY.scaled(Vector3.ONE * OBJECT_HEIGHT / thai_bounds.size.y)
-	lucy_bounds = Transform3D(lucy_basis, Vector3.ZERO) * lucy.get_aabb()
-	thai_bounds = Transform3D(thai_basis, Vector3.ZERO) * thai.get_aabb()
-	var spacing := Vector2(maxf(lucy_bounds.size.x, thai_bounds.size.x), maxf(lucy_bounds.size.z, thai_bounds.size.z)) + Vector2.ONE * CELL_MARGIN
-	var lucy_offset := Vector3(-lucy_bounds.get_center().x, -lucy_bounds.position.y, -lucy_bounds.get_center().z)
-	var thai_offset := Vector3(-thai_bounds.get_center().x, -thai_bounds.position.y, -thai_bounds.get_center().z)
-	for row in ROWS:
-		for column in COLUMNS:
-			var is_lucy := (row + column) % 2 == 0
-			var instance := MeshInstance3D.new()
-			instance.name = "%s_%04d" % ["Lucy" if is_lucy else "Thai", (row * COLUMNS + column) >> 1]
-			instance.mesh = lucy if is_lucy else thai
-			var origin := Vector3((column - (COLUMNS - 1) * 0.5) * spacing.x, 0.0, (row - (ROWS - 1) * 0.5) * spacing.y)
-			instance.transform = Transform3D(lucy_basis if is_lucy else thai_basis, origin + (lucy_offset if is_lucy else thai_offset))
-			$Instances.add_child(instance)
-	var extent := Vector2(COLUMNS, ROWS) * spacing
-	var floor_mesh := $Floor.mesh as BoxMesh
-	floor_mesh.size = Vector3(extent.x + 4.0, 0.2, extent.y + 4.0)
-	camera_radius = maxf(extent.x, extent.y)
-	camera.position = Vector3(0.0, camera_radius * 0.8, camera_radius)
-	camera.far = camera_radius * 4.0
-	camera.look_at(Vector3(0.0, OBJECT_HEIGHT * 0.5, 0.0))
+	camera_radius = Vector2(camera.position.x, camera.position.z).length()
 	var counts := Vector2i.ZERO
 	var native_instances := 0
-	for child in $Instances.get_children():
+	var mesh_nodes := $Instances.find_children("*", "MeshInstance3D", true, false)
+	for child in mesh_nodes:
 		var instance := child as MeshInstance3D
 		if instance.mesh == lucy:
 			counts.x += 1
@@ -81,8 +50,8 @@ func _ready() -> void:
 			counts.y += 1
 		if instance.get_instance().is_valid():
 			native_instances += 1
-	print("MICRO_STRESS_POPULATED lucy=", counts.x, " thai=", counts.y, " native_instance_rids=", native_instances, " shared_mesh_resources=2 setup_ms=", (Time.get_ticks_usec() - setup_started) / 1000.0, " cell_spacing=", spacing, " field_extent=", extent)
-	if counts != Vector2i(INSTANCES_PER_MESH, INSTANCES_PER_MESH) or native_instances != INSTANCES_PER_MESH * 2:
+	print("MICRO_STRESS_POPULATED lucy=", counts.x, " thai=", counts.y, " native_instance_rids=", native_instances, " shared_mesh_resources=2 serialized_roots=", $Instances.get_child_count(), " inspection_ms=", (Time.get_ticks_usec() - setup_started) / 1000.0)
+	if counts != Vector2i(INSTANCES_PER_MESH, INSTANCES_PER_MESH) or native_instances != INSTANCES_PER_MESH * 2 or $Instances.get_child_count() != INSTANCES_PER_MESH * 2:
 		push_error("MICRO_STRESS: incomplete instance population")
 		get_tree().quit(1)
 		return
