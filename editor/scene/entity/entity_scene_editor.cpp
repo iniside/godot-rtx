@@ -16,6 +16,7 @@
 #include "scene/gui/scroll_container.h"
 #include "scene/gui/spin_box.h"
 #include "scene/gui/tree.h"
+#include "scene/main/viewport.h"
 
 EntitySceneEditor *EntitySceneEditor::singleton = nullptr;
 
@@ -469,6 +470,12 @@ void EntitySceneEditor::_flush_text() {
 void EntitySceneEditor::commit_pending_edits() {
 	_flush_number();
 	_flush_text();
+	Control *focus = fields && fields->is_inside_tree() ? fields->get_viewport()->gui_get_focus_owner() : nullptr;
+	SpinBox *spin_box = focus ? Object::cast_to<SpinBox>(focus->get_parent()) : nullptr;
+	if (spin_box && fields->is_ancestor_of(spin_box)) {
+		spin_box->apply();
+		_flush_number();
+	}
 }
 
 void EntitySceneEditor::_component_folded(bool p_folded, uint64_t p_component) {
