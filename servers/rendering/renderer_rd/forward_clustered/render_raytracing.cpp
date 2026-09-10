@@ -34,6 +34,7 @@
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
 #include "core/profiling/profiling.h"
+#include "core/templates/hashfuncs.h"
 #include "servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h"
 #include "servers/rendering/renderer_rd/forward_clustered/render_rtxdi.h"
 #include "servers/rendering/renderer_rd/storage_rd/light_storage.h"
@@ -4526,9 +4527,14 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			prepare_decals(0);
 		}
 		const uint64_t decal_joined = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
+		uint64_t decal_generation = snapshot.data_generation;
+		for (const auto &texture : snapshot.texture_generations) {
+			decal_generation = hash_djb2_one_64(RendererRD::TextureStorage::get_singleton()->texture_get_content_generation(texture.texture), decal_generation);
+			decal_generation = hash_djb2_one_64(texture.atlas_generation, decal_generation);
+		}
 		state->decal_count = snapshot.count;
-		state->decal_generation = snapshot.generation;
-		hash_scene(snapshot.generation);
+		state->decal_generation = decal_generation;
+		hash_scene(decal_generation);
 		uint32_t size = MAX(uint32_t(snapshot.data.size()), 16u);
 		if (size > state->decal_buffer_capacity) {
 			if (state->decal_buffer.is_valid()) {
@@ -4622,6 +4628,7 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 	const RID area_atlas = ts->area_light_atlas_get_texture();
 	const RID projector_atlas = ts->decal_atlas_get_texture_srgb();
 	HashMap<RID, uint32_t> atlas_indices;
+	HashMap<RID, uint64_t> texture_generations;
 	auto discover_atlases = [&](uint32_t) {
 		begin_job(0);
 		if (!p_render_data->rt_lights) {
@@ -4640,6 +4647,9 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 			const bool area = ls->light_get_type(base) == RSE::LIGHT_AREA;
 			RID texture = area ? ls->light_area_get_texture(base) : ls->light_get_projector(base);
 			RID atlas = area ? area_atlas : projector_atlas;
+			if (texture.is_valid()) {
+				texture_generations.insert(texture, 0);
+			}
 			if (texture.is_valid() && atlas.is_valid()) {
 				atlas_indices[atlas] = 0;
 			}
@@ -4657,6 +4667,10 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 	for (auto &entry : atlas_indices) {
 		entry.value = bindless_block->add_texture(entry.key);
 	}
+	for (auto &entry : texture_generations) {
+		entry.value = ts->texture_get_content_generation(entry.key);
+	}
+	const auto &resolved_texture_generations = texture_generations;
 	const uint64_t resources_end = profile_preparation ? OS::get_singleton()->get_ticks_usec() : 0;
 	auto compute_light_energy = [&](RID p_base, RSE::LightType p_type) {
 		float sign = ls->light_is_negative(p_base) ? -1.0f : 1.0f;
@@ -4762,7 +4776,7 @@ void RenderRaytracing::build_light_registry(RTViewportState *p_state, const Rend
 				}
 
 				RID projected_texture = type == RSE::LIGHT_AREA ? ls->light_area_get_texture(base) : ls->light_get_projector(base);
-				const uint64_t texture_generation = ts->texture_get_content_generation(projected_texture);
+				const uint64_t texture_generation = projected_texture.is_valid() ? resolved_texture_generations[projected_texture] : 0;
 				r_scene_signature = _rt_scene_hash(&texture_generation, sizeof(texture_generation), r_scene_signature);
 				if (projected_texture.is_valid()) {
 					Rect2 rect;

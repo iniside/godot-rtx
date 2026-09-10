@@ -4378,12 +4378,11 @@ TextureStorage::RTDecalSnapshot TextureStorage::build_rt_decal_snapshot(const Pa
 		_pack_decal(ordered[i].decal, frame, data);
 		memcpy(snapshot.data.ptrw() + i * sizeof(DecalData), &data, sizeof(DecalData));
 	}
-	snapshot.generation = hash_djb2_buffer(snapshot.data.ptr(), snapshot.data.size());
+	snapshot.data_generation = hash_djb2_buffer(snapshot.data.ptr(), snapshot.data.size());
 	for (const OrderedDecal &entry : ordered) {
 		for (const RID &texture : entry.decal.decal->textures) {
-			snapshot.generation = hash_djb2_one_64(texture_get_content_generation(texture), snapshot.generation);
 			const DecalAtlas::Texture *atlas_texture = decal_atlas.textures.getptr(texture);
-			snapshot.generation = hash_djb2_one_64(atlas_texture ? atlas_texture->content_generation : 0, snapshot.generation);
+			snapshot.texture_generations.push_back({ texture, atlas_texture ? atlas_texture->content_generation : 0 });
 		}
 	}
 	return snapshot;

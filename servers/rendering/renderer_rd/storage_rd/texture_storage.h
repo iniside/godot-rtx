@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/templates/local_vector.h"
 #include "core/templates/paged_array.h"
 #include "core/templates/rid_owner.h"
 #include "servers/rendering/renderer_rd/shaders/canvas_sdf.glsl.gen.h"
@@ -849,9 +850,14 @@ public:
 	void update_decal_buffer(const PagedArray<RID> &p_decals, const Transform3D &p_camera_xform);
 
 	struct RTDecalSnapshot {
+		struct TextureGenerationInput {
+			RID texture;
+			uint64_t atlas_generation = 0;
+		};
 		Vector<uint8_t> data;
+		LocalVector<TextureGenerationInput> texture_generations;
 		uint32_t count = 0;
-		uint64_t generation = 0;
+		uint64_t data_generation = 0;
 	};
 	RTDecalSnapshot build_rt_decal_snapshot(const PagedArray<RID> &p_resident_decals, const PagedArray<RID> &p_camera_decals, const Transform3D &p_camera_xform, const Vector3 &p_rt_origin);
 
