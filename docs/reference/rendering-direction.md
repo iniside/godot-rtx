@@ -25,10 +25,15 @@ Wymiana cyklu świata `9588beb0d4` z poprawką `7e4513db52` kompiluje się na
 trzech osiach; pełny edytor i pusta gra Vulkan kończą się kodem 0. Finalny
 source review tego etapu przeszedł. Dokument `c1927f7324` z poprawkami
 `22158a5585` i wznowioną przez właściciela `2a7768e58c` przeszedł świeży review,
-trzy buildy i start edytora/pustej gry Vulkan. Niepuste operacje dokumentu
-pozostają niesprawdzone w wykonaniu. Trwa bezpośrednia integracja renderera encji. Zobacz
+trzy buildy i start edytora/pustej gry Vulkan. Niecommitowane renderer/konwerter
+zapisują i odczytują już natywne energy_directional. Pierwsze klatki Vulkan
+ujawniły transpozycję transformacji konwertera i błędne flagi proceduralne;
+poprawki dają widoczną szarą płaszczyznę z natywną kamerą i materiałem.
+Istniejące liczniki GPU potwierdzają próbkowane wykonanie światła kierunkowego.
+Operacje prefab/UI oraz cała integracja renderera pozostają nieukończone. Zobacz
 [status i granice dowodów](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
-Nie ma jeszcze dowodu renderowania niepustych scen encji ani ich wydajności.
+Reakcja na zmianę energii światła, pozostałe przypadki renderowania i wydajność
+są niesprawdzone.
 
 
 Zakres implementacji zatwierdzony 2026-09-09, plan `414a19fdef`:

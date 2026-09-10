@@ -213,8 +213,10 @@ have source reasoning rather than executed UI proof. Steps 1–4 are accepted
 at their documented intermediate evidence boundary. The full migration remains
 incomplete.
 
-Successful nonempty `.escn` load/save, prefab apply/revert, undo/redo and subset
-round trips have not been executed. Their production authoring UI is step 6;
+At step 4 acceptance, successful nonempty `.escn` load/save, prefab apply/revert,
+undo/redo and subset round trips had not been executed. The finite converter
+below now exercises native save/reload; prefab and UI workflows remain pending.
+Their production authoring UI is step 6;
 complete renderer fixtures need later component/import work. These remain
 required final behavior validation through the real editor/native scenes.
 No new fixture, test harness, script, extra CLI proof API or automated test was
@@ -285,6 +287,74 @@ The renderer writer has stopped and released source/build ownership to the
 bounded finite-conversion context. Double/template and nonempty Vulkan
 validation are still pending. This is compile evidence for an intermediate
 dirty source snapshot, not a reviewed or completed renderer implementation.
+
+Finite conversion now succeeds: `editor/entity_scene_energy_converter.*` and
+its tools-only Main flag save `demos/rtxdi_manual/energy_directional.escn` with
+six standalone UID-backed assets. Native readback compares every encoded
+component and confirms eight records, four meshes, one visible mesh, Stretch,
+two cameras with only primary current, a directional light and environment.
+Ordinary build03 passes in 31.05s; convert03 exits 0. Evidence is under
+`gpuprofile/ecs_energy_converter/`, including `manifest.json`, `owned_diff.patch`
+and `convert03.log`. All 138 frozen renderer source hashes remain unchanged.
+The finite flag uses existing recovery startup to suppress saved-scene reopen;
+the earlier crash before conversion is not root-caused by the passing retry.
+
+**Initial native image gate FAILED: black viewport.** The owner observed black
+in the normal Vulkan window; root confirmed an entirely black 1280x720 frame
+from the existing MovieWriter viewport readback. `capture02` renders 120 frames
+and exits 0 in 14.03s with executable SHA256
+`ec9f4ce3b7d326ce9dec76b64a0f1dd5f9bde745b131ac647d0b4c82c239635f`.
+Command, logs and receipt are under `gpuprofile/ecs_step5_first_image/`;
+the inspected image is `capture02/energy00000119.png`. MovieWriter forces
+readback synchronization, so this is image evidence, not performance proof.
+The earlier `game01` was deliberately stopped to restart with capture and
+does not establish clean exit. Windows Computer Use capture was unavailable
+after its native pipe failed retries/reset; no desktop screenshot claim is made.
+The renderer writer has regained source/build/runtime ownership solely to
+diagnose and repair this black image before extending the remaining refactor.
+
+The black-image investigation identified transposed converter transforms:
+the preserved values follow VariantParser's row-major Basis constructor, but
+the converter used set_column. Correcting that constructor and reconverting
+restores primary camera position `(0,6,0)` and forward `(0,-1,0)`, confirmed
+by saved-component readback. Matched Vulkan `capture03` exits 0 and its inspected
+`energy00000119.png` now contains the plane on a black background. The plane
+is magenta, so that capture still fails material rendering.
+This establishes native geometry/camera visibility only. Material publication
+and classification are the next bounded investigation; broader refactoring
+remains stopped.
+
+Matched `capture04` now displays a gray plane on black: root inspected
+`gpuprofile/ecs_step5_first_image/capture04/energy00000119.png` after the
+author's 120-frame Vulkan run exited 0. Native publication had unconditionally
+called the procedural-bounds setter after disabling procedural geometry;
+that setter recreated procedural state and caused UNSUPPORTED/DEFORMED flags
+on the ordinary mesh. Guarding the bounds call fixes the magenta result
+without changing shader classification or renderer settings. Ordinary build
+passes in 30.100s. This is the first visible native geometry/camera/material
+image, not proof of light-energy response, 100 km precision, other render
+components or full step 5 completion. The two first-image fixes and converter
+remain uncommitted along with the larger renderer change.
+
+Existing RTXDI GPU diagnostics confirm executed directional lighting in
+`capture05` on the same source, executable and scene: frame 60 contains one
+infinite light and no local/environment lights. Of 1024 sampled pixels, 624
+have surfaces; initial proposals and final shading record directional samples,
+positive target PDFs, visible shadow results and valid reservoirs for those
+624 surfaces, with 624 final BRDF evaluations. The run exits 0. Its requested
+limit is `--quit-after 120`, but hashed MovieWriter stdout and PNG numbering
+show 130 captured frames. The receipt's frame count is corrected to 130;
+`capture05_receipt_original.json` preserves the original erroneous 120 entry.
+`capture05_receipt.json` and `capture05/directional-frame-60.json` contain
+the source/data hash checks and raw counts. These are sampled executed events,
+not whole-frame extrapolations, GPU timing or light-energy-change response.
+
+Fresh read-only proof audit PASS confirms the bounded conversion, actual
+native Vulkan image, the two failing-branch corrections and sampled directional
+lighting. It verified 22 capture04 manifest artifacts, all six serialized UIDs
+and unchanged asset hashes, original preserved scene/GLTF/wrapper inputs, and
+the corrected capture05 receipt. This is an intermediate proof acceptance;
+the unfinished source task still requires its full commit and hostile review.
 
 Bounded baseline artifact audit found historical stress logs, but no retained
 replayable exact pre-entity executable in their named artifact locations.

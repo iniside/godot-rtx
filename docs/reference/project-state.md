@@ -16,13 +16,18 @@ correction `7e4513db52` builds on all three axes; normal Vulkan editor and empty
 native game exit 0. Final lifecycle source review passes. Native document
 `c1927f7324` plus corrections `22158a5585` and owner-renewed `2a7768e58c`
 passes fresh exact/cumulative source review, ordinary/double/template builds
-and Vulkan editor/empty-game startup. Nonempty document workflows remain
-unexecuted. Direct native renderer integration is now in progress. See [execution evidence and limits](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
+and Vulkan editor/empty-game startup. The uncommitted renderer/converter now
+save and reload the finite native energy_directional scene. First Vulkan
+captures exposed transposed converter transforms and incorrect procedural
+flags; fixes produce a visible gray plane with its native camera/material.
+Existing GPU counters confirm sampled directional-light shading.
+Prefab/UI workflows and full renderer integration remain incomplete. See
+[execution evidence and limits](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
 Scripting, Node plugins, 2D and HTML/CSS
 game UI are excluded; old world scenes need no compatibility beyond the finite
 renderer migration. SoftBody/Generic6DOF and CSG/GridMap authoring are also
-excluded by the approved plan. Nonempty native scene rendering and performance
-remain unverified. Existing renderer GPU data ownership and change-only publication
+excluded by the approved plan. Light-energy-change response, broader native rendering and
+performance remain unverified. Existing renderer GPU data ownership and change-only publication
 remain the integration baseline.
 
 
