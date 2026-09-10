@@ -22,8 +22,8 @@ CSG/GridMap. Zabezpieczenie danych scen `05996de60b` przeszło source review
 i niezależny audyt danych. Fundament Flecs `8b645f23a7` z poprawką `4e2db6d6ab`
 przeszedł finalny source review oraz ordinary/double/template buildy.
 Wymiana cyklu świata `9588beb0d4` z poprawką `7e4513db52` kompiluje się na
-trzech osiach; pełny edytor i pusta gra Vulkan kończą się kodem0. Finalny
-source review tego etapu trwa. Zobacz
+trzech osiach; pełny edytor i pusta gra Vulkan kończą się kodem 0. Finalny
+source review tego etapu przeszedł. Trwa implementacja dokumentu encji. Zobacz
 [status i granice dowodów](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
 Nie ma jeszcze dowodu renderowania niepustych scen encji ani ich wydajności.
 

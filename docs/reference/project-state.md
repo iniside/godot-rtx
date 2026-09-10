@@ -13,7 +13,8 @@ passes source review and independent data audit. Flecs/schema foundation
 `8b645f23a7` plus cold-subresource fix `4e2db6d6ab` passes final source review
 and ordinary/double/template builds. Native lifecycle `9588beb0d4` plus
 correction `7e4513db52` builds on all three axes; normal Vulkan editor and empty
-native game exit 0. Final lifecycle source review is pending. See [execution evidence and limits](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
+native game exit 0. Final lifecycle source review passes. Native document
+implementation is in progress. See [execution evidence and limits](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
 Scripting, Node plugins, 2D and HTML/CSS
 game UI are excluded; old world scenes need no compatibility beyond the finite
 renderer migration. SoftBody/Generic6DOF and CSG/GridMap authoring are also

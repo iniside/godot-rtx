@@ -57,7 +57,7 @@ cache/ownership contracts. Final correction builds pass in all three axes:
 `logs/entity-step2-asset-fix-template.log` (26.12s).
 Actual cold-load and native-world execution remain unverified.
 
-## Step 3: lifecycle correction committed, final review pending
+## Step 3: native lifecycle accepted
 
 Committed at `9588beb0d4c01d5a6da844c64edc29bffecac95c`, from `4e2db6d6ab`.
 Native game MainLoop/window/viewport and EntityWorld services replace game
@@ -104,7 +104,11 @@ SPIR-V parser/OpDemote diagnostics, RTXDI magenta-material warnings and renderer
 StringName orphan messages remain disclosed. Earlier native logs contain the
 same shader diagnostic category, but do not establish identical materials or
 visual correctness. No warning-free, nonempty native rendering, performance or
-automated-test result is claimed. The second fresh source review is pending.
+automated-test result is claimed. Fresh final source review PASS examined the
+exact correction/original commits and cumulative `4e2db6d6ab..7e4513db52`,
+confirming all three round-one findings closed. It checked all twelve archived
+source hashes and actual build/run receipts; native hierarchy execution and
+nonempty rendering remain unverified.
 
 Until native editor/physics/import replacements, the following old UI routes
 are explicitly unavailable: ruler, snap object to floor, curve collider snap,
@@ -112,6 +116,12 @@ are explicitly unavailable: ruler, snap object to floor, curve collider snap,
 sun/environment to the Node scene. Their native replacements remain assigned
 to approved later steps; disabling old entry points does not complete them.
 GridMap authoring remains permanently excluded by the approved plan.
+
+## Step 4: native document implementation in progress
+
+Implementation baseline: `2dd1bf401d93a724341355f9b55c5b9cc4f5e9da`.
+The document/format, prefab and transactional command step is delegated as
+one responsibility. Its source has not landed or passed review yet.
 
 ## Remaining work
 
