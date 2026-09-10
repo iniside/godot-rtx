@@ -32,6 +32,17 @@ independent data/image audit passes. Engine identity is recorded separately
 from the Windows console launcher, with explicit post-capture collection.
 Fog/GI changes compile; isolated feature execution, particles and tool closure
 remain incomplete. See the status for source-snapshot and proof limits.
+Owner now requires renderer validation in the real editor. Old `.tscn` worlds
+are rejected before instantiation; normal cached-session startup passes after
+fixing obsolete WorldEnvironment mutation. Native stress data conversion is
+complete (10004 records); its earlier standalone sky-only image failed and
+Camera/Sun conversion was corrected from source Euler properties. Corrected
+editor capture shows the populated stress grid. Ordinary editor navigation and
+camera save/close/reopen are now owner-confirmed with native editor build05
+(uncommitted source over `20d7f5cbbacd`). On 2026-09-10 the owner moves renderer
+completion after the next editor usability slice: entity list, editable native
+Inspector and viewport click selection. Full authoring remains pending. The
+microgeometry admission limit is deferred as a separate problem.
 Prefab/UI workflows and full renderer integration remain incomplete. See
 [execution evidence and limits](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
 Scripting, Node plugins, 2D and HTML/CSS

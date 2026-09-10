@@ -429,6 +429,105 @@ The saved scene data, actual Vulkan images and capture logs remain valid
 bounded observations. Future checkpoints retain both engine and launcher plus
 the exact owned source snapshot before further edits.
 
+Combined particle/tool checkpoint ordinary editor build passes (97.61s,
+`gpuprofile/ecs_step5_renderer/particles_tools_build06.log`). It includes native
+particle collision/attractor publication, heightfield origin handling, relative
+simulation and current/previous draw origins, generated ParticleProcessMaterial
+provenance with retained public custom-shader semantics, and static import/tool
+preview closure. Retired polygon/skeleton authoring and Node drag/drop consumers
+are removed; Animation assets remain, with playback explicitly unavailable until
+native animation. Ruler helper data is native, while placement remains Step 6.
+This checkpoint has compile evidence only. The retained nine scenes contain no
+particle simulation population; PPM spawn/motion/collider/sub-emitter behavior
+requires later native-authoring execution before final migration closure.
+An audit-found mask-change pairing invalidation correction is being applied
+before the next frozen build/runtime checkpoint. Pose-only updates must retain
+their incremental path. Double/template and complete Step 5 review remain open.
+
+The following ordinary build07 passes (31.82s), and the native main Vulkan
+capture again exits 0 with 120 frames; root inspected recognizable meshes,
+materials and shadows. `particles_tools_checkpoint/` retains 168 owned source
+snapshots, deletion/diff records, 24 scene/asset files and matching-basename
+engine/launcher copies. Normal editor startup instead crashes while restoring
+the old `microgeometry_stress/scene.tscn`. A `/MAP` relink has byte-identical
+`.text` to the captured crash engine, mapping the stack to
+World3D::get_scenario ← WorldEnvironment::_notification ← cached editor scene
+attachment. Old Node-world environment mutation dereferences the removed world.
+Evidence: `gpuprofile/ecs_step5_renderer/editor_crash_symbols/decoded_stack.json`.
+
+The owner explicitly requires old `.tscn` worlds not to load, including session
+restore. The bounded correction rejects them at editor load authority before
+instantiation and retires WorldEnvironment world mutation while retaining
+parsed shared assets. Normal cached startup must be rerun; recovery mode alone
+does not close this failure. The owner also prioritizes converting the retained
+10000-instance microgeometry stress scene to native `.escn`. Preparation runs
+read-only until the crash correction releases the source/build slot. No new
+Node-world compatibility route is authorized.
+
+The crash correction now builds (37.82s) and normal Vulkan editor startup with
+the same cached stress `.tscn` exits 0 (19.92s), explicitly rejecting that path
+before instantiation. `editor_crash_fix_editor01/stderr.log:523` records the
+rejection; retained `editor_layout_before.cfg` establishes the cached input.
+The editor subsequently saves its empty open-scene list normally. Exact engine,
+launcher, symbol map and 172 owned source snapshots are retained under
+`gpuprofile/ecs_step5_renderer/editor_crash_fix_checkpoint/`. This closes the
+observed old-world startup crash, not native editor authoring.
+
+Source/build/runtime ownership is now with the finite stress converter. Its
+verified recipe has 10004 records: 5000 Lucy, 5000 Thai, one floor, sun, camera
+and environment. All seven preserved input hashes match; exact JSONL transforms
+are reused. Existing MicroGeometry saver must preserve content/pages in two
+standalone `.mgdata` files, referenced by shared saved meshes, rather than
+retaining imported-cache paths. Renderer implementation is paused until this
+conversion and first native stress execution hand back the slot. Remaining
+renderer source work includes particle cycle/reference/history fixes, native
+occluder coordinate publication and final precision/ownership review.
+
+Stress conversion run03 exits 0 after 78.07s, validating all records/components,
+order and 5000+5000 sharing in the decoded native world. The first standalone
+Vulkan stress image fails visibly (sky only). Source evidence identifies a
+preservation discrepancy: literal Transform3D bases use rows, while the
+preservation script's Euler-derived bases use columns. Stress Camera/Sun use
+Euler properties, so the converter must derive their bases from authored
+SceneState values using actual Node3D Euler semantics. Exact literal mesh
+bases/placements remain unchanged; Lucy's literal source basis also contradicts
+the old recipe prose sign. Failed image/input are preserved under
+`gpuprofile/ecs_stress_converter/`; corrected conversion/readback is in progress.
+
+The owner now explicitly requires rendering verification in the actual editor,
+not standalone. No further standalone stress image/FPS launches are authorized.
+Converter data correction may finish, then native `.escn` document opening and
+display in the real editor 3D viewport takes priority over remaining renderer
+expansion. This advances the entry/display portion of approved Step 6; it does
+not substitute a separate viewer or claim complete native Inspector/outliner/
+undo authoring. Old `.tscn` world rejection remains mandatory.
+
+Corrected stress data conversion exits 0 (build04 29.61s, conversion wall69.29s),
+with scene SHA256 `7db8fe4b2d5b5f636506dc2a2f107f1fe80f97f4276c57f90b8eebf942998b71`.
+All original source hashes remain unchanged. Eight standalone asset files total
+4.159GB. `gpuprofile/ecs_stress_converter/manifest.json` preserves commands,
+failed earlier captures, exact owned source/diff and asset identity evidence.
+
+Native editor entry/display now builds (88.75s, followup35.58s) and the first
+actual editor capture exits 0 with 120 frames. Root inspected
+`gpuprofile/ecs_native_editor/capture01/editor00000015.png`: real menus/docks,
+3D viewport and populated stress grid are visible. The tab-owned EntityScene
+replaces Node3DEditor's unrelated empty world; camera seeding and native
+light/environment presence preserve the authored view. Full native editing
+remains unavailable. The stale selected-tab highlight was corrected. In the
+ordinary editor without MovieWriter/fixed timestep the owner confirmed RMB+WASD
+navigation. Magenta grid rendering remains recorded.
+
+Native Ctrl+S initially skipped editor-state serialization because the legacy
+save branch expected a Node root. Build05 (34.25s) routes native Save, Save All
+and clean exit through existing editor-state serialization. The owner then
+saved a view, closed normally and confirmed its restoration after reopening.
+The native editstate remained byte-identical across save/close/reopen:
+SHA256 `0244ee5812e2c2f05c9ed75f03ec24c3fbd01ec46b813212d5772722b8c4150b`.
+The scene asset remained unchanged. Evidence lives in
+`gpuprofile/ecs_native_editor/final_build05/` and `owner_saved_camera/`.
+This confirms editor camera persistence, not native entity editing or its save.
+
 Bounded baseline artifact audit found historical stress logs, but no retained
 replayable exact pre-entity executable in their named artifact locations.
 `%TEMP%/godot-render-repair-20260909/micro-step4-history-final.log` and its
@@ -450,12 +549,21 @@ an implementation sequencing boundary, not a final animation scope exclusion.
 
 ## Remaining work
 
-Step 6 entry research at `a49e5c7b96` verifies that document/tab ownership,
-open/save, Inspector and undo still require native integration. Existing
+Owner sequencing decision 2026-09-10, working source over `20d7f5cbbacd`:
+advance the coherent Step 6 usability slice before completing Step 5. Deliver
+an entity list, an editable Inspector for the selected native entity, and
+viewport mesh click selection sharing the same native selection. Preserve the
+saved camera. Remaining renderer completion is deferred behind this slice;
+the microgeometry admission limit is a separate deferred problem. No new
+scripting, UI framework or streaming scope is added.
+
+Step 6 entry research at `a49e5c7b96` mapped document/tab ownership,
+open/save, Inspector and undo. Native document/tab opening and camera-state
+save now work; entity authoring, document-save UI and undo remain pending. Existing
 EntityScene/EntityWorld/schema/command APIs already provide the data substrate;
-no entity Object proxy is needed. `EditorData::EditedScene` owns Node roots and
-selection; `EditorNode::load_scene` instantiates PackedScene. Native save must
-replace the old packing flags too: `_save_scene` always supplies
+no entity Object proxy is needed. Native tabs now own EntityScene and old world
+loading is rejected. Native document save must replace the old packing flags:
+the legacy `_save_scene` supplies
 `FLAG_REPLACE_SUBRESOURCE_PATHS`, rejected by ResourceFormatSaverEntityScene.
 Inspector field reads, defaults/revert and schema enumeration must resolve
 native addresses, while real shared Resource subinspectors remain supported.

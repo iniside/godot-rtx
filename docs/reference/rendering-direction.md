@@ -40,6 +40,16 @@ przesunięciu wszystkich encji o 100000 na każdej osi; niezależny audyt danych
 i obrazu przeszedł. To dowód nieruchomej galerii, nie pełnej poprawności mgły/GI,
 cieni, ruchu ani gęstego świata. Status rozdziela hash silnika od launchera
 konsolowego oraz odnotowuje ograniczenia historycznego snapshotu źródeł.
+Właściciel wymaga teraz weryfikacji renderowania w rzeczywistym edytorze.
+Stare światy `.tscn` są odrzucane przed instancjonowaniem. Konwersja danych
+sceny obciążeniowej (10004 rekordy) jest gotowa; pierwsza próba standalone
+pokazała samo niebo i nie stanowi poprawnego dowodu. Orientacje kamery/słońca
+poprawiono według źródłowych wartości Euler. Obraz rzeczywistego edytora pokazuje
+populację sceny; właściciel potwierdził nawigację oraz zapis i odtworzenie kamery
+po zamknięciu (build05, niecommitowane źródła nad `20d7f5cbbacd`). Decyzją
+właściciela 2026-09-10 domknięcie renderera następuje po podstawowej używalności
+edytora: lista encji, edytowalny Inspector i zaznaczanie kliknięciem w viewporcie.
+Limit alokacji microgeometry pozostaje osobnym, odłożonym problemem.
 Operacje prefab/UI oraz cała integracja renderera pozostają nieukończone. Zobacz
 [status i granice dowodów](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
 Reakcja na zmianę energii światła, pozostałe przypadki renderowania i wydajność gęstego świata
