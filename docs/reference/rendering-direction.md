@@ -18,8 +18,10 @@ przy `999bbd18c` określa granice wymiany. Właściciel zatwierdził implementac
 commit `e4f73a8286`, task-start `3a6a695fc8`. Model skryptów i Node plugins są
 poza zakresem; stare sceny nie wymagają kompatybilności, zachowujemy skończony
 zestaw scen rendererowych. Plan wyłącza też SoftBody/Generic6DOF i authoring
-CSG/GridMap. Trwa zabezpieczenie danych scen i implementacja fundamentu Flecs;
-nie ma jeszcze dowodu działania ani wydajności nowego modelu.
+CSG/GridMap. Zabezpieczenie danych scen `05996de60b` przeszło source review
+i niezależny audyt danych; trwa implementacja fundamentu Flecs. Zobacz
+[status i granice dowodów](../research/2026-09-10-1149-flecs-scene-implementation-status.md).
+Nie ma jeszcze dowodu działania ani wydajności nowego modelu.
 
 
 Zakres implementacji zatwierdzony 2026-09-09, plan `414a19fdef`:
