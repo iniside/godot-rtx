@@ -35,6 +35,7 @@ struct EntityFieldSchema {
 	Error (*read)(const void *, Variant &) = nullptr;
 	Error (*write)(void *, const Variant &) = nullptr;
 	Error (*validate)(const Variant &) = nullptr;
+	Error (*make_array_element)(Variant &) = nullptr;
 };
 
 struct EntityComponentSchema {
@@ -329,6 +330,7 @@ struct EntityCodec<Ref<T>> {
 template <typename T>
 struct EntityCodec<Vector<T>> {
 	static constexpr Variant::Type variant_type = Variant::ARRAY;
+	static Error make_default_element(Variant &r_value) { return EntityCodec<T>::encode(T(), r_value); }
 	static Error encode(const Vector<T> &p_value, Variant &r_value) {
 		Array values;
 		values.resize(p_value.size());
@@ -387,6 +389,9 @@ EntityFieldSchema entity_make_field(uint64_t p_id, const char *p_name, const cha
 	result.name = p_name;
 	result.native_type = p_type;
 	result.variant_type = EntityCodec<T>::variant_type;
+	if constexpr (EntityCodec<T>::variant_type == Variant::ARRAY) {
+		result.make_array_element = &EntityCodec<T>::make_default_element;
+	}
 	result.read = [](const void *p_component, Variant &r_value) { return EntityCodec<T>::encode(static_cast<const C *>(p_component)->*Member, r_value); };
 	result.write = [](void *p_component, const Variant &p_value) { return EntityCodec<T>::decode(p_value, static_cast<C *>(p_component)->*Member); };
 	result.validate = [](const Variant &p_value) {

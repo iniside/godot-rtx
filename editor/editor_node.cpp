@@ -4229,6 +4229,9 @@ void EditorNode::_export_as_menu_option(int p_idx) {
 }
 
 int EditorNode::_next_unsaved_scene(bool p_valid_filename, int p_start) {
+	if (EntitySceneEditor::get_singleton()) {
+		EntitySceneEditor::get_singleton()->commit_pending_edits();
+	}
 	for (int i = p_start; i < editor_data.get_edited_scene_count(); i++) {
 		if (!editor_data.get_edited_scene_root(i) && editor_data.get_scene_document(i).is_null()) {
 			continue;

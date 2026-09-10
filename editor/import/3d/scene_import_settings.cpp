@@ -1232,6 +1232,9 @@ void SceneImportSettingsDialog::_update_theme_item_cache() {
 
 void SceneImportSettingsDialog::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_PREDELETE: {
+			_cleanup();
+		} break;
 		case NOTIFICATION_POST_ENTER_TREE: {
 			RS::get_singleton()->viewport_set_scenario(base_viewport->get_viewport_rid(), scenario);
 			RS::get_singleton()->viewport_attach_camera(base_viewport->get_viewport_rid(), camera);
@@ -1818,7 +1821,6 @@ SceneImportSettingsDialog::SceneImportSettingsDialog() {
 }
 
 SceneImportSettingsDialog::~SceneImportSettingsDialog() {
-	_cleanup();
 	if (scene) {
 		memdelete(scene);
 	}

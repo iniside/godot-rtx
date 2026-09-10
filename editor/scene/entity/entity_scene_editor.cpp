@@ -1,15 +1,16 @@
 #include "entity_scene_editor.h"
 
-#include "core/math/triangle_mesh.h"
 #include "core/input/input.h"
+#include "core/math/triangle_mesh.h"
 #include "core/object/callable_mp.h"
 #include "editor/docks/inspector_dock.h"
 #include "editor/editor_node.h"
-#include "editor/inspector/editor_resource_picker.h"
 #include "editor/editor_undo_redo_manager.h"
+#include "editor/inspector/editor_resource_picker.h"
 #include "scene/3d/camera_3d.h"
 #include "scene/gui/button.h"
 #include "scene/gui/check_box.h"
+#include "scene/gui/foldable_container.h"
 #include "scene/gui/label.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/scroll_container.h"
@@ -96,7 +97,7 @@ void EntitySceneEditor::_select_deferred(const String &p_id, Ref<EntityScene> p_
 }
 
 void EntitySceneEditor::select(EntityId p_entity) {
-	_flush_number();
+	commit_pending_edits();
 	field_error = String();
 	if (document.is_null()) {
 		return;
@@ -124,17 +125,21 @@ void EntitySceneEditor::select(EntityId p_entity) {
 	_inspect();
 }
 
-void EntitySceneEditor::_add_field(const String &p_label, const Variant &p_value, uint64_t p_component, uint64_t p_field, const Array &p_path, const EntityFieldSchema *p_schema) {
+void EntitySceneEditor::_add_field(VBoxContainer *p_parent, const String &p_label, const Variant &p_value, uint64_t p_component, uint64_t p_field, const Array &p_path, const EntityFieldSchema *p_schema) {
 	if (p_value.get_type() == Variant::DICTIONARY && p_schema && p_schema->nested_type_id) {
 		const EntityComponentSchema *nested = document->get_world()->get_schemas().find(p_schema->nested_type_id);
 		if (nested) {
+			FoldableContainer *group = memnew(FoldableContainer(p_label.capitalize()));
+			p_parent->add_child(group);
+			VBoxContainer *children = memnew(VBoxContainer);
+			group->add_child(children);
 			Dictionary values = p_value;
 			for (const EntityFieldSchema &field : nested->fields) {
 				String key = String::num_uint64(field.id, 16);
 				if (field.editable && values.has(key)) {
 					Array path = p_path.duplicate();
 					path.push_back(key);
-					_add_field(p_label + "/" + String(field.name), values[key], p_component, p_field, path, &field);
+					_add_field(children, String(field.name).capitalize(), values[key], p_component, p_field, path, &field);
 				}
 			}
 			return;
@@ -142,25 +147,19 @@ void EntitySceneEditor::_add_field(const String &p_label, const Variant &p_value
 	}
 	if (p_value.get_type() == Variant::ARRAY) {
 		HBoxContainer *row = memnew(HBoxContainer);
-		fields->add_child(row);
+		p_parent->add_child(row);
 		Label *label = memnew(Label(p_label));
 		label->set_h_size_flags(SIZE_EXPAND_FILL);
 		row->add_child(label);
-		Variant default_value = String();
-		if (p_schema && p_schema->nested_type_id) {
-			const EntityComponentSchema *nested = document->get_world()->get_schemas().find(p_schema->nested_type_id);
-			Dictionary values;
-			if (nested) {
-				for (const EntityFieldSchema &field : nested->fields) {
-					if (field.serialized) {
-						values[String::num_uint64(field.id, 16)] = field.default_value;
-					}
-				}
-			}
-			default_value = values;
-		}
+		Variant default_value;
+		bool can_add = p_schema && p_schema->make_array_element && p_schema->make_array_element(default_value) == OK;
+		can_add = can_add && default_value.get_type() != Variant::NIL && (default_value.get_type() != Variant::DICTIONARY || p_schema->nested_type_id != 0);
 		Button *add = memnew(Button("Add"));
 		row->add_child(add);
+		add->set_disabled(!can_add);
+		if (!can_add) {
+			add->set_tooltip_text("The declared element type has no native field editor.");
+		}
 		add->connect("pressed", callable_mp(this, &EntitySceneEditor::_resize_array).bind(p_component, p_field, p_path, default_value, 1));
 		Button *remove = memnew(Button("Remove last"));
 		row->add_child(remove);
@@ -172,18 +171,31 @@ void EntitySceneEditor::_add_field(const String &p_label, const Variant &p_value
 	}
 	int count = 0;
 	switch (p_value.get_type()) {
-		case Variant::VECTOR2: count = 2; break;
-		case Variant::VECTOR3: count = 3; break;
-		case Variant::VECTOR4: case Variant::COLOR: count = 4; break;
-		case Variant::BASIS: count = 3; break;
-		case Variant::ARRAY: count = Array(p_value).size(); break;
-		default: break;
+		case Variant::VECTOR2:
+			count = 2;
+			break;
+		case Variant::VECTOR3:
+		case Variant::BASIS:
+			count = 3;
+			break;
+		case Variant::VECTOR4:
+		case Variant::COLOR:
+			count = 4;
+			break;
+		case Variant::ARRAY:
+			count = Array(p_value).size();
+			break;
+		default:
+			break;
 	}
 	if (count > 0) {
 		for (int i = 0; i < count; i++) {
 			Array path = p_path.duplicate();
 			path.push_back(i);
-			_add_field(p_label + "/" + itos(i), p_value.get(i), p_component, p_field, path, p_schema);
+			const String axes[] = { "X", "Y", "Z", "W" };
+			const String channels[] = { "R", "G", "B", "A" };
+			String name = p_value.get_type() == Variant::ARRAY ? "[" + itos(i) + "]" : (p_value.get_type() == Variant::COLOR ? channels[i] : axes[i]);
+			_add_field(p_parent, p_label + " / " + name, p_value.get(i), p_component, p_field, path, p_schema);
 		}
 		return;
 	}
@@ -191,12 +203,12 @@ void EntitySceneEditor::_add_field(const String &p_label, const Variant &p_value
 		for (const String &key : { String("position"), String("size") }) {
 			Array path = p_path.duplicate();
 			path.push_back(key);
-			_add_field(p_label + "/" + key, p_value.get(key), p_component, p_field, path);
+			_add_field(p_parent, p_label + " / " + key.capitalize(), p_value.get(key), p_component, p_field, path);
 		}
 		return;
 	}
 	HBoxContainer *row = memnew(HBoxContainer);
-	fields->add_child(row);
+	p_parent->add_child(row);
 	Label *label = memnew(Label(p_label));
 	label->set_h_size_flags(SIZE_EXPAND_FILL);
 	label->set_clip_text(true);
@@ -242,7 +254,9 @@ void EntitySceneEditor::_add_field(const String &p_label, const Variant &p_value
 		value->set_h_size_flags(SIZE_EXPAND_FILL);
 		value->set_text(p_value);
 		row->add_child(value);
-		value->connect("text_submitted", callable_mp(this, &EntitySceneEditor::_text_changed).bind(p_component, p_field, p_path));
+		value->connect("text_changed", callable_mp(this, &EntitySceneEditor::_text_changed).bind(p_component, p_field, p_path, document, selected.to_string()));
+		value->connect("text_submitted", callable_mp(this, &EntitySceneEditor::_flush_text).unbind(1));
+		value->connect("focus_exited", callable_mp(this, &EntitySceneEditor::_flush_text), CONNECT_DEFERRED);
 	} else {
 		row->add_child(memnew(Label(p_value.get_type() == Variant::ARRAY ? "Empty array" : "Unsupported field type")));
 	}
@@ -283,14 +297,19 @@ void EntitySceneEditor::_inspect() {
 	components.sort();
 	for (uint64_t id : components) {
 		const EntityComponentSchema *schema = world->get_schemas().find(id);
-		fields->add_child(memnew(Label(String(schema->name))));
+		FoldableContainer *group = memnew(FoldableContainer(String(schema->name).trim_prefix("Entity").capitalize()));
+		group->set_folded(folded_components.has(id) ? folded_components[id] : id != EntityComponentTraits<EntityName>::id && id != EntityComponentTraits<EntityTransform>::id);
+		group->connect("folding_changed", callable_mp(this, &EntitySceneEditor::_component_folded).bind(id));
+		fields->add_child(group);
+		VBoxContainer *children = memnew(VBoxContainer);
+		group->add_child(children);
 		for (const EntityFieldSchema &field : schema->fields) {
 			if (!field.editable) {
 				continue;
 			}
 			Variant value;
 			if (world->read_field(target.handle, id, field.id, value) == OK) {
-				_add_field(String(field.name), value, id, field.id, Array(), &field);
+				_add_field(children, String(field.name).capitalize(), value, id, field.id, Array(), &field);
 			}
 		}
 	}
@@ -311,17 +330,22 @@ static bool set_nested_value(Variant &r_value, const Array &p_path, int p_index,
 	return valid;
 }
 
-void EntitySceneEditor::_change(const Variant &p_value, uint64_t p_component, uint64_t p_field, const Array &p_path) {
-	EntityResolution target = document->resolve(selected);
+void EntitySceneEditor::_change(const Variant &p_value, uint64_t p_component, uint64_t p_field, const Array &p_path, Ref<EntityScene> p_document, EntityId p_entity) {
+	Ref<EntityScene> target_document = p_document.is_valid() ? p_document : document;
+	EntityId target_entity = p_entity.is_valid() ? p_entity : selected;
+	if (target_document.is_null()) {
+		return;
+	}
+	EntityResolution target = target_document->resolve(target_entity);
 	if (target.state != EntityReferenceState::RESIDENT) {
 		return;
 	}
 	EntitySceneCommands::Command command;
-	command.document = document->get_document_id();
-	command.entity = selected;
+	command.document = target_document->get_document_id();
+	command.entity = target_entity;
 	command.component = p_component;
 	command.field = p_field;
-	Error error = document->get_world()->read_field(target.handle, p_component, p_field, command.before);
+	Error error = target_document->get_world()->read_field(target.handle, p_component, p_field, command.before);
 	command.after = command.before.duplicate(true);
 	if (error != OK || !set_nested_value(command.after, p_path, 0, p_value) || command.before == command.after) {
 		return;
@@ -329,49 +353,52 @@ void EntitySceneEditor::_change(const Variant &p_value, uint64_t p_component, ui
 	EditorData &editor_data = EditorNode::get_editor_data();
 	int history_id = EditorUndoRedoManager::INVALID_HISTORY;
 	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
-		if (editor_data.get_scene_document(i) == document) {
+		if (editor_data.get_scene_document(i) == target_document) {
 			history_id = editor_data.get_scene_history_id(i);
 			break;
 		}
 	}
 	ERR_FAIL_COND(history_id == EditorUndoRedoManager::INVALID_HISTORY);
 	EntitySceneCommands::Transaction transaction;
-	error = document->get_commands().execute("Edit entity field", Vector<EntitySceneCommands::Command>{ command }, nullptr, &transaction);
+	error = target_document->get_commands().execute("Edit entity field", Vector<EntitySceneCommands::Command>{ command }, nullptr, &transaction);
 	if (error != OK) {
-		field_error = vformat("Edit rejected (%d): %s", error, document->get_last_error());
+		field_error = vformat("Edit rejected (%d): %s", error, target_document->get_last_error());
 		error_label->set_text(field_error);
 		callable_mp(this, &EntitySceneEditor::_inspect).call_deferred();
 		return;
 	}
 	field_error = String();
 	error_label->set_text(String());
-	revision = document->get_revision();
+	revision = target_document->get_revision();
 	EditorUndoRedoManager *manager = EditorUndoRedoManager::get_singleton();
 	manager->create_action_for_history("Edit entity field", history_id);
-	manager->set_native_action(callable_mp(this, &EntitySceneEditor::_restore).bind(document, transaction.before, transaction.prefabs_before), callable_mp(this, &EntitySceneEditor::_restore).bind(document, transaction.after, transaction.prefabs_after));
+	manager->set_native_action(callable_mp(this, &EntitySceneEditor::_restore).bind(target_document, transaction.before, transaction.prefabs_before), callable_mp(this, &EntitySceneEditor::_restore).bind(target_document, transaction.after, transaction.prefabs_after));
 	UndoRedo *history = manager->get_history_undo_redo(history_id);
 	history->add_do_method(callable_mp(this, &EntitySceneEditor::_history_changed));
 	history->add_undo_method(callable_mp(this, &EntitySceneEditor::_history_changed));
 	manager->commit_action(false);
-	if (p_component == EntityComponentTraits<EntityName>::id) {
-		_refresh_catalog();
+	if (target_document == document && p_component == EntityComponentTraits<EntityName>::id) {
+		callable_mp(this, &EntitySceneEditor::_refresh_catalog).call_deferred();
 	}
 }
 
 void EntitySceneEditor::_number_changed(double p_value, uint64_t p_component, uint64_t p_field, Array p_path, bool p_integer) {
 	if (Input::get_singleton()->is_mouse_button_pressed(MouseButton::LEFT)) {
-		number_pending = true;
-		pending_value = p_integer ? Variant(int64_t(p_value)) : Variant(p_value);
-		pending_component = p_component;
-		pending_field = p_field;
-		pending_path = p_path;
+		pending_number = { document, selected, p_integer ? Variant(int64_t(p_value)) : Variant(p_value), p_component, p_field, p_path, true };
 	} else {
 		_change(p_integer ? Variant(int64_t(p_value)) : Variant(p_value), p_component, p_field, p_path);
 	}
 }
 
-void EntitySceneEditor::_text_changed(const String &p_value, uint64_t p_component, uint64_t p_field, Array p_path) {
-	_change(p_value, p_component, p_field, p_path);
+void EntitySceneEditor::_text_changed(const String &p_value, uint64_t p_component, uint64_t p_field, Array p_path, Ref<EntityScene> p_document, const String &p_entity) {
+	EntityId entity;
+	if (EntityId::parse(p_entity, entity) != OK) {
+		return;
+	}
+	if (pending_text.active && (pending_text.document != p_document || pending_text.entity != entity || pending_text.component != p_component || pending_text.field != p_field || pending_text.path != p_path)) {
+		_flush_text();
+	}
+	pending_text = { p_document, entity, p_value, p_component, p_field, p_path, true };
 }
 
 void EntitySceneEditor::_bool_changed(bool p_value, uint64_t p_component, uint64_t p_field, Array p_path) {
@@ -424,10 +451,28 @@ void EntitySceneEditor::_resize_array(uint64_t p_component, uint64_t p_field, Ar
 }
 
 void EntitySceneEditor::_flush_number() {
-	if (number_pending) {
-		number_pending = false;
-		_change(pending_value, pending_component, pending_field, pending_path);
+	if (pending_number.active) {
+		PendingField pending = pending_number;
+		pending_number = PendingField();
+		_change(pending.value, pending.component, pending.field, pending.path, pending.document, pending.entity);
 	}
+}
+
+void EntitySceneEditor::_flush_text() {
+	if (pending_text.active) {
+		PendingField pending = pending_text;
+		pending_text = PendingField();
+		_change(pending.value, pending.component, pending.field, pending.path, pending.document, pending.entity);
+	}
+}
+
+void EntitySceneEditor::commit_pending_edits() {
+	_flush_number();
+	_flush_text();
+}
+
+void EntitySceneEditor::_component_folded(bool p_folded, uint64_t p_component) {
+	folded_components[p_component] = p_folded;
 }
 
 Error EntitySceneEditor::_restore(Ref<EntityScene> p_document, Dictionary p_records, Dictionary p_prefabs) {
@@ -464,7 +509,7 @@ void EntitySceneEditor::_notification(int p_what) {
 	if (next_document == document) {
 		return;
 	}
-	_flush_number();
+	commit_pending_edits();
 	if (document.is_valid() && selected.is_valid()) {
 		document->unpin(Vector<EntityId>{ selected });
 	}
@@ -479,10 +524,14 @@ void EntitySceneEditor::pick(Camera3D *p_camera, const Vector2 &p_position) {
 	if (document.is_null()) {
 		return;
 	}
-	Vector3 origin = p_camera->project_ray_origin(p_position);
-	Vector3 direction = p_camera->project_ray_normal(p_position);
+	Vector3 origin = p_camera->project_position(p_position, p_camera->get_near());
+	Vector3 segment = p_camera->project_position(p_position, p_camera->get_far()) - origin;
+	real_t distance = segment.length();
+	if (Math::is_zero_approx(distance)) {
+		return;
+	}
+	Vector3 direction = segment / distance;
 	EntityId nearest;
-	real_t distance = p_camera->get_far();
 	EntityWorld *world = document->get_world();
 	world->query<EntityMesh, EntityTransform>().each([&](flecs::entity p_entity, const EntityMesh &p_mesh, const EntityTransform &p_transform) {
 		EntityHandle handle = world->get_handle(p_entity);
@@ -506,7 +555,7 @@ void EntitySceneEditor::pick(Camera3D *p_camera, const Vector2 &p_position) {
 		Vector3 normal;
 		if (triangles.is_valid() && triangles->intersect_segment(local_origin, local_end, point, normal)) {
 			real_t hit_distance = pose.basis.xform(point - local_origin).dot(direction);
-			if (hit_distance >= p_camera->get_near() && hit_distance < distance && world->is_alive(handle)) {
+			if (hit_distance >= 0.0 && hit_distance <= distance && world->is_alive(handle)) {
 				distance = hit_distance;
 				nearest = world->get_id(handle);
 			}
