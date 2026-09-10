@@ -123,8 +123,14 @@ committed at `8e316e180d`. Step1 `dc7b4b2320` retains changed surface/task metad
 and removes per-task snapshots. One matched dense no-profile pair reports
 43.20 ->47.85FPS and23.147 ->20.900ms wall frame; CPU samples21.576 ->19.194ms.
 Both runs and moving/freeze exit0; final GI-pairing invalidation is compile-only.
-Step2 persistent raster inputs/culler routing is active; RT replacement and
-final fan-out remain pending.
+Step2 `671aa6cfc4` retains raster/shadow inputs and removes eligible meshes from
+the conventional CPU culling domain. GPU receives actual caster planes and
+rejects invisible DAG work early; selector capacity maintenance is change-only.
+Ordinary build and dense/moving native runs pass. Same-route no-profile wall
+time24.343 ->22.227ms, CPU samples22.443 ->19.894ms in one comparison;
+GPU samples6.351 ->6.816ms. Intermediate shadow/admission regression was fixed
+before commit. RT gather/preparation remains measured CPU work; Step3 replacement
+is active, followed by the approved independent-job fan-out.
 Actual dragon import/reimport passed in 82.66/67.04 seconds, yielding 17 DAG
 levels and 9737 pages with byte-identical reused `.mgdata`; the diagnostic
 reimport command had shutdown warnings. Import evidence uses an immutable

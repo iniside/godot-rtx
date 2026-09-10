@@ -1257,3 +1257,51 @@ by two-line scene change `cf07aa2993`; both runs use it. Moving300/freeze-after2
 also exits0. Final existing-GI pairing invalidation is included in commit
 `dc7b4b2320` and final ordinary build32.49s; that small final closure is compile
 validated, not part of those native captures. Step2 implementation is active.
+
+## CPU removal Step2, intermediate runtime regression
+
+The uncommitted persistent raster/culling candidate builds, but is not accepted.
+Matched dense1500 orbit runs `micro-step2-control.log` (Step1 final binary) and
+`micro-step2-candidate.log` (Step2 candidate), process frames900-1500, report
+median wall frame24.304/22.245ms, CPU render sample22.527/19.976ms and GPU
+sample6.415/15.552ms. Both processes exit0, but the candidate emits five sparse
+selection admission errors: about733MB requested against the existing512MiB
+limit. Resident pages increase from8 to169 and resident CLAS from108 to2708.
+These observations do not establish an acceptable optimization or identical
+rendered workload. GPU shadow visibility/refinement and admission sizing are
+being corrected before another comparison; scene quality and budgets remain
+unchanged. The shared-cut RT instance count remains approximately10000.
+
+The corrected short180 native run `micro-step2-caster-short.log` exits0 with
+zero Godot ERROR and returns to8pages/108CLAS, with late GPU samples around6ms.
+The correction publishes existing CPU caster planes as bounded pass data and
+rejects invisible instances/groups on GPU before DAG refinement/page requests.
+The same-settings full comparison is still pending; the short run establishes
+closure of the observed early admission/residency regression only.
+
+The full corrected-caster pair is clean but does not improve wall time:
+24.343ms control versus24.675ms candidate. Short diagnostic420 then measures
+raster preparation at approximately0.012ms CPU, RT gather5.39-5.61ms,
+microgeometry RT preparation2.67-2.71ms and the enclosing TLAS Build interval
+3.74-3.91ms. These profiled intervals include host work; they are not native
+GPU TLAS cost. The retained selector still rebuilt capacity arrays and scanned
+all units after feedback on every pass. Capacity publication now belongs to
+successful resize; scans run only when feedback actually requests retry.
+
+`micro-step2-capacity-candidate.log` on that correction ends normally with
+zero Godot ERROR. Same scene/settings/route, frames900-1500,51 timing samples:
+44.99FPS,22.227ms wall,19.894ms CPU render sample,6.816ms GPU sample. The
+preceding `micro-step2-caster-control.log` Step1 run has56 samples:41.08FPS,
+24.343ms wall,22.443ms CPU,6.351ms GPU. This is an8.7% shorter wall frame in
+this comparison, without a claim of isolated GPU improvement. The intervening
+caster candidate and diagnostic explain the correction; no build/heavy agent
+work ran concurrently with these performance captures.
+
+Step2 is committed as `671aa6cfc43b7e36b92733c88212d847ee15ad47` after ordinary
+build27.10s and moving300/orbit/freeze-after2 native exit0 without Godot ERROR
+(`micro-step2-moving.log`). It retains persistent camera/shadow batches and
+routes conventional culling through a membership-maintained domain. The
+temporary RT-only microgeometry gather remains deliberately until Step3
+replaces its consumer. Step3 is now implementing persistent GPU RT inputs;
+the remaining fan-out step follows that ownership handoff. No tests or audit
+agents were run for this replacement workflow.
