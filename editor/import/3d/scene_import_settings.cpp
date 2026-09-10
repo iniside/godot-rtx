@@ -43,14 +43,18 @@
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/3d/importer_mesh_instance_3d.h"
+#include "scene/3d/mesh_instance_3d.h"
 #include "scene/3d/multimesh_instance_3d.h"
+#include "scene/3d/skeleton_3d.h"
 #include "scene/animation/animation_player.h"
 #include "scene/gui/subviewport_container.h"
 #include "scene/main/timer.h"
+#include "scene/main/viewport.h"
 #include "scene/resources/3d/importer_mesh.h"
 #include "scene/resources/sky.h"
 #include "scene/resources/surface_tool.h"
 #include "servers/display/display_server.h"
+#include "servers/rendering/rendering_server.h"
 
 class SceneImportSettingsData : public Object {
 	GDCLASS(SceneImportSettingsData, Object)
@@ -388,26 +392,6 @@ void SceneImportSettingsDialog::_fill_scene(Node *p_node, TreeItem *p_parent_ite
 
 	ImporterMeshInstance3D *src_mesh_node = Object::cast_to<ImporterMeshInstance3D>(p_node);
 
-	if (src_mesh_node) {
-		MeshInstance3D *mesh_node = memnew(MeshInstance3D);
-		mesh_node->set_name(src_mesh_node->get_name());
-		mesh_node->set_transform(src_mesh_node->get_transform());
-		mesh_node->set_skin(src_mesh_node->get_skin());
-		mesh_node->set_skeleton_path(src_mesh_node->get_skeleton_path());
-		mesh_node->set_visible(src_mesh_node->is_visible());
-		if (src_mesh_node->get_mesh().is_valid()) {
-			Ref<ImporterMesh> editor_mesh = src_mesh_node->get_mesh();
-			mesh_node->set_mesh(editor_mesh->get_mesh());
-		}
-		// Replace the original mesh node in the scene tree with the new one.
-		if (unlikely(p_node == scene)) {
-			scene = mesh_node;
-		}
-		p_node->replace_by(mesh_node);
-		memdelete(p_node);
-		p_node = mesh_node;
-	}
-
 	String type = p_node->get_class();
 
 	if (!has_theme_icon(type, EditorStringName(EditorIcons))) {
@@ -443,13 +427,8 @@ void SceneImportSettingsDialog::_fill_scene(Node *p_node, TreeItem *p_parent_ite
 			} else if (Object::cast_to<AnimationPlayer>(p_node)) {
 				category = ResourceImporterScene::INTERNAL_IMPORT_CATEGORY_ANIMATION_NODE;
 
-				animation_player = Object::cast_to<AnimationPlayer>(p_node);
-				animation_player->connect(SceneStringName(animation_finished), callable_mp(this, &SceneImportSettingsDialog::_animation_finished));
 			} else if (Object::cast_to<Skeleton3D>(p_node)) {
 				category = ResourceImporterScene::INTERNAL_IMPORT_CATEGORY_SKELETON_3D_NODE;
-				Skeleton3D *skeleton = Object::cast_to<Skeleton3D>(p_node);
-				skeleton->connect(SceneStringName(tree_entered), callable_mp(this, &SceneImportSettingsDialog::_skeleton_tree_entered).bind(skeleton));
-				skeletons.push_back(skeleton);
 			} else {
 				category = ResourceImporterScene::INTERNAL_IMPORT_CATEGORY_NODE;
 			}
@@ -479,35 +458,37 @@ void SceneImportSettingsDialog::_fill_scene(Node *p_node, TreeItem *p_parent_ite
 	for (int i = 0; i < p_node->get_child_count(); i++) {
 		_fill_scene(p_node->get_child(i), item);
 	}
-	Transform3D accum_xform;
 	Node3D *base = Object::cast_to<Node3D>(p_node);
 	while (base) {
-		accum_xform = base->get_transform() * accum_xform;
+		node_data.transform = base->get_transform() * node_data.transform;
+		node_data.visible = node_data.visible && base->is_visible();
+		if (base->is_set_as_top_level()) {
+			break;
+		}
 		base = Object::cast_to<Node3D>(base->get_parent());
 	}
 	MeshInstance3D *mesh_node = Object::cast_to<MeshInstance3D>(p_node);
-	if (mesh_node && mesh_node->get_mesh().is_valid()) {
-		// This controls the display of mesh resources in the import settings dialog tree (the white mesh icon).
-		// We want to show these icons for any import type that preserves meshes.
+	if (src_mesh_node && src_mesh_node->get_mesh().is_valid()) {
+		node_data.mesh = src_mesh_node->get_mesh()->get_mesh();
+	} else if (mesh_node) {
+		node_data.mesh = mesh_node->get_mesh();
+	}
+	AABB aabb;
+	bool has_aabb = false;
+	if (node_data.mesh.is_valid()) {
 		if (_resource_importer_scene->get_scene_import_type() != "AnimationLibrary") {
-			_fill_mesh(scene_tree, mesh_node->get_mesh(), item);
+			_fill_mesh(scene_tree, node_data.mesh, item);
 		}
-
-		// Add the collider view.
-		MeshInstance3D *collider_view = memnew(MeshInstance3D);
-		collider_view->set_name("collider_view");
-		collider_view->set_visible(false);
-		mesh_node->add_child(collider_view, true);
-		collider_view->set_owner(mesh_node);
-
-		AABB aabb = accum_xform.xform(mesh_node->get_mesh()->get_aabb());
-
-		if (first_aabb) {
-			contents_aabb = aabb;
-			first_aabb = false;
-		} else {
-			contents_aabb.merge_with(aabb);
-		}
+		node_data.preview = ToolRenderData::create(node_data.mesh->get_rid(), scenario, node_data.mesh);
+		node_data.preview.transform = node_data.transform;
+		node_data.preview.visible = node_data.visible;
+		node_data.preview.publish();
+		node_data.collider = ToolRenderData::create(RID(), scenario);
+		node_data.collider.visible = false;
+		node_data.collider.cast_shadows = RSE::SHADOW_CASTING_SETTING_OFF;
+		node_data.collider.publish();
+		aabb = node_data.transform.xform(node_data.mesh->get_aabb());
+		has_aabb = true;
 	}
 	MultiMeshInstance3D *multi_mesh_node = Object::cast_to<MultiMeshInstance3D>(p_node);
 	if (multi_mesh_node && multi_mesh_node->get_multimesh().is_valid()) {
@@ -516,24 +497,25 @@ void SceneImportSettingsDialog::_fill_scene(Node *p_node, TreeItem *p_parent_ite
 		if (mm_mesh.is_valid()) {
 			_fill_mesh(scene_tree, mm_mesh, item);
 		}
-		const AABB aabb = accum_xform.xform(multi_mesh->get_aabb());
-		if (first_aabb) {
-			contents_aabb = aabb;
-			first_aabb = false;
-		} else {
-			contents_aabb.merge_with(aabb);
-		}
+		node_data.preview = ToolRenderData::create(multi_mesh->get_rid(), scenario, multi_mesh);
+		node_data.preview.transform = node_data.transform;
+		node_data.preview.visible = node_data.visible;
+		node_data.preview.publish();
+		aabb = node_data.transform.xform(multi_mesh->get_aabb());
+		has_aabb = true;
 	}
-
 	Skeleton3D *skeleton = Object::cast_to<Skeleton3D>(p_node);
 	if (skeleton) {
-		Ref<ArrayMesh> bones_mesh = Skeleton3DGizmoPlugin::get_bones_mesh(skeleton, -1, true);
-
-		bones_mesh_preview->set_mesh(bones_mesh);
-		bones_mesh_preview->set_transform(accum_xform * skeleton->get_transform());
-
-		AABB aabb = accum_xform.xform(bones_mesh->get_aabb());
-
+		Ref<ArrayMesh> bones_mesh = create_skeleton_rest_mesh(skeleton);
+		node_data.bones = ToolRenderData::create(bones_mesh->get_rid(), scenario, bones_mesh);
+		node_data.bones.transform = node_data.transform;
+		node_data.bones.visible = false;
+		node_data.bones.cast_shadows = RSE::SHADOW_CASTING_SETTING_OFF;
+		node_data.bones.publish();
+		aabb = node_data.transform.xform(bones_mesh->get_aabb());
+		has_aabb = true;
+	}
+	if (has_aabb) {
 		if (first_aabb) {
 			contents_aabb = aabb;
 			first_aabb = false;
@@ -576,35 +558,28 @@ void SceneImportSettingsDialog::_update_view_gizmos() {
 		open_settings(base_path);
 		return;
 	}
-	for (const KeyValue<String, NodeData> &e : node_map) {
-		// Skip import nodes that aren't MeshInstance3D.
-		const MeshInstance3D *mesh_node = Object::cast_to<MeshInstance3D>(e.value.node);
-		if (mesh_node == nullptr || mesh_node->get_mesh().is_null()) {
+	for (KeyValue<String, NodeData> &e : node_map) {
+		if (e.value.mesh.is_null()) {
 			continue;
 		}
-
+		ToolRenderData &collider_view = e.value.collider;
 		// Determine if the mesh collider should be visible.
 		bool show_collider_view = false;
 		if (e.value.settings.has(SNAME("generate/physics"))) {
 			show_collider_view = e.value.settings[SNAME("generate/physics")];
 		}
 
-		// Get the collider_view MeshInstance3D.
-		TypedArray<Node> descendants = mesh_node->find_children("collider_view", "MeshInstance3D", false);
-		CRASH_COND_MSG(descendants.is_empty(), "This is unreachable, since the collider view is always created even when the collision is not used! If this is triggered there is a bug on the function `_fill_scene`.");
-		MeshInstance3D *collider_view = Object::cast_to<MeshInstance3D>(descendants[0].operator Object *());
-
 		// Regenerate the physics collider for this MeshInstance3D if either:
 		// - A regeneration is requested for the selected import node.
 		// - The collider is being made visible.
-		if ((generate_collider && e.key == selected_id) || (show_collider_view && !collider_view->is_visible())) {
+		if ((generate_collider && e.key == selected_id) || (show_collider_view && collider_view.base.is_null())) {
 			// This collider_view doesn't have a mesh so we need to generate a new one.
 			Ref<ImporterMesh> mesh;
 			mesh.instantiate();
 			// ResourceImporterScene::get_collision_shapes() expects ImporterMesh, not Mesh.
 			// TODO: Duplicate code with EditorSceneFormatImporterESCN::import_scene()
 			// Consider making a utility function to convert from Mesh to ImporterMesh.
-			Ref<Mesh> mesh_3d_mesh = mesh_node->get_mesh();
+			Ref<Mesh> mesh_3d_mesh = e.value.mesh;
 			Ref<ArrayMesh> array_mesh_3d_mesh = mesh_3d_mesh;
 			if (array_mesh_3d_mesh.is_valid()) {
 				// For the MeshInstance3D nodes, we need to convert the ArrayMesh to an ImporterMesh specially.
@@ -658,12 +633,14 @@ void SceneImportSettingsDialog::_update_view_gizmos() {
 				}
 			}
 
-			collider_view->set_mesh(collider_view_mesh);
-			collider_view->set_transform(transform);
+			collider_view.base = collider_view_mesh->get_rid();
+			collider_view.base_asset = collider_view_mesh;
+			collider_view.transform = e.value.transform * transform;
 		}
 
 		// Set the collider visibility.
-		collider_view->set_visible(show_collider_view);
+		collider_view.visible = show_collider_view && (selected_type == "Node" || selected_type == "Animation" || selected_type.is_empty());
+		collider_view.publish();
 	}
 
 	generate_collider = false;
@@ -679,8 +656,8 @@ void SceneImportSettingsDialog::_update_camera() {
 	if (selected_type == "Node" || selected_type == "Animation" || selected_type.is_empty()) {
 		camera_aabb = contents_aabb;
 	} else {
-		if (mesh_preview->get_mesh().is_valid()) {
-			camera_aabb = mesh_preview->get_transform().xform(mesh_preview->get_mesh()->get_aabb());
+		if (preview_mesh.is_valid()) {
+			camera_aabb = mesh_preview.transform.xform(preview_mesh->get_aabb());
 		} else {
 			camera_aabb = AABB(Vector3(-1, -1, -1), Vector3(2, 2, 2));
 		}
@@ -698,16 +675,21 @@ void SceneImportSettingsDialog::_update_camera() {
 	}
 
 	Vector3 center = camera_aabb.get_center();
-	float camera_size = camera_aabb.get_longest_axis_size();
+	float camera_size = MAX(camera_aabb.get_longest_axis_size(), 0.001f);
 
-	camera->set_orthogonal(camera_size * zoom, 0.0001, camera_size * 2);
+	RS::get_singleton()->camera_set_orthogonal(camera, camera_size * zoom, 0.0001, camera_size * 2);
 
 	Transform3D xf;
 	xf.basis = Basis(Vector3(0, 1, 0), rot_y) * Basis(Vector3(1, 0, 0), rot_x);
 	xf.origin = center;
 	xf.translate_local(0, 0, camera_size);
 
-	camera->set_transform(xf);
+	RS::get_singleton()->camera_set_transform(camera, xf);
+	Transform3D light_transform = light_rotate_switch->is_pressed() ? xf : Transform3D();
+	light1.transform = light_transform * Transform3D(Basis::looking_at(Vector3(-1, -1, -1)));
+	light2.transform = light_transform * Transform3D(Basis::looking_at(Vector3(0, 1, 0), Vector3(0, 0, 1)));
+	light1.publish();
+	light2.publish();
 }
 
 void SceneImportSettingsDialog::_load_default_subresource_settings(HashMap<StringName, Variant> &settings, const String &p_type, const String &p_import_id, ResourceImporterScene::InternalImportCategory p_category) {
@@ -770,7 +752,8 @@ void SceneImportSettingsDialog::open_settings(const String &p_path, const String
 	node_map.clear();
 	defaults.clear();
 
-	mesh_preview->hide();
+	mesh_preview.visible = false;
+	mesh_preview.publish();
 
 	selected_id = "";
 	selected_type = "";
@@ -811,8 +794,6 @@ void SceneImportSettingsDialog::open_settings(const String &p_path, const String
 
 	_update_scene();
 
-	base_viewport->add_child(scene);
-
 	inspector->edit(nullptr);
 
 	if (first_aabb) {
@@ -844,7 +825,7 @@ SceneImportSettingsDialog *SceneImportSettingsDialog::get_singleton() {
 }
 
 Node *SceneImportSettingsDialog::get_selected_node() {
-	if (selected_id == "") {
+	if (!node_map.has(selected_id)) {
 		return nullptr;
 	}
 	return node_map[selected_id].node;
@@ -858,31 +839,25 @@ void SceneImportSettingsDialog::_select(Tree *p_from, const String &p_type, cons
 	// Only actual scenes can make use of the node generation options such as generating physics colliders on meshes or setting a script.
 	const bool hide_node_gen_options = _resource_importer_scene->get_scene_import_type() != "PackedScene";
 
-	bones_mesh_preview->hide();
 	if (p_type == "Node") {
-		node_selected->hide(); // Always hide just in case.
-		mesh_preview->hide();
-		_reset_animation();
+		node_selected.visible = false;
+		mesh_preview.visible = false;
 
-		if (Object::cast_to<Node3D>(scene)) {
-			Object::cast_to<Node3D>(scene)->show();
-		}
 		material_tree->deselect_all();
 		mesh_tree->deselect_all();
 		NodeData &nd = node_map[p_id];
 
-		MeshInstance3D *mi = Object::cast_to<MeshInstance3D>(nd.node);
-		if (mi) {
-			Ref<Mesh> base_mesh = mi->get_mesh();
+		if (nd.mesh.is_valid()) {
+			Ref<Mesh> base_mesh = nd.mesh;
 			if (base_mesh.is_valid()) {
 				AABB aabb = base_mesh->get_aabb();
 				Transform3D aabb_xf;
 				aabb_xf.basis.scale(aabb.size);
 				aabb_xf.origin = aabb.position;
 
-				aabb_xf = mi->get_global_transform() * aabb_xf;
-				node_selected->set_transform(aabb_xf);
-				node_selected->show();
+				aabb_xf = nd.transform * aabb_xf;
+				node_selected.transform = aabb_xf;
+				node_selected.visible = true;
 			}
 		}
 
@@ -891,7 +866,7 @@ void SceneImportSettingsDialog::_select(Tree *p_from, const String &p_type, cons
 			scene_import_settings_data->category = ResourceImporterScene::INTERNAL_IMPORT_CATEGORY_MAX;
 		} else {
 			scene_import_settings_data->settings = &nd.settings;
-			if (mi) {
+			if (Object::cast_to<ImporterMeshInstance3D>(nd.node) || Object::cast_to<MeshInstance3D>(nd.node)) {
 				scene_import_settings_data->category = ResourceImporterScene::INTERNAL_IMPORT_CATEGORY_MESH_3D_NODE;
 				scene_import_settings_data->hide_options = hide_node_gen_options;
 			} else if (Object::cast_to<AnimationPlayer>(nd.node)) {
@@ -899,7 +874,6 @@ void SceneImportSettingsDialog::_select(Tree *p_from, const String &p_type, cons
 				scene_import_settings_data->hide_options = hide_anim_and_skel_options;
 			} else if (Object::cast_to<Skeleton3D>(nd.node)) {
 				scene_import_settings_data->category = ResourceImporterScene::INTERNAL_IMPORT_CATEGORY_SKELETON_3D_NODE;
-				bones_mesh_preview->show();
 				scene_import_settings_data->hide_options = hide_anim_and_skel_options;
 			} else {
 				scene_import_settings_data->category = ResourceImporterScene::INTERNAL_IMPORT_CATEGORY_NODE;
@@ -907,13 +881,9 @@ void SceneImportSettingsDialog::_select(Tree *p_from, const String &p_type, cons
 			}
 		}
 	} else if (p_type == "Animation") {
-		node_selected->hide(); // Always hide just in case.
-		mesh_preview->hide();
-		_reset_animation(p_id);
+		node_selected.visible = false;
+		mesh_preview.visible = false;
 
-		if (Object::cast_to<Node3D>(scene)) {
-			Object::cast_to<Node3D>(scene)->show();
-		}
 		material_tree->deselect_all();
 		mesh_tree->deselect_all();
 		AnimationData &ad = animation_map[p_id];
@@ -922,12 +892,8 @@ void SceneImportSettingsDialog::_select(Tree *p_from, const String &p_type, cons
 		scene_import_settings_data->category = ResourceImporterScene::INTERNAL_IMPORT_CATEGORY_ANIMATION;
 		scene_import_settings_data->hide_options = hide_anim_and_skel_options;
 
-		_animation_update_skeleton_visibility();
 	} else if (p_type == "Mesh") {
-		node_selected->hide();
-		if (Object::cast_to<Node3D>(scene)) {
-			Object::cast_to<Node3D>(scene)->hide();
-		}
+		node_selected.visible = false;
 
 		MeshData &md = mesh_map[p_id];
 		if (md.mesh_node != nullptr) {
@@ -943,27 +909,22 @@ void SceneImportSettingsDialog::_select(Tree *p_from, const String &p_type, cons
 			}
 		}
 
-		mesh_preview->set_mesh(md.mesh);
-		mesh_preview->show();
-		_reset_animation();
+		preview_mesh = md.mesh;
+		mesh_preview.visible = true;
 
 		material_tree->deselect_all();
 
 		scene_import_settings_data->settings = &md.settings;
 		scene_import_settings_data->category = ResourceImporterScene::INTERNAL_IMPORT_CATEGORY_MESH;
 	} else if (p_type == "Material") {
-		node_selected->hide();
-		if (Object::cast_to<Node3D>(scene)) {
-			Object::cast_to<Node3D>(scene)->hide();
-		}
+		node_selected.visible = false;
 
-		mesh_preview->show();
-		_reset_animation();
+		mesh_preview.visible = true;
 
 		MaterialData &md = material_map[p_id];
 
 		material_preview->set_material(md.material);
-		mesh_preview->set_mesh(material_preview);
+		preview_mesh = material_preview;
 
 		if (p_from != mesh_tree) {
 			md.mesh_node->uncollapse_tree();
@@ -987,6 +948,19 @@ void SceneImportSettingsDialog::_select(Tree *p_from, const String &p_type, cons
 
 	selected_type = p_type;
 	selected_id = p_id;
+	animation_preview->set_visible(p_type == "Animation");
+	const bool show_scene = p_type == "Node" || p_type == "Animation";
+	for (KeyValue<String, NodeData> &entry : node_map) {
+		if (entry.value.preview.is_valid()) {
+			entry.value.preview.visible = show_scene && entry.value.visible;
+			entry.value.preview.publish();
+		}
+	}
+	mesh_preview.base = preview_mesh.is_valid() ? preview_mesh->get_rid() : RID();
+	mesh_preview.base_asset = preview_mesh;
+	mesh_preview.publish();
+	node_selected.publish();
+	_animation_update_skeleton_visibility();
 
 	selecting = false;
 
@@ -1018,20 +992,10 @@ void SceneImportSettingsDialog::_select(Tree *p_from, const String &p_type, cons
 	scene_import_settings_data->options = options;
 	inspector->edit(scene_import_settings_data);
 	scene_import_settings_data->notify_property_list_changed();
+	_update_view_gizmos();
 }
 
 void SceneImportSettingsDialog::_inspector_property_edited(const String &p_name) {
-	if (p_name == "settings/loop_mode") {
-		if (!animation_map.has(selected_id)) {
-			return;
-		}
-		HashMap<StringName, Variant> settings(animation_map[selected_id].settings);
-		if (settings.has(p_name)) {
-			animation_loop_mode = static_cast<Animation::LoopMode>((int)settings[p_name]);
-		} else {
-			animation_loop_mode = Animation::LoopMode::LOOP_NONE;
-		}
-	}
 	if ((p_name == "use_external/enabled") || (p_name == "use_external/path") || (p_name == "use_external/fallback_path")) {
 		MaterialData &material_data = material_map[selected_id];
 		String spath = base_path.get_base_dir();
@@ -1058,125 +1022,13 @@ void SceneImportSettingsDialog::_inspector_property_edited(const String &p_name)
 	}
 }
 
-void SceneImportSettingsDialog::_reset_bone_transforms() {
-	for (Skeleton3D *skeleton : skeletons) {
-		skeleton->reset_bone_poses();
-	}
-}
-
-void SceneImportSettingsDialog::_play_animation() {
-	if (animation_player == nullptr) {
-		return;
-	}
-	StringName id = StringName(selected_id);
-	if (animation_player->has_animation(id)) {
-		if (animation_player->is_playing()) {
-			animation_player->pause();
-			animation_play_button->set_button_icon(get_editor_theme_icon(SNAME("MainPlay")));
-			set_process(false);
-		} else {
-			animation_player->play(id);
-			animation_play_button->set_button_icon(get_editor_theme_icon(SNAME("Pause")));
-			set_process(true);
-		}
-	}
-}
-
-void SceneImportSettingsDialog::_stop_current_animation() {
-	animation_pingpong = false;
-	animation_player->stop();
-	animation_play_button->set_button_icon(get_editor_theme_icon(SNAME("MainPlay")));
-	animation_slider->set_value_no_signal(0.0);
-	set_process(false);
-}
-
-void SceneImportSettingsDialog::_reset_animation(const String &p_animation_name) {
-	if (p_animation_name.is_empty()) {
-		animation_preview->hide();
-
-		if (animation_player != nullptr && animation_player->is_playing()) {
-			animation_player->stop();
-		}
-		animation_play_button->set_button_icon(get_editor_theme_icon(SNAME("MainPlay")));
-
-		_reset_bone_transforms();
-		set_process(false);
-	} else {
-		_reset_bone_transforms();
-		animation_preview->show();
-
-		animation_loop_mode = Animation::LoopMode::LOOP_NONE;
-		animation_pingpong = false;
-
-		if (animation_map.has(p_animation_name)) {
-			HashMap<StringName, Variant> settings(animation_map[p_animation_name].settings);
-			if (settings.has("settings/loop_mode")) {
-				animation_loop_mode = static_cast<Animation::LoopMode>((int)settings["settings/loop_mode"]);
-			}
-		}
-
-		if (animation_player->is_playing() && animation_loop_mode != Animation::LoopMode::LOOP_NONE) {
-			animation_player->play(p_animation_name);
-		} else {
-			animation_player->stop(true);
-			animation_play_button->set_button_icon(get_editor_theme_icon(SNAME("MainPlay")));
-			animation_player->set_assigned_animation(p_animation_name);
-			animation_player->seek(0.0, true);
-			animation_slider->set_value_no_signal(0.0);
-			set_process(false);
-		}
-	}
-}
-
-void SceneImportSettingsDialog::_animation_slider_value_changed(double p_value) {
-	if (animation_player == nullptr || !animation_map.has(selected_id) || animation_map[selected_id].animation.is_null()) {
-		return;
-	}
-	if (animation_player->is_playing()) {
-		animation_player->stop();
-		animation_play_button->set_button_icon(get_editor_theme_icon(SNAME("MainPlay")));
-		set_process(false);
-	}
-	animation_player->seek(p_value * animation_map[selected_id].animation->get_length(), true);
-}
-
-void SceneImportSettingsDialog::_skeleton_tree_entered(Skeleton3D *p_skeleton) {
-	bones_mesh_preview->set_skeleton_path(p_skeleton->get_path());
-	Ref<Skin> skin = p_skeleton->create_skin_from_rest_transforms();
-	p_skeleton->register_skin(skin);
-	bones_mesh_preview->set_skin(skin);
-}
-
-void SceneImportSettingsDialog::_animation_finished(const StringName &p_name) {
-	Animation::LoopMode loop_mode = animation_loop_mode;
-
-	switch (loop_mode) {
-		case Animation::LOOP_NONE: {
-			animation_play_button->set_button_icon(get_editor_theme_icon(SNAME("MainPlay")));
-			animation_slider->set_value_no_signal(1.0);
-			set_process(false);
-		} break;
-		case Animation::LOOP_LINEAR: {
-			animation_player->play(p_name);
-		} break;
-		case Animation::LOOP_PINGPONG: {
-			if (animation_pingpong) {
-				animation_player->play(p_name);
-			} else {
-				animation_player->play_backwards(p_name);
-			}
-			animation_pingpong = !animation_pingpong;
-		} break;
-		default: {
-		} break;
-	}
-}
-
 void SceneImportSettingsDialog::_animation_update_skeleton_visibility() {
-	if (animation_toggle_skeleton_visibility->is_pressed()) {
-		bones_mesh_preview->show();
-	} else {
-		bones_mesh_preview->hide();
+	for (KeyValue<String, NodeData> &entry : node_map) {
+		if (entry.value.bones.is_valid()) {
+			entry.value.bones.visible = (selected_type == "Node" && selected_id == entry.key) ||
+					(selected_type == "Animation" && animation_toggle_skeleton_visibility->is_pressed());
+			entry.value.bones.publish();
+		}
 	}
 }
 
@@ -1215,26 +1067,33 @@ void SceneImportSettingsDialog::_scene_tree_selected() {
 }
 
 void SceneImportSettingsDialog::_cleanup() {
-	skeletons.clear();
-	if (animation_player != nullptr) {
-		animation_player->disconnect(SceneStringName(animation_finished), callable_mp(this, &SceneImportSettingsDialog::_animation_finished));
-		animation_player = nullptr;
+	update_view_timer->stop();
+	for (KeyValue<String, NodeData> &entry : node_map) {
+		entry.value.preview.clear();
+		entry.value.collider.clear();
+		entry.value.bones.clear();
 	}
-	set_process(false);
+	mesh_preview.base = RID();
+	mesh_preview.base_asset.unref();
+	mesh_preview.visible = false;
+	mesh_preview.publish();
+	preview_mesh.unref();
+	node_selected.visible = false;
+	node_selected.publish();
 }
 
 void SceneImportSettingsDialog::_on_light_1_switch_pressed() {
-	light1->set_visible(light_1_switch->is_pressed());
+	light1.visible = light_1_switch->is_pressed();
+	light1.publish();
 }
 
 void SceneImportSettingsDialog::_on_light_2_switch_pressed() {
-	light2->set_visible(light_2_switch->is_pressed());
+	light2.visible = light_2_switch->is_pressed();
+	light2.publish();
 }
 
 void SceneImportSettingsDialog::_on_light_rotate_switch_pressed() {
-	bool light_top_level = !light_rotate_switch->is_pressed();
-	light1->set_as_top_level_keep_local(light_top_level);
-	light2->set_as_top_level_keep_local(light_top_level);
+	_update_camera();
 }
 
 void SceneImportSettingsDialog::_viewport_input(const Ref<InputEvent> &p_input) {
@@ -1360,7 +1219,7 @@ void SceneImportSettingsDialog::_re_import() {
 
 	main_settings["_subresources"] = subresources;
 
-	_cleanup(); // Prevent skeletons and other pointers from pointing to dangling references.
+	_cleanup();
 	EditorFileSystem::get_singleton()->reimport_file_with_custom_parameters(base_path, _resource_importer_scene->get_importer_name(), main_settings);
 }
 
@@ -1373,29 +1232,21 @@ void SceneImportSettingsDialog::_update_theme_item_cache() {
 
 void SceneImportSettingsDialog::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_POST_ENTER_TREE: {
+			RS::get_singleton()->viewport_set_scenario(base_viewport->get_viewport_rid(), scenario);
+			RS::get_singleton()->viewport_attach_camera(base_viewport->get_viewport_rid(), camera);
+		} break;
 		case NOTIFICATION_READY: {
 			connect(SceneStringName(confirmed), callable_mp(this, &SceneImportSettingsDialog::_re_import));
 		} break;
 
 		case NOTIFICATION_THEME_CHANGED: {
-			if (animation_player != nullptr && animation_player->is_playing()) {
-				animation_play_button->set_button_icon(get_editor_theme_icon(SNAME("Pause")));
-			} else {
-				animation_play_button->set_button_icon(get_editor_theme_icon(SNAME("MainPlay")));
-			}
-			animation_stop_button->set_button_icon(get_editor_theme_icon(SNAME("Stop")));
 
 			light_1_switch->set_button_icon(theme_cache.light_1_icon);
 			light_2_switch->set_button_icon(theme_cache.light_2_icon);
 			light_rotate_switch->set_button_icon(theme_cache.rotate_icon);
 
 			animation_toggle_skeleton_visibility->set_button_icon(get_editor_theme_icon(SNAME("SkeletonPreview")));
-		} break;
-
-		case NOTIFICATION_PROCESS: {
-			if (animation_player != nullptr) {
-				animation_slider->set_value_no_signal(animation_player->get_current_animation_position() / animation_player->get_current_animation_length());
-			}
 		} break;
 
 		case NOTIFICATION_VISIBILITY_CHANGED: {
@@ -1767,31 +1618,10 @@ SceneImportSettingsDialog::SceneImportSettingsDialog() {
 	HBoxContainer *animation_hbox = memnew(HBoxContainer);
 	animation_preview->add_child(animation_hbox);
 
-	animation_play_button = memnew(Button);
-	animation_hbox->add_child(animation_play_button);
-	animation_play_button->set_flat(true);
-	animation_play_button->set_accessibility_name(TTRC("Selected Animation Play/Pause"));
-	animation_play_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
-	animation_play_button->set_shortcut(ED_SHORTCUT("scene_import_settings/play_selected_animation", TTRC("Selected Animation Play/Pause"), Key::SPACE));
-	animation_play_button->connect(SceneStringName(pressed), callable_mp(this, &SceneImportSettingsDialog::_play_animation));
-
-	animation_stop_button = memnew(Button);
-	animation_hbox->add_child(animation_stop_button);
-	animation_stop_button->set_flat(true);
-	animation_stop_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
-	animation_stop_button->set_tooltip_text(TTR("Selected Animation Stop"));
-	animation_stop_button->connect(SceneStringName(pressed), callable_mp(this, &SceneImportSettingsDialog::_stop_current_animation));
-
-	animation_slider = memnew(HSlider);
-	animation_hbox->add_child(animation_slider);
-	animation_slider->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	animation_slider->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	animation_slider->set_max(1.0);
-	animation_slider->set_step(1.0 / 100.0);
-	animation_slider->set_value_no_signal(0.0);
-	animation_slider->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
-	animation_slider->set_accessibility_name(TTRC("Animation"));
-	animation_slider->connect(SceneStringName(value_changed), callable_mp(this, &SceneImportSettingsDialog::_animation_slider_value_changed));
+	Label *animation_unavailable = memnew(Label(TTR("Animation playback is unavailable until native animation import is implemented.")));
+	animation_unavailable->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	animation_unavailable->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	animation_hbox->add_child(animation_unavailable);
 
 	animation_toggle_skeleton_visibility = memnew(Button);
 	animation_hbox->add_child(animation_toggle_skeleton_visibility);
@@ -1801,8 +1631,6 @@ SceneImportSettingsDialog::SceneImportSettingsDialog() {
 	animation_toggle_skeleton_visibility->set_tooltip_text(TTR("Toggle Animation Skeleton Visibility"));
 
 	animation_toggle_skeleton_visibility->connect(SceneStringName(pressed), callable_mp(this, &SceneImportSettingsDialog::_animation_update_skeleton_visibility));
-
-	base_viewport->set_use_own_world_3d(true);
 
 	HBoxContainer *viewport_hbox = memnew(HBoxContainer);
 	vp_container->add_child(viewport_hbox);
@@ -1838,13 +1666,13 @@ SceneImportSettingsDialog::SceneImportSettingsDialog() {
 	light_2_switch->connect(SceneStringName(pressed), callable_mp(this, &SceneImportSettingsDialog::_on_light_2_switch_pressed));
 	vb_light->add_child(light_2_switch);
 
-	camera = memnew(Camera3D);
-	base_viewport->add_child(camera);
-	camera->make_current();
+	RenderingServer *rs = RS::get_singleton();
+	scenario = rs->scenario_create();
+	camera = rs->camera_create();
 
 	if (GLOBAL_GET("rendering/lights_and_shadows/use_physical_light_units")) {
 		camera_attributes.instantiate();
-		camera->set_attributes(camera_attributes);
+		rs->camera_set_camera_attributes(camera, camera_attributes->get_rid());
 	}
 
 	// Use a grayscale gradient sky to avoid skewing the preview towards a specific color,
@@ -1867,17 +1695,14 @@ SceneImportSettingsDialog::SceneImportSettingsDialog() {
 	environment->set_sky(sky);
 	// A custom FOV must be specified, as an orthogonal camera is used for the preview.
 	environment->set_sky_custom_fov(50.0);
-	camera->set_environment(environment);
+	rs->camera_set_environment(camera, environment->get_rid());
 
-	light1 = memnew(DirectionalLight3D);
-	light1->set_transform(Transform3D(Basis::looking_at(Vector3(-1, -1, -1))));
-	light1->set_shadow(true);
-	camera->add_child(light1);
-
-	light2 = memnew(DirectionalLight3D);
-	light2->set_transform(Transform3D(Basis::looking_at(Vector3(0, 1, 0), Vector3(0, 0, 1))));
-	light2->set_color(Color(0.5f, 0.5f, 0.5f));
-	camera->add_child(light2);
+	light1 = ToolRenderData::create(rs->directional_light_create(), scenario);
+	rs->light_set_shadow(light1.base, true);
+	rs->light_set_param(light1.base, RSE::LIGHT_PARAM_INTENSITY, 100000.0);
+	light2 = ToolRenderData::create(rs->directional_light_create(), scenario);
+	rs->light_set_color(light2.base, Color(0.5f, 0.5f, 0.5f));
+	rs->light_set_param(light2.base, RSE::LIGHT_PARAM_INTENSITY, 100000.0);
 
 	{
 		Ref<StandardMaterial3D> selection_mat;
@@ -1907,17 +1732,16 @@ SceneImportSettingsDialog::SceneImportSettingsDialog() {
 		st->commit(selection_mesh);
 		selection_mesh->surface_set_material(0, selection_mat);
 
-		node_selected = memnew(MeshInstance3D);
-		node_selected->set_mesh(selection_mesh);
-		node_selected->set_cast_shadows_setting(GeometryInstance3D::SHADOW_CASTING_SETTING_OFF);
-		base_viewport->add_child(node_selected);
-		node_selected->hide();
+		node_selected = ToolRenderData::create(selection_mesh->get_rid(), scenario, selection_mesh);
+		node_selected.cast_shadows = RSE::SHADOW_CASTING_SETTING_OFF;
+		node_selected.visible = false;
+		node_selected.publish();
 	}
 
 	{
-		mesh_preview = memnew(MeshInstance3D);
-		base_viewport->add_child(mesh_preview);
-		mesh_preview->hide();
+		mesh_preview = ToolRenderData::create(RID(), scenario);
+		mesh_preview.visible = false;
+		mesh_preview.publish();
 
 		material_preview.instantiate();
 	}
@@ -1927,13 +1751,6 @@ SceneImportSettingsDialog::SceneImportSettingsDialog() {
 		collider_mat->set_shading_mode(StandardMaterial3D::SHADING_MODE_UNSHADED);
 		collider_mat->set_flag(StandardMaterial3D::FLAG_DISABLE_FOG, true);
 		collider_mat->set_albedo(Color(0.5, 0.5, 1.0));
-	}
-
-	{
-		bones_mesh_preview = memnew(MeshInstance3D);
-		bones_mesh_preview->set_cast_shadows_setting(GeometryInstance3D::SHADOW_CASTING_SETTING_OFF);
-		bones_mesh_preview->set_skeleton_path(NodePath());
-		base_viewport->add_child(bones_mesh_preview);
 	}
 
 	inspector = memnew(EditorInspector);
@@ -2001,5 +1818,19 @@ SceneImportSettingsDialog::SceneImportSettingsDialog() {
 }
 
 SceneImportSettingsDialog::~SceneImportSettingsDialog() {
+	_cleanup();
+	if (scene) {
+		memdelete(scene);
+	}
+	mesh_preview.clear();
+	node_selected.clear();
+	RID light1_base = light1.base;
+	RID light2_base = light2.base;
+	light1.clear();
+	light2.clear();
+	RS::get_singleton()->free_rid(light1_base);
+	RS::get_singleton()->free_rid(light2_base);
+	RS::get_singleton()->free_rid(camera);
+	RS::get_singleton()->free_rid(scenario);
 	memdelete(scene_import_settings_data);
 }

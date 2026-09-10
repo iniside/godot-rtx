@@ -207,6 +207,7 @@ bool EntitySceneRuntime::process(double p_time) {
 	world->get_transforms().interpolate(interpolation_enabled ? Engine::get_singleton()->get_physics_interpolation_fraction() : 1.0);
 	BaseMaterial3D::flush_changes();
 	ParticleProcessMaterial::flush_changes();
+	world->get_rendering().publish();
 	input_events.clear();
 	return quit_requested;
 }

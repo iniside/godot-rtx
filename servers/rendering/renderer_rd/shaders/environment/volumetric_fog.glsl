@@ -65,6 +65,8 @@ layout(set = 1, binding = 2, std140) uniform SceneParams {
 
 	mat4 to_prev_view;
 	mat4 transform;
+	vec4 camera_origin_high;
+	vec4 camera_origin_low;
 }
 scene_params;
 
@@ -220,6 +222,7 @@ void main() {
 	}
 
 	if (cull_mask > 0.0) {
+		world.xyz = (world.xyz + scene_params.camera_origin_low.xyz) + scene_params.camera_origin_high.xyz;
 		{
 #CODE : FOG
 		}

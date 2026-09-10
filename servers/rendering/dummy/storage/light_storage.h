@@ -120,9 +120,9 @@ public:
 
 	RID light_instance_create(RID p_light) override { return RID(); }
 	void light_instance_free(RID p_light) override {}
-	void light_instance_set_transform(RID p_light_instance, const Transform3D &p_transform) override {}
+	void light_instance_set_transform(RID p_light_instance, const Transform3D &p_transform, const double *p_origin = nullptr) override {}
 	void light_instance_set_aabb(RID p_light_instance, const AABB &p_aabb) override {}
-	void light_instance_set_shadow_transform(RID p_light_instance, const Projection &p_projection, const Transform3D &p_transform, float p_far, float p_split, int p_pass, float p_shadow_texel_size, float p_bias_scale = 1.0, float p_range_begin = 0, const Vector2 &p_uv_scale = Vector2()) override {}
+	void light_instance_set_shadow_transform(RID p_light_instance, const Projection &p_projection, const Transform3D &p_transform, float p_far, float p_split, int p_pass, float p_shadow_texel_size, float p_bias_scale = 1.0, float p_range_begin = 0, const Vector2 &p_uv_scale = Vector2(), const double *p_origin = nullptr) override {}
 	void light_instance_mark_visible(RID p_light_instance) override {}
 	virtual bool light_instance_is_shadow_visible_at_position(RID p_light_instance, const Vector3 &p_position) const override { return false; }
 
@@ -169,7 +169,7 @@ public:
 
 	virtual RID reflection_probe_instance_create(RID p_probe) override { return RID(); }
 	virtual void reflection_probe_instance_free(RID p_instance) override {}
-	virtual void reflection_probe_instance_set_transform(RID p_instance, const Transform3D &p_transform) override {}
+	virtual void reflection_probe_instance_set_transform(RID p_instance, const Transform3D &p_transform, const double *p_origin = nullptr) override {}
 	virtual bool reflection_probe_has_atlas_index(RID p_instance) override { return false; }
 	virtual void reflection_probe_release_atlas_index(RID p_instance) override {}
 	virtual bool reflection_probe_instance_needs_redraw(RID p_instance) override { return false; }
@@ -212,7 +212,7 @@ public:
 
 	RID lightmap_instance_create(RID p_lightmap) override;
 	void lightmap_instance_free(RID p_lightmap) override;
-	void lightmap_instance_set_transform(RID p_lightmap, const Transform3D &p_transform) override {}
+	void lightmap_instance_set_transform(RID p_lightmap, const Transform3D &p_transform, const double *p_origin = nullptr) override {}
 
 	/* SHADOW ATLAS API */
 	virtual RID shadow_atlas_create() override { return RID(); }

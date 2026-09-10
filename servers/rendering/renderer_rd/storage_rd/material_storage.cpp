@@ -2334,6 +2334,7 @@ void MaterialStorage::shader_set_code(RID p_shader, const String &p_code) {
 
 	if (shader->data) {
 		shader->data->generated_standard_material = shader->generated_standard_material;
+		shader->data->generated_particle_material = shader->generated_particle_material;
 		shader->data->set_path_hint(shader->path_hint);
 		shader->data->set_code(p_code);
 		// rt_* fields are seeded from raster inside `set_code`; the
@@ -2360,6 +2361,16 @@ void MaterialStorage::shader_set_generated_standard_material(RID p_shader, bool 
 	shader->generated_standard_material = p_generated;
 	if (shader->data) {
 		shader->data->generated_standard_material = p_generated;
+	}
+}
+
+void MaterialStorage::shader_set_generated_particle_material(RID p_shader, bool p_generated) {
+	Shader *shader = shader_owner.get_or_null(p_shader);
+	ERR_FAIL_NULL(shader);
+	MutexLock lock(*shader->mutex);
+	shader->generated_particle_material = p_generated;
+	if (shader->data) {
+		shader->data->generated_particle_material = p_generated;
 	}
 }
 

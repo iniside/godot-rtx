@@ -465,7 +465,7 @@ AABB ParticlesStorage::particles_get_aabb(RID p_particles) const {
 	return particles->custom_aabb;
 }
 
-void ParticlesStorage::particles_set_emission_transform(RID p_particles, const Transform3D &p_transform) {
+void ParticlesStorage::particles_set_emission_transform(RID p_particles, const Transform3D &p_transform, const double *p_origin) {
 	Particles *particles = particles_owner.get_or_null(p_particles);
 	ERR_FAIL_NULL(particles);
 
@@ -1508,10 +1508,13 @@ void ParticlesStorage::particles_collision_instance_free(RID p_rid) {
 	particles_collision_instance_owner.free(p_rid);
 }
 
-void ParticlesStorage::particles_collision_instance_set_transform(RID p_collision_instance, const Transform3D &p_transform) {
+void ParticlesStorage::particles_collision_instance_set_transform(RID p_collision_instance, const Transform3D &p_transform, const double *p_origin) {
 	ParticlesCollisionInstance *pci = particles_collision_instance_owner.get_or_null(p_collision_instance);
 	ERR_FAIL_NULL(pci);
 	pci->transform = p_transform;
+	if (p_origin) {
+		pci->transform.origin = Vector3(p_origin[0], p_origin[1], p_origin[2]);
+	}
 }
 
 void ParticlesStorage::particles_collision_instance_set_active(RID p_collision_instance, bool p_active) {

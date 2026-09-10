@@ -341,6 +341,7 @@ protected:
 	uint32_t micro_geometry_visible_layers = UINT32_MAX;
 	uint32_t micro_geometry_shadow_layers = UINT32_MAX;
 	Vector<Plane> micro_geometry_shadow_planes;
+	double micro_geometry_shadow_origin[3] = {};
 	bool _micro_geometry_eligible(const GeometryInstanceSurfaceDataCache *p_surface, PassMode p_pass) const;
 	MicroGeometryRasterPass *_prepare_micro_geometry(const RenderDataRD *p_render_data, PassMode p_pass);
 
@@ -473,10 +474,8 @@ protected:
 			uint32_t rtxdi_padding[3];
 			float prev_transform[12];
 			float lightmap_uv_scale[4];
-#ifdef REAL_T_IS_DOUBLE
 			float model_precision[4];
 			float prev_model_precision[4];
-#endif
 
 			// These setters allow us to copy the data over with operation when using floats.
 			inline void set_lightmap_uv_scale(const Rect2 &p_rect) {
@@ -749,6 +748,7 @@ protected:
 			TELEPORTED,
 		} transform_status = TransformStatus::MOVED;
 		Transform3D prev_transform;
+		double prev_origin[3] = {};
 		RID voxel_gi_instances[MAX_VOXEL_GI_INSTANCESS_PER_INSTANCE];
 		GeometryInstanceSurfaceDataCache *surface_caches = nullptr;
 		SelfList<GeometryInstanceForwardClustered> dirty_list_element;
@@ -963,7 +963,8 @@ protected:
 		const PagedArray<RenderGeometryInstance *> *instances = nullptr;
 		RenderingServerTypes::RenderInfo *render_info = nullptr;
 		Transform3D camera_transform;
-		Transform3D main_camera_transform;
+		double camera_origin[3] = {};
+		double main_camera_origin[3] = {};
 		Projection projection;
 		bool orthogonal = false;
 		float lod_distance_multiplier = 0;
@@ -1017,13 +1018,13 @@ protected:
 	/* Volumetric fog */
 	RID shadow_sampler;
 
-	void _update_volumetric_fog(Ref<RenderSceneBuffersRD> p_render_buffers, RID p_environment, const Projection &p_cam_projection, const Transform3D &p_cam_transform, const Transform3D &p_prev_cam_inv_transform, RID p_shadow_atlas, int p_directional_light_count, bool p_use_directional_shadows, int p_positional_light_count, int p_voxel_gi_count, float p_camera_exposure, const PagedArray<RID> &p_fog_volumes);
+	void _update_volumetric_fog(Ref<RenderSceneBuffersRD> p_render_buffers, RID p_environment, const Projection &p_cam_projection, const Transform3D &p_cam_transform, const Transform3D &p_prev_cam_inv_transform, RID p_shadow_atlas, int p_directional_light_count, bool p_use_directional_shadows, int p_positional_light_count, int p_voxel_gi_count, float p_camera_exposure, const PagedArray<RID> &p_fog_volumes, const double *p_cam_origin, const double *p_prev_cam_origin);
 
 	/* Render shadows */
 
-	void _render_shadow_pass(RID p_light, RID p_shadow_atlas, int p_pass, const PagedArray<RenderGeometryInstance *> &p_instances, float p_lod_distance_multiplier, float p_screen_mesh_lod_threshold, bool p_open_pass, bool p_close_pass, bool p_clear_region, RenderingServerTypes::RenderInfo *p_render_info, const Size2i &p_viewport_size, const Transform3D &p_main_cam_transform, const Vector<Plane> &p_cull_planes);
+	void _render_shadow_pass(RID p_light, RID p_shadow_atlas, int p_pass, const PagedArray<RenderGeometryInstance *> &p_instances, float p_lod_distance_multiplier, float p_screen_mesh_lod_threshold, bool p_open_pass, bool p_close_pass, bool p_clear_region, RenderingServerTypes::RenderInfo *p_render_info, const Size2i &p_viewport_size, const Transform3D &p_main_cam_transform, const Vector<Plane> &p_cull_planes, const double *p_main_origin, const double *p_cull_origin);
 	void _render_shadow_begin();
-	void _render_shadow_append(RID p_framebuffer, const PagedArray<RenderGeometryInstance *> &p_instances, const Projection &p_projection, const Transform3D &p_transform, float p_zfar, float p_bias, float p_normal_bias, bool p_reverse_cull_face, bool p_use_dp, bool p_use_dp_flip, bool p_use_pancake, float p_lod_distance_multiplier = 0.0, float p_screen_mesh_lod_threshold = 0.0, const Rect2i &p_rect = Rect2i(), bool p_flip_y = false, bool p_clear_region = true, bool p_begin = true, bool p_end = true, RenderingServerTypes::RenderInfo *p_render_info = nullptr, const Size2i &p_viewport_size = Size2i(1, 1), const Transform3D &p_main_cam_transform = Transform3D());
+	void _render_shadow_append(RID p_framebuffer, const PagedArray<RenderGeometryInstance *> &p_instances, const Projection &p_projection, const Transform3D &p_transform, float p_zfar, float p_bias, float p_normal_bias, bool p_reverse_cull_face, bool p_use_dp, bool p_use_dp_flip, bool p_use_pancake, float p_lod_distance_multiplier = 0.0, float p_screen_mesh_lod_threshold = 0.0, const Rect2i &p_rect = Rect2i(), bool p_flip_y = false, bool p_clear_region = true, bool p_begin = true, bool p_end = true, RenderingServerTypes::RenderInfo *p_render_info = nullptr, const Size2i &p_viewport_size = Size2i(1, 1), const Transform3D &p_main_cam_transform = Transform3D(), const double *p_origin = nullptr, const double *p_main_origin = nullptr);
 	void _render_shadow_process();
 	void _render_shadow_end();
 
@@ -1071,10 +1072,10 @@ protected:
 	void _render_3d_upscaling(const RenderDataRD *p_render_data, Scale3DMode p_scale_type, bool p_using_taa, double p_time_step);
 	virtual void _free_rt_viewport_state(RenderSceneBuffersRD *p_render_buffers);
 
-	virtual void _render_material(const Transform3D &p_cam_transform, const Projection &p_cam_projection, bool p_cam_orthogonal, const PagedArray<RenderGeometryInstance *> &p_instances, RID p_framebuffer, const Rect2i &p_region, float p_exposure_normalization) override;
+	virtual void _render_material(const Transform3D &p_cam_transform, const Projection &p_cam_projection, bool p_cam_orthogonal, const PagedArray<RenderGeometryInstance *> &p_instances, RID p_framebuffer, const Rect2i &p_region, float p_exposure_normalization, const double *p_origin = nullptr) override;
 	virtual void _render_uv2(const PagedArray<RenderGeometryInstance *> &p_instances, RID p_framebuffer, const Rect2i &p_region) override;
 	virtual void _render_sdfgi(Ref<RenderSceneBuffersRD> p_render_buffers, const Vector3i &p_from, const Vector3i &p_size, const AABB &p_bounds, const PagedArray<RenderGeometryInstance *> &p_instances, const RID &p_albedo_texture, const RID &p_emission_texture, const RID &p_emission_aniso_texture, const RID &p_geom_facing_texture, float p_exposure_normalization) override;
-	virtual void _render_particle_collider_heightfield(RID p_fb, const Transform3D &p_cam_transform, const Projection &p_cam_projection, const PagedArray<RenderGeometryInstance *> &p_instances) override;
+	virtual void _render_particle_collider_heightfield(RID p_fb, const Transform3D &p_cam_transform, const Projection &p_cam_projection, const PagedArray<RenderGeometryInstance *> &p_instances, const double *p_origin, RID p_scenario, uint32_t p_layers) override;
 
 public:
 	static RenderForwardClustered *get_singleton() { return singleton; }
@@ -1083,9 +1084,9 @@ public:
 	RendererRD::SSEffects *get_ss_effects() { return ss_effects; }
 
 	/* callback from updating our lighting UBOs, used to populate cluster builder */
-	virtual void setup_added_reflection_probe(const Transform3D &p_transform, const Vector3 &p_half_size) override;
-	virtual void setup_added_light(const RSE::LightType p_type, const Transform3D &p_transform, float p_radius, float p_spot_aperture, const Vector2 &p_area_size) override;
-	virtual void setup_added_decal(const Transform3D &p_transform, const Vector3 &p_half_size) override;
+	virtual void setup_added_reflection_probe(const Transform3D &p_transform, const Vector3 &p_half_size, const double *p_origin = nullptr) override;
+	virtual void setup_added_light(const RSE::LightType p_type, const Transform3D &p_transform, float p_radius, float p_spot_aperture, const Vector2 &p_area_size, const double *p_origin = nullptr) override;
+	virtual void setup_added_decal(const Transform3D &p_transform, const Vector3 &p_half_size, const double *p_origin = nullptr) override;
 
 	virtual void base_uniforms_changed() override;
 
@@ -1099,7 +1100,7 @@ public:
 
 	/* GEOMETRY INSTANCE */
 
-	virtual RenderGeometryInstance *geometry_instance_create(RID p_base) override;
+	virtual RenderGeometryInstance *geometry_instance_create(RID p_base, RenderSceneInstanceData *p_scene_data) override;
 	virtual void geometry_instance_free(RenderGeometryInstance *p_geometry_instance) override;
 
 	virtual uint32_t geometry_instance_get_pair_mask() override;

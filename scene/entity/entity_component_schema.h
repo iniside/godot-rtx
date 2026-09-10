@@ -207,6 +207,105 @@ struct EntityCodec<Basis> {
 	static ecs_entity_t meta_type(flecs::world &p_world);
 };
 
+template <typename T, Variant::Type Type>
+struct EntityFiniteVariantCodec {
+	static constexpr Variant::Type variant_type = Type;
+	static Error encode(const T &p_value, Variant &r_value) {
+		if (!p_value.is_finite()) {
+			return ERR_INVALID_DATA;
+		}
+		r_value = p_value;
+		return OK;
+	}
+	static Error decode(const Variant &p_value, T &r_value) {
+		if (p_value.get_type() != variant_type) {
+			return ERR_INVALID_DATA;
+		}
+		T value = p_value;
+		if (!value.is_finite()) {
+			return ERR_INVALID_DATA;
+		}
+		r_value = value;
+		return OK;
+	}
+	static ecs_entity_t meta_type(flecs::world &p_world) { return entity_string_meta<T>(p_world); }
+};
+
+template <>
+struct EntityCodec<Vector2> : EntityFiniteVariantCodec<Vector2, Variant::VECTOR2> {};
+
+template <>
+struct EntityCodec<Vector3> : EntityFiniteVariantCodec<Vector3, Variant::VECTOR3> {};
+
+template <>
+struct EntityCodec<Rect2> : EntityFiniteVariantCodec<Rect2, Variant::RECT2> {};
+
+template <>
+struct EntityCodec<AABB> : EntityFiniteVariantCodec<AABB, Variant::AABB> {};
+
+template <>
+struct EntityCodec<Color> {
+	static constexpr Variant::Type variant_type = Variant::COLOR;
+	static Error encode(const Color &p_value, Variant &r_value) {
+		if (!Math::is_finite(p_value.r) || !Math::is_finite(p_value.g) || !Math::is_finite(p_value.b) || !Math::is_finite(p_value.a)) {
+			return ERR_INVALID_DATA;
+		}
+		r_value = p_value;
+		return OK;
+	}
+	static Error decode(const Variant &p_value, Color &r_value) {
+		if (p_value.get_type() != variant_type) {
+			return ERR_INVALID_DATA;
+		}
+		Color value = p_value;
+		Variant encoded;
+		Error error = encode(value, encoded);
+		if (error == OK) {
+			r_value = value;
+		}
+		return error;
+	}
+	static ecs_entity_t meta_type(flecs::world &p_world) { return entity_string_meta<Color>(p_world); }
+};
+
+template <>
+struct EntityCodec<Variant> {
+	static constexpr Variant::Type variant_type = Variant::NIL;
+	static Error encode(const Variant &p_value, Variant &r_value) {
+		switch (p_value.get_type()) {
+			case Variant::NIL:
+			case Variant::BOOL:
+			case Variant::INT:
+			case Variant::VECTOR2I:
+			case Variant::VECTOR3I:
+			case Variant::VECTOR4I:
+				break;
+			case Variant::FLOAT:
+				if (!Math::is_finite(double(p_value))) {
+					return ERR_INVALID_DATA;
+				}
+				break;
+			case Variant::VECTOR2:
+				return EntityCodec<Vector2>::encode(p_value, r_value);
+			case Variant::VECTOR3:
+				return EntityCodec<Vector3>::encode(p_value, r_value);
+			case Variant::VECTOR4:
+				if (!Vector4(p_value).is_finite()) {
+					return ERR_INVALID_DATA;
+				}
+				break;
+			case Variant::COLOR:
+				return EntityCodec<Color>::encode(p_value, r_value);
+			default:
+				return ERR_INVALID_DATA;
+		}
+		r_value = p_value;
+		return OK;
+	}
+	static Error decode(const Variant &p_value, Variant &r_value) { return encode(p_value, r_value); }
+	static ecs_entity_t meta_type(flecs::world &p_world) { return entity_string_meta<Variant>(p_world); }
+};
+
 template <typename T>
 struct EntityCodec<Ref<T>> {
 	static constexpr Variant::Type variant_type = Variant::STRING;

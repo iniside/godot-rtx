@@ -1338,7 +1338,9 @@ void FileSystemDock::_select_file(const String &p_path, bool p_select_in_favorit
 		}
 
 		String resource_type = ResourceLoader::get_resource_type(fpath);
-		if (resource_type == "PackedScene" || resource_type == "AnimationLibrary") {
+		if (resource_type == "EntityScene") {
+			EditorNode::get_singleton()->load_scene_or_resource(fpath);
+		} else if (resource_type == "PackedScene" || resource_type == "AnimationLibrary") {
 			bool is_imported = false;
 			{
 				List<String> importer_exts;
@@ -1630,12 +1632,12 @@ void FileSystemDock::_try_duplicate_item(const FileOrFolder &p_item, const Strin
 
 		Error err = EditorFileSystem::get_singleton()->copy_file(old_path, new_path);
 		if (err != OK) {
-			EditorNode::get_singleton()->add_io_error(TTR("Error duplicating:") + "\n" + old_path + U" → " + new_path + ": " + TTR(error_names[err]) + "\n");
+			EditorNode::get_singleton()->add_io_error(TTR("Error duplicating:") + "\n" + old_path + U" â†’ " + new_path + ": " + TTR(error_names[err]) + "\n");
 		}
 	} else {
 		Error err = EditorFileSystem::get_singleton()->copy_directory(old_path, new_path);
 		if (err != OK) {
-			EditorNode::get_singleton()->add_io_error(TTR("Error duplicating directory:") + "\n" + old_path + U" → " + new_path + ": " + TTR(error_names[err]) + "\n");
+			EditorNode::get_singleton()->add_io_error(TTR("Error duplicating directory:") + "\n" + old_path + U" â†’ " + new_path + ": " + TTR(error_names[err]) + "\n");
 		}
 	}
 }

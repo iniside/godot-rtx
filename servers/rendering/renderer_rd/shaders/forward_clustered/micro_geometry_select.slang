@@ -78,10 +78,8 @@ struct RasterInstance {
 	uint padding[3];
 	float previous_transform[12];
 	float lightmap_uv_scale[4];
-#ifdef USE_DOUBLE_PRECISION
 	float model_precision[4];
 	float previous_model_precision[4];
-#endif
 };
 struct DrawCommand {
 	uint index_count;
@@ -352,10 +350,8 @@ void main(uint3 id : SV_DispatchThreadID) {
 		raster.rtxdi_material_flags = surface.material_flags;
 		for (uint element = 0; element < 4; element++) {
 			raster.lightmap_uv_scale[element] = instance.lightmap_uv_scale[element];
-#ifdef USE_DOUBLE_PRECISION
 			raster.model_precision[element] = (task.flags & 1) != 0 ? 0 : instance.origin_low[element];
 			raster.previous_model_precision[element] = (task.flags & 1) != 0 ? 0 : instance.previous_origin_low[element];
-#endif
 		}
 		for (uint lightmap = 0; lightmap < 8; lightmap++) {
 			if (instance.lightmap != 0 && instance.lightmap == parameters.lightmaps[lightmap]) {

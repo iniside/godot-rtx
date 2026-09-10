@@ -59,9 +59,7 @@ RenderPathtracing::Context::~Context() {
 
 RenderPathtracing::RenderPathtracing() {
 	String defines;
-#ifdef REAL_T_IS_DOUBLE
 	defines += "#define USE_DOUBLE_PRECISION\n";
-#endif
 	shader.initialize(Vector<String>{ "\n", "\n#define USE_RADIANCE_OCTMAP_ARRAY\n" }, defines);
 	version = shader.version_create();
 }

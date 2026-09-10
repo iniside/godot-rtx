@@ -13,7 +13,7 @@
 static std::atomic<uint64_t> entity_world_generation{ 1 };
 
 EntityWorld::EntityWorld(EntityCatalog &p_catalog) :
-		catalog(p_catalog), generation(entity_world_generation.fetch_add(1)), transforms(*this) {
+		catalog(p_catalog), generation(entity_world_generation.fetch_add(1)), transforms(*this), rendering(*this) {
 	ecs.component<Identity>();
 	register_entity_component_schemas(ecs, schemas);
 }
@@ -59,11 +59,15 @@ Error EntityWorld::initialize_services() {
 		navigation->map_set_active(navigation_map, true);
 	}
 #endif
+	for (const KeyValue<EntityId, Resident> &entry : residents) {
+		rendering.mark_dirty(entry.key);
+	}
 	return OK;
 }
 
 void EntityWorld::finalize_services() {
 	DEV_ASSERT(_is_owner());
+	rendering.release();
 #ifndef NAVIGATION_3D_DISABLED
 	if (navigation_map.is_valid()) {
 		NavigationServer3D::get_singleton()->map_set_active(navigation_map, false);
@@ -97,9 +101,12 @@ Error EntityWorld::load_default_environment() {
 	return OK;
 }
 
-void EntityWorld::_component_changed(EntityHandle p_handle) {
-	transforms.mark_dirty(p_handle.entity);
-	_mark_changed(get_id(p_handle));
+void EntityWorld::_component_changed(EntityHandle p_handle, uint64_t p_component) {
+	uint32_t mask = EntityRenderSystem::component_mask(p_component);
+	if (mask & EntityRenderUpdate::POSE) {
+		transforms.mark_dirty(p_handle.entity);
+	}
+	_mark_changed(get_id(p_handle), mask);
 }
 
 bool EntityWorld::_has_resident_children(EntityHandle p_handle) const {
@@ -113,13 +120,14 @@ bool EntityWorld::_has_resident_children(EntityHandle p_handle) const {
 	return false;
 }
 
-void EntityWorld::_mark_changed(EntityId p_id) {
+void EntityWorld::_mark_changed(EntityId p_id, uint32_t p_render_mask) {
 	change_serial++;
 	Resident *resident = residents.getptr(p_id);
 	if (resident) {
 		resident->revision = change_serial;
 	}
 	changed.insert(p_id);
+	rendering.mark_dirty(p_id, p_render_mask);
 }
 
 EntityHandle EntityWorld::_materialize(EntityId p_id) {
@@ -357,7 +365,7 @@ Error EntityWorld::add_component(EntityHandle p_handle, uint64_t p_component) {
 		return ERR_ALREADY_EXISTS;
 	}
 	schema->add_default(ecs, p_handle.entity);
-	_component_changed(p_handle);
+	_component_changed(p_handle, p_component);
 	return OK;
 }
 
@@ -371,7 +379,7 @@ Error EntityWorld::remove_component(EntityHandle p_handle, uint64_t p_component)
 			transforms.teleport(p_handle.entity);
 		}
 		ecs_remove_id(ecs.c_ptr(), p_handle.entity, schema->runtime_id);
-		_component_changed(p_handle);
+		_component_changed(p_handle, p_component);
 	}
 	return OK;
 }
@@ -401,7 +409,7 @@ Error EntityWorld::write_component(EntityHandle p_handle, uint64_t p_component, 
 	}
 	Error error = schema->set_serialized(ecs, p_handle.entity, p_value);
 	ERR_FAIL_COND_V_MSG(error != OK, error, "Cannot decode entity " + get_id(p_handle).to_string() + " component " + String(schema->name));
-	_component_changed(p_handle);
+	_component_changed(p_handle, p_component);
 	return OK;
 }
 
@@ -424,6 +432,6 @@ Error EntityWorld::write_field(EntityHandle p_handle, uint64_t p_component, uint
 	ERR_FAIL_COND_V(!schema->is_component, ERR_INVALID_PARAMETER);
 	Error error = schema->set_field(ecs, p_handle.entity, p_field, p_value);
 	ERR_FAIL_COND_V_MSG(error != OK, error, "Cannot edit entity " + get_id(p_handle).to_string() + " component " + String(schema->name));
-	_component_changed(p_handle);
+	_component_changed(p_handle, p_component);
 	return OK;
 }

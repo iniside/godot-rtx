@@ -70,9 +70,9 @@ class NavigationObstacle3DEditorPlugin : public EditorPlugin {
 	Ref<StandardMaterial3D> handle_material;
 
 	RID point_lines_mesh_rid;
-	RID point_lines_instance_rid;
+	ToolRenderData point_lines_instance_rid;
 	RID point_handle_mesh_rid;
-	RID point_handles_instance_rid;
+	ToolRenderData point_handles_instance_rid;
 
 public:
 	enum Mode {

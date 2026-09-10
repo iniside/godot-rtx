@@ -95,6 +95,7 @@ private:
 		struct ShadowTransform {
 			Projection camera;
 			Transform3D transform;
+			double origin[3] = {};
 			float farplane = 0.0;
 			float split = 0.0;
 			float bias_scale = 0.0;
@@ -112,6 +113,7 @@ private:
 		RID self;
 		RID light;
 		Transform3D transform;
+		double origin[3] = {};
 
 		Vector3 light_vector;
 		Vector3 spot_vector;
@@ -302,6 +304,7 @@ private:
 		RendererRD::ForwardID forward_id = -1;
 
 		Transform3D transform;
+		double origin[3] = {};
 	};
 
 	mutable RID_Owner<ReflectionProbeInstance> reflection_probe_instance_owner;
@@ -387,6 +390,7 @@ private:
 	struct LightmapInstance {
 		RID lightmap;
 		Transform3D transform;
+		double origin[3] = {};
 	};
 
 	mutable RID_Owner<LightmapInstance> lightmap_instance_owner;
@@ -630,9 +634,14 @@ public:
 
 	virtual RID light_instance_create(RID p_light) override;
 	virtual void light_instance_free(RID p_light) override;
-	virtual void light_instance_set_transform(RID p_light_instance, const Transform3D &p_transform) override;
+	_FORCE_INLINE_ const double *light_instance_get_origin(RID p_light_instance) const {
+		const LightInstance *instance = light_instance_owner.get_or_null(p_light_instance);
+		ERR_FAIL_NULL_V(instance, nullptr);
+		return instance->origin;
+	}
+	virtual void light_instance_set_transform(RID p_light_instance, const Transform3D &p_transform, const double *p_origin = nullptr) override;
 	virtual void light_instance_set_aabb(RID p_light_instance, const AABB &p_aabb) override;
-	virtual void light_instance_set_shadow_transform(RID p_light_instance, const Projection &p_projection, const Transform3D &p_transform, float p_far, float p_split, int p_pass, float p_shadow_texel_size, float p_bias_scale = 1.0, float p_range_begin = 0, const Vector2 &p_uv_scale = Vector2()) override;
+	virtual void light_instance_set_shadow_transform(RID p_light_instance, const Projection &p_projection, const Transform3D &p_transform, float p_far, float p_split, int p_pass, float p_shadow_texel_size, float p_bias_scale = 1.0, float p_range_begin = 0, const Vector2 &p_uv_scale = Vector2(), const double *p_origin = nullptr) override;
 	virtual void light_instance_mark_visible(RID p_light_instance) override;
 
 	virtual bool light_instance_is_shadow_visible_at_position(RID p_light_instance, const Vector3 &p_position) const override {
@@ -749,6 +758,10 @@ public:
 		LightInstance *li = light_instance_owner.get_or_null(p_light_instance);
 		return li->shadow_transform[p_index].transform;
 	}
+	_FORCE_INLINE_ const double *light_instance_get_shadow_origin(RID p_light_instance, int p_index) {
+		LightInstance *li = light_instance_owner.get_or_null(p_light_instance);
+		return li->shadow_transform[p_index].origin;
+	}
 	_FORCE_INLINE_ float light_instance_get_shadow_bias_scale(RID p_light_instance, int p_index) {
 		LightInstance *li = light_instance_owner.get_or_null(p_light_instance);
 		return li->shadow_transform[p_index].bias_scale;
@@ -861,6 +874,7 @@ public:
 			float radius;
 			float spot_angle;
 			Vector2 area_size;
+			double origin[3];
 		};
 		LocalVector<LightInstance *> admitted_lights;
 		LocalVector<ClusterLight> cluster_lights;
@@ -954,7 +968,7 @@ public:
 
 	virtual RID reflection_probe_instance_create(RID p_probe) override;
 	virtual void reflection_probe_instance_free(RID p_instance) override;
-	virtual void reflection_probe_instance_set_transform(RID p_instance, const Transform3D &p_transform) override;
+	virtual void reflection_probe_instance_set_transform(RID p_instance, const Transform3D &p_transform, const double *p_origin = nullptr) override;
 	virtual bool reflection_probe_has_atlas_index(RID p_instance) override;
 	virtual void reflection_probe_release_atlas_index(RID p_instance) override;
 	virtual bool reflection_probe_instance_needs_redraw(RID p_instance) override;
@@ -1110,7 +1124,7 @@ public:
 
 	virtual RID lightmap_instance_create(RID p_lightmap) override;
 	virtual void lightmap_instance_free(RID p_lightmap) override;
-	virtual void lightmap_instance_set_transform(RID p_lightmap, const Transform3D &p_transform) override;
+	virtual void lightmap_instance_set_transform(RID p_lightmap, const Transform3D &p_transform, const double *p_origin = nullptr) override;
 	_FORCE_INLINE_ bool lightmap_instance_is_valid(RID p_lightmap_instance) {
 		return lightmap_instance_owner.get_or_null(p_lightmap_instance) != nullptr;
 	}

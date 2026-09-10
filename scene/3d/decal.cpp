@@ -293,7 +293,7 @@ bool Decal::_get(const StringName &p_name, Variant &r_property) const {
 
 Decal::Decal() {
 	decal = RenderingServer::get_singleton()->decal_create();
-	RS::get_singleton()->instance_set_base(get_instance(), decal);
+	set_base(decal);
 }
 
 Decal::~Decal() {

@@ -30,6 +30,8 @@
 
 #pragma once
 
+#include "scene/entity/entity_id.h"
+
 #include "core/io/image.h"
 #include "core/templates/rid.h"
 #include "core/variant/typed_array.h"
@@ -60,6 +62,8 @@ struct MeshData;
 #endif
 
 class RenderingDevice;
+struct EntityRenderPacket;
+struct ToolRenderData;
 
 class RenderingServer : public Object {
 	GDCLASS(RenderingServer, Object);
@@ -93,8 +97,6 @@ protected:
 	void _canvas_item_add_multiline_bind_compat_84523(RID p_item, const Vector<Point2> &p_points, const Vector<Color> &p_colors, float p_width = -1.0);
 	void _canvas_item_add_rect_bind_compat_84523(RID p_item, const Rect2 &p_rect, const Color &p_color);
 	void _canvas_item_add_circle_bind_compat_84523(RID p_item, const Point2 &p_pos, float p_radius, const Color &p_color);
-	void _instance_set_interpolated_bind_compat_104269(RID p_instance, bool p_interpolated);
-	void _instance_reset_physics_interpolation_bind_compat_104269(RID p_instance);
 	void _viewport_set_size_compat_115799(RID p_viewport, int p_width, int p_height);
 	void _particles_request_process_time_bind_compat_109142(RID p_particles, real_t p_request_process_time);
 
@@ -164,6 +166,7 @@ public:
 	virtual void shader_set_code(RID p_shader, const String &p_code) = 0;
 	virtual void shader_set_code_rt(RID p_shader, const String &p_code_rt) = 0;
 	virtual void shader_set_generated_standard_material(RID p_shader, bool p_generated) {}
+	virtual void shader_set_generated_particle_material(RID p_shader, bool p_generated) {}
 	virtual void shader_set_path_hint(RID p_shader, const String &p_path) = 0;
 	virtual String shader_get_code(RID p_shader) const = 0;
 	virtual void get_shader_parameter_list(RID p_shader, List<PropertyInfo> *p_param_list) const = 0;
@@ -731,64 +734,17 @@ public:
 	/* SCENARIO API */
 
 	virtual RID scenario_create() = 0;
+	virtual void scene_publish_entities(const EntityRenderPacket &p_packet) = 0;
+	virtual Vector<EntityHandle> scene_entities_cull_aabb(const AABB &p_aabb, RID p_scenario) const = 0;
+	virtual Vector<EntityHandle> scene_entities_cull_ray(const Vector3 &p_from, const Vector3 &p_to, RID p_scenario) const = 0;
+	virtual Vector<EntityHandle> scene_entities_cull_convex(const Vector<Plane> &p_convex, RID p_scenario) const = 0;
+	virtual RID tool_render_create() = 0;
+	virtual void tool_render_update(const ToolRenderData &p_data) = 0;
 
 	virtual void scenario_set_environment(RID p_scenario, RID p_environment) = 0;
 	virtual void scenario_set_fallback_environment(RID p_scenario, RID p_environment) = 0;
 	virtual void scenario_set_camera_attributes(RID p_scenario, RID p_camera_attributes) = 0;
 	virtual void scenario_set_compositor(RID p_scenario, RID p_compositor) = 0;
-
-	/* INSTANCING API */
-
-	virtual RID instance_create2(RID p_base, RID p_scenario);
-
-	virtual RID instance_create() = 0;
-
-	virtual void instance_set_base(RID p_instance, RID p_base) = 0;
-	virtual void instance_set_scenario(RID p_instance, RID p_scenario) = 0;
-	virtual void instance_set_layer_mask(RID p_instance, uint32_t p_mask) = 0;
-	virtual void instance_set_pivot_data(RID p_instance, float p_sorting_offset, bool p_use_aabb_center) = 0;
-	virtual void instance_set_transform(RID p_instance, const Transform3D &p_transform) = 0;
-	virtual void instance_attach_object_instance_id(RID p_instance, ObjectID p_id) = 0;
-	virtual void instance_set_blend_shape_weight(RID p_instance, int p_shape, float p_weight) = 0;
-	virtual void instance_set_surface_override_material(RID p_instance, int p_surface, RID p_material) = 0;
-	virtual void instance_set_visible(RID p_instance, bool p_visible) = 0;
-
-	virtual void instance_teleport(RID p_instance) = 0;
-
-	virtual void instance_set_custom_aabb(RID p_instance, AABB aabb) = 0;
-
-	virtual void instance_set_rt_procedural(RID p_instance, bool p_procedural, AABB p_aabb) = 0;
-	virtual void instance_set_rt_procedural_bounds(RID p_instance, const PackedFloat32Array &p_aabb_data, bool p_expose_bounds) = 0;
-
-	virtual void instance_attach_skeleton(RID p_instance, RID p_skeleton) = 0;
-
-	virtual void instance_set_extra_visibility_margin(RID p_instance, real_t p_margin) = 0;
-	virtual void instance_set_visibility_parent(RID p_instance, RID p_parent_instance) = 0;
-
-	virtual void instance_set_ignore_culling(RID p_instance, bool p_enabled) = 0;
-
-	// Don't use these in a game!
-	virtual Vector<ObjectID> instances_cull_aabb(const AABB &p_aabb, RID p_scenario = RID()) const = 0;
-	virtual Vector<ObjectID> instances_cull_ray(const Vector3 &p_from, const Vector3 &p_to, RID p_scenario = RID()) const = 0;
-	virtual Vector<ObjectID> instances_cull_convex(const Vector<Plane> &p_convex, RID p_scenario = RID()) const = 0;
-
-	PackedInt64Array _instances_cull_aabb_bind(const AABB &p_aabb, RID p_scenario = RID()) const;
-	PackedInt64Array _instances_cull_ray_bind(const Vector3 &p_from, const Vector3 &p_to, RID p_scenario = RID()) const;
-	PackedInt64Array _instances_cull_convex_bind(const TypedArray<Plane> &p_convex, RID p_scenario = RID()) const;
-
-	virtual void instance_geometry_set_flag(RID p_instance, RSE::InstanceFlags p_flags, bool p_enabled) = 0;
-	virtual void instance_geometry_set_cast_shadows_setting(RID p_instance, RSE::ShadowCastingSetting p_shadow_casting_setting) = 0;
-	virtual void instance_geometry_set_material_override(RID p_instance, RID p_material) = 0;
-	virtual void instance_geometry_set_material_overlay(RID p_instance, RID p_material) = 0;
-	virtual void instance_geometry_set_visibility_range(RID p_instance, float p_min, float p_max, float p_min_margin, float p_max_margin, RSE::VisibilityRangeFadeMode p_fade_mode) = 0;
-	virtual void instance_geometry_set_lightmap(RID p_instance, RID p_lightmap, const Rect2 &p_lightmap_uv_scale, int p_lightmap_slice) = 0;
-	virtual void instance_geometry_set_lod_bias(RID p_instance, float p_lod_bias) = 0;
-	virtual void instance_geometry_set_transparency(RID p_instance, float p_transparency) = 0;
-
-	virtual void instance_geometry_set_shader_parameter(RID p_instance, const StringName &, const Variant &p_value) = 0;
-	virtual Variant instance_geometry_get_shader_parameter(RID p_instance, const StringName &) const = 0;
-	virtual Variant instance_geometry_get_shader_parameter_default_value(RID p_instance, const StringName &) const = 0;
-	virtual void instance_geometry_get_shader_parameter_list(RID p_instance, List<PropertyInfo> *p_parameters) const = 0;
 
 	/* BAKE API */
 
@@ -1089,7 +1045,6 @@ private:
 	RID _mesh_create_from_surfaces(const TypedArray<Dictionary> &p_surfaces, int p_blend_shape_count);
 	void _mesh_add_surface(RID p_mesh, const Dictionary &p_surface);
 	Dictionary _mesh_get_surface(RID p_mesh, int p_idx);
-	TypedArray<Dictionary> _instance_geometry_get_shader_parameter_list(RID p_instance) const;
 	TypedArray<Dictionary> _canvas_item_get_instance_shader_parameter_list(RID p_item) const;
 	TypedArray<Image> _bake_render_uv2(RID p_base, const TypedArray<RID> &p_material_overrides, const Size2i &p_image_size);
 	void _particles_set_trail_bind_poses(RID p_particles, const TypedArray<Transform3D> &p_bind_poses);
@@ -1175,7 +1130,6 @@ VARIANT_ENUM_CAST_EXT(RSE::DOFBlurQuality, RenderingServer::DOFBlurQuality);
 VARIANT_ENUM_CAST_EXT(RSE::DOFBokehShape, RenderingServer::DOFBokehShape);
 VARIANT_ENUM_CAST_EXT(RSE::ShadowQuality, RenderingServer::ShadowQuality);
 VARIANT_ENUM_CAST_EXT(RSE::InstanceType, RenderingServer::InstanceType);
-VARIANT_ENUM_CAST_EXT(RSE::InstanceFlags, RenderingServer::InstanceFlags);
 VARIANT_ENUM_CAST_EXT(RSE::ShadowCastingSetting, RenderingServer::ShadowCastingSetting);
 VARIANT_ENUM_CAST_EXT(RSE::VisibilityRangeFadeMode, RenderingServer::VisibilityRangeFadeMode);
 VARIANT_ENUM_CAST_EXT(RSE::NinePatchAxisMode, RenderingServer::NinePatchAxisMode);

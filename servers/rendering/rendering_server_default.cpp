@@ -35,6 +35,7 @@
 #include "core/os/os.h"
 #include "core/profiling/profiling.h"
 #include "drivers/streamline/streamline.h"
+#include "scene/entity/entity_render_system.h"
 #include "servers/display/display_server.h"
 #include "servers/rendering/renderer_canvas_cull.h"
 #include "servers/rendering/renderer_scene_cull.h"
@@ -71,6 +72,36 @@ void RenderingServerDefault::_free(RID p_rid) {
 }
 
 /* EVENT QUEUING */
+
+void RenderingServerDefault::scene_publish_entities(const EntityRenderPacket &p_packet) {
+	redraw_request();
+	if (Thread::get_caller_id() == server_thread) {
+		command_queue.flush_if_pending();
+		RSG::scene->scene_publish_entities(p_packet);
+	} else {
+		command_queue.push(RSG::scene, &RenderingMethod::scene_publish_entities, p_packet);
+	}
+}
+
+RID RenderingServerDefault::tool_render_create() {
+	RID handle = RSG::scene->tool_render_allocate();
+	if (Thread::get_caller_id() == server_thread) {
+		RSG::scene->tool_render_initialize(handle);
+	} else {
+		command_queue.push(RSG::scene, &RenderingMethod::tool_render_initialize, handle);
+	}
+	return handle;
+}
+
+void RenderingServerDefault::tool_render_update(const ToolRenderData &p_data) {
+	redraw_request();
+	if (Thread::get_caller_id() == server_thread) {
+		command_queue.flush_if_pending();
+		RSG::scene->tool_render_update(p_data);
+	} else {
+		command_queue.push(RSG::scene, &RenderingMethod::tool_render_update, p_data);
+	}
+}
 
 void RenderingServerDefault::texture_2d_update(RID p_texture, const Ref<Image> &p_image, int p_layer) {
 	redraw_request();
@@ -377,6 +408,9 @@ void RenderingServerDefault::_init() {
 }
 
 void RenderingServerDefault::_finish() {
+	if (RSG::scene != nullptr && rasterizer_initialized) {
+		RSG::scene->finalize_entities();
+	}
 	if (test_cube.is_valid() && RSG::utilities != nullptr) {
 		free_rid(test_cube);
 		test_cube = RID();

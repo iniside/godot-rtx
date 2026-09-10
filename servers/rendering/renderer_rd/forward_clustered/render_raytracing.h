@@ -659,7 +659,8 @@ struct RTViewportState {
 	uint64_t camera_history_epoch = 0;
 	uint64_t scene_generation = 0;
 	uint64_t scene_signature = 0;
-	Vector3 rt_origin;
+	double rt_origin[3] = {};
+	double camera_origin[3] = {};
 	Transform3D camera_transform;
 	Projection camera_projection;
 	bool camera_orthogonal = false;

@@ -146,9 +146,7 @@ private:
 	};
 
 public:
-	// Before each pass with a different camera, you must call this so the culler can pre-create
-	// the camera frustum planes and corner points in world space which are used for the culling.
-	bool prepare_camera(const Transform3D &p_cam_transform, const Projection &p_cam_matrix);
+	bool prepare_camera(const Transform3D &p_cam_transform, const Projection &p_cam_matrix, const double *p_origin);
 
 	// REGULAR LIGHTS (SPOT, OMNI).
 	// These are prepared then used for culling one by one, single threaded.
@@ -165,13 +163,22 @@ public:
 	// Return false if the instance is to be culled.
 	bool cull_directional_light(const RendererSceneCull::InstanceBounds &p_bound, int32_t p_directional_light_id, int32_t p_cascade);
 
-	void append_caster_planes(Vector<Plane> &r_planes, int32_t p_directional_light = -1, int32_t p_cascade = 0) const {
+	void append_caster_planes(Vector<Plane> &r_planes, int32_t p_directional_light = -1, int32_t p_cascade = 0, const double *p_origin = nullptr) const {
 		if (!data.is_active() || !is_caster_culling_active()) {
 			return;
 		}
 		const auto &planes = p_directional_light < 0 ? data.regular_cull_planes : data.directional_cull_planes[p_directional_light].planes[p_cascade];
 		for (int index = 0; index < planes.num_cull_planes; index++) {
-			r_planes.push_back(planes.cull_planes[index]);
+			Plane plane = planes.cull_planes[index];
+			double distance = plane.d;
+			for (int axis = 0; axis < 3; axis++) {
+				distance += double(plane.normal[axis]) * (data.camera_origin[axis] - (p_origin ? p_origin[axis] : 0.0));
+			}
+			plane.d = distance;
+			if (double(plane.d) < distance) {
+				plane.d = std::nextafter(plane.d, std::numeric_limits<real_t>::infinity());
+			}
+			r_planes.push_back(plane);
 		}
 	}
 
@@ -272,6 +279,7 @@ private:
 		LocalVector<DirectionalCullPlanes> directional_cull_planes;
 
 		Transform3D camera_transform;
+		double camera_origin[3] = {};
 		Projection camera_projection;
 
 		// Single threaded cull planes for regular lights

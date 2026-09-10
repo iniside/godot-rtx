@@ -37,143 +37,13 @@
 #include "scene/resources/mesh.h"
 #include "servers/rendering/rendering_server.h"
 
-Path3D::Path3D() {
-	SceneTree *st = SceneTree::get_singleton();
-	if (st && st->is_debugging_paths_hint()) {
-		debug_instance = RS::get_singleton()->instance_create();
-		set_notify_transform(true);
-		_update_debug_mesh();
-	}
-}
-
-Path3D::~Path3D() {
-	if (debug_instance.is_valid()) {
-		ERR_FAIL_NULL(RenderingServer::get_singleton());
-		RS::get_singleton()->free_rid(debug_instance);
-	}
-	if (debug_mesh.is_valid()) {
-		ERR_FAIL_NULL(RenderingServer::get_singleton());
-		RS::get_singleton()->free_rid(debug_mesh->get_rid());
-	}
-}
-
 void Path3D::set_update_callback(Callable p_callback) {
 	update_callback = p_callback;
 }
 
 void Path3D::_notification(int p_what) {
-	switch (p_what) {
-		case NOTIFICATION_ENTER_TREE: {
-			SceneTree *st = SceneTree::get_singleton();
-			if (st && st->is_debugging_paths_hint()) {
-				_update_debug_mesh();
-			}
-		} break;
-
-		case NOTIFICATION_EXIT_TREE: {
-			SceneTree *st = SceneTree::get_singleton();
-			if (st && st->is_debugging_paths_hint()) {
-				RS::get_singleton()->instance_set_visible(debug_instance, false);
-			}
-		} break;
-
-		case NOTIFICATION_TRANSFORM_CHANGED: {
-			if (is_inside_tree()) {
-				if (debug_instance.is_valid()) {
-					RS::get_singleton()->instance_set_transform(debug_instance, get_global_transform());
-				}
-
-				update_callback.call();
-			}
-		} break;
-	}
-}
-
-void Path3D::_update_debug_mesh() {
-	SceneTree *st = SceneTree::get_singleton();
-	if (!(st && st->is_debugging_paths_hint())) {
-		return;
-	}
-
-	if (debug_mesh.is_null()) {
-		debug_mesh.instantiate();
-	}
-
-	if (curve.is_null()) {
-		RS::get_singleton()->instance_set_visible(debug_instance, false);
-		return;
-	}
-	if (curve->get_point_count() < 2) {
-		RS::get_singleton()->instance_set_visible(debug_instance, false);
-		return;
-	}
-
-	real_t interval = 0.1;
-	const real_t length = curve->get_baked_length();
-
-	if (length <= CMP_EPSILON) {
-		RS::get_singleton()->instance_set_visible(debug_instance, false);
-		return;
-	}
-
-	const int sample_count = int(length / interval) + 2;
-	interval = length / (sample_count - 1);
-
-	Vector<Vector3> ribbon;
-	ribbon.resize(sample_count);
-	Vector3 *ribbon_ptr = ribbon.ptrw();
-
-	Vector<Vector3> bones;
-	bones.resize(sample_count * 4);
-	Vector3 *bones_ptr = bones.ptrw();
-
-	for (int i = 0; i < sample_count; i++) {
-		const Transform3D r = curve->sample_baked_with_rotation(i * interval, true, true);
-
-		const Vector3 p1 = r.origin;
-		const Vector3 side = r.basis.get_column(0);
-		const Vector3 up = r.basis.get_column(1);
-		const Vector3 forward = r.basis.get_column(2);
-
-		// Path3D as a ribbon.
-		ribbon_ptr[i] = p1;
-
-		if (i % 4 == 0) {
-			// Draw fish bone every 4 points to reduce visual noise and performance impact
-			// (compared to drawing it for every point).
-			const Vector3 p_left = p1 + (side + forward - up * 0.3) * 0.06;
-			const Vector3 p_right = p1 + (-side + forward - up * 0.3) * 0.06;
-
-			const int bone_idx = i * 4;
-
-			bones_ptr[bone_idx] = p1;
-			bones_ptr[bone_idx + 1] = p_left;
-			bones_ptr[bone_idx + 2] = p1;
-			bones_ptr[bone_idx + 3] = p_right;
-		}
-	}
-
-	Array ribbon_array;
-	ribbon_array.resize(Mesh::ARRAY_MAX);
-	ribbon_array[Mesh::ARRAY_VERTEX] = ribbon;
-
-	Array bone_array;
-	bone_array.resize(Mesh::ARRAY_MAX);
-	bone_array[Mesh::ARRAY_VERTEX] = bones;
-
-	_update_debug_path_material();
-
-	debug_mesh->clear_surfaces();
-	debug_mesh->add_surface_from_arrays(Mesh::PRIMITIVE_LINE_STRIP, ribbon_array);
-	debug_mesh->add_surface_from_arrays(Mesh::PRIMITIVE_LINES, bone_array);
-	debug_mesh->surface_set_material(0, debug_material);
-	debug_mesh->surface_set_material(1, debug_material);
-
-	RS::get_singleton()->instance_set_base(debug_instance, debug_mesh->get_rid());
-	if (is_inside_tree()) {
-		RS::get_singleton()->instance_set_scenario(debug_instance, get_world_3d()->get_scenario());
-		RS::get_singleton()->instance_set_transform(debug_instance, get_global_transform());
-		RS::get_singleton()->instance_set_visible(debug_instance, is_visible_in_tree());
+	if (p_what == NOTIFICATION_TRANSFORM_CHANGED && is_inside_tree() && update_callback.is_valid()) {
+		update_callback.call();
 	}
 }
 
@@ -234,7 +104,6 @@ void Path3D::_curve_changed() {
 	}
 	SceneTree *st = SceneTree::get_singleton();
 	if (st && st->is_debugging_paths_hint()) {
-		_update_debug_mesh();
 	}
 }
 

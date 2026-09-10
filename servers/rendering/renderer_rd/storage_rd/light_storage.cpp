@@ -634,11 +634,14 @@ void LightStorage::light_instance_free(RID p_light) {
 	light_instance_owner.free(p_light);
 }
 
-void LightStorage::light_instance_set_transform(RID p_light_instance, const Transform3D &p_transform) {
+void LightStorage::light_instance_set_transform(RID p_light_instance, const Transform3D &p_transform, const double *p_origin) {
 	LightInstance *light_instance = light_instance_owner.get_or_null(p_light_instance);
 	ERR_FAIL_NULL(light_instance);
 
 	light_instance->transform = p_transform;
+	for (int axis = 0; axis < 3; axis++) {
+		light_instance->origin[axis] = p_origin ? p_origin[axis] : double(p_transform.origin[axis]);
+	}
 }
 
 void LightStorage::light_instance_set_aabb(RID p_light_instance, const AABB &p_aabb) {
@@ -648,7 +651,7 @@ void LightStorage::light_instance_set_aabb(RID p_light_instance, const AABB &p_a
 	light_instance->aabb = p_aabb;
 }
 
-void LightStorage::light_instance_set_shadow_transform(RID p_light_instance, const Projection &p_projection, const Transform3D &p_transform, float p_far, float p_split, int p_pass, float p_shadow_texel_size, float p_bias_scale, float p_range_begin, const Vector2 &p_uv_scale) {
+void LightStorage::light_instance_set_shadow_transform(RID p_light_instance, const Projection &p_projection, const Transform3D &p_transform, float p_far, float p_split, int p_pass, float p_shadow_texel_size, float p_bias_scale, float p_range_begin, const Vector2 &p_uv_scale, const double *p_origin) {
 	LightInstance *light_instance = light_instance_owner.get_or_null(p_light_instance);
 	ERR_FAIL_NULL(light_instance);
 
@@ -656,6 +659,9 @@ void LightStorage::light_instance_set_shadow_transform(RID p_light_instance, con
 
 	light_instance->shadow_transform[p_pass].camera = p_projection;
 	light_instance->shadow_transform[p_pass].transform = p_transform;
+	for (int axis = 0; axis < 3; axis++) {
+		light_instance->shadow_transform[p_pass].origin[axis] = p_origin ? p_origin[axis] : double(p_transform.origin[axis]);
+	}
 	light_instance->shadow_transform[p_pass].farplane = p_far;
 	light_instance->shadow_transform[p_pass].split = p_split;
 	light_instance->shadow_transform[p_pass].bias_scale = p_bias_scale;
@@ -759,7 +765,14 @@ void LightStorage::prepare_light_buffers(RenderDataRD *p_render_data, const Page
 
 	RendererRD::TextureStorage *texture_storage = RendererRD::TextureStorage::get_singleton();
 
-	Transform3D inverse_transform = p_camera_transform.affine_inverse();
+	Transform3D inverse_transform(p_camera_transform.basis.inverse());
+	auto camera_relative = [&](const Transform3D &p_transform, const double *p_origin) {
+		Transform3D relative = p_transform;
+		for (int axis = 0; axis < 3; axis++) {
+			relative.origin[axis] = p_origin[axis] - p_render_data->scene_data->cam_origin[axis];
+		}
+		return relative;
+	};
 
 	r_directional_light_count = 0;
 	r_positional_light_count = 0;
@@ -792,7 +805,7 @@ void LightStorage::prepare_light_buffers(RenderDataRD *p_render_data, const Page
 
 					DirectionalLightData &light_data = directional_lights[r_directional_light_count];
 
-					Transform3D light_transform = light_instance->transform;
+					Transform3D light_transform = camera_relative(light_instance->transform, light_instance->origin);
 
 					Vector3 direction = inverse_transform.basis.xform(light_transform.basis.xform(Vector3(0, 0, 1))).normalized();
 
@@ -872,7 +885,7 @@ void LightStorage::prepare_light_buffers(RenderDataRD *p_render_data, const Page
 							Projection rectm;
 							rectm.set_light_atlas_rect(atlas_rect);
 
-							Transform3D modelview = (inverse_transform * light_instance->shadow_transform[j].transform).inverse();
+							Transform3D modelview = (inverse_transform * camera_relative(light_instance->shadow_transform[j].transform, light_instance->shadow_transform[j].origin)).inverse();
 
 							Projection shadow_mtx = rectm * bias * matrix * modelview;
 							light_data.shadow_split_offsets[j] = split;
@@ -918,8 +931,8 @@ void LightStorage::prepare_light_buffers(RenderDataRD *p_render_data, const Page
 						continue;
 					}
 
-					Transform3D light_transform = light_instance->transform;
-					const real_t distance = p_camera_transform.origin.distance_to(light_transform.origin);
+					Transform3D light_transform = camera_relative(light_instance->transform, light_instance->origin);
+					const real_t distance = light_transform.origin.length();
 
 					if (light->distance_fade) {
 						const float fade_begin = light->distance_fade_begin;
@@ -943,8 +956,8 @@ void LightStorage::prepare_light_buffers(RenderDataRD *p_render_data, const Page
 						continue;
 					}
 
-					Transform3D light_transform = light_instance->transform;
-					const real_t distance = p_camera_transform.origin.distance_to(light_transform.origin);
+					Transform3D light_transform = camera_relative(light_instance->transform, light_instance->origin);
+					const real_t distance = light_transform.origin.length();
 
 					if (light->distance_fade) {
 						const float fade_begin = light->distance_fade_begin;
@@ -968,8 +981,8 @@ void LightStorage::prepare_light_buffers(RenderDataRD *p_render_data, const Page
 						continue;
 					}
 
-					Transform3D light_transform = light_instance->transform;
-					const real_t distance = p_camera_transform.origin.distance_to(light_transform.origin);
+					Transform3D light_transform = camera_relative(light_instance->transform, light_instance->origin);
+					const real_t distance = light_transform.origin.length();
 
 					if (light->distance_fade) {
 						const float fade_begin = light->distance_fade_begin;
@@ -1040,7 +1053,7 @@ void LightStorage::prepare_light_buffers(RenderDataRD *p_render_data, const Page
 			}
 
 			LightData &light_data = *light_data_ptr;
-			Transform3D light_transform = light_instance->transform;
+			Transform3D light_transform = camera_relative(light_instance->transform, light_instance->origin);
 
 			float sign = light->negative ? -1 : 1;
 			Color linear_col = light->color.srgb_to_linear();
@@ -1277,7 +1290,7 @@ void LightStorage::prepare_light_buffers(RenderDataRD *p_render_data, const Page
 				light_data.shadow_opacity = 0.0;
 			}
 
-			r_preparation.cluster_lights.push_back({ type, light_transform, radius, spot_angle, area_size });
+			r_preparation.cluster_lights.push_back({ type, light_instance->transform, radius, spot_angle, area_size, { light_instance->origin[0], light_instance->origin[1], light_instance->origin[2] } });
 			r_positional_light_count++;
 		}
 	};
@@ -1288,7 +1301,7 @@ void LightStorage::publish_light_buffers(const LightBufferPreparation &p_prepara
 	const uint32_t r_directional_light_count = p_preparation.directional_light_count;
 	const uint32_t r_positional_light_count = p_preparation.positional_light_count;
 	for (const auto &light : p_preparation.cluster_lights) {
-		RendererSceneRenderRD::get_singleton()->setup_added_light(light.type, light.transform, light.radius, light.spot_angle, light.area_size);
+		RendererSceneRenderRD::get_singleton()->setup_added_light(light.type, light.transform, light.radius, light.spot_angle, light.area_size, light.origin);
 	}
 
 	const uint64_t frame = RSG::rasterizer->get_frame_number();
@@ -1700,11 +1713,14 @@ void LightStorage::reflection_probe_instance_free(RID p_instance) {
 	reflection_probe_instance_owner.free(p_instance);
 }
 
-void LightStorage::reflection_probe_instance_set_transform(RID p_instance, const Transform3D &p_transform) {
+void LightStorage::reflection_probe_instance_set_transform(RID p_instance, const Transform3D &p_transform, const double *p_origin) {
 	ReflectionProbeInstance *rpi = reflection_probe_instance_owner.get_or_null(p_instance);
 	ERR_FAIL_NULL(rpi);
 
 	rpi->transform = p_transform;
+	for (int axis = 0; axis < 3; axis++) {
+		rpi->origin[axis] = p_origin ? p_origin[axis] : double(p_transform.origin[axis]);
+	}
 	rpi->dirty = true;
 }
 
@@ -2107,11 +2123,14 @@ void LightStorage::update_reflection_probe_buffer(RenderDataRD *p_render_data, c
 		reflection_ubo.ambient[2] = ambient_linear.b * interior_ambient_energy;
 
 		Transform3D transform = rpi->transform;
-		Transform3D proj = (p_camera_inverse_transform * transform).inverse();
+		for (int axis = 0; axis < 3; axis++) {
+			transform.origin[axis] = rpi->origin[axis] - p_render_data->scene_data->cam_origin[axis];
+		}
+		Transform3D proj = (Transform3D(p_camera_inverse_transform.basis) * transform).inverse();
 		MaterialStorage::store_transform(proj, reflection_ubo.local_matrix);
 
 		// hook for subclass to do further processing.
-		RendererSceneRenderRD::get_singleton()->setup_added_reflection_probe(transform, extents);
+		RendererSceneRenderRD::get_singleton()->setup_added_reflection_probe(rpi->transform, extents, rpi->origin);
 	}
 
 	if (reflection_count) {
@@ -2406,10 +2425,13 @@ void LightStorage::lightmap_instance_free(RID p_lightmap) {
 	lightmap_instance_owner.free(p_lightmap);
 }
 
-void LightStorage::lightmap_instance_set_transform(RID p_lightmap, const Transform3D &p_transform) {
+void LightStorage::lightmap_instance_set_transform(RID p_lightmap, const Transform3D &p_transform, const double *p_origin) {
 	LightmapInstance *li = lightmap_instance_owner.get_or_null(p_lightmap);
 	ERR_FAIL_NULL(li);
 	li->transform = p_transform;
+	for (int axis = 0; axis < 3; axis++) {
+		li->origin[axis] = p_origin ? p_origin[axis] : double(p_transform.origin[axis]);
+	}
 }
 
 /* SHADOW ATLAS API */

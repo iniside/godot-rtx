@@ -116,22 +116,10 @@ void Path2D::_debug_create() {
 	if (debug_mesh_rid.is_null()) {
 		debug_mesh_rid = RS::get_singleton()->mesh_create();
 	}
-
-	if (debug_instance.is_null()) {
-		debug_instance = RS::get_singleton()->instance_create();
-	}
-
-	RS::get_singleton()->instance_set_base(debug_instance, debug_mesh_rid);
-	RS::get_singleton()->instance_geometry_set_cast_shadows_setting(debug_instance, RSE::SHADOW_CASTING_SETTING_OFF);
 }
 
 void Path2D::_debug_free() {
 	ERR_FAIL_NULL(RS::get_singleton());
-
-	if (debug_instance.is_valid()) {
-		RS::get_singleton()->free_rid(debug_instance);
-		debug_instance = RID();
-	}
 	if (debug_mesh_rid.is_valid()) {
 		RS::get_singleton()->free_rid(debug_mesh_rid);
 		debug_mesh_rid = RID();
@@ -153,7 +141,7 @@ void Path2D::_debug_update() {
 		return;
 	}
 
-	if (debug_mesh_rid.is_null() || debug_instance.is_null()) {
+	if (debug_mesh_rid.is_null()) {
 		_debug_create();
 	}
 

@@ -30,6 +30,8 @@
 
 #pragma once
 
+#include "servers/rendering/renderer_scene_data.h"
+
 #include "core/math/dynamic_bvh.h"
 #include "core/templates/hash_map.h"
 #include "scene/3d/camera_3d.h"
@@ -44,14 +46,14 @@ class EditorNode3DGizmo : public Node3DGizmo {
 	GDCLASS(EditorNode3DGizmo, Node3DGizmo);
 
 	struct Instance {
-		RID instance;
+		ToolRenderData instance;
 		Ref<Mesh> mesh;
 		Ref<Material> material;
 		Ref<SkinReference> skin_reference;
 		bool extra_margin = false;
 		Transform3D xform;
 
-		void create_instance(Node3D *p_base, bool p_hidden = false);
+		void create_instance(RID p_scenario, bool p_hidden = false);
 	};
 
 	bool selected;

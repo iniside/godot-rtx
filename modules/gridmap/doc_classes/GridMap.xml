@@ -28,13 +28,6 @@
 				Clears all baked meshes. See [method make_baked_meshes].
 			</description>
 		</method>
-		<method name="get_bake_mesh_instance">
-			<return type="RID" />
-			<param index="0" name="idx" type="int" />
-			<description>
-				Returns [RID] of a baked mesh with the given [param idx].
-			</description>
-		</method>
 		<method name="get_bake_meshes">
 			<return type="Array" />
 			<description>

@@ -32,9 +32,8 @@
 
 #include "editor/inspector/editor_inspector.h"
 #include "editor/plugins/editor_plugin.h"
-#include "scene/3d/camera_3d.h"
-#include "scene/3d/light_3d.h"
-#include "scene/3d/mesh_instance_3d.h"
+#include "scene/resources/mesh.h"
+#include "servers/rendering/renderer_scene_data.h"
 #include "scene/gui/subviewport_container.h"
 #include "scene/resources/camera_attributes.h"
 
@@ -48,11 +47,12 @@ class MeshEditor : public SubViewportContainer {
 	float rot_y;
 
 	SubViewport *viewport = nullptr;
-	MeshInstance3D *mesh_instance = nullptr;
-	Node3D *rotation = nullptr;
-	DirectionalLight3D *light1 = nullptr;
-	DirectionalLight3D *light2 = nullptr;
-	Camera3D *camera = nullptr;
+	ToolRenderData mesh_instance;
+	ToolRenderData light1;
+	ToolRenderData light2;
+	Transform3D mesh_transform;
+	RID scenario;
+	RID camera;
 	Ref<CameraAttributesPractical> camera_attributes;
 
 	Ref<Mesh> mesh;
@@ -77,6 +77,7 @@ protected:
 public:
 	void edit(Ref<Mesh> p_mesh);
 	MeshEditor();
+	~MeshEditor();
 };
 
 class EditorInspectorPluginMesh : public EditorInspectorPlugin {

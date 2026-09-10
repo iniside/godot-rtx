@@ -88,7 +88,7 @@ public:
 	};
 
 	struct Context {
-		Vector3 debug_anchor;
+		double debug_anchor[3] = {};
 		bool debug_anchor_frozen = false;
 		Cascade cascades[MAX_CASCADES];
 		VolumeDescriptor descriptors[MAX_CASCADES];
@@ -121,7 +121,7 @@ public:
 	DDGIEffect();
 	~DDGIEffect();
 	Context *create_context(const RendererEnvironmentStorage::RaytracingSettings &p_settings);
-	bool prepare(Context &p_context, const Vector3 &p_camera, const Vector3 &p_rt_origin, uint64_t p_history_epoch, int p_update_budget);
+	bool prepare(Context &p_context, const double *p_camera, const double *p_rt_origin, uint64_t p_history_epoch, int p_update_budget);
 	bool begin_update(Context &p_context, uint32_t p_cascade);
 	bool finish_update(Context &p_context, uint32_t p_cascade);
 	RID get_trace_shader(bool p_radiance_array);

@@ -105,30 +105,10 @@ class GridMap : public Node3D {
 		struct NavigationCell {
 			RID region;
 			Transform3D xform;
-			RID navigation_mesh_debug_instance;
 			uint32_t navigation_layers = 1;
 		};
 
-		struct MultimeshInstance {
-			RID instance;
-			RID multimesh;
-			struct Item {
-				int index = 0;
-				Transform3D transform;
-				IndexKey key;
-			};
-
-			Vector<Item> items; //tools only, for changing visibility
-		};
-
-		Vector<MultimeshInstance> multimesh_instances;
 		HashSet<IndexKey> cells;
-		RID collision_debug;
-		RID collision_debug_instance;
-#ifdef DEBUG_ENABLED
-		RID navigation_debug_edge_connections_instance;
-		Ref<ArrayMesh> navigation_debug_edge_connections_mesh;
-#endif // DEBUG_ENABLED
 
 		bool dirty = false;
 		RID static_body;
@@ -208,11 +188,6 @@ class GridMap : public Node3D {
 	bool _octant_update(const OctantKey &p_key);
 	void _octant_clean_up(const OctantKey &p_key);
 	void _octant_transform(const OctantKey &p_key);
-#if defined(DEBUG_ENABLED) && !defined(NAVIGATION_3D_DISABLED)
-	void _update_octant_navigation_debug_edge_connections_mesh(const OctantKey &p_key);
-	void _navigation_map_changed(RID p_map);
-	void _update_navigation_debug_edge_connections();
-#endif // defined(DEBUG_ENABLED) && !defined(NAVIGATION_3D_DISABLED)
 	bool awaiting_update = false;
 
 	void _queue_octants_dirty();
@@ -228,31 +203,12 @@ class GridMap : public Node3D {
 
 	struct BakedMesh {
 		Ref<Mesh> mesh;
-		RID instance;
 	};
 
 	Vector<BakedMesh> baked_meshes;
 
 	bool debug_show_octants = false;
 	Color debug_octant_color = Color(1.0, 1.0, 1.0, 1.0);
-#ifdef DEBUG_ENABLED
-	bool debug_dirty = false;
-	Ref<StandardMaterial3D> debug_octant_line_material;
-
-	void _debug_update();
-	void _debug_update_octants();
-	void _debug_clear_octants();
-
-	RID debug_octant_line_mesh_rid;
-
-	struct OctantDebug {
-		RID debug_line_mesh_rid;
-		RID debug_line_instance_rid;
-	};
-	HashMap<OctantKey, OctantDebug *, OctantKey> debug_octant_map;
-
-	Array _build_octant_line_mesh_arrays() const;
-#endif // DEBUG_ENABLED
 
 protected:
 	bool _set(const StringName &p_name, const Variant &p_value);
@@ -260,7 +216,6 @@ protected:
 	void _get_property_list(List<PropertyInfo> *p_list) const;
 
 	void _notification(int p_what);
-	void _update_visibility();
 	static void _bind_methods();
 
 public:
@@ -360,7 +315,6 @@ public:
 	void clear();
 
 	Array get_bake_meshes();
-	RID get_bake_mesh_instance(int p_idx);
 
 	void set_debug_show_octants(bool p_enable);
 	bool get_debug_show_octants() const;

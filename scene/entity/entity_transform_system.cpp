@@ -145,7 +145,7 @@ void EntityTransformSystem::update() {
 			visibility->effective = effective;
 		}
 		if (changed) {
-			world._mark_changed(world.get_id({ world.generation, entry.entity }));
+			world._mark_changed(world.get_id({ world.generation, entry.entity }), EntityRenderUpdate::POSE);
 		}
 	}
 	reset.clear();
@@ -178,7 +178,7 @@ void EntityTransformSystem::interpolate(double p_fraction) {
 		}
 		if (!entity_pose_equal(transform->render, pose)) {
 			transform->render = pose;
-			world._mark_changed(world.get_id({ world.generation, id }));
+			world._mark_changed(world.get_id({ world.generation, id }), EntityRenderUpdate::POSE);
 		}
 	}
 	render_dirty.clear();

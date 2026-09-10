@@ -36,6 +36,7 @@
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/button.h"
 #include "scene/main/viewport.h"
+#include "servers/rendering/rendering_server.h"
 
 void MeshEditor::gui_input(const Ref<InputEvent> &p_event) {
 	ERR_FAIL_COND(p_event.is_null());
@@ -59,6 +60,10 @@ void MeshEditor::_update_theme_item_cache() {
 
 void MeshEditor::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_POST_ENTER_TREE: {
+			RS::get_singleton()->viewport_set_scenario(viewport->get_viewport_rid(), scenario);
+			RS::get_singleton()->viewport_attach_camera(viewport->get_viewport_rid(), camera);
+		} break;
 		case NOTIFICATION_THEME_CHANGED: {
 			light_1_switch->set_button_icon(theme_cache.light_1_icon);
 			light_2_switch->set_button_icon(theme_cache.light_2_icon);
@@ -70,16 +75,18 @@ void MeshEditor::_update_rotation() {
 	Transform3D t;
 	t.basis.rotate(Vector3(0, 1, 0), -rot_y);
 	t.basis.rotate(Vector3(1, 0, 0), -rot_x);
-	rotation->set_transform(t);
+	mesh_instance.transform = t * mesh_transform;
+	mesh_instance.publish();
 }
 
 void MeshEditor::edit(Ref<Mesh> p_mesh) {
 	mesh = p_mesh;
-	mesh_instance->set_mesh(mesh);
+	mesh_instance.base = mesh->get_rid();
+	mesh_instance.base_asset = mesh;
+	mesh_transform = Transform3D();
 
 	rot_x = Math::deg_to_rad(-15.0);
 	rot_y = Math::deg_to_rad(30.0);
-	_update_rotation();
 
 	AABB aabb = mesh->get_aabb();
 	Vector3 ofs = aabb.get_center();
@@ -91,50 +98,46 @@ void MeshEditor::edit(Ref<Mesh> p_mesh) {
 		xform.basis.scale(Vector3(m, m, m));
 		xform.origin = -xform.basis.xform(ofs); //-ofs*m;
 		//xform.origin.z -= aabb.get_longest_axis_size() * 2;
-		mesh_instance->set_transform(xform);
+		mesh_transform = xform;
 	}
+	_update_rotation();
 }
 
 void MeshEditor::_on_light_1_switch_pressed() {
-	light1->set_visible(light_1_switch->is_pressed());
+	light1.visible = light_1_switch->is_pressed();
+	light1.publish();
 }
 
 void MeshEditor::_on_light_2_switch_pressed() {
-	light2->set_visible(light_2_switch->is_pressed());
+	light2.visible = light_2_switch->is_pressed();
+	light2.publish();
 }
 
 MeshEditor::MeshEditor() {
 	viewport = memnew(SubViewport);
-	Ref<World3D> world_3d;
-	world_3d.instantiate();
-	viewport->set_world_3d(world_3d); // Use own world.
 	add_child(viewport);
 	viewport->set_disable_input(true);
 	viewport->set_msaa_3d(Viewport::MSAA_4X);
 	set_stretch(true);
-	camera = memnew(Camera3D);
-	camera->set_transform(Transform3D(Basis(), Vector3(0, 0, 1.1)));
-	camera->set_perspective(45, 0.1, 10);
-	viewport->add_child(camera);
-
+	RenderingServer *rs = RS::get_singleton();
+	scenario = rs->scenario_create();
+	camera = rs->camera_create();
+	rs->camera_set_transform(camera, Transform3D(Basis(), Vector3(0, 0, 1.1)));
+	rs->camera_set_perspective(camera, 45, 0.1, 10);
 	if (GLOBAL_GET("rendering/lights_and_shadows/use_physical_light_units")) {
 		camera_attributes.instantiate();
-		camera->set_attributes(camera_attributes);
+		rs->camera_set_camera_attributes(camera, camera_attributes->get_rid());
 	}
-
-	light1 = memnew(DirectionalLight3D);
-	light1->set_transform(Transform3D().looking_at(Vector3(-1, -1, -1), Vector3(0, 1, 0)));
-	viewport->add_child(light1);
-
-	light2 = memnew(DirectionalLight3D);
-	light2->set_transform(Transform3D().looking_at(Vector3(0, 1, 0), Vector3(0, 0, 1)));
-	light2->set_color(Color(0.7, 0.7, 0.7));
-	viewport->add_child(light2);
-
-	rotation = memnew(Node3D);
-	viewport->add_child(rotation);
-	mesh_instance = memnew(MeshInstance3D);
-	rotation->add_child(mesh_instance);
+	light1 = ToolRenderData::create(rs->directional_light_create(), scenario);
+	light1.transform = Transform3D().looking_at(Vector3(-1, -1, -1), Vector3(0, 1, 0));
+	rs->light_set_param(light1.base, RSE::LIGHT_PARAM_INTENSITY, 100000.0);
+	light1.publish();
+	light2 = ToolRenderData::create(rs->directional_light_create(), scenario);
+	light2.transform = Transform3D().looking_at(Vector3(0, 1, 0), Vector3(0, 0, 1));
+	rs->light_set_color(light2.base, Color(0.7, 0.7, 0.7));
+	rs->light_set_param(light2.base, RSE::LIGHT_PARAM_INTENSITY, 100000.0);
+	light2.publish();
+	mesh_instance = ToolRenderData::create(RID(), scenario);
 
 	set_custom_minimum_size(Size2(1, 150) * EDSCALE);
 
@@ -167,6 +170,18 @@ MeshEditor::MeshEditor() {
 	rot_y = 0;
 
 	EditorNode::get_singleton()->register_hdr_viewport(viewport);
+}
+
+MeshEditor::~MeshEditor() {
+	RID light1_base = light1.base;
+	RID light2_base = light2.base;
+	mesh_instance.clear();
+	light1.clear();
+	light2.clear();
+	RS::get_singleton()->free_rid(light1_base);
+	RS::get_singleton()->free_rid(light2_base);
+	RS::get_singleton()->free_rid(camera);
+	RS::get_singleton()->free_rid(scenario);
 }
 
 ///////////////////////

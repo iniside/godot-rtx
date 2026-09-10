@@ -180,7 +180,6 @@ void Node3D::_notification(int p_what) {
 			_notify_dirty();
 
 			notification(NOTIFICATION_ENTER_WORLD);
-			_update_visibility_parent(true);
 
 			if (is_inside_tree() && get_tree()->is_physics_interpolation_enabled()) {
 				// Always reset FTI when entering tree and update the servers,
@@ -235,7 +234,6 @@ void Node3D::_notification(int p_what) {
 			data.index_in_parent = UINT32_MAX;
 
 			data.parent = nullptr;
-			_update_visibility_parent(true);
 			_disable_client_physics_interpolation();
 		} break;
 
@@ -1300,45 +1298,9 @@ void Node3D::force_update_transform() {
 	notification(NOTIFICATION_TRANSFORM_CHANGED);
 }
 
-void Node3D::_update_visibility_parent(bool p_update_root) {
-	RID new_parent;
-
-	if (!visibility_parent_path.is_empty()) {
-		if (!p_update_root) {
-			return;
-		}
-		Node *parent = get_node_or_null(visibility_parent_path);
-		ERR_FAIL_NULL_MSG(parent, "Can't find visibility parent node at path: " + String(visibility_parent_path));
-		ERR_FAIL_COND_MSG(parent == this, "The visibility parent can't be the same node.");
-		GeometryInstance3D *gi = Object::cast_to<GeometryInstance3D>(parent);
-		ERR_FAIL_NULL_MSG(gi, "The visibility parent node must be a GeometryInstance3D, at path: " + String(visibility_parent_path));
-		new_parent = gi ? gi->get_instance() : RID();
-	} else if (data.parent) {
-		new_parent = data.parent->data.visibility_parent;
-	}
-
-	if (new_parent == data.visibility_parent) {
-		return;
-	}
-
-	data.visibility_parent = new_parent;
-
-	VisualInstance3D *vi = Object::cast_to<VisualInstance3D>(this);
-	if (vi) {
-		RS::get_singleton()->instance_set_visibility_parent(vi->get_instance(), data.visibility_parent);
-	}
-
-	for (Node3D *c : data.node3d_children) {
-		c->_update_visibility_parent(false);
-	}
-}
-
 void Node3D::set_visibility_parent(const NodePath &p_path) {
 	ERR_MAIN_THREAD_GUARD;
 	visibility_parent_path = p_path;
-	if (is_inside_tree()) {
-		_update_visibility_parent(true);
-	}
 }
 
 NodePath Node3D::get_visibility_parent() const {

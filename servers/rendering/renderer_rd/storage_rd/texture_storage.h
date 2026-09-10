@@ -356,6 +356,7 @@ private:
 	struct DecalInstance {
 		RID decal;
 		Transform3D transform;
+		double origin[3] = {};
 		float sorting_offset = 0.0;
 		uint32_t cull_mask = 0;
 		RendererRD::ForwardID forward_id = -1;
@@ -398,8 +399,8 @@ private:
 	DecalInstanceSort *decal_sort = nullptr;
 	RID decal_buffer;
 
-	bool _get_decal_sort(RID p_instance, const Transform3D &p_camera_xform, DecalInstanceSort &r_sort) const;
-	bool _pack_decal(const DecalInstanceSort &p_sort, const Transform3D &p_frame, DecalData &r_data);
+	bool _get_decal_sort(RID p_instance, const Transform3D &p_camera_xform, DecalInstanceSort &r_sort, const double *p_camera_origin) const;
+	bool _pack_decal(const DecalInstanceSort &p_sort, const Transform3D &p_frame, DecalData &r_data, const double *p_frame_origin);
 
 	/* RENDER TARGET API */
 
@@ -814,7 +815,7 @@ public:
 
 	virtual RID decal_instance_create(RID p_decal) override;
 	virtual void decal_instance_free(RID p_decal_instance) override;
-	virtual void decal_instance_set_transform(RID p_decal_instance, const Transform3D &p_transform) override;
+	virtual void decal_instance_set_transform(RID p_decal_instance, const Transform3D &p_transform, const double *p_origin = nullptr) override;
 	virtual void decal_instance_set_sorting_offset(RID p_decal_instance, float p_sorting_offset) override;
 
 	_FORCE_INLINE_ RID decal_instance_get_base(RID p_decal_instance) const {
@@ -851,12 +852,13 @@ public:
 		struct ClusterDecal {
 			Transform3D transform;
 			Vector3 half_size;
+			double origin[3];
 		};
 		LocalVector<ClusterDecal> cluster_decals;
 	};
-	void prepare_decal_buffer(const PagedArray<RID> &p_decals, const Transform3D &p_camera_xform, DecalBufferPreparation &r_preparation);
+	void prepare_decal_buffer(const PagedArray<RID> &p_decals, const Transform3D &p_camera_xform, DecalBufferPreparation &r_preparation, const double *p_camera_origin = nullptr);
 	void publish_decal_buffer(const DecalBufferPreparation &p_preparation);
-	void update_decal_buffer(const PagedArray<RID> &p_decals, const Transform3D &p_camera_xform);
+	void update_decal_buffer(const PagedArray<RID> &p_decals, const Transform3D &p_camera_xform, const double *p_camera_origin = nullptr);
 
 	struct RTDecalSnapshot {
 		struct TextureGenerationInput {
@@ -868,7 +870,7 @@ public:
 		uint32_t count = 0;
 		uint64_t data_generation = 0;
 	};
-	RTDecalSnapshot build_rt_decal_snapshot(const PagedArray<RID> &p_resident_decals, const PagedArray<RID> &p_camera_decals, const Transform3D &p_camera_xform, const Vector3 &p_rt_origin);
+	RTDecalSnapshot build_rt_decal_snapshot(const PagedArray<RID> &p_resident_decals, const PagedArray<RID> &p_camera_decals, const Transform3D &p_camera_xform, const double *p_rt_origin, const double *p_camera_origin);
 
 	/* RENDER TARGET API */
 

@@ -149,7 +149,6 @@ private:
 		bool fti_is_identity_xform : 1;
 		bool fti_processed : 1;
 
-		RID visibility_parent;
 
 		Node3D *parent = nullptr;
 
@@ -185,8 +184,6 @@ private:
 
 	void _propagate_visibility_changed();
 
-	void _propagate_visibility_parent();
-	void _update_visibility_parent(bool p_update_root);
 	void _propagate_transform_changed_deferred();
 
 protected:

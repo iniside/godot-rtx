@@ -41,13 +41,6 @@
 void CollisionObject3D::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
-			if (_are_collision_shapes_visible()) {
-				debug_shape_old_transform = get_global_transform();
-				for (const KeyValue<uint32_t, ShapeData> &E : shapes) {
-					debug_shapes_to_update.insert(E.key);
-				}
-				_update_debug_shapes();
-			}
 #ifdef TOOLS_ENABLED
 			if (Engine::get_singleton()->is_editor_hint()) {
 				set_notify_local_transform(true); // Used for warnings and only in editor.
@@ -56,9 +49,6 @@ void CollisionObject3D::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_EXIT_TREE: {
-			if (debug_shapes_count > 0) {
-				_clear_debug_shapes();
-			}
 		} break;
 
 		case NOTIFICATION_ENTER_WORLD: {
@@ -103,8 +93,6 @@ void CollisionObject3D::_notification(int p_what) {
 			} else {
 				PhysicsServer3D::get_singleton()->body_set_state(rid, PhysicsServer3D::BODY_STATE_TRANSFORM, get_global_transform());
 			}
-
-			_on_transform_changed();
 		} break;
 
 		case NOTIFICATION_VISIBILITY_CHANGED: {
@@ -349,111 +337,6 @@ void CollisionObject3D::_update_pickable() {
 	}
 }
 
-bool CollisionObject3D::_are_collision_shapes_visible() {
-	return is_inside_tree() && get_tree()->is_debugging_collisions_hint() && !Engine::get_singleton()->is_editor_hint();
-}
-
-void CollisionObject3D::_update_shape_data(uint32_t p_owner) {
-	if (_are_collision_shapes_visible()) {
-		if (debug_shapes_to_update.is_empty()) {
-			callable_mp(this, &CollisionObject3D::_update_debug_shapes).call_deferred();
-		}
-		debug_shapes_to_update.insert(p_owner);
-	}
-}
-
-void CollisionObject3D::_shape_changed(const Ref<Shape3D> &p_shape) {
-	for (KeyValue<uint32_t, ShapeData> &E : shapes) {
-		ShapeData &shapedata = E.value;
-		ShapeData::ShapeBase *shape_bases = shapedata.shapes.ptrw();
-		for (int i = 0; i < shapedata.shapes.size(); i++) {
-			ShapeData::ShapeBase &s = shape_bases[i];
-			if (s.shape == p_shape && s.debug_shape.is_valid()) {
-				Ref<Mesh> mesh = s.shape->get_debug_mesh();
-				RS::get_singleton()->instance_set_base(s.debug_shape, mesh->get_rid());
-			}
-		}
-	}
-}
-
-void CollisionObject3D::_update_debug_shapes() {
-	ERR_FAIL_NULL(RenderingServer::get_singleton());
-
-	if (!is_inside_tree()) {
-		debug_shapes_to_update.clear();
-		return;
-	}
-
-	for (const uint32_t &shapedata_idx : debug_shapes_to_update) {
-		if (shapes.has(shapedata_idx)) {
-			ShapeData &shapedata = shapes[shapedata_idx];
-			ShapeData::ShapeBase *shape_bases = shapedata.shapes.ptrw();
-			for (int i = 0; i < shapedata.shapes.size(); i++) {
-				ShapeData::ShapeBase &s = shape_bases[i];
-				if (s.shape.is_null() || shapedata.disabled) {
-					if (s.debug_shape.is_valid()) {
-						RS::get_singleton()->free_rid(s.debug_shape);
-						s.debug_shape = RID();
-						--debug_shapes_count;
-					}
-					continue;
-				}
-
-				if (s.debug_shape.is_null()) {
-					s.debug_shape = RS::get_singleton()->instance_create();
-					RS::get_singleton()->instance_set_scenario(s.debug_shape, get_world_3d()->get_scenario());
-					s.shape->connect_changed(callable_mp(this, &CollisionObject3D::_shape_changed).bind(s.shape), CONNECT_DEFERRED);
-					++debug_shapes_count;
-				}
-
-				Ref<Mesh> mesh = s.shape->get_debug_mesh();
-				RS::get_singleton()->instance_set_base(s.debug_shape, mesh->get_rid());
-				RS::get_singleton()->instance_set_transform(s.debug_shape, get_global_transform() * shapedata.xform);
-			}
-		}
-	}
-	debug_shapes_to_update.clear();
-}
-
-void CollisionObject3D::_clear_debug_shapes() {
-	ERR_FAIL_NULL(RenderingServer::get_singleton());
-
-	for (KeyValue<uint32_t, ShapeData> &E : shapes) {
-		ShapeData &shapedata = E.value;
-		ShapeData::ShapeBase *shape_bases = shapedata.shapes.ptrw();
-		for (int i = 0; i < shapedata.shapes.size(); i++) {
-			ShapeData::ShapeBase &s = shape_bases[i];
-			if (s.debug_shape.is_valid()) {
-				RS::get_singleton()->free_rid(s.debug_shape);
-				s.debug_shape = RID();
-				if (s.shape.is_valid()) {
-					s.shape->disconnect_changed(callable_mp(this, &CollisionObject3D::_update_shape_data));
-				}
-			}
-		}
-	}
-	debug_shapes_count = 0;
-}
-
-void CollisionObject3D::_on_transform_changed() {
-	if (debug_shapes_count > 0 && !debug_shape_old_transform.is_equal_approx(get_global_transform())) {
-		debug_shape_old_transform = get_global_transform();
-		for (KeyValue<uint32_t, ShapeData> &E : shapes) {
-			ShapeData &shapedata = E.value;
-			if (shapedata.disabled) {
-				continue; // If disabled then there are no debug shapes to update.
-			}
-			const ShapeData::ShapeBase *shape_bases = shapedata.shapes.ptr();
-			for (int i = 0; i < shapedata.shapes.size(); i++) {
-				if (shape_bases[i].debug_shape.is_null()) {
-					continue;
-				}
-				RS::get_singleton()->instance_set_transform(shape_bases[i].debug_shape, debug_shape_old_transform * shapedata.xform);
-			}
-		}
-	}
-}
-
 void CollisionObject3D::set_ray_pickable(bool p_ray_pickable) {
 	ray_pickable = p_ray_pickable;
 	_update_pickable();
@@ -562,7 +445,6 @@ void CollisionObject3D::shape_owner_set_disabled(uint32_t p_owner, bool p_disabl
 			PhysicsServer3D::get_singleton()->body_set_shape_disabled(rid, sd.shapes[i].index, p_disabled);
 		}
 	}
-	_update_shape_data(p_owner);
 }
 
 bool CollisionObject3D::is_shape_owner_disabled(uint32_t p_owner) const {
@@ -598,8 +480,6 @@ void CollisionObject3D::shape_owner_set_transform(uint32_t p_owner, const Transf
 			PhysicsServer3D::get_singleton()->body_set_shape_transform(rid, sd.shapes[i].index, p_transform);
 		}
 	}
-
-	_update_shape_data(p_owner);
 }
 Transform3D CollisionObject3D::shape_owner_get_transform(uint32_t p_owner) const {
 	ERR_FAIL_COND_V(!shapes.has(p_owner), Transform3D());
@@ -630,8 +510,6 @@ void CollisionObject3D::shape_owner_add_shape(uint32_t p_owner, RequiredParam<Sh
 	sd.shapes.push_back(s);
 
 	total_subshapes++;
-
-	_update_shape_data(p_owner);
 	update_gizmos();
 }
 
@@ -669,13 +547,6 @@ void CollisionObject3D::shape_owner_remove_shape(uint32_t p_owner, int p_shape) 
 		PhysicsServer3D::get_singleton()->body_remove_shape(rid, index_to_remove);
 	}
 
-	if (s.debug_shape.is_valid()) {
-		RS::get_singleton()->free_rid(s.debug_shape);
-		if (s.shape.is_valid()) {
-			s.shape->disconnect_changed(callable_mp(this, &CollisionObject3D::_shape_changed));
-		}
-		--debug_shapes_count;
-	}
 
 	shapes[p_owner].shapes.remove_at(p_shape);
 

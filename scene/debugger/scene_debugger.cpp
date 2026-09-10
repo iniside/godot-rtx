@@ -496,11 +496,6 @@ Error SceneDebugger::_msg_transform_camera_2d(const Array &p_args) {
 }
 
 #ifndef _3D_DISABLED
-Error SceneDebugger::_msg_runtime_node_select_reset_camera_3d(const Array &p_args) {
-	RuntimeNodeSelect::get_singleton()->_reset_camera_3d();
-	return OK;
-}
-
 Error SceneDebugger::_msg_transform_camera_3d(const Array &p_args) {
 	ERR_FAIL_COND_V(p_args.size() < 5, ERR_INVALID_DATA);
 	ERR_FAIL_COND_V(!SceneTree::get_singleton()->get_root()->is_camera_3d_override_enabled(), ERR_BUG);
@@ -655,7 +650,6 @@ void SceneDebugger::_init_message_handlers() {
 	message_handlers["runtime_node_select_set_prefer_group"] = _msg_runtime_node_select_set_prefer_group;
 	message_handlers["runtime_node_select_reset_camera_2d"] = _msg_runtime_node_select_reset_camera_2d;
 #ifndef _3D_DISABLED
-	message_handlers["runtime_node_select_reset_camera_3d"] = _msg_runtime_node_select_reset_camera_3d;
 #endif
 	message_handlers["rq_screenshot"] = _msg_rq_screenshot;
 	message_handlers["report_window_focused"] = _msg_report_window_focused;

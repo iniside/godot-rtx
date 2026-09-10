@@ -33,14 +33,6 @@
 #include "core/object/class_db.h"
 #include "servers/rendering/rendering_server.h"
 
-void RTProceduralInstance3D::_notification(int p_what) {
-	switch (p_what) {
-		case NOTIFICATION_ENTER_TREE: {
-			_update_procedural();
-		} break;
-	}
-}
-
 void RTProceduralInstance3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_size", "size"), &RTProceduralInstance3D::set_size);
 	ClassDB::bind_method(D_METHOD("get_size"), &RTProceduralInstance3D::get_size);
@@ -58,28 +50,6 @@ void RTProceduralInstance3D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "expose_aabb_bounds"), "set_expose_aabb_bounds", "get_expose_aabb_bounds");
 }
 
-PackedFloat32Array RTProceduralInstance3D::_pack_aabb_data() const {
-	const int count = bounds.size();
-	if (count == 0) {
-		return PackedFloat32Array();
-	}
-	PackedFloat32Array packed;
-	packed.resize(count * 6);
-	float *w = packed.ptrw();
-	const AABB *b = bounds.ptr();
-	for (int i = 0; i < count; i++) {
-		const Vector3 mn = b[i].position;
-		const Vector3 mx = b[i].position + b[i].size;
-		w[i * 6 + 0] = mn.x;
-		w[i * 6 + 1] = mn.y;
-		w[i * 6 + 2] = mn.z;
-		w[i * 6 + 3] = mx.x;
-		w[i * 6 + 4] = mx.y;
-		w[i * 6 + 5] = mx.z;
-	}
-	return packed;
-}
-
 AABB RTProceduralInstance3D::_compute_enclosing_aabb() const {
 	if (custom_enclosing_aabb.has_volume()) {
 		return custom_enclosing_aabb;
@@ -95,36 +65,8 @@ AABB RTProceduralInstance3D::_compute_enclosing_aabb() const {
 	return enclosing;
 }
 
-void RTProceduralInstance3D::_update_procedural() {
-	if (!is_inside_tree()) {
-		return;
-	}
-
-	AABB culling_aabb = _compute_enclosing_aabb();
-	set_custom_aabb(culling_aabb);
-	RenderingServer::get_singleton()->instance_set_rt_procedural(get_instance(), true, culling_aabb);
-
-	PackedFloat32Array aabb_data = _pack_aabb_data();
-	RenderingServer::get_singleton()->instance_set_rt_procedural_bounds(get_instance(), aabb_data, expose_aabb_bounds);
-}
-
-void RTProceduralInstance3D::_ensure_null_base_mesh() {
-	// A zero-surface ArrayMesh is the minimum object required to make
-	// RendererSceneCull classify this instance as INSTANCE_MESH so that
-	// instance_set_rt_procedural() can attach procedural RT data to it.
-	// With no surfaces: no vertex/index buffers, no surface caches, no BLAS
-	// built by the mesh pipeline, and nothing added to raster render lists.
-	if (null_base_mesh.is_valid()) {
-		return;
-	}
-	null_base_mesh.instantiate();
-	set_base(null_base_mesh->get_rid());
-}
-
 void RTProceduralInstance3D::set_size(const Vector3 &p_size) {
 	size = p_size.abs();
-	_ensure_null_base_mesh();
-	_update_procedural();
 	update_gizmos();
 }
 
@@ -139,8 +81,6 @@ void RTProceduralInstance3D::set_bounds(const TypedArray<AABB> &p_bounds) {
 	for (int i = 0; i < count; i++) {
 		w[i] = p_bounds[i];
 	}
-	_ensure_null_base_mesh();
-	_update_procedural();
 	update_gizmos();
 }
 
@@ -161,7 +101,6 @@ bool RTProceduralInstance3D::is_multi_aabb() const {
 
 void RTProceduralInstance3D::set_custom_enclosing_aabb(const AABB &p_aabb) {
 	custom_enclosing_aabb = p_aabb;
-	_update_procedural();
 	update_gizmos();
 }
 
@@ -171,7 +110,6 @@ AABB RTProceduralInstance3D::get_custom_enclosing_aabb() const {
 
 void RTProceduralInstance3D::set_expose_aabb_bounds(bool p_expose) {
 	expose_aabb_bounds = p_expose;
-	_update_procedural();
 }
 
 bool RTProceduralInstance3D::get_expose_aabb_bounds() const {
@@ -180,11 +118,4 @@ bool RTProceduralInstance3D::get_expose_aabb_bounds() const {
 
 AABB RTProceduralInstance3D::get_aabb() const {
 	return _compute_enclosing_aabb();
-}
-
-RTProceduralInstance3D::RTProceduralInstance3D() {
-	_ensure_null_base_mesh();
-}
-
-RTProceduralInstance3D::~RTProceduralInstance3D() {
 }

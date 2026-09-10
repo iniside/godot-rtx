@@ -39,6 +39,7 @@
 #include "editor/scene/3d/node_3d_editor_plugin.h"
 #include "editor/settings/editor_settings.h"
 #include "scene/3d/navigation/navigation_obstacle_3d.h"
+#include "scene/entity/entity_world.h"
 #include "scene/gui/button.h"
 #include "scene/gui/dialogs.h"
 #include "scene/main/scene_tree.h"
@@ -277,8 +278,11 @@ void NavigationObstacle3DEditorPlugin::edit(Object *p_object) {
 		wip_active = false;
 		edited_point = -1;
 
-		rs->instance_set_scenario(point_lines_instance_rid, obstacle_node->get_world_3d()->get_scenario());
-		rs->instance_set_scenario(point_handles_instance_rid, obstacle_node->get_world_3d()->get_scenario());
+		point_lines_instance_rid.scenario = Node3DEditor::get_singleton()->get_entity_world()->get_scenario();
+
+		point_lines_instance_rid.publish();
+		point_handles_instance_rid.scenario = Node3DEditor::get_singleton()->get_entity_world()->get_scenario();
+		point_handles_instance_rid.publish();
 
 		redraw();
 
@@ -287,8 +291,10 @@ void NavigationObstacle3DEditorPlugin::edit(Object *p_object) {
 
 		rs->mesh_clear(point_lines_mesh_rid);
 		rs->mesh_clear(point_handle_mesh_rid);
-		rs->instance_set_scenario(point_lines_instance_rid, RID());
-		rs->instance_set_scenario(point_handles_instance_rid, RID());
+		point_lines_instance_rid.scenario = RID();
+		point_lines_instance_rid.publish();
+		point_handles_instance_rid.scenario = RID();
+		point_handles_instance_rid.publish();
 	}
 }
 
@@ -757,10 +763,13 @@ void NavigationObstacle3DEditorPlugin::redraw() {
 	point_lines_mesh_array[Mesh::ARRAY_VERTEX] = point_lines_mesh_vertices;
 
 	rs->mesh_add_surface_from_arrays(point_lines_mesh_rid, RSE::PRIMITIVE_LINES, point_lines_mesh_array);
-	rs->instance_set_surface_override_material(point_lines_instance_rid, 0, line_material->get_rid());
+	point_lines_instance_rid.material_override = line_material->get_rid();
+	point_lines_instance_rid.material_asset = line_material;
+	point_lines_instance_rid.publish();
 	const Vector3 safe_scale = obstacle_node->get_global_basis().get_scale().abs().maxf(0.001);
 	const Transform3D gt = Transform3D(Basis().scaled(safe_scale).rotated(Vector3(0.0, 1.0, 0.0), obstacle_node->get_global_rotation().y), obstacle_node->get_global_position());
-	rs->instance_set_transform(point_lines_instance_rid, gt);
+	point_lines_instance_rid.transform = gt;
+	point_lines_instance_rid.publish();
 
 	Array point_handle_mesh_array;
 	point_handle_mesh_array.resize(Mesh::ARRAY_MAX);
@@ -784,8 +793,11 @@ void NavigationObstacle3DEditorPlugin::redraw() {
 	point_handle_mesh_array[Mesh::ARRAY_VERTEX] = point_handle_mesh_vertices;
 
 	rs->mesh_add_surface_from_arrays(point_handle_mesh_rid, RSE::PRIMITIVE_POINTS, point_handle_mesh_array);
-	rs->instance_set_surface_override_material(point_handles_instance_rid, 0, handle_material->get_rid());
-	rs->instance_set_transform(point_handles_instance_rid, gt);
+	point_handles_instance_rid.material_override = handle_material->get_rid();
+	point_handles_instance_rid.material_asset = handle_material;
+	point_handles_instance_rid.publish();
+	point_handles_instance_rid.transform = gt;
+	point_handles_instance_rid.publish();
 }
 
 NavigationObstacle3DEditorPlugin *NavigationObstacle3DEditorPlugin::singleton = nullptr;
@@ -818,11 +830,14 @@ NavigationObstacle3DEditorPlugin::NavigationObstacle3DEditorPlugin() {
 	point_lines_mesh_rid = rs->mesh_create();
 	point_handle_mesh_rid = rs->mesh_create();
 
-	point_lines_instance_rid = rs->instance_create();
-	point_handles_instance_rid = rs->instance_create();
+	point_lines_instance_rid = ToolRenderData::create();
+	point_handles_instance_rid = ToolRenderData::create();
 
-	rs->instance_set_base(point_lines_instance_rid, point_lines_mesh_rid);
-	rs->instance_set_base(point_handles_instance_rid, point_handle_mesh_rid);
+	point_lines_instance_rid.base = point_lines_mesh_rid;
+
+	point_lines_instance_rid.publish();
+	point_handles_instance_rid.base = point_handle_mesh_rid;
+	point_handles_instance_rid.publish();
 
 	obstacle_editor = memnew(HBoxContainer);
 	obstacle_editor->hide();
@@ -887,8 +902,8 @@ NavigationObstacle3DEditorPlugin::~NavigationObstacle3DEditorPlugin() {
 	ERR_FAIL_NULL(rs);
 
 	if (point_lines_instance_rid.is_valid()) {
-		rs->free_rid(point_lines_instance_rid);
-		point_lines_instance_rid = RID();
+		point_lines_instance_rid.clear();
+		point_lines_instance_rid = ToolRenderData();
 	}
 	if (point_lines_mesh_rid.is_valid()) {
 		rs->free_rid(point_lines_mesh_rid);
@@ -896,8 +911,8 @@ NavigationObstacle3DEditorPlugin::~NavigationObstacle3DEditorPlugin() {
 	}
 
 	if (point_handles_instance_rid.is_valid()) {
-		rs->free_rid(point_handles_instance_rid);
-		point_handles_instance_rid = RID();
+		point_handles_instance_rid.clear();
+		point_handles_instance_rid = ToolRenderData();
 	}
 	if (point_handle_mesh_rid.is_valid()) {
 		rs->free_rid(point_handle_mesh_rid);

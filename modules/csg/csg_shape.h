@@ -78,8 +78,6 @@ private:
 	real_t collision_priority = 1.0;
 	Ref<ConcavePolygonShape3D> root_collision_shape;
 	RID root_collision_body;
-	RID root_collision_debug_instance;
-	Transform3D debug_shape_old_transform;
 #endif // PHYSICS_3D_DISABLED
 
 	bool calculate_tangents = true;
@@ -111,10 +109,6 @@ private:
 
 #ifndef PHYSICS_3D_DISABLED
 	void _update_collision_faces();
-	bool _is_debug_collision_shape_visible();
-	void _update_debug_collision_shape();
-	void _clear_debug_collision_shape();
-	void _on_transform_changed();
 	Vector<Vector3> _get_brush_collision_faces();
 #endif // PHYSICS_3D_DISABLED
 

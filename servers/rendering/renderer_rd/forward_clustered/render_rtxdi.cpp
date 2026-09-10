@@ -88,9 +88,7 @@ void RenderRTXDI::initialize(RenderRaytracing *p_raytracing, bool p_radiance_use
 	modes.push_back(ShaderRD::VariantDefine(0, "\n#define MODE_SPATIAL 1\n", true));
 	modes.push_back(ShaderRD::VariantDefine(0, "\n#define MODE_SHADE 1\n", true));
 	String defines = "\n#define MAX_ROUGHNESS_LOD " + itos(p_roughness_layers - 1) + ".0\n";
-#ifdef REAL_T_IS_DOUBLE
 	defines += "\n#define USE_DOUBLE_PRECISION\n";
-#endif
 	if (radiance_uses_array) {
 		defines += "\n#define USE_RADIANCE_OCTMAP_ARRAY\n";
 	}

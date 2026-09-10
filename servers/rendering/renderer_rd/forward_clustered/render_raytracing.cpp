@@ -135,25 +135,31 @@ bool RenderRaytracing::update_viewport_settings(const RenderDataRD *p_render_dat
 	RTViewportState *state = _get_or_create_viewport_state(p_render_data);
 	ERR_FAIL_NULL_V(state, false);
 	const RenderSceneDataRD &scene = *p_render_data->scene_data;
-	Vector3 rt_origin = state->rt_origin;
+	double rt_origin[3];
+	memcpy(rt_origin, state->rt_origin, sizeof(rt_origin));
 	for (int axis = 0; axis < 3; axis++) {
-		if (!state->coordinates_initialized || Math::abs(scene.cam_transform.origin[axis] - rt_origin[axis]) > real_t(1024.0)) {
-			rt_origin[axis] = Math::round(scene.cam_transform.origin[axis] / real_t(1024.0)) * real_t(1024.0);
+		if (!state->coordinates_initialized || Math::abs(scene.cam_origin[axis] - rt_origin[axis]) > 1024.0) {
+			rt_origin[axis] = Math::round(scene.cam_origin[axis] / 1024.0) * 1024.0;
 		}
 	}
-	const bool origin_changed = !state->coordinates_initialized || state->rt_origin != rt_origin;
+	const bool origin_changed = !state->coordinates_initialized || memcmp(state->rt_origin, rt_origin, sizeof(rt_origin)) != 0;
 	const bool uses_jitter = scene.taa_jitter != Vector2();
-	const bool camera_moved = !state->coordinates_initialized || state->camera_transform != scene.cam_transform || !state->camera_projection.is_same(scene.cam_projection) || state->camera_orthogonal != scene.cam_orthogonal || state->camera_uses_jitter != uses_jitter;
-	state->rt_origin = rt_origin;
+	const bool camera_moved = !state->coordinates_initialized || state->camera_transform != scene.cam_transform || memcmp(state->camera_origin, scene.cam_origin, sizeof(scene.cam_origin)) != 0 || !state->camera_projection.is_same(scene.cam_projection) || state->camera_orthogonal != scene.cam_orthogonal || state->camera_uses_jitter != uses_jitter;
+	memcpy(state->rt_origin, rt_origin, sizeof(rt_origin));
+	memcpy(state->camera_origin, scene.cam_origin, sizeof(scene.cam_origin));
 	state->camera_transform = scene.cam_transform;
 	state->camera_projection = scene.cam_projection;
 	state->camera_orthogonal = scene.cam_orthogonal;
 	state->camera_uses_jitter = uses_jitter;
 	state->coordinates_initialized = true;
 	Transform3D camera_to_rt = scene.cam_transform;
-	camera_to_rt.origin -= rt_origin;
+	for (int axis = 0; axis < 3; axis++) {
+		camera_to_rt.origin[axis] = scene.cam_origin[axis] - rt_origin[axis];
+	}
 	Transform3D previous_camera_to_rt = origin_changed ? scene.cam_transform : scene.prev_cam_transform;
-	previous_camera_to_rt.origin -= rt_origin;
+	for (int axis = 0; axis < 3; axis++) {
+		previous_camera_to_rt.origin[axis] = (origin_changed ? scene.cam_origin[axis] : scene.prev_cam_origin[axis]) - rt_origin[axis];
+	}
 	RendererRD::MaterialStorage::store_transform_transposed_3x4(camera_to_rt, state->frame_constants.camera_to_rt);
 	RendererRD::MaterialStorage::store_transform_transposed_3x4(previous_camera_to_rt, state->frame_constants.previous_camera_to_rt);
 	if (!state->frame_constants_buffer.is_valid()) {
@@ -208,7 +214,7 @@ bool RenderRaytracing::_prepare_ddgi(RTViewportState *p_state, bool p_freeze_anc
 	ERR_FAIL_NULL_V(p_state->ddgi, false);
 	RendererRD::DDGIEffect::Context &context = *p_state->ddgi;
 	if (!p_freeze_anchor || !context.debug_anchor_frozen) {
-		context.debug_anchor = p_state->camera_transform.origin;
+		memcpy(context.debug_anchor, p_state->camera_origin, sizeof(context.debug_anchor));
 	}
 	context.debug_anchor_frozen = p_freeze_anchor;
 	if (!ddgi_effect->prepare(context, context.debug_anchor, p_state->rt_origin, p_state->ddgi_history_epoch, settings.ddgi_updates_per_frame)) {
@@ -783,8 +789,8 @@ RTSurfaceData *RenderRaytracing::process_surface(
 
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
 
-	RID mesh_rid = surf->owner->data->base;
-	if (surf->owner->data->base_type == RSE::INSTANCE_MULTIMESH) {
+	RID mesh_rid = surf->owner->scene_data->base;
+	if (surf->owner->scene_data->base_type == RSE::INSTANCE_MULTIMESH) {
 		RID underlying = mesh_storage->multimesh_get_mesh(mesh_rid);
 		if (underlying.is_valid()) {
 			mesh_rid = underlying;
@@ -1811,11 +1817,8 @@ bool RenderRaytracing::_micro_dispatch(RTViewportState *p_state, uint32_t p_mode
 	} parameters;
 	static_assert(sizeof(Parameters) == 96);
 	for (uint32_t axis = 0; axis < 3; axis++) {
-#ifdef REAL_T_IS_DOUBLE
 		RendererRD::MaterialStorage::split_double(p_state->rt_origin[axis], &parameters.origin[axis], &parameters.origin_low[axis]);
-#else
-		parameters.origin[axis] = p_state->rt_origin[axis];
-#endif
+
 	}
 	parameters.unit_count = build->segment_data.size();
 	parameters.slot_count = build->pool_count;
@@ -1929,8 +1932,8 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 				rt_task.instance_flags |= RD::ACCELERATION_STRUCTURE_INSTANCE_FORCE_OPAQUE_BIT;
 			}
 			if (record.multimesh_address) {
-				rt_task.multimesh_flags = uint32_t(mesh_storage->multimesh_uses_colors(instance->data->base)) | (uint32_t(mesh_storage->multimesh_uses_custom_data(instance->data->base)) << 1) | ((record.flags & (1u << 13)) ? 4u : 0u);
-				build->uses_gpu_instances |= mesh_storage->multimesh_has_gpu_updates(instance->data->base);
+				rt_task.multimesh_flags = uint32_t(mesh_storage->multimesh_uses_colors(instance->scene_data->base)) | (uint32_t(mesh_storage->multimesh_uses_custom_data(instance->scene_data->base)) << 1) | ((record.flags & (1u << 13)) ? 4u : 0u);
+				build->uses_gpu_instances |= mesh_storage->multimesh_has_gpu_updates(instance->scene_data->base);
 			}
 			build->uses_time |= shader->rt_uses_time();
 			build->uses_previous_time |= shader->rt_uses_previous_time();
@@ -1945,7 +1948,7 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 				if (emissive) {
 					RTEmissiveSource source;
 					source.instance_id = instance->get_instance_rid().get_id();
-					source.resource_id = instance->data->base.get_id();
+					source.resource_id = instance->scene_data->base.get_id();
 					source.surface_generation = (uint64_t(mesh_storage->mesh_surface_get_rt_invalidation_counter(surface->surface)) << 32) | surface->surface_index;
 					source.geometry_index = build->admitted_count + ordinal;
 					source.primitive_count = metadata.surfaces[rt_task.micro_surface].source_triangle_count;
@@ -2041,11 +2044,7 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 	RendererRD::MaterialStorage::store_camera(correction * p_render_data->scene_data->cam_projection, parameters.projection);
 	RendererRD::MaterialStorage::store_transform_transposed_3x4(Transform3D(p_state->camera_transform.basis.inverse(), Vector3()), parameters.view_rotation);
 	for (uint32_t axis = 0; axis < 3; axis++) {
-#ifdef REAL_T_IS_DOUBLE
-		RendererRD::MaterialStorage::split_double(p_state->camera_transform.origin[axis], &parameters.camera[axis], &parameters.camera_low[axis]);
-#else
-		parameters.camera[axis] = p_state->camera_transform.origin[axis];
-#endif
+		RendererRD::MaterialStorage::split_double(p_state->camera_origin[axis], &parameters.camera[axis], &parameters.camera_low[axis]);
 	}
 	build->selection->persistent_instances = persistent_instance_buffer;
 	build->selection->persistent_surfaces = persistent_surface_buffer;
@@ -2573,7 +2572,6 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 		const uint32_t to = MIN(from + 256, blass.size());
 		for (uint32_t index = from; index < to; index++) {
 			Transform3D transform = blas_transforms[index];
-			transform.origin -= p_state->rt_origin;
 			RendererRD::MaterialStorage::store_transform_transposed_3x4(transform, instances[index].transform);
 			instances[index].custom_index_and_mask = (build->admitted_count + index) | (uint32_t(instance_masks[index]) << 24);
 			instances[index].sbt_offset_and_flags = (build->admitted_count + index) | (instance_flags[index] << 24);
@@ -2681,7 +2679,6 @@ bool RenderRaytracing::build_acceleration_structures(RTViewportState *p_state, c
 			RD::AccelerationStructureInstance &inst = instances[i];
 			inst.id = i;
 			inst.transform = blas_transforms[i];
-			inst.transform.origin -= p_state->rt_origin;
 			inst.blas = blass[i];
 			inst.flags = BitField<RD::AccelerationStructureInstanceFlagBits>(instance_flags[i]);
 			inst.mask = (i < instance_masks.size()) ? instance_masks[i] : 0xFF;
@@ -3357,7 +3354,10 @@ struct RenderRaytracing::LightingPreparation {
 				signature = _rt_scene_hash(&light_id, sizeof(light_id), signature);
 				signature = _rt_scene_hash(&light_generation, sizeof(light_generation), signature);
 				signature = _rt_scene_hash(&xform, sizeof(xform), signature);
-				xform.origin -= p_state->rt_origin;
+				signature = _rt_scene_hash(ls->light_instance_get_origin(light_instance), sizeof(double) * 3, signature);
+				for (int axis = 0; axis < 3; axis++) {
+					xform.origin[axis] = ls->light_instance_get_origin(light_instance)[axis] - p_state->rt_origin[axis];
+				}
 				Vector3 direction = -xform.basis.get_column(2).normalized();
 				ld.position[0] = xform.origin.x;
 				ld.position[1] = xform.origin.y;
@@ -3495,7 +3495,6 @@ struct RenderRaytracing::LightingPreparation {
 				light.uv_rect[2] = source.material->data.uv1_offset[0];
 				light.uv_rect[3] = source.material->data.uv1_offset[1];
 				Transform3D emitter_to_rt = source.transform;
-				emitter_to_rt.origin -= p_state->rt_origin;
 				RendererRD::MaterialStorage::store_transform_transposed_3x4(emitter_to_rt, light.transform);
 				emissive_keys.push_back(key);
 				emissive_lights.push_back(light);
@@ -3583,7 +3582,7 @@ struct RenderRaytracing::LightingPreparation {
 				break;
 			case 5:
 				if (preparation.p_render_data->rt_decals && preparation.p_render_data->decals) {
-					preparation.decals = preparation.ts->build_rt_decal_snapshot(*preparation.p_render_data->rt_decals, *preparation.p_render_data->decals, preparation.p_render_data->scene_data->cam_transform, preparation.p_state->rt_origin);
+					preparation.decals = preparation.ts->build_rt_decal_snapshot(*preparation.p_render_data->rt_decals, *preparation.p_render_data->decals, preparation.p_render_data->scene_data->cam_transform, preparation.p_state->rt_origin, preparation.p_render_data->scene_data->cam_origin);
 				}
 				break;
 		}
@@ -3840,16 +3839,16 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 				continue;
 			}
 			if (instance->rt_procedural) {
-				const auto *material = static_cast<const SceneShaderForwardClustered::MaterialData *>(material_storage->material_get_data(instance->data->material_override, RendererRD::MaterialStorage::SHADER_TYPE_3D));
+				const auto *material = static_cast<const SceneShaderForwardClustered::MaterialData *>(material_storage->material_get_data(instance->scene_data->material_override, RendererRD::MaterialStorage::SHADER_TYPE_3D));
 				if (!material || !material->shader_data || material->shader_data->version.is_null() || material->shader_data->code.is_empty()) {
 					continue;
 				}
 				batch.procedural.insert(instance->rt_procedural);
-				batch.materials[instance->data->material_override].insert(instance->shader_uniforms_offset);
+				batch.materials[instance->scene_data->material_override].insert(instance->shader_uniforms_offset);
 				continue;
 			}
-			RID mesh = instance->data->base;
-			if (instance->data->base_type == RSE::INSTANCE_MULTIMESH) {
+			RID mesh = instance->scene_data->base;
+			if (instance->scene_data->base_type == RSE::INSTANCE_MULTIMESH) {
 				if (mesh_storage->multimesh_get_transform_format(mesh) != RSE::MULTIMESH_TRANSFORM_3D || mesh_storage->multimesh_get_instances_to_draw(mesh) == 0) {
 					continue;
 				}
@@ -3861,10 +3860,10 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 					continue;
 				}
 				RID material;
-				if (instance->data->material_override.is_valid()) {
-					material = instance->data->material_override;
-				} else if (surface->surface_index < instance->data->surface_materials.size() && instance->data->surface_materials[surface->surface_index].is_valid()) {
-					material = instance->data->surface_materials[surface->surface_index];
+				if (instance->scene_data->material_override.is_valid()) {
+					material = instance->scene_data->material_override;
+				} else if (surface->surface_index < instance->scene_data->materials.size() && instance->scene_data->materials[surface->surface_index].is_valid()) {
+					material = instance->scene_data->materials[surface->surface_index];
 				} else if (mesh.is_valid()) {
 					HashMap<uint32_t, RID> &mesh_materials = batch.mesh_materials[mesh];
 					const RID *resolved = mesh_materials.getptr(surface->surface_index);
@@ -3881,16 +3880,16 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 
 				SurfaceRequest request;
 				request.surface = surface;
-				request.required = instance->data->base_type != RSE::INSTANCE_MULTIMESH;
+				request.required = instance->scene_data->base_type != RSE::INSTANCE_MULTIMESH;
 				const void *key = surface->surface;
-				if (instance->mesh_instance.is_valid()) {
+				if (instance->scene_data->mesh_instance.is_valid()) {
 					key = surface;
 					auto &deformation = request.deformation;
-					deformation.current_vb = mesh_storage->mesh_instance_get_vertex_buffer(instance->mesh_instance, surface->surface_index);
-					deformation.prev_vb = mesh_storage->mesh_instance_get_prev_vertex_buffer(instance->mesh_instance, surface->surface_index);
-					deformation.change_stamp = mesh_storage->mesh_instance_get_last_change(instance->mesh_instance, surface->surface_index);
-					deformation.cache_version = uint32_t(instance->mesh_instance.get_id() >> 32);
-					deformation.cache_key = (uint64_t(uint32_t(instance->mesh_instance.get_id())) << 16) | (surface->surface_index & 0xFFFFu);
+					deformation.current_vb = mesh_storage->mesh_instance_get_vertex_buffer(instance->scene_data->mesh_instance, surface->surface_index);
+					deformation.prev_vb = mesh_storage->mesh_instance_get_prev_vertex_buffer(instance->scene_data->mesh_instance, surface->surface_index);
+					deformation.change_stamp = mesh_storage->mesh_instance_get_last_change(instance->scene_data->mesh_instance, surface->surface_index);
+					deformation.cache_version = uint32_t(instance->scene_data->mesh_instance.get_id() >> 32);
+					deformation.cache_key = (uint64_t(uint32_t(instance->scene_data->mesh_instance.get_id())) << 16) | (surface->surface_index & 0xFFFFu);
 					deformation.surface_counter = mesh_storage->mesh_surface_get_rt_invalidation_counter(surface->surface);
 				}
 				if (const SurfaceRequest *previous = batch.surfaces.getptr(key)) {
@@ -4116,7 +4115,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 		};
 		auto instance_geometry = [](const RenderForwardClustered::GeometryInstanceForwardClustered *p_instance, const RT_GeometryData &p_geometry, const RenderForwardClustered::GeometryInstanceSurfaceDataCache *p_surface) {
 			RT_GeometryData geometry = p_geometry;
-			geometry.instance_layer_mask = p_instance->layer_mask;
+			geometry.instance_layer_mask = p_instance->scene_data->layer_mask;
 			geometry.instance_uniforms_offset = p_instance->shader_uniforms_offset;
 			if (p_instance->rt_casts_shadows) {
 				geometry.flags |= RT_GEOM_FLAG_CASTS_SHADOWS;
@@ -4139,29 +4138,35 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			if (!inst || !inst->data) {
 				continue;
 			}
-			const Transform3D &instance_transform = inst->transform;
+			Transform3D instance_transform = inst->transform;
+			for (int axis = 0; axis < 3; axis++) {
+				instance_transform.origin[axis] = inst->origin[axis] - state->rt_origin[axis];
+			}
 			hash_scene(inst->get_instance_rid().get_id());
-			hash_scene(inst->data->base.get_id());
-			hash_scene(inst->mesh_instance.get_id());
+			hash_scene(inst->scene_data->base.get_id());
+			hash_scene(inst->scene_data->mesh_instance.get_id());
 			hash_scene(instance_transform);
-			hash_scene(inst->layer_mask);
+			hash_scene(inst->scene_data->layer_mask);
 			hash_scene(inst->rt_visible_receiver);
 			hash_scene(inst->rt_casts_shadows);
 			hash_scene(inst->rt_shadows_only);
 
 			// Determine previous-frame transform for motion vectors.
-			const Transform3D &prev_instance_transform =
+			Transform3D prev_instance_transform =
 					(inst->transform_status == RenderForwardClustered::GeometryInstanceForwardClustered::TransformStatus::TELEPORTED)
 					? inst->transform
 					: inst->prev_transform;
+			for (int axis = 0; axis < 3; axis++) {
+				prev_instance_transform.origin[axis] = (inst->transform_status == RenderForwardClustered::GeometryInstanceForwardClustered::TELEPORTED ? inst->origin[axis] : inst->prev_origin[axis]) - state->rt_origin[axis];
+			}
 
 			if (inst->rt_procedural) {
 				RTProceduralState *ps = inst->rt_procedural;
 
-				if (!inst->data || !inst->data->material_override.is_valid()) {
+				if (!inst->data || !inst->scene_data->material_override.is_valid()) {
 					continue;
 				}
-				RID proc_material_rid = inst->data->material_override;
+				RID proc_material_rid = inst->scene_data->material_override;
 				const SceneShaderForwardClustered::MaterialData *proc_material = static_cast<SceneShaderForwardClustered::MaterialData *>(material_storage->material_get_data(proc_material_rid, RendererRD::MaterialStorage::SHADER_TYPE_3D));
 				if (!proc_material || !proc_material->shader_data || proc_material->shader_data->version.is_null() || proc_material->shader_data->code.is_empty()) {
 					continue;
@@ -4181,7 +4186,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 						motion_indices.push_back((int32_t)motion_transforms.size());
 						RT_InstanceMotionData motion = {};
 						Transform3D previous_to_rt = prev_instance_transform;
-						previous_to_rt.origin -= state->rt_origin;
 						RendererRD::MaterialStorage::store_transform_transposed_3x4(previous_to_rt, motion.prev_object_to_rt);
 						motion_transforms.push_back(motion);
 					} else {
@@ -4208,8 +4212,8 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 
 			// MultiMesh: resolve materials and warm data cache now.
 			// Compute dispatches and TLAS assembly are deferred to Phase 2.
-			if (inst->data->base_type == RSE::INSTANCE_MULTIMESH) {
-				RID mm_rid = inst->data->base;
+			if (inst->scene_data->base_type == RSE::INSTANCE_MULTIMESH) {
+				RID mm_rid = inst->scene_data->base;
 
 				if (mesh_storage->multimesh_get_transform_format(mm_rid) != RSE::MULTIMESH_TRANSFORM_3D) {
 					continue;
@@ -4249,11 +4253,11 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 					uses_previous_time |= mm_surf->shader && mm_surf->shader->rt_uses_previous_time();
 
 					RID material_rid;
-					if (mm_surf->owner->data->material_override.is_valid()) {
-						material_rid = mm_surf->owner->data->material_override;
-					} else if (mm_surf->surface_index < mm_surf->owner->data->surface_materials.size() &&
-							mm_surf->owner->data->surface_materials[mm_surf->surface_index].is_valid()) {
-						material_rid = mm_surf->owner->data->surface_materials[mm_surf->surface_index];
+					if (mm_surf->owner->scene_data->material_override.is_valid()) {
+						material_rid = mm_surf->owner->scene_data->material_override;
+					} else if (mm_surf->surface_index < mm_surf->owner->scene_data->materials.size() &&
+							mm_surf->owner->scene_data->materials[mm_surf->surface_index].is_valid()) {
+						material_rid = mm_surf->owner->scene_data->materials[mm_surf->surface_index];
 					} else {
 						RID mesh_rid = mesh_storage->multimesh_get_mesh(mm_rid);
 						material_rid = resolve_mesh_material(mesh_rid, mm_surf->surface_index);
@@ -4333,10 +4337,10 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 				uses_time |= surf->shader && surf->shader->rt_uses_time();
 				uses_previous_time |= surf->shader && surf->shader->rt_uses_previous_time();
 
-				const void *resource_key = inst->mesh_instance.is_valid() ? static_cast<const void *>(surf) : surf->surface;
+				const void *resource_key = inst->scene_data->mesh_instance.is_valid() ? static_cast<const void *>(surf) : surf->surface;
 				const RTSurfaceData *surf_data = resolved_surfaces.getptr(resource_key);
-				if (inst->mesh_instance.is_valid() && mesh_storage->mesh_instance_get_vertex_buffer(inst->mesh_instance, surf->surface_index).is_valid()) {
-					hash_scene(mesh_storage->mesh_instance_get_last_change(inst->mesh_instance, surf->surface_index));
+				if (inst->scene_data->mesh_instance.is_valid() && mesh_storage->mesh_instance_get_vertex_buffer(inst->scene_data->mesh_instance, surf->surface_index).is_valid()) {
+					hash_scene(mesh_storage->mesh_instance_get_last_change(inst->scene_data->mesh_instance, surf->surface_index));
 				}
 
 				if (!surf_data || !surf_data->blas.is_valid()) {
@@ -4345,13 +4349,13 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 				}
 
 				RID material_rid;
-				if (surf->owner->data->material_override.is_valid()) {
-					material_rid = surf->owner->data->material_override;
-				} else if (surf->surface_index < surf->owner->data->surface_materials.size() &&
-						surf->owner->data->surface_materials[surf->surface_index].is_valid()) {
-					material_rid = surf->owner->data->surface_materials[surf->surface_index];
+				if (surf->owner->scene_data->material_override.is_valid()) {
+					material_rid = surf->owner->scene_data->material_override;
+				} else if (surf->surface_index < surf->owner->scene_data->materials.size() &&
+						surf->owner->scene_data->materials[surf->surface_index].is_valid()) {
+					material_rid = surf->owner->scene_data->materials[surf->surface_index];
 				} else {
-					RID mesh_rid = surf->owner->data->base;
+					RID mesh_rid = surf->owner->scene_data->base;
 					material_rid = resolve_mesh_material(mesh_rid, surf->surface_index);
 				}
 
@@ -4370,7 +4374,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 						geometry_buffer_dependencies.insert(buffer);
 					}
 				}
-				register_emissive_source(inst, inst->data->base, surf->surface_index, surface_counter, geometry_index, 0,
+				register_emissive_source(inst, inst->scene_data->base, surf->surface_index, surface_counter, geometry_index, 0,
 						surf_data->geometry.primitive_count, final_transform, mat_data);
 
 				if (inst->transform_status == RenderForwardClustered::GeometryInstanceForwardClustered::TransformStatus::MOVED ||
@@ -4378,7 +4382,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 					motion_indices.push_back((int32_t)motion_transforms.size());
 					RT_InstanceMotionData motion = {};
 					Transform3D prev_final = prev_instance_transform;
-					prev_final.origin -= state->rt_origin;
 					RendererRD::MaterialStorage::store_transform_transposed_3x4(prev_final, motion.prev_object_to_rt);
 					motion_transforms.push_back(motion);
 				} else {
@@ -4651,7 +4654,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 		};
 		auto instance_geometry = [](const RenderForwardClustered::GeometryInstanceForwardClustered *p_instance, const RT_GeometryData &p_geometry, const RenderForwardClustered::GeometryInstanceSurfaceDataCache *p_surface) {
 			RT_GeometryData geometry = p_geometry;
-			geometry.instance_layer_mask = p_instance->layer_mask;
+			geometry.instance_layer_mask = p_instance->scene_data->layer_mask;
 			geometry.instance_uniforms_offset = p_instance->shader_uniforms_offset;
 			if (p_instance->rt_casts_shadows) {
 				geometry.flags |= RT_GEOM_FLAG_CASTS_SHADOWS;
@@ -4679,7 +4682,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 			geometry_material_programs.push_back(pending.mat_data->hit_shader);
 			if (pending.transform_moved || (merged_sd.geometry.prev_vertex_buffer_address_lo | merged_sd.geometry.prev_vertex_buffer_address_hi) != 0) {
 				Transform3D previous_to_rt = pending.prev_instance_transform;
-				previous_to_rt.origin -= state->rt_origin;
 				motion_indices.push_back((int32_t)motion_transforms.size());
 				RT_InstanceMotionData motion = {};
 				RendererRD::MaterialStorage::store_transform_transposed_3x4(previous_to_rt, motion.prev_object_to_rt);
@@ -4746,7 +4748,6 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 						previous_mm_transform.origin[row] = previous_data[row * 4 + 3];
 					}
 					Transform3D prev_final = pending.prev_instance_transform * previous_mm_transform;
-					prev_final.origin -= state->rt_origin;
 					motion_indices.push_back((int32_t)motion_transforms.size());
 					RT_InstanceMotionData motion = {};
 					RendererRD::MaterialStorage::store_transform_transposed_3x4(prev_final, motion.prev_object_to_rt);
@@ -5297,7 +5298,7 @@ void RenderRaytracing::update_persistent_instances(const LocalVector<RenderGeome
 			Input input;
 			input.instance = instance;
 			inputs.push_back(std::move(input));
-			resources[instance->data->base].type = instance->data->base_type;
+			resources[instance->scene_data->base].type = instance->scene_data->base_type;
 			if (instance->persistent_surfaces_dirty) {
 				for (auto *surface = instance->surface_caches; surface; surface = surface->next) {
 					materials[surface->material_rid.is_valid() ? surface->material_rid : owner->scene_shader.default_material];
@@ -5369,7 +5370,7 @@ void RenderRaytracing::update_persistent_instances(const LocalVector<RenderGeome
 				instance->persistent_instance = allocate(persistent_instances, persistent_instance_free_slots);
 			}
 			PersistentInstanceSlot &slot = persistent_instances[uint32_t(instance->persistent_instance) - 1];
-			const Vector<RID> &dependencies = resources[instance->data->base].dependencies;
+			const Vector<RID> &dependencies = resources[instance->scene_data->base].dependencies;
 			if (slot.dependencies != dependencies) {
 				for (RID buffer : slot.dependencies) {
 					_reference_persistent_buffer(buffer, false);
@@ -5434,36 +5435,34 @@ void RenderRaytracing::update_persistent_instances(const LocalVector<RenderGeome
 			const Input &entry = inputs[i];
 			Instance *instance = entry.instance;
 			const uint32_t instance_index = uint32_t(instance->persistent_instance) - 1;
-			RTPersistentInstanceData data = resolved_resources[instance->data->base].data;
+			RTPersistentInstanceData data = resolved_resources[instance->scene_data->base].data;
 			data.handle = instance->persistent_instance;
-			data.identity = instance->instance_rid.get_id();
-			data.scenario = instance->scenario_rid.get_id();
+			data.identity = instance->scene_data->render_handle.get_id();
+			data.scenario = instance->scene_data->scenario_rid.get_id();
 			const Transform3D &previous = instance->transform_status == RenderForwardClustered::GeometryInstanceForwardClustered::TELEPORTED ? instance->transform : instance->prev_transform;
 			RendererRD::MaterialStorage::store_transform_transposed_3x4(instance->transform, data.transform);
 			RendererRD::MaterialStorage::store_transform_transposed_3x4(previous, data.previous_transform);
-#ifdef REAL_T_IS_DOUBLE
 			for (int axis = 0; axis < 3; axis++) {
-				RendererRD::MaterialStorage::split_double(instance->transform.origin[axis], &data.transform[axis * 4 + 3], &data.origin_low[axis]);
-				RendererRD::MaterialStorage::split_double(previous.origin[axis], &data.previous_transform[axis * 4 + 3], &data.previous_origin_low[axis]);
+				RendererRD::MaterialStorage::split_double(instance->origin[axis], &data.transform[axis * 4 + 3], &data.origin_low[axis]);
+				RendererRD::MaterialStorage::split_double(instance->transform_status == RenderForwardClustered::GeometryInstanceForwardClustered::TELEPORTED ? instance->origin[axis] : instance->prev_origin[axis], &data.previous_transform[axis * 4 + 3], &data.previous_origin_low[axis]);
 			}
-#endif
 			for (int axis = 0; axis < 3; axis++) {
-				data.aabb_position[axis] = instance->data->aabb.position[axis];
-				data.aabb_size[axis] = instance->data->aabb.size[axis];
+				data.aabb_position[axis] = instance->scene_data->aabb.position[axis];
+				data.aabb_size[axis] = instance->scene_data->aabb.size[axis];
 			}
 			data.flags = instance->base_flags;
-			data.layer_mask = instance->layer_mask;
+			data.layer_mask = instance->scene_data->layer_mask;
 			data.instance_uniforms_offset = uint32_t(instance->shader_uniforms_offset);
-			data.visible = instance->scene_visible && instance->scenario_rid.is_valid();
-			data.shadows = instance->scene_shadows;
-			data.deformed = instance->mesh_instance.is_valid() || instance->rt_procedural != nullptr;
+			data.visible = instance->scene_data->visible && instance->scene_data->scenario_rid.is_valid();
+			data.shadows = instance->scene_data->cast_shadows;
+			data.deformed = instance->scene_data->mesh_instance.is_valid() || instance->rt_procedural != nullptr;
 			data.fade_near_begin = instance->fade_near ? instance->fade_near_begin : 0;
 			data.fade_near_end = instance->fade_near ? instance->fade_near_end : 0;
 			data.fade_far_begin = instance->fade_far ? instance->fade_far_begin : 0;
 			data.fade_far_end = instance->fade_far ? instance->fade_far_end : 0;
 			data.force_alpha = instance->force_alpha;
 			data.parent_fade_alpha = instance->parent_fade_alpha;
-			data.lod_bias = instance->lod_bias;
+			data.lod_bias = instance->scene_data->lod_bias;
 			data.model_scale = instance->lod_model_scale;
 			data.lightmap = instance->lightmap_instance.get_id();
 			data.lightmap_slice = instance->lightmap_slice_index;

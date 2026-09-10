@@ -375,9 +375,7 @@ NRDEffect::NRDEffect(bool p_radiance_array, uint32_t p_roughness_layers) {
 	if (p_radiance_array) {
 		defines += "#define USE_RADIANCE_OCTMAP_ARRAY\n";
 	}
-#ifdef REAL_T_IS_DOUBLE
 	defines += "#define USE_DOUBLE_PRECISION\n";
-#endif
 	Vector<ShaderRD::VariantDefine> modes;
 	modes.push_back(ShaderRD::VariantDefine(0, "#define MODE_PREPARE\n", true));
 	modes.push_back(ShaderRD::VariantDefine(0, "#define MODE_COMPOSE\n", true));

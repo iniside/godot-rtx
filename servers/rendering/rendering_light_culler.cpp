@@ -133,7 +133,9 @@ bool RenderingLightCuller::_prepare_light(const RendererSceneCull::Instance &p_i
 			break;
 	}
 
-	lsource.pos = p_instance.transform.origin;
+	for (int axis = 0; axis < 3; axis++) {
+		lsource.pos[axis] = p_instance.origin[axis] - data.camera_origin[axis];
+	}
 	lsource.dir = -p_instance.transform.basis.get_column(2);
 	lsource.dir.normalize();
 
@@ -232,13 +234,13 @@ bool RenderingLightCuller::cull_directional_light(const RendererSceneCull::Insta
 
 	LightCullPlanes &cull_planes = data.directional_cull_planes[p_directional_light_id].planes[p_cascade];
 
-	Vector3 mins = Vector3(p_bound.bounds[0], p_bound.bounds[1], p_bound.bounds[2]);
-	Vector3 maxs = Vector3(p_bound.bounds[3], p_bound.bounds[4], p_bound.bounds[5]);
-	AABB bb(mins, maxs - mins);
-
-	real_t r_min, r_max;
 	for (int p = 0; p < cull_planes.num_cull_planes; p++) {
-		bb.project_range_in_plane(cull_planes.cull_planes[p], r_min, r_max);
+		const Plane &plane = cull_planes.cull_planes[p];
+		double r_min = -double(plane.d);
+		for (int axis = 0; axis < 3; axis++) {
+			const int bound = axis + (plane.normal[axis] < 0 ? 3 : 0);
+			r_min += double(plane.normal[axis]) * (p_bound.precise_bounds[bound] - data.camera_origin[axis]);
+		}
 		if (r_min > 0.0f) {
 #ifdef LIGHT_CULLER_DEBUG_DIRECTIONAL_LIGHT
 			cull_planes.rejected_count++;
@@ -271,27 +273,16 @@ void RenderingLightCuller::cull_regular_light(PagedArray<RendererSceneCull::Inst
 
 	// Go through all the casters in the list (the list will hopefully shrink as we go).
 	for (int n = 0; n < (int)list.size(); n++) {
-		// World space aabb.
-		const AABB &bb = list[n]->transformed_aabb;
-
-#ifdef LIGHT_CULLER_DEBUG_LOGGING
-		if (is_logging()) {
-			print_line("bb : " + String(bb));
-		}
-#endif
-
-		real_t r_min, r_max;
+		const RendererSceneCull::InstanceBounds bounds(list[n]->aabb, list[n]->transform.basis, list[n]->origin);
 		bool show = true;
 
 		for (int p = 0; p < data.regular_cull_planes.num_cull_planes; p++) {
-			// As we only need r_min, could this be optimized?
-			bb.project_range_in_plane(data.regular_cull_planes.cull_planes[p], r_min, r_max);
-
-#ifdef LIGHT_CULLER_DEBUG_LOGGING
-			if (is_logging()) {
-				print_line("\tplane " + itos(p) + " : " + String(data.regular_cull_planes.cull_planes[p]) + " r_min " + String(Variant(r_min)) + " r_max " + String(Variant(r_max)));
+			const Plane &plane = data.regular_cull_planes.cull_planes[p];
+			double r_min = -double(plane.d);
+			for (int axis = 0; axis < 3; axis++) {
+				const int bound = axis + (plane.normal[axis] < 0 ? 3 : 0);
+				r_min += double(plane.normal[axis]) * (bounds.precise_bounds[bound] - data.camera_origin[axis]);
 			}
-#endif
 
 			if (r_min > 0.0f) {
 				show = false;
@@ -596,7 +587,7 @@ bool RenderingLightCuller::_add_light_camera_planes(LightCullPlanes &r_cull_plan
 	return true;
 }
 
-bool RenderingLightCuller::prepare_camera(const Transform3D &p_cam_transform, const Projection &p_cam_matrix) {
+bool RenderingLightCuller::prepare_camera(const Transform3D &p_cam_transform, const Projection &p_cam_matrix, const double *p_origin) {
 	data.debug_count++;
 	if (data.debug_count >= 120) {
 		data.debug_count = 0;
@@ -620,11 +611,14 @@ bool RenderingLightCuller::prepare_camera(const Transform3D &p_cam_transform, co
 		return false;
 	}
 	// These are needed later to build per-cascade cull frustums for directional lights.
-	data.camera_transform = p_cam_transform;
+	data.camera_transform = Transform3D(p_cam_transform.basis, Vector3());
+	for (int axis = 0; axis < 3; axis++) {
+		data.camera_origin[axis] = p_origin[axis];
+	}
 	data.camera_projection = p_cam_matrix;
 
 	// Get the camera frustum planes in world space.
-	data.frustum_planes = p_cam_matrix.get_projection_planes(p_cam_transform);
+	data.frustum_planes = p_cam_matrix.get_projection_planes(data.camera_transform);
 	DEV_CHECK_ONCE(data.frustum_planes.size() == 6);
 
 	data.regular_cull_planes.num_cull_planes = 0;

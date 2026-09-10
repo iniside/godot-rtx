@@ -31,25 +31,25 @@
 #pragma once
 
 #include "editor/import/3d/resource_importer_scene.h"
-#include "scene/3d/camera_3d.h"
-#include "scene/3d/light_3d.h"
-#include "scene/3d/mesh_instance_3d.h"
-#include "scene/3d/skeleton_3d.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/menu_button.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/panel_container.h"
-#include "scene/gui/slider.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/tab_container.h"
 #include "scene/gui/tree.h"
 #include "scene/resources/3d/primitive_meshes.h"
 #include "scene/resources/3d/sky_material.h"
+#include "scene/resources/animation.h"
+#include "scene/resources/camera_attributes.h"
+#include "scene/resources/environment.h"
+#include "servers/rendering/renderer_scene_data.h"
 
 class EditorFileDialog;
 class EditorInspector;
 class SceneImportSettingsData;
 class Timer;
+class SubViewport;
 
 class SceneImportSettingsDialog : public ConfirmationDialog {
 	GDCLASS(SceneImportSettingsDialog, ConfirmationDialog)
@@ -75,7 +75,8 @@ class SceneImportSettingsDialog : public ConfirmationDialog {
 
 	SubViewport *base_viewport = nullptr;
 
-	Camera3D *camera = nullptr;
+	RID camera;
+	RID scenario;
 	Ref<CameraAttributesPractical> camera_attributes;
 	Ref<Environment> environment;
 	Ref<Sky> sky;
@@ -93,26 +94,19 @@ class SceneImportSettingsDialog : public ConfirmationDialog {
 		Ref<Texture2D> rotate_icon;
 	} theme_cache;
 
-	DirectionalLight3D *light1 = nullptr;
-	DirectionalLight3D *light2 = nullptr;
+	ToolRenderData light1;
+	ToolRenderData light2;
 	Ref<ArrayMesh> selection_mesh;
-	MeshInstance3D *node_selected = nullptr;
+	ToolRenderData node_selected;
 
-	MeshInstance3D *mesh_preview = nullptr;
+	ToolRenderData mesh_preview;
+	Ref<Mesh> preview_mesh;
 	Ref<SphereMesh> material_preview;
 
-	AnimationPlayer *animation_player = nullptr;
-	List<Skeleton3D *> skeletons;
 	PanelContainer *animation_preview = nullptr;
-	HSlider *animation_slider = nullptr;
-	Button *animation_play_button = nullptr;
-	Button *animation_stop_button = nullptr;
 	Button *animation_toggle_skeleton_visibility = nullptr;
-	Animation::LoopMode animation_loop_mode = Animation::LOOP_NONE;
-	bool animation_pingpong = false;
 	bool previous_import_as_skeleton = false;
 	bool previous_rest_as_reset = false;
-	MeshInstance3D *bones_mesh_preview = nullptr;
 
 	Ref<StandardMaterial3D> collider_mat;
 
@@ -160,6 +154,12 @@ class SceneImportSettingsDialog : public ConfirmationDialog {
 
 	struct NodeData {
 		Node *node = nullptr;
+		Ref<Mesh> mesh;
+		Transform3D transform;
+		bool visible = true;
+		ToolRenderData preview;
+		ToolRenderData collider;
+		ToolRenderData bones;
 		TreeItem *scene_node = nullptr;
 		HashMap<StringName, Variant> settings;
 	};
@@ -183,17 +183,10 @@ class SceneImportSettingsDialog : public ConfirmationDialog {
 	void _update_camera();
 	void _select(Tree *p_from, const String &p_type, const String &p_id);
 	void _inspector_property_edited(const String &p_name);
-	void _reset_bone_transforms();
-	void _play_animation();
-	void _stop_current_animation();
-	void _reset_animation(const String &p_animation_name = "");
-	void _animation_slider_value_changed(double p_value);
-	void _animation_finished(const StringName &p_name);
 	void _animation_update_skeleton_visibility();
 	void _material_tree_selected();
 	void _mesh_tree_selected();
 	void _scene_tree_selected();
-	void _skeleton_tree_entered(Skeleton3D *p_skeleton);
 	void _cleanup();
 	void _on_light_1_switch_pressed();
 	void _on_light_2_switch_pressed();

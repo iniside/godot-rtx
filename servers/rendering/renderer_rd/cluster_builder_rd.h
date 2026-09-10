@@ -178,6 +178,7 @@ private:
 	uint32_t render_element_max = 0;
 
 	Transform3D view_xform;
+	double view_origin[3] = {};
 	Projection adjusted_projection;
 	Projection projection;
 	float z_far = 0;
@@ -231,9 +232,9 @@ private:
 public:
 	void setup(Size2i p_screen_size, uint32_t p_max_elements, RID p_depth_buffer, RID p_depth_buffer_sampler, RID p_color_buffer);
 
-	void begin(const Transform3D &p_view_transform, const Projection &p_cam_projection, bool p_flip_y);
+	void begin(const Transform3D &p_view_transform, const Projection &p_cam_projection, bool p_flip_y, const double *p_origin = nullptr);
 
-	_FORCE_INLINE_ void add_light(LightType p_type, const Transform3D &p_transform, float p_radius, float p_spot_aperture, const Vector2 &p_area_size) {
+	_FORCE_INLINE_ void add_light(LightType p_type, const Transform3D &p_transform, float p_radius, float p_spot_aperture, const Vector2 &p_area_size, const double *p_origin = nullptr) {
 		if (p_type == LIGHT_TYPE_OMNI && cluster_count_by_type[ELEMENT_TYPE_OMNI_LIGHT] == max_elements_by_type) {
 			return; // Max number elements reached.
 		}
@@ -246,7 +247,11 @@ public:
 
 		RenderElementData &e = render_elements[render_element_count];
 
-		Transform3D xform = view_xform * p_transform;
+		Transform3D relative = p_transform;
+		for (int axis = 0; axis < 3; axis++) {
+			relative.origin[axis] = (p_origin ? p_origin[axis] : double(p_transform.origin[axis])) - view_origin[axis];
+		}
+		Transform3D xform = view_xform * relative;
 
 		float radius = xform.basis.get_uniform_scale();
 		if (radius < 0.98 || radius > 1.02) {
@@ -370,7 +375,7 @@ public:
 		render_element_count++;
 	}
 
-	_FORCE_INLINE_ void add_box(BoxType p_box_type, const Transform3D &p_transform, const Vector3 &p_half_size) {
+	_FORCE_INLINE_ void add_box(BoxType p_box_type, const Transform3D &p_transform, const Vector3 &p_half_size, const double *p_origin = nullptr) {
 		if (p_box_type == BOX_TYPE_DECAL && cluster_count_by_type[ELEMENT_TYPE_DECAL] == max_elements_by_type) {
 			return; // Max number elements reached.
 		}
@@ -379,7 +384,11 @@ public:
 		}
 
 		RenderElementData &e = render_elements[render_element_count];
-		Transform3D xform = view_xform * p_transform;
+		Transform3D relative = p_transform;
+		for (int axis = 0; axis < 3; axis++) {
+			relative.origin[axis] = (p_origin ? p_origin[axis] : double(p_transform.origin[axis])) - view_origin[axis];
+		}
+		Transform3D xform = view_xform * relative;
 
 		// Extract scale and scale the matrix by it, makes things simpler.
 		Vector3 scale = p_half_size;

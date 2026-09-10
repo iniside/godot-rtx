@@ -30,6 +30,8 @@
 
 #pragma once
 
+#include "servers/rendering/renderer_scene_data.h"
+
 #include "editor/plugins/editor_plugin.h"
 #include "editor/scene/3d/node_3d_editor_gizmos.h"
 #include "editor/themes/editor_scale.h"
@@ -62,10 +64,10 @@ public:
 	Transform3D last_xform; // last transform
 	bool last_xform_dirty;
 	Node3D *sp = nullptr;
-	RID sbox_instance;
-	RID sbox_instance_offset;
-	RID sbox_instance_xray;
-	RID sbox_instance_xray_offset;
+	ToolRenderData sbox_instance;
+	ToolRenderData sbox_instance_offset;
+	ToolRenderData sbox_instance_xray;
+	ToolRenderData sbox_instance_xray_offset;
 	Ref<EditorNode3DGizmo> gizmo;
 	HashMap<int, Transform3D> subgizmos; // Key: Subgizmo ID, Value: Initial subgizmo transform.
 
@@ -235,37 +237,26 @@ private:
 	double gpu_time_history[FRAME_TIME_HISTORY];
 	int gpu_time_history_index;
 
-	Node *ruler = nullptr;
-	Node3D *ruler_start_point = nullptr;
-	Node3D *ruler_end_point = nullptr;
+	bool ruler_active = false;
+	Vector3 ruler_start_position;
+	Vector3 ruler_end_position;
 	Ref<ImmediateMesh> geometry;
 	Ref<ImmediateMesh> geometry_xray;
-	MeshInstance3D *ruler_line = nullptr;
-	MeshInstance3D *ruler_line_xray = nullptr;
+	ToolRenderData ruler_line;
+	ToolRenderData ruler_line_xray;
 	Label *ruler_label = nullptr;
 	Ref<StandardMaterial3D> ruler_material;
 	Ref<StandardMaterial3D> ruler_material_xray;
 	Ref<StandardMaterial3D> ruler_triangle_material;
 	Ref<StandardMaterial3D> ruler_triangle_material_xray;
-	MeshInstance3D *ruler_triangle_lines = nullptr;
-	MeshInstance3D *ruler_triangle_lines_xray = nullptr;
+	ToolRenderData ruler_triangle_lines;
+	ToolRenderData ruler_triangle_lines_xray;
 	Label *ruler_label_x = nullptr;
 	Label *ruler_label_y = nullptr;
 	Label *ruler_label_z = nullptr;
 
 	int index;
 	void _menu_option(int p_option);
-	Node3D *preview_node = nullptr;
-	bool update_preview_node = false;
-	Point2 preview_node_viewport_pos;
-	Vector3 preview_node_pos;
-	AABB *preview_bounds = nullptr;
-	Vector<String> selected_files;
-	AcceptDialog *accept = nullptr;
-
-	Node *target_node = nullptr;
-	Point2 drop_pos;
-
 	ObjectID focused_node_id;
 
 	EditorSelection *editor_selection = nullptr;
@@ -446,8 +437,8 @@ private:
 	real_t zoom_indicator_delay;
 	int zoom_failed_attempts_count = 0;
 
-	RID move_gizmo_instance[3], move_plane_gizmo_instance[3], rotate_gizmo_instance[4], scale_gizmo_instance[3], scale_plane_gizmo_instance[3], axis_gizmo_instance[3];
-	RID trackball_sphere_instance;
+	ToolRenderData move_gizmo_instance[3], move_plane_gizmo_instance[3], rotate_gizmo_instance[4], scale_gizmo_instance[3], scale_plane_gizmo_instance[3], axis_gizmo_instance[3];
+	ToolRenderData trackball_sphere_instance;
 
 	String last_message;
 	String message;
@@ -465,7 +456,6 @@ private:
 	void _apply_camera_transform_to_cursor();
 
 	void _surface_mouse_enter();
-	void _surface_mouse_exit();
 	void _surface_focus_enter();
 	void _surface_focus_exit();
 
@@ -506,21 +496,6 @@ private:
 
 	Vector3 _get_instance_position(const Point2 &p_pos, Node3D *p_node) const;
 	static AABB _calculate_spatial_bounds(const Node3D *p_parent, bool p_omit_top_level = false, const Transform3D *p_bounds_orientation = nullptr);
-
-	Node *_sanitize_preview_node(Node *p_node) const;
-
-	void _create_preview_node(const Vector<String> &files) const;
-	void _remove_preview_node();
-	bool _apply_preview_material(ObjectID p_target, const Point2 &p_point) const;
-	void _reset_preview_material() const;
-	void _remove_preview_material();
-	bool _cyclical_dependency_exists(const String &p_target_scene_path, Node *p_desired_node) const;
-	bool _create_instance(Node *p_parent, const String &p_path, const Point2 &p_point);
-	bool _create_audio_node(Node *p_parent, const String &p_path, const Point2 &p_point);
-	void _perform_drop_data();
-
-	bool can_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from);
-	void drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from);
 
 	void _project_settings_changed();
 
@@ -563,17 +538,14 @@ public:
 	void set_state(const Dictionary &p_state);
 	Dictionary get_state() const;
 	void reset();
+	void set_document_scenario(RID p_scenario);
+	void set_document_camera(const Transform3D &p_transform, bool p_orthogonal, real_t p_size);
 
 	Vector3 get_ray_pos(const Vector2 &p_pos) const;
 	Vector3 get_ray(const Vector2 &p_pos) const;
 	Point2 point_to_screen(const Vector3 &p_point);
 
 	void focus_selection();
-
-	void assign_pending_data_pointers(
-			Node3D *p_preview_node,
-			AABB *p_preview_bounds,
-			AcceptDialog *p_accept);
 
 	SubViewport *get_viewport_node() { return viewport; }
 	Camera3D *get_camera_3d() { return camera; } // return the default camera object.

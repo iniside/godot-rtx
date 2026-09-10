@@ -292,6 +292,7 @@ void SceneTreeDock::instantiate(const String &p_file) {
 }
 
 void SceneTreeDock::instantiate_scenes(const Vector<String> &p_files, Node *p_parent) {
+	ERR_FAIL_COND_MSG(editor_data->get_scene_document().is_valid(), "Node-based scene authoring is unavailable.");
 	Node *parent = p_parent;
 
 	if (!parent) {
@@ -608,6 +609,10 @@ bool SceneTreeDock::_track_inherit(const String &p_target_scene_path, Node *p_de
 }
 
 void SceneTreeDock::_tool_selected(int p_tool, bool p_confirm_override) {
+	if (editor_data->get_edited_scene_count() > 0 && editor_data->get_scene_document().is_valid()) {
+		return;
+	}
+
 	current_option = p_tool;
 
 	switch (p_tool) {
@@ -3123,6 +3128,10 @@ void SceneTreeDock::_post_do_create(Node *p_child) {
 }
 
 void SceneTreeDock::_create() {
+	if (editor_data->get_edited_scene_count() > 0 && editor_data->get_scene_document().is_valid()) {
+		return;
+	}
+
 	if (current_option == TOOL_NEW) {
 		Node *parent = nullptr;
 
@@ -4710,6 +4719,16 @@ void SceneTreeDock::_local_tree_selected() {
 }
 
 void SceneTreeDock::_update_create_root_dialog_visibility() {
+	if (editor_data->get_edited_scene_count() > 0 && editor_data->get_scene_document().is_valid()) {
+		create_root_dialog->hide();
+		button_add->hide();
+		button_instance->hide();
+		scene_tree->set_can_rename(false);
+		if (!remote_tree || !remote_tree->is_visible()) {
+			scene_tree->show();
+		}
+		return;
+	}
 	if (remote_tree && remote_tree->is_visible()) {
 		return;
 	}
@@ -4792,6 +4811,12 @@ void SceneTreeDock::_feature_profile_changed() {
 		scene_tree->set_can_rename(true);
 		profile_allow_editing = true;
 		profile_allow_script_editing = true;
+	}
+
+	if (editor_data->get_edited_scene_count() > 0 && editor_data->get_scene_document().is_valid()) {
+		button_add->hide();
+		button_instance->hide();
+		scene_tree->set_can_rename(false);
 	}
 
 	_queue_update_script_button();

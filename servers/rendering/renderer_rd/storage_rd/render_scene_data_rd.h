@@ -43,6 +43,7 @@ public:
 	bool calculate_motion_vectors = false;
 
 	Transform3D cam_transform;
+	double cam_origin[3] = {};
 	Projection cam_projection;
 	RID camera;
 	Vector2 taa_jitter;
@@ -53,6 +54,7 @@ public:
 
 	// For billboards to cast correct shadows.
 	Transform3D main_cam_transform;
+	double main_cam_origin[3] = {};
 
 	// For stereo rendering
 	uint32_t view_count = 1;
@@ -60,6 +62,7 @@ public:
 	Projection view_projection[RendererSceneRender::MAX_RENDER_VIEWS];
 
 	Transform3D prev_cam_transform;
+	double prev_cam_origin[3] = {};
 	Projection prev_cam_projection;
 	RID prev_camera;
 	bool prev_cam_orthogonal = false;
@@ -125,9 +128,7 @@ private:
 		float inv_view_matrix[12];
 		float view_matrix[12];
 
-#ifdef REAL_T_IS_DOUBLE
 		float inv_view_precision[4];
-#endif
 
 		float projection_matrix_view[RendererSceneRender::MAX_RENDER_VIEWS][16];
 		float inv_projection_matrix_view[RendererSceneRender::MAX_RENDER_VIEWS][16];

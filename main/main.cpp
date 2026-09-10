@@ -124,6 +124,7 @@
 #include "editor/doc/doc_tools.h"
 #include "editor/doc/editor_help.h"
 #include "editor/editor_node.h"
+#include "editor/entity_scene_energy_converter.h"
 #include "editor/file_system/editor_file_system.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/gui/progress_dialog.h"
@@ -234,6 +235,7 @@ static bool recovery_mode = false;
 static bool auto_build_solutions = false;
 static String debug_server_uri;
 static bool wait_for_import = false;
+static Error (*renderer_scene_converter)() = nullptr;
 static bool restore_editor_window_layout = true;
 #ifndef DISABLE_DEPRECATED
 static int converter_max_kb_file = 4 * 1024; // 4MB
@@ -1705,6 +1707,12 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 				OS::get_singleton()->print("Missing file to load argument after --validate-extension-api, aborting.");
 				goto error;
 			}
+		} else if (arg == "--convert-energy-directional" || arg == "--convert-renderer-main" || arg == "--convert-microgeometry-stress") {
+			editor = true;
+			recovery_mode = true;
+			cmdline_tool = true;
+			wait_for_import = true;
+			main_args.push_back(arg);
 		} else if (arg == "--import") {
 			editor = true;
 			cmdline_tool = true;
@@ -4112,6 +4120,15 @@ int Main::start() {
 		if (E->get() == "--check-only") {
 			check_only = true;
 #ifdef TOOLS_ENABLED
+		} else if (E->get() == "--convert-energy-directional") {
+			ERR_FAIL_COND_V_MSG(renderer_scene_converter, EXIT_FAILURE, "Select one finite renderer scene conversion.");
+			renderer_scene_converter = convert_energy_directional_entity_scene;
+		} else if (E->get() == "--convert-renderer-main") {
+			ERR_FAIL_COND_V_MSG(renderer_scene_converter, EXIT_FAILURE, "Select one finite renderer scene conversion.");
+			renderer_scene_converter = convert_main_entity_scene;
+		} else if (E->get() == "--convert-microgeometry-stress") {
+			ERR_FAIL_COND_V_MSG(renderer_scene_converter, EXIT_FAILURE, "Select one finite renderer scene conversion.");
+			renderer_scene_converter = convert_microgeometry_stress_entity_scene;
 		} else if (E->get() == "--no-docbase") {
 			gen_flags.set_flag(DocTools::GENERATE_FLAG_SKIP_BASIC_TYPES);
 		} else if (E->get() == "--gdextension-docs") {
@@ -4401,6 +4418,11 @@ int Main::start() {
 		}
 	}
 
+#ifdef TOOLS_ENABLED
+	if (renderer_scene_converter) {
+		game_path = String();
+	}
+#endif
 	if (!script.is_empty() && check_only) {
 		Ref<Script> script_resource = ResourceLoader::load(script);
 		ERR_FAIL_COND_V_MSG(script_resource.is_null(), EXIT_FAILURE, "Can't load script: " + script);
@@ -5043,6 +5065,16 @@ bool Main::iteration() {
 
 #ifdef TOOLS_ENABLED
 	if (wait_for_import && EditorFileSystem::get_singleton() && EditorFileSystem::get_singleton()->doing_first_scan()) {
+		exit = false;
+	}
+	if (renderer_scene_converter && EditorFileSystem::get_singleton() && !EditorFileSystem::get_singleton()->doing_first_scan()) {
+		Error (*converter)() = renderer_scene_converter;
+		renderer_scene_converter = nullptr;
+		Error error = converter();
+		if (error == OK) {
+			error = ResourceUID::get_singleton()->update_cache();
+		}
+		SceneTree::get_singleton()->quit(error == OK ? EXIT_SUCCESS : EXIT_FAILURE);
 		exit = false;
 	}
 #endif

@@ -343,6 +343,9 @@ void vertex_shader(float3 vertex_input,
 			scene_data.inv_view_matrix[1],
 			scene_data.inv_view_matrix[2],
 			float4(0.0, 0.0, 0.0, 1.0)));
+#ifdef USE_DOUBLE_PRECISION
+	inv_view_matrix[3].xyz = -(inv_view_matrix[3].xyz + scene_data.inv_view_precision.xyz);
+#endif
 
 	float4x4 model_matrix = transpose(float4x4(in_model_matrix[0],
 			in_model_matrix[1],
@@ -539,7 +542,7 @@ void vertex_shader(float3 vertex_input,
 	}
 
 	float3 temp_precision;
-	modelview[3].xyz = double_add_vec3(model_origin, model_precision, inv_view_matrix[3].xyz, view_precision, temp_precision);
+	modelview[3].xyz = double_add_vec3(model_origin, model_precision, float3(scene_data.inv_view_matrix[0][3], scene_data.inv_view_matrix[1][3], scene_data.inv_view_matrix[2][3]), view_precision, temp_precision);
 	modelview[3].xyz = mul(modelview[3].xyz, (float3x3)read_view_matrix);
 #else
 	float4x4 modelview = mul(model_matrix, read_view_matrix);
@@ -1353,6 +1356,9 @@ void fragment_shader(in SceneData scene_data) {
 			scene_data.inv_view_matrix[1],
 			scene_data.inv_view_matrix[2],
 			float4(0.0, 0.0, 0.0, 1.0)));
+#ifdef USE_DOUBLE_PRECISION
+	inv_view_matrix[3].xyz = -(inv_view_matrix[3].xyz + scene_data.inv_view_precision.xyz);
+#endif
 	float4x4 read_model_matrix = transpose(float4x4(instances[instance_index].transform[0],
 			instances[instance_index].transform[1],
 			instances[instance_index].transform[2],

@@ -194,10 +194,8 @@ struct InstanceData {
 	uint rtxdi_padding_2;
 	row_major float3x4 prev_transform;
 	float4 lightmap_uv_scale;
-#ifdef USE_DOUBLE_PRECISION
 	float4 model_precision;
 	float4 prev_model_precision;
-#endif
 };
 
 #ifdef MICRO_GEOMETRY_RASTER

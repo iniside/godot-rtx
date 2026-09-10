@@ -367,7 +367,7 @@ public:
 	virtual AABB particles_get_current_aabb(RID p_particles) override;
 	virtual AABB particles_get_aabb(RID p_particles) const override;
 
-	virtual void particles_set_emission_transform(RID p_particles, const Transform3D &p_transform) override;
+	virtual void particles_set_emission_transform(RID p_particles, const Transform3D &p_transform, const double *p_origin = nullptr) override;
 	virtual void particles_set_emitter_velocity(RID p_particles, const Vector3 &p_velocity) override;
 	virtual void particles_set_interp_to_end(RID p_particles, float p_interp) override;
 
@@ -475,7 +475,7 @@ public:
 
 	virtual RID particles_collision_instance_create(RID p_collision) override;
 	virtual void particles_collision_instance_free(RID p_rid) override;
-	virtual void particles_collision_instance_set_transform(RID p_collision_instance, const Transform3D &p_transform) override;
+	virtual void particles_collision_instance_set_transform(RID p_collision_instance, const Transform3D &p_transform, const double *p_origin = nullptr) override;
 	virtual void particles_collision_instance_set_active(RID p_collision_instance, bool p_active) override;
 };
 

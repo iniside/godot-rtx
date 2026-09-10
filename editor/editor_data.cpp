@@ -652,6 +652,7 @@ int EditorData::add_edited_scene(int p_at_pos) {
 	}
 	EditedScene es;
 	es.root = nullptr;
+	es.document.instantiate();
 	es.path = String();
 	es.file_modified_time = 0;
 	es.history_current = -1;
@@ -701,7 +702,24 @@ void EditorData::remove_scene(int p_idx) {
 	edited_scene.remove_at(p_idx);
 }
 
+void EditorData::set_scene_document(int p_idx, const Ref<EntityScene> &p_document) {
+	ERR_FAIL_INDEX(p_idx, edited_scene.size());
+	ERR_FAIL_COND(p_document.is_null());
+	edited_scene.write[p_idx].document = p_document;
+	edited_scene.write[p_idx].path = p_document->get_path();
+	edited_scene.write[p_idx].file_modified_time = FileAccess::get_modified_time(p_document->get_path());
+}
+
+Ref<EntityScene> EditorData::get_scene_document(int p_idx) const {
+	if (p_idx < 0) {
+		p_idx = current_edited_scene;
+	}
+	ERR_FAIL_INDEX_V(p_idx, edited_scene.size(), Ref<EntityScene>());
+	return edited_scene[p_idx].document;
+}
+
 void EditorData::set_scene_root(int p_idx, Node *p_root) {
+	ERR_FAIL_COND_MSG(p_root, "Node-based scene authoring is unavailable.");
 	ERR_FAIL_INDEX(p_idx, edited_scene.size());
 	EditedScene &scene_info = edited_scene.write[p_idx];
 
@@ -887,6 +905,9 @@ uint64_t EditorData::get_scene_modified_time(int p_idx) const {
 
 String EditorData::get_scene_type(int p_idx) const {
 	ERR_FAIL_INDEX_V(p_idx, edited_scene.size(), String());
+	if (edited_scene[p_idx].document.is_valid()) {
+		return "EntityScene";
+	}
 	if (!edited_scene[p_idx].root) {
 		return "";
 	}
@@ -919,14 +940,14 @@ Ref<Script> EditorData::get_scene_root_script(int p_idx) const {
 
 String EditorData::get_scene_title(int p_idx, bool p_always_strip_extension) const {
 	ERR_FAIL_INDEX_V(p_idx, edited_scene.size(), String());
-	if (!edited_scene[p_idx].root) {
+	if (get_scene_path(p_idx).is_empty() && edited_scene[p_idx].document->get_record_count() == 0) {
 		return TTR("[empty]");
 	}
-	if (edited_scene[p_idx].root->get_scene_file_path().is_empty()) {
+	if (get_scene_path(p_idx).is_empty()) {
 		return TTR("[unsaved]");
 	}
 
-	const String filename = edited_scene[p_idx].root->get_scene_file_path().get_file();
+	const String filename = get_scene_path(p_idx).get_file();
 	const String basename = filename.get_basename();
 
 	if (p_always_strip_extension) {
@@ -940,7 +961,7 @@ String EditorData::get_scene_title(int p_idx, bool p_always_strip_extension) con
 			continue;
 		}
 
-		if (edited_scene[i].root && basename == edited_scene[i].root->get_scene_file_path().get_file().get_basename()) {
+		if (basename == get_scene_path(i).get_file().get_basename()) {
 			return filename;
 		}
 	}

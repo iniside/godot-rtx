@@ -117,7 +117,6 @@ private:
 	static Error _msg_runtime_node_select_reset_camera_2d(const Array &p_args);
 	static Error _msg_transform_camera_2d(const Array &p_args);
 #ifndef _3D_DISABLED
-	static Error _msg_runtime_node_select_reset_camera_3d(const Array &p_args);
 	static Error _msg_transform_camera_3d(const Array &p_args);
 #endif // _3D_DISABLED
 

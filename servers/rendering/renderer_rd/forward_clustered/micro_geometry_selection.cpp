@@ -44,9 +44,7 @@ MicroGeometrySelection::MicroGeometrySelection() {
 	Vector<String> modes;
 	modes.push_back("");
 	String defines;
-#ifdef REAL_T_IS_DOUBLE
 	defines = "\n#define USE_DOUBLE_PRECISION\n";
-#endif
 	shader.initialize(modes, defines);
 	version = shader.version_create();
 	pipeline = RD::get_singleton()->compute_pipeline_create(shader.version_get_shader(version, 0));

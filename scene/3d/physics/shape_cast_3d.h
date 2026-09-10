@@ -60,11 +60,8 @@ class ShapeCast3D : public Node3D {
 	Vector<Vector3> debug_shape_vertices;
 	Vector<Vector3> debug_line_vertices;
 
-	void _create_debug_shape();
-	void _update_debug_shape();
 	void _update_debug_shape_material(bool p_check_collision = false);
 	void _update_debug_shape_vertices();
-	void _clear_debug_shape();
 
 	// Result
 	int max_results = 32;
@@ -73,8 +70,6 @@ class ShapeCast3D : public Node3D {
 	real_t collision_safe_fraction = 1.0;
 	real_t collision_unsafe_fraction = 1.0;
 
-	RID debug_instance;
-	Ref<ArrayMesh> debug_mesh;
 
 protected:
 	void _notification(int p_what);

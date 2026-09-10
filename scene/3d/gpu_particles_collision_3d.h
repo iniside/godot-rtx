@@ -234,7 +234,6 @@ private:
 	UpdateMode update_mode = UPDATE_MODE_WHEN_MOVED;
 
 protected:
-	void _notification(int p_what);
 	static void _bind_methods();
 #ifndef DISABLE_DEPRECATED
 	bool _set(const StringName &p_name, const Variant &p_value);

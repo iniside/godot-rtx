@@ -14,9 +14,7 @@ struct SceneData {
 	row_major float3x4 inv_view_matrix;
 	row_major float3x4 view_matrix;
 
-#ifdef USE_DOUBLE_PRECISION
 	float4 inv_view_precision;
-#endif
 
 	row_major float4x4 projection_matrix_view[MAX_VIEWS];
 	row_major float4x4 inv_projection_matrix_view[MAX_VIEWS];

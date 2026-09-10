@@ -90,7 +90,7 @@ ParticlesStorage::ParticlesStorage() {
 		actions.renames["NUMBER"] = "particle_number";
 		actions.renames["INDEX"] = "index";
 		//actions.renames["GRAVITY"] = "current_gravity";
-		actions.renames["EMISSION_TRANSFORM"] = "FRAME.emission_transform";
+		actions.renames["EMISSION_TRANSFORM"] = "emission_transform";
 		actions.renames["EMITTER_VELOCITY"] = "FRAME.emitter_velocity";
 		actions.renames["INTERPOLATE_TO_END"] = "FRAME.interp_to_end";
 		actions.renames["RANDOM_SEED"] = "FRAME.random_seed";
@@ -410,7 +410,12 @@ void ParticlesStorage::particles_set_use_local_coordinates(RID p_particles, bool
 	Particles *particles = particles_owner.get_or_null(p_particles);
 	ERR_FAIL_NULL(particles);
 
+	if (particles->use_local_coords == p_enable) {
+		return;
+	}
 	particles->use_local_coords = p_enable;
+	_particles_free_data(particles);
+	particles->clear = true;
 	particles->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_PARTICLES);
 }
 
@@ -618,9 +623,16 @@ void ParticlesStorage::particles_emit(RID p_particles, const Transform3D &p_tran
 	particles->inactive = false;
 	particles->inactive_time = 0;
 
+	particles->simulation_origin_initialized = true;
 	int32_t idx = particles->emission_buffer->particle_count;
 	if (idx < particles->emission_buffer->particle_max) {
-		RendererRD::MaterialStorage::store_transform(p_transform, particles->emission_buffer->data[idx].xform);
+		Transform3D emission = p_transform;
+		if (!particles->use_local_coords) {
+			for (int i = 0; i < 3; i++) {
+				emission.origin[i] = double(p_transform.origin[i]) - particles->simulation_origin[i];
+			}
+		}
+		RendererRD::MaterialStorage::store_transform(emission, particles->emission_buffer->data[idx].xform);
 
 		particles->emission_buffer->data[idx].velocity[0] = p_velocity.x;
 		particles->emission_buffer->data[idx].velocity[1] = p_velocity.y;
@@ -668,6 +680,13 @@ AABB ParticlesStorage::particles_get_current_aabb(RID p_particles) {
 	ERR_FAIL_COND_V(buffer.size() != (int)(total_amount * particle_data_size), AABB());
 
 	Transform3D inv = particles->emission_transform.affine_inverse();
+	if (particles->mode == RSE::PARTICLES_MODE_3D) {
+		Vector3 offset;
+		for (int i = 0; i < 3; i++) {
+			offset[i] = particles->simulation_origin[i] - particles->emission_origin[i];
+		}
+		inv.origin = inv.basis.xform(offset);
+	}
 
 	AABB aabb;
 	if (buffer.size()) {
@@ -712,11 +731,24 @@ AABB ParticlesStorage::particles_get_aabb(RID p_particles) const {
 	return particles->custom_aabb;
 }
 
-void ParticlesStorage::particles_set_emission_transform(RID p_particles, const Transform3D &p_transform) {
+void ParticlesStorage::particles_set_emission_transform(RID p_particles, const Transform3D &p_transform, const double *p_origin) {
 	Particles *particles = particles_owner.get_or_null(p_particles);
 	ERR_FAIL_NULL(particles);
 
 	particles->emission_transform = p_transform;
+	for (int i = 0; i < 3; i++) {
+		particles->emission_origin[i] = p_origin ? p_origin[i] : double(p_transform.origin[i]);
+		if (!particles->simulation_origin_initialized) {
+			particles->simulation_origin[i] = particles->mode == RSE::PARTICLES_MODE_3D ? particles->emission_origin[i] : 0.0;
+		}
+	}
+	particles->simulation_origin_initialized = true;
+}
+
+const double *ParticlesStorage::particles_get_simulation_origin(RID p_particles) const {
+	const Particles *particles = particles_owner.get_or_null(p_particles);
+	ERR_FAIL_NULL_V(particles, nullptr);
+	return particles->simulation_origin;
 }
 
 void ParticlesStorage::particles_set_emitter_velocity(RID p_particles, const Vector3 &p_velocity) {
@@ -783,6 +815,7 @@ void ParticlesStorage::particles_set_canvas_sdf_collision(RID p_particles, bool 
 }
 
 void ParticlesStorage::_particles_process(Particles *p_particles, double p_delta) {
+	p_particles->simulation_origin_initialized = true;
 	TextureStorage *texture_storage = TextureStorage::get_singleton();
 	MaterialStorage *material_storage = MaterialStorage::get_singleton();
 
@@ -870,9 +903,29 @@ void ParticlesStorage::_particles_process(Particles *p_particles, double p_delta
 	if (p_particles->use_local_coords) {
 		RendererRD::MaterialStorage::store_transform(Transform3D(), frame_params.emission_transform);
 	} else {
-		RendererRD::MaterialStorage::store_transform(p_particles->emission_transform, frame_params.emission_transform);
+		Transform3D emission = p_particles->emission_transform;
+		for (int i = 0; i < 3; i++) {
+			emission.origin[i] = p_particles->emission_origin[i] - p_particles->simulation_origin[i];
+		}
+		RendererRD::MaterialStorage::store_transform(emission, frame_params.emission_transform);
 	}
 
+	for (int i = 0; i < 3; i++) {
+		MaterialStorage::split_double(p_particles->use_local_coords ? 0.0 : p_particles->simulation_origin[i], &frame_params.simulation_origin_high[i], &frame_params.simulation_origin_low[i]);
+	}
+	Transform3D to_sub_emitter;
+	if (const Particles *child = particles_owner.get_or_null(p_particles->sub_emitter)) {
+		const double *parent_origin = p_particles->use_local_coords ? p_particles->emission_origin : p_particles->simulation_origin;
+		const double *child_origin = child->use_local_coords ? child->emission_origin : child->simulation_origin;
+		to_sub_emitter.basis = p_particles->use_local_coords ? p_particles->emission_transform.basis : Basis();
+		for (int i = 0; i < 3; i++) {
+			to_sub_emitter.origin[i] = parent_origin[i] - child_origin[i];
+		}
+		if (child->use_local_coords) {
+			to_sub_emitter = Transform3D(child->emission_transform.basis.inverse(), Vector3()) * to_sub_emitter;
+		}
+	}
+	MaterialStorage::store_transform(to_sub_emitter, frame_params.sub_emitter_transform);
 	frame_params.cycle = p_particles->cycle_number;
 	frame_params.frame = p_particles->frame_counter++;
 	frame_params.amount_ratio = p_particles->amount_ratio;
@@ -894,7 +947,7 @@ void ParticlesStorage::_particles_process(Particles *p_particles, double p_delta
 
 		Transform3D to_particles;
 		if (p_particles->use_local_coords) {
-			to_particles = p_particles->emission_transform.affine_inverse();
+			to_particles.basis = p_particles->emission_transform.basis.inverse();
 		}
 
 		if (p_particles->has_sdf_collision && RD::get_singleton()->texture_is_valid(p_particles->sdf_collision_texture)) {
@@ -959,6 +1012,10 @@ void ParticlesStorage::_particles_process(Particles *p_particles, double p_delta
 			ERR_CONTINUE(!pc);
 
 			Transform3D to_collider = pci->transform;
+			const double *simulation_origin = p_particles->use_local_coords ? p_particles->emission_origin : p_particles->simulation_origin;
+			for (int i = 0; i < 3; i++) {
+				to_collider.origin[i] = pci->origin[i] - simulation_origin[i];
+			}
 			if (p_particles->use_local_coords) {
 				to_collider = to_particles * to_collider;
 			}
@@ -1791,6 +1848,10 @@ void ParticlesStorage::ParticlesShaderData::set_code(const String &p_code) {
 		}
 	}
 
+	if (generated_particle_material) {
+		gen_code.defines.push_back("#define GENERATED_PARTICLE_PROCESS_MATERIAL\n");
+	}
+
 	particles_storage->particles_shader.shader.version_set_compute_code(version, gen_code.code, gen_code.uniforms, gen_code.stage_globals[ShaderCompiler::STAGE_COMPUTE], gen_code.defines);
 	ERR_FAIL_COND(!particles_storage->particles_shader.shader.version_is_valid(version));
 
@@ -2064,10 +2125,14 @@ void ParticlesStorage::particles_collision_instance_free(RID p_rid) {
 	particles_collision_instance_owner.free(p_rid);
 }
 
-void ParticlesStorage::particles_collision_instance_set_transform(RID p_collision_instance, const Transform3D &p_transform) {
+void ParticlesStorage::particles_collision_instance_set_transform(RID p_collision_instance, const Transform3D &p_transform, const double *p_origin) {
 	ParticlesCollisionInstance *pci = particles_collision_instance_owner.get_or_null(p_collision_instance);
 	ERR_FAIL_NULL(pci);
 	pci->transform = p_transform;
+	for (int axis = 0; axis < 3; axis++) {
+		pci->origin[axis] = p_origin ? p_origin[axis] : double(p_transform.origin[axis]);
+		pci->transform.origin[axis] = pci->origin[axis];
+	}
 }
 
 void ParticlesStorage::particles_collision_instance_set_active(RID p_collision_instance, bool p_active) {

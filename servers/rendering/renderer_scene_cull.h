@@ -39,6 +39,7 @@
 #include "core/templates/pass_func.h"
 #include "core/templates/rid_owner.h"
 #include "core/templates/self_list.h"
+#include "scene/entity/entity_render_system.h"
 #include "servers/rendering/instance_uniforms.h"
 #include "servers/rendering/renderer_scene_occlusion_cull.h"
 #include "servers/rendering/renderer_scene_render.h"
@@ -46,6 +47,9 @@
 #include "servers/rendering/rendering_server_globals.h"
 #include "servers/rendering/rendering_server_types.h"
 #include "servers/rendering/storage/utilities.h"
+
+#include <cmath>
+#include <limits>
 
 class RenderingLightCuller;
 
@@ -82,6 +86,7 @@ public:
 		float znear, zfar;
 		float size;
 		Vector2 offset;
+		Vector2 position_offset;
 		uint32_t visible_layers;
 		bool vaspect;
 		RID env;
@@ -89,6 +94,7 @@ public:
 		RID compositor;
 
 		Transform3D transform;
+		double origin[3] = {};
 
 		Camera() {
 			visible_layers = 0xFFFFFFFF;
@@ -160,7 +166,8 @@ public:
 		Vector<PlaneSign> plane_signs;
 		const Plane *planes_ptr;
 		const PlaneSign *plane_signs_ptr;
-		uint32_t plane_count;
+		uint32_t plane_count = 0;
+		double origin[3] = {};
 
 		_ALWAYS_INLINE_ Frustum() {}
 		_ALWAYS_INLINE_ Frustum(const Frustum &p_frustum) {
@@ -170,6 +177,9 @@ public:
 			planes_ptr = planes.ptr();
 			plane_signs_ptr = plane_signs.ptr();
 			plane_count = p_frustum.plane_count;
+			for (int axis = 0; axis < 3; axis++) {
+				origin[axis] = p_frustum.origin[axis];
+			}
 		}
 		_ALWAYS_INLINE_ void operator=(const Frustum &p_frustum) {
 			planes = p_frustum.planes;
@@ -178,8 +188,16 @@ public:
 			planes_ptr = planes.ptr();
 			plane_signs_ptr = plane_signs.ptr();
 			plane_count = p_frustum.plane_count;
+			for (int axis = 0; axis < 3; axis++) {
+				origin[axis] = p_frustum.origin[axis];
+			}
 		}
-		_ALWAYS_INLINE_ Frustum(const Vector<Plane> &p_planes) {
+		_ALWAYS_INLINE_ Frustum(const Vector<Plane> &p_planes, const double *p_origin = nullptr) {
+			if (p_origin) {
+				for (int axis = 0; axis < 3; axis++) {
+					origin[axis] = p_origin[axis];
+				}
+			}
 			planes = p_planes;
 			planes_ptr = planes.ptrw();
 			plane_count = planes.size();
@@ -193,32 +211,48 @@ public:
 	};
 
 	struct InstanceBounds {
-		// Efficiently store instance bounds.
-		// Because bounds checking is performed first,
-		// keep it separated from data.
-
-		real_t bounds[6];
+		real_t bounds[6] = {};
+		double precise_bounds[6] = {};
 		_ALWAYS_INLINE_ InstanceBounds() {}
 
-		_ALWAYS_INLINE_ InstanceBounds(const AABB &p_aabb) {
-			bounds[0] = p_aabb.position.x;
-			bounds[1] = p_aabb.position.y;
-			bounds[2] = p_aabb.position.z;
-			bounds[3] = p_aabb.position.x + p_aabb.size.x;
-			bounds[4] = p_aabb.position.y + p_aabb.size.y;
-			bounds[5] = p_aabb.position.z + p_aabb.size.z;
+		_ALWAYS_INLINE_ InstanceBounds(const AABB &p_aabb, const Basis &p_basis = Basis(), const double *p_origin = nullptr) {
+			const AABB local = Transform3D(p_basis, Vector3()).xform(p_aabb);
+			for (int axis = 0; axis < 3; axis++) {
+				const double origin = p_origin ? p_origin[axis] : 0.0;
+				precise_bounds[axis] = origin + double(local.position[axis]);
+				precise_bounds[axis + 3] = precise_bounds[axis] + double(local.size[axis]);
+				bounds[axis] = real_t(precise_bounds[axis]);
+				bounds[axis + 3] = real_t(precise_bounds[axis + 3]);
+				if (double(bounds[axis]) > precise_bounds[axis]) {
+					bounds[axis] = std::nextafter(bounds[axis], -std::numeric_limits<real_t>::infinity());
+				}
+				if (double(bounds[axis + 3]) < precise_bounds[axis + 3]) {
+					bounds[axis + 3] = std::nextafter(bounds[axis + 3], std::numeric_limits<real_t>::infinity());
+				}
+			}
+		}
+
+		_ALWAYS_INLINE_ AABB get_aabb() const {
+			AABB result;
+			for (int axis = 0; axis < 3; axis++) {
+				result.position[axis] = bounds[axis];
+				result.size[axis] = bounds[axis + 3] - bounds[axis];
+				if (result.position[axis] + result.size[axis] < bounds[axis + 3]) {
+					result.size[axis] = std::nextafter(result.size[axis], std::numeric_limits<real_t>::infinity());
+				}
+			}
+			return result;
 		}
 		_ALWAYS_INLINE_ bool in_frustum(const Frustum &p_frustum) const {
 			// This is not a full SAT check and the possibility of false positives exist,
 			// but the tradeoff vs performance is still very good.
 
 			for (uint32_t i = 0; i < p_frustum.plane_count; i++) {
-				Vector3 min(
-						bounds[p_frustum.plane_signs_ptr[i].signs[0]],
-						bounds[p_frustum.plane_signs_ptr[i].signs[1]],
-						bounds[p_frustum.plane_signs_ptr[i].signs[2]]);
-
-				if (p_frustum.planes_ptr[i].distance_to(min) >= 0.0) {
+				double distance = -double(p_frustum.planes_ptr[i].d);
+				for (int axis = 0; axis < 3; axis++) {
+					distance += (precise_bounds[p_frustum.plane_signs_ptr[i].signs[axis]] - p_frustum.origin[axis]) * double(p_frustum.planes_ptr[i].normal[axis]);
+				}
+				if (distance >= 0.0) {
 					return false;
 				}
 			}
@@ -302,7 +336,7 @@ public:
 		uint64_t viewport_state = 0;
 		int32_t array_index = -1;
 		RSE::VisibilityRangeFadeMode fade_mode = RSE::VISIBILITY_RANGE_FADE_DISABLED;
-		Vector3 position;
+		double position[3] = {};
 		Instance *instance = nullptr;
 		float range_begin = 0.0f;
 		float range_end = 0.0f;
@@ -324,6 +358,19 @@ public:
 	PagedArrayPool<InstanceData> instance_data_page_pool;
 	PagedArrayPool<InstanceVisibilityData> instance_visibility_data_page_pool;
 
+	struct NativeEntity {
+		EntityHandle handle;
+		RID slots[EntityRenderUpdate::COMPONENT_COUNT];
+		RID owned_bases[EntityRenderUpdate::COMPONENT_COUNT];
+		RID camera;
+		RID skeleton;
+		bool current_camera = false;
+		bool emitter_initialized = false;
+		bool emitter_requested = false;
+		uint64_t emitter_restart_revision = 0;
+		Vector<Ref<Resource>> assets[EntityRenderUpdate::COMPONENT_COUNT];
+	};
+
 	struct Scenario {
 		enum IndexerType {
 			INDEXER_GEOMETRY, //for geometry
@@ -335,6 +382,14 @@ public:
 		DynamicBVH indexers[INDEXER_MAX];
 
 		RID self;
+		uint64_t world_generation = 0;
+		uint64_t publication_sequence = 0;
+		HashMap<EntityId, NativeEntity, EntityIdHasher> native_entities;
+		HashMap<EntityId, HashSet<Instance *>, EntityIdHasher> entity_dependents;
+		HashMap<EntityId, RID, EntityIdHasher> native_cameras;
+		HashMap<EntityId, Vector<RID>, EntityIdHasher> native_environments;
+		bool native_released = false;
+		RID sampling_camera;
 
 		List<Instance *> directional_lights;
 		RID environment;
@@ -388,6 +443,27 @@ public:
 	virtual RID scenario_get_environment(RID p_scenario);
 	virtual void scenario_add_viewport_visibility_mask(RID p_scenario, RID p_viewport);
 	virtual void scenario_remove_viewport_visibility_mask(RID p_scenario, RID p_viewport);
+	void scene_publish_entities(const EntityRenderPacket &p_packet) override;
+	void finalize_entities() override;
+	RID tool_render_allocate() override;
+	void tool_render_initialize(RID p_handle) override;
+	void tool_render_update(const ToolRenderData &p_data) override;
+	void _release_native_entity(NativeEntity &r_entity);
+	void _apply_entity_pose(NativeEntity &r_entity, const EntityRenderPoseUpdate &p_update);
+	void _apply_entity_geometry(Instance *p_instance, const EntityRenderUpdate &p_update);
+	void _refresh_render_slot_flags(Instance *p_instance);
+	void _refresh_entity_references(Instance *p_instance);
+	void _remove_entity_references(Instance *p_instance);
+	bool releasing_entity_batch = false;
+	struct RetiredEntityAssets {
+		uint64_t submission = 0;
+		Vector<Ref<Resource>> assets;
+		Vector<RID> bases;
+	};
+	LocalVector<RetiredEntityAssets> retired_entity_assets;
+	RID procedural_geometry_base;
+	void _retire_entity_assets(Vector<Ref<Resource>> p_assets, Vector<RID> p_bases = Vector<RID>());
+	void _collect_retired_entity_assets();
 
 	/* INSTANCING API */
 
@@ -406,35 +482,28 @@ public:
 		virtual ~InstanceBaseData() {}
 	};
 
-	struct Instance {
-		RSE::InstanceType base_type;
-		RID base;
-
-		RID skeleton;
-		RID material_override;
-		RID material_overlay;
-
-		RID mesh_instance; //only used for meshes and when skeleton/blendshapes exist
-
-		Transform3D transform;
+	struct Instance : RenderSceneInstanceData {
+		EntityHandle entity_handle;
+		bool component_visible = true;
+		EntityId entity_id;
+		uint64_t reset_revision = 0;
+		HashSet<StringName> published_uniforms;
+		EntityId visibility_target;
+		EntityId skeleton_target;
+		EntityId lightmap_target;
+		EntityId subemitter_target;
+		bool tool = false;
+		Vector<Ref<Resource>> tool_assets;
 		bool teleported = false;
 
-		float lod_bias;
 
 		bool ignore_occlusion_culling;
 		bool ignore_all_culling;
 
-		Vector<RID> materials;
 
-		RSE::ShadowCastingSetting cast_shadows;
 
-		uint32_t layer_mask;
 		// Fit in 32 bits.
-		bool mirror : 1;
 		bool receive_shadows : 1;
-		bool visible : 1;
-		bool baked_light : 1; // This flag is only to know if it actually did use baked light.
-		bool dynamic_gi : 1; // Same as above for dynamic objects.
 		bool redraw_if_visible : 1;
 
 		Instance *lightmap = nullptr;
@@ -443,8 +512,6 @@ public:
 		uint32_t lightmap_cull_index;
 		Vector<Color> lightmap_sh; //spherical harmonic
 
-		AABB aabb;
-		AABB transformed_aabb;
 		AABB prev_transformed_aabb;
 
 		InstanceUniforms instance_uniforms;
@@ -467,7 +534,6 @@ public:
 		Instance *visibility_parent = nullptr;
 		HashSet<Instance *> visibility_dependencies;
 		uint32_t visibility_dependencies_depth = 0;
-		float transparency = 0.0f;
 		Scenario *scenario = nullptr;
 		SelfList<Instance> scenario_item;
 
@@ -479,11 +545,8 @@ public:
 
 		AABB *custom_aabb = nullptr; // <Zylann> would using aabb directly with a bool be better?
 		float extra_margin;
-		ObjectID object_id;
 
 		// sorting
-		float sorting_offset = 0.0;
-		bool use_aabb_center = true;
 
 		Vector<Color> lightmap_target_sh; //target is used for incrementally changing the SH over time, this avoids pops in some corner cases and when going interior <-> exterior
 
@@ -538,21 +601,25 @@ public:
 			Instance *instance = (Instance *)tracker->userdata;
 
 			if (p_dependency == instance->base) {
-				singleton->instance_set_base(instance->self, RID());
+				singleton->_render_slot_replace_base(instance->self, RID());
 			} else if (p_dependency == instance->skeleton) {
-				singleton->instance_attach_skeleton(instance->self, RID());
+				instance->skeleton = RID();
+				if (instance->base_type == RSE::INSTANCE_MESH) {
+					singleton->_instance_update_mesh_instance(instance);
+				}
+				singleton->_instance_queue_update(instance, true, true);
 			} else {
 				// It's possible the same material is used in multiple slots,
 				// so we check whether we need to clear them all.
 				if (p_dependency == instance->material_override) {
-					singleton->instance_geometry_set_material_override(instance->self, RID());
+					instance->material_override = RID();
 				}
 				if (p_dependency == instance->material_overlay) {
-					singleton->instance_geometry_set_material_overlay(instance->self, RID());
+					instance->material_overlay = RID();
 				}
 				for (int i = 0; i < instance->materials.size(); i++) {
 					if (p_dependency == instance->materials[i]) {
-						singleton->instance_set_surface_override_material(instance->self, i, RID());
+						instance->materials.write[i] = RID();
 					}
 				}
 				if (instance->base_type == RSE::INSTANCE_PARTICLES) {
@@ -670,6 +737,9 @@ public:
 	struct InstanceParticlesCollisionData : public InstanceBaseData {
 		RID instance;
 		uint32_t cull_mask = 0xFFFFFFFF;
+		bool heightfield_follow_camera = false;
+		bool heightfield_update_always = false;
+		double sampling_origin[3] = {};
 	};
 
 	struct InstanceFogVolumeData : public InstanceBaseData {
@@ -849,6 +919,8 @@ public:
 	};
 
 	mutable HashSet<Instance *> heightfield_particle_colliders_update_list;
+	HashSet<Instance *> continuous_heightfield_particle_colliders;
+	bool _update_particle_collider_sampling(Instance *p_instance) const;
 
 	PagedArrayPool<Instance *> instance_cull_page_pool;
 	PagedArrayPool<RenderGeometryInstance *> geometry_instance_cull_page_pool;
@@ -1075,57 +1147,33 @@ public:
 
 	RenderingLightCuller *light_culler = nullptr;
 
-	virtual RID instance_allocate();
-	virtual void instance_initialize(RID p_rid);
+	RID _render_slot_allocate();
+	void _render_slot_initialize(RID p_rid);
 
-	virtual void instance_set_base(RID p_instance, RID p_base);
-	virtual void instance_set_scenario(RID p_instance, RID p_scenario);
-	virtual void instance_set_layer_mask(RID p_instance, uint32_t p_mask);
-	virtual void instance_set_pivot_data(RID p_instance, float p_sorting_offset, bool p_use_aabb_center);
-	virtual void instance_set_transform(RID p_instance, const Transform3D &p_transform);
-	virtual void instance_attach_object_instance_id(RID p_instance, ObjectID p_id);
-	virtual void instance_set_blend_shape_weight(RID p_instance, int p_shape, float p_weight);
-	virtual void instance_set_surface_override_material(RID p_instance, int p_surface, RID p_material);
-	virtual void instance_set_visible(RID p_instance, bool p_visible);
-	virtual void instance_geometry_set_transparency(RID p_instance, float p_transparency);
+	void _render_slot_replace_base(RID p_instance, RID p_base);
+	void _render_slot_move_scenario(RID p_instance, RID p_scenario);
+	void _render_slot_change_visibility(RID p_instance, bool p_visible);
 
-	virtual void instance_teleport(RID p_instance);
 
-	virtual void instance_set_custom_aabb(RID p_instance, AABB p_aabb);
 
-	virtual void instance_set_rt_procedural(RID p_instance, bool p_procedural, AABB p_aabb);
-	virtual void instance_set_rt_procedural_bounds(RID p_instance, const PackedFloat32Array &p_aabb_data, bool p_expose_bounds);
 
-	virtual void instance_attach_skeleton(RID p_instance, RID p_skeleton);
 
-	virtual void instance_set_extra_visibility_margin(RID p_instance, real_t p_margin);
 
-	virtual void instance_set_visibility_parent(RID p_instance, RID p_parent_instance);
+	void _render_slot_link_visibility(RID p_instance, RID p_parent_instance);
 
-	virtual void instance_set_ignore_culling(RID p_instance, bool p_enabled);
 
 	bool _update_instance_visibility_depth(Instance *p_instance);
 	void _update_instance_visibility_dependencies(Instance *p_instance) const;
 
 	// don't use these in a game!
-	virtual Vector<ObjectID> instances_cull_aabb(const AABB &p_aabb, RID p_scenario = RID()) const;
-	virtual Vector<ObjectID> instances_cull_ray(const Vector3 &p_from, const Vector3 &p_to, RID p_scenario = RID()) const;
-	virtual Vector<ObjectID> instances_cull_convex(const Vector<Plane> &p_convex, RID p_scenario = RID()) const;
+	virtual Vector<EntityHandle> scene_entities_cull_aabb(const AABB &p_aabb, RID p_scenario = RID()) const;
+	virtual Vector<EntityHandle> scene_entities_cull_ray(const Vector3 &p_from, const Vector3 &p_to, RID p_scenario = RID()) const;
+	virtual Vector<EntityHandle> scene_entities_cull_convex(const Vector<Plane> &p_convex, RID p_scenario = RID()) const;
 
-	virtual void instance_geometry_set_flag(RID p_instance, RSE::InstanceFlags p_flags, bool p_enabled);
-	virtual void instance_geometry_set_cast_shadows_setting(RID p_instance, RSE::ShadowCastingSetting p_shadow_casting_setting);
-	virtual void instance_geometry_set_material_override(RID p_instance, RID p_material);
-	virtual void instance_geometry_set_material_overlay(RID p_instance, RID p_material);
 
-	virtual void instance_geometry_set_visibility_range(RID p_instance, float p_min, float p_max, float p_min_margin, float p_max_margin, RSE::VisibilityRangeFadeMode p_fade_mode);
 
-	virtual void instance_geometry_set_lightmap(RID p_instance, RID p_lightmap, const Rect2 &p_lightmap_uv_scale, int p_slice_index);
-	virtual void instance_geometry_set_lod_bias(RID p_instance, float p_lod_bias);
+	void _render_slot_link_lightmap(RID p_instance, RID p_lightmap, const Rect2 &p_lightmap_uv_scale, int p_slice_index);
 
-	virtual void instance_geometry_set_shader_parameter(RID p_instance, const StringName &p_parameter, const Variant &p_value);
-	virtual void instance_geometry_get_shader_parameter_list(RID p_instance, List<PropertyInfo> *p_parameters) const;
-	virtual Variant instance_geometry_get_shader_parameter(RID p_instance, const StringName &p_parameter) const;
-	virtual Variant instance_geometry_get_shader_parameter_default_value(RID p_instance, const StringName &p_parameter) const;
 
 	virtual void mesh_generate_pipelines(RID p_mesh, bool p_background_compilation);
 	virtual uint32_t get_pipeline_compilations(RSE::PipelineSource p_source);
@@ -1136,7 +1184,8 @@ public:
 	_FORCE_INLINE_ void _update_instance_lightmap_captures(Instance *p_instance) const;
 	void _unpair_instance(Instance *p_instance);
 
-	void _light_instance_setup_directional_shadow(int p_shadow_index, Instance *p_instance, const Transform3D p_cam_transform, const Projection &p_cam_projection, bool p_cam_orthogonal, bool p_cam_vaspect);
+	void _cull_shadow_geometry(Scenario *p_scenario, const Vector<Plane> &p_planes, const double *p_origin, PagedArray<Instance *> &r_instances);
+	void _light_instance_setup_directional_shadow(int p_shadow_index, Instance *p_instance, const Transform3D p_cam_transform, const Projection &p_cam_projection, bool p_cam_orthogonal, bool p_cam_vaspect, const double *p_cam_origin);
 
 	_FORCE_INLINE_ bool _light_instance_update_shadow(Instance *p_instance, const Transform3D p_cam_transform, const Projection &p_cam_projection, bool p_cam_orthogonal, bool p_cam_vaspect, RID p_shadow_atlas, Scenario *p_scenario, float p_screen_mesh_lod_threshold, uint32_t p_visible_layers = 0xFFFFFF);
 
@@ -1152,6 +1201,7 @@ public:
 
 				Projection projection;
 				Transform3D transform;
+				double origin[3] = {};
 				real_t zfar;
 				real_t split;
 				real_t shadow_texel_size;
@@ -1193,7 +1243,7 @@ public:
 		uint32_t job_count = 1;
 		uint64_t viewport_mask;
 		Scenario *scenario = nullptr;
-		Vector3 camera_position;
+		double camera_position[3] = {};
 		uint32_t cull_offset;
 		uint32_t cull_count;
 	};
@@ -1201,7 +1251,7 @@ public:
 	void _visibility_cull_threaded(uint32_t p_thread, VisibilityCullData *cull_data);
 	void _visibility_cull(VisibilityCullData &cull_data, uint64_t p_from, uint64_t p_to);
 	template <bool p_fade_check>
-	_FORCE_INLINE_ int _visibility_range_check(InstanceVisibilityData &r_vis_data, const Vector3 &p_camera_pos, uint64_t p_viewport_mask);
+	_FORCE_INLINE_ int _visibility_range_check(InstanceVisibilityData &r_vis_data, const double *p_camera_pos, uint64_t p_viewport_mask);
 
 	struct CullData {
 		bool profile = false;
@@ -1209,6 +1259,7 @@ public:
 		Scenario *scenario = nullptr;
 		RID shadow_atlas;
 		Transform3D cam_transform;
+		double camera_origin[3] = {};
 		uint32_t visible_layers;
 		Instance *render_reflection_probe = nullptr;
 		const RendererSceneOcclusionCull::HZBuffer *occlusion_buffer;

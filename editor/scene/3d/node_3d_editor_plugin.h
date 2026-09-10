@@ -30,13 +30,15 @@
 
 #pragma once
 
+#include "servers/rendering/renderer_scene_data.h"
+
 #include "core/math/dynamic_bvh.h"
 #include "editor/plugins/editor_plugin.h"
 #include "editor/scene/3d/node_3d_editor_gizmos.h"
 #include "scene/debugger/view_3d_controller.h"
-#include "scene/entity/entity_catalog.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/popup.h"
+#include "scene/resources/entity_scene.h"
 
 class AcceptDialog;
 class Button;
@@ -96,7 +98,10 @@ public:
 	real_t gizmo_view_rotation_scale = 1.0;
 
 private:
-	EntityCatalog entity_catalog;
+	Ref<EntityScene> scene_document;
+	Label *document_status = nullptr;
+	bool native_directional_light = false;
+	bool native_environment = false;
 	EntityWorld *entity_world = nullptr;
 	void _update_default_environment();
 
@@ -116,10 +121,10 @@ private:
 
 	RID origin_mesh;
 	RID origin_multimesh;
-	RID origin_instance;
+	ToolRenderData origin_instance;
 	bool origin_enabled = false;
 	RID grid[3];
-	RID grid_instance[3];
+	ToolRenderData grid_instance[3];
 	bool grid_visible[3] = { false, false, false }; //currently visible
 	bool grid_enable[3] = { false, false, false }; //should be always visible if true
 	bool grid_enabled = false;
@@ -159,21 +164,12 @@ private:
 	Ref<StandardMaterial3D> active_selection_box_mat_xray;
 
 	RID indicators;
-	RID indicators_instance;
+	ToolRenderData indicators_instance;
 	RID cursor_mesh;
-	RID cursor_instance;
+	ToolRenderData cursor_instance;
 	Ref<ShaderMaterial> origin_mat;
 	Ref<ShaderMaterial> grid_mat[3];
 	Ref<StandardMaterial3D> cursor_material;
-
-	// Scene drag and drop support
-	Node3D *preview_node = nullptr;
-	AABB preview_bounds;
-
-	Ref<Material> preview_material;
-	Ref<Material> preview_reset_material;
-	ObjectID preview_material_target;
-	int preview_material_surface = -1;
 
 	struct Gizmo {
 		bool visible = false;
@@ -223,7 +219,6 @@ private:
 	PopupMenu *gizmos_menu = nullptr;
 	MenuButton *view_layout_menu = nullptr;
 
-	AcceptDialog *accept = nullptr;
 
 	ConfirmationDialog *snap_dialog = nullptr;
 	ConfirmationDialog *xform_dialog = nullptr;
@@ -351,7 +346,7 @@ private:
 	Button *sun_environ_settings = nullptr;
 
 	RID preview_sun;
-	RID preview_sun_instance;
+	ToolRenderData preview_sun_instance;
 	Color preview_sun_color = Color(1, 1, 1);
 	real_t preview_sun_energy = 1.0;
 	real_t preview_sun_shadow_max_distance = 100.0;
@@ -397,6 +392,7 @@ protected:
 public:
 	static Node3DEditor *get_singleton() { return singleton; }
 	EntityWorld *get_entity_world() const { return entity_world; }
+	void set_scene_document(const Ref<EntityScene> &p_document, bool p_reset_view);
 
 	static Size2i get_camera_viewport_size(Camera3D *p_camera);
 
@@ -478,15 +474,6 @@ public:
 	}
 
 	void set_can_preview(Camera3D *p_preview);
-
-	void set_preview_material(Ref<Material> p_material) { preview_material = p_material; }
-	Ref<Material> get_preview_material() { return preview_material; }
-	void set_preview_reset_material(Ref<Material> p_material) { preview_reset_material = p_material; }
-	Ref<Material> get_preview_reset_material() const { return preview_reset_material; }
-	void set_preview_material_target(ObjectID p_object_id) { preview_material_target = p_object_id; }
-	ObjectID get_preview_material_target() const { return preview_material_target; }
-	void set_preview_material_surface(int p_surface) { preview_material_surface = p_surface; }
-	int get_preview_material_surface() const { return preview_material_surface; }
 
 	Node3DEditorViewport *get_editor_viewport(int p_idx) {
 		ERR_FAIL_INDEX_V(p_idx, static_cast<int>(VIEWPORTS_COUNT), nullptr);

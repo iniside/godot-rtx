@@ -821,7 +821,6 @@ void PhysicalBone3D::_body_state_changed(PhysicsDirectBodyState3D *p_state) {
 	}
 
 	_sync_body_state(p_state);
-	_on_transform_changed();
 
 	Transform3D global_transform(p_state->get_transform());
 

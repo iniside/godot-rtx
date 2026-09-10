@@ -616,19 +616,6 @@ void Viewport::_notification(int p_what) {
 				contact_2d_debug = RenderingServer::get_singleton()->canvas_item_create();
 				RenderingServer::get_singleton()->canvas_item_set_parent(contact_2d_debug, current_canvas);
 #endif // PHYSICS_2D_DISABLED
-#ifndef PHYSICS_3D_DISABLED
-				if (find_world_3d().is_valid()) {
-					PhysicsServer3D::get_singleton()->space_set_debug_contacts(find_world_3d()->get_space(), get_tree()->get_collision_debug_contact_count());
-					contact_3d_debug_multimesh = RenderingServer::get_singleton()->multimesh_create();
-					RenderingServer::get_singleton()->multimesh_allocate_data(contact_3d_debug_multimesh, get_tree()->get_collision_debug_contact_count(), RSE::MULTIMESH_TRANSFORM_3D, false);
-					RenderingServer::get_singleton()->multimesh_set_visible_instances(contact_3d_debug_multimesh, 0);
-					RenderingServer::get_singleton()->multimesh_set_mesh(contact_3d_debug_multimesh, get_tree()->get_debug_contact_mesh()->get_rid());
-					contact_3d_debug_instance = RenderingServer::get_singleton()->instance_create();
-					RenderingServer::get_singleton()->instance_set_base(contact_3d_debug_instance, contact_3d_debug_multimesh);
-					RenderingServer::get_singleton()->instance_set_scenario(contact_3d_debug_instance, find_world_3d()->get_scenario());
-					RenderingServer::get_singleton()->instance_geometry_set_flag(contact_3d_debug_instance, RSE::INSTANCE_FLAG_DRAW_NEXT_FRAME_IF_VISIBLE, true);
-				}
-#endif // PHYSICS_3D_DISABLED
 				set_physics_process_internal(true);
 			}
 #endif // !defined(PHYSICS_2D_DISABLED) || !defined(PHYSICS_3D_DISABLED)
@@ -680,12 +667,6 @@ void Viewport::_notification(int p_what) {
 #endif // PHYSICS_2D_DISABLED
 
 #ifndef PHYSICS_3D_DISABLED
-			if (contact_3d_debug_multimesh.is_valid()) {
-				RenderingServer::get_singleton()->free_rid(contact_3d_debug_multimesh);
-				RenderingServer::get_singleton()->free_rid(contact_3d_debug_instance);
-				contact_3d_debug_instance = RID();
-				contact_3d_debug_multimesh = RID();
-			}
 #endif // PHYSICS_3D_DISABLED
 
 			remove_from_group("_viewports");
@@ -731,18 +712,6 @@ void Viewport::_notification(int p_what) {
 			}
 #endif // PHYSICS_2D_DISABLED
 #ifndef PHYSICS_3D_DISABLED
-			if (get_tree()->is_debugging_collisions_hint() && contact_3d_debug_multimesh.is_valid()) {
-				Vector<Vector3> points = PhysicsServer3D::get_singleton()->space_get_contacts(find_world_3d()->get_space());
-				int point_count = PhysicsServer3D::get_singleton()->space_get_contact_count(find_world_3d()->get_space());
-
-				RS::get_singleton()->multimesh_set_visible_instances(contact_3d_debug_multimesh, point_count);
-
-				for (int i = 0; i < point_count; i++) {
-					Transform3D point_transform;
-					point_transform.origin = points[i];
-					RS::get_singleton()->multimesh_instance_set_transform(contact_3d_debug_multimesh, i, point_transform);
-				}
-			}
 #endif // PHYSICS_3D_DISABLED
 		} break;
 #endif // !defined(PHYSICS_2D_DISABLED) || !defined(PHYSICS_3D_DISABLED)

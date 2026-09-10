@@ -34,10 +34,6 @@
 
 #include "core/object/ref_counted.h"
 
-#ifndef _3D_DISABLED
-#include "scene/debugger/view_3d_controller.h"
-#include "scene/resources/mesh.h"
-#endif // _3D_DISABLED
 
 class InputEvent;
 class InputEventMouseMotion;
@@ -46,9 +42,6 @@ class Node;
 class PopupMenu;
 class ViewPanner;
 
-#ifndef _3D_DISABLED
-class ArrayMesh;
-#endif
 
 class RuntimeNodeSelect : public Object {
 	GDCLASS(RuntimeNodeSelect, Object);
@@ -124,33 +117,6 @@ private:
 	Color srect_color;
 	RID srect_ci;
 
-#ifndef _3D_DISABLED
-	Ref<View3DController> view_3d_controller;
-
-	real_t camera_fov = 0;
-	real_t camera_znear = 0;
-	real_t camera_zfar = 0;
-
-	Key freelook_modifier = Key::NONE;
-	Ref<Shortcut> freelook_toggle;
-
-	struct SelectionBox : public RefCounted {
-		RID instance;
-		RID instance_ofs;
-		RID instance_xray;
-		RID instance_xray_ofs;
-
-		Transform3D transform;
-		AABB bounds;
-
-		~SelectionBox();
-	};
-	HashMap<ObjectID, Ref<SelectionBox>> selected_3d_nodes;
-
-	Color sbox_color;
-	Ref<ArrayMesh> sbox_mesh;
-	Ref<ArrayMesh> sbox_mesh_xray;
-#endif // _3D_DISABLED
 
 	void _setup(const Dictionary &p_settings);
 
@@ -186,17 +152,6 @@ private:
 	void _reset_camera_2d();
 	void _update_view_2d();
 
-#ifndef _3D_DISABLED
-	void _find_3d_items_at_pos(const Point2 &p_pos, Vector<SelectResult> &r_items);
-	void _find_3d_items_at_rect(const Rect2 &p_rect, Vector<SelectResult> &r_items);
-	Vector3 _get_screen_to_space(const Vector3 &p_vector3);
-
-	void _fov_scaled();
-	void _cursor_interpolated();
-
-	bool _handle_3d_input(const Ref<InputEvent> &p_event);
-	void _reset_camera_3d();
-#endif // _3D_DISABLED
 
 	RuntimeNodeSelect() { singleton = this; }
 

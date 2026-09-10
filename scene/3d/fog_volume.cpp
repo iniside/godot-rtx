@@ -89,7 +89,6 @@ Vector3 FogVolume::get_size() const {
 void FogVolume::set_shape(RSE::FogVolumeShape p_type) {
 	shape = p_type;
 	RS::get_singleton()->fog_volume_set_shape(_get_volume(), shape);
-	RS::get_singleton()->instance_set_ignore_culling(get_instance(), shape == RSE::FOG_VOLUME_SHAPE_WORLD);
 	update_gizmos();
 	notify_property_list_changed();
 }

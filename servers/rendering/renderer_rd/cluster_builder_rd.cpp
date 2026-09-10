@@ -412,8 +412,11 @@ void ClusterBuilderRD::setup(Size2i p_screen_size, uint32_t p_max_elements, RID 
 	}
 }
 
-void ClusterBuilderRD::begin(const Transform3D &p_view_transform, const Projection &p_cam_projection, bool p_flip_y) {
-	view_xform = p_view_transform.affine_inverse();
+void ClusterBuilderRD::begin(const Transform3D &p_view_transform, const Projection &p_cam_projection, bool p_flip_y, const double *p_origin) {
+	view_xform = Transform3D(p_view_transform.basis.inverse());
+	for (int axis = 0; axis < 3; axis++) {
+		view_origin[axis] = p_origin ? p_origin[axis] : double(p_view_transform.origin[axis]);
+	}
 	projection = p_cam_projection;
 	z_near = projection.get_z_near();
 	z_far = projection.get_z_far();

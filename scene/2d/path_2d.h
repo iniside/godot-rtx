@@ -44,7 +44,6 @@ class Path2D : public Node2D {
 
 #ifdef DEBUG_ENABLED
 	RID debug_mesh_rid;
-	RID debug_instance;
 
 	void _debug_create();
 	void _debug_update();

@@ -63,6 +63,7 @@ public:
 	virtual void shader_set_code(RID p_shader, const String &p_code) = 0;
 	virtual void shader_set_code_rt(RID p_shader, const String &p_code_rt) {}
 	virtual void shader_set_generated_standard_material(RID p_shader, bool p_generated) {}
+	virtual void shader_set_generated_particle_material(RID p_shader, bool p_generated) {}
 	virtual void shader_set_path_hint(RID p_shader, const String &p_path) = 0;
 	virtual String shader_get_code(RID p_shader) const = 0;
 	virtual void get_shader_parameter_list(RID p_shader, List<PropertyInfo> *p_param_list) const = 0;

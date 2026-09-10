@@ -85,28 +85,6 @@ static PackedInt64Array to_int_array(const Vector<ObjectID> &ids) {
 	return a;
 }
 
-PackedInt64Array RenderingServer::_instances_cull_aabb_bind(const AABB &p_aabb, RID p_scenario) const {
-	Vector<ObjectID> ids = instances_cull_aabb(p_aabb, p_scenario);
-	return to_int_array(ids);
-}
-
-PackedInt64Array RenderingServer::_instances_cull_ray_bind(const Vector3 &p_from, const Vector3 &p_to, RID p_scenario) const {
-	Vector<ObjectID> ids = instances_cull_ray(p_from, p_to, p_scenario);
-	return to_int_array(ids);
-}
-
-PackedInt64Array RenderingServer::_instances_cull_convex_bind(const TypedArray<Plane> &p_convex, RID p_scenario) const {
-	Vector<Plane> planes;
-	for (int i = 0; i < p_convex.size(); ++i) {
-		const Variant &v = p_convex[i];
-		ERR_FAIL_COND_V(v.get_type() != Variant::PLANE, PackedInt64Array());
-		planes.push_back(v);
-	}
-
-	Vector<ObjectID> ids = instances_cull_convex(planes, p_scenario);
-	return to_int_array(ids);
-}
-
 RID RenderingServer::get_test_texture() {
 	if (test_texture.is_valid()) {
 		return test_texture;
@@ -2053,12 +2031,6 @@ Dictionary RenderingServer::_mesh_get_surface(RID p_mesh, int p_idx) {
 	return d;
 }
 
-TypedArray<Dictionary> RenderingServer::_instance_geometry_get_shader_parameter_list(RID p_instance) const {
-	List<PropertyInfo> params;
-	instance_geometry_get_shader_parameter_list(p_instance, &params);
-	return convert_property_list(&params);
-}
-
 TypedArray<Dictionary> RenderingServer::_canvas_item_get_instance_shader_parameter_list(RID p_instance) const {
 	List<PropertyInfo> params;
 	canvas_item_get_instance_shader_parameter_list(p_instance, &params);
@@ -3262,48 +3234,6 @@ void RenderingServer::_bind_methods() {
 
 	/* INSTANCE */
 
-	ClassDB::bind_method(D_METHOD("instance_create2", "base", "scenario"), &RenderingServer::instance_create2);
-	ClassDB::bind_method(D_METHOD("instance_create"), &RenderingServer::instance_create);
-	ClassDB::bind_method(D_METHOD("instance_set_base", "instance", "base"), &RenderingServer::instance_set_base);
-	ClassDB::bind_method(D_METHOD("instance_set_scenario", "instance", "scenario"), &RenderingServer::instance_set_scenario);
-	ClassDB::bind_method(D_METHOD("instance_set_layer_mask", "instance", "mask"), &RenderingServer::instance_set_layer_mask);
-	ClassDB::bind_method(D_METHOD("instance_set_pivot_data", "instance", "sorting_offset", "use_aabb_center"), &RenderingServer::instance_set_pivot_data);
-	ClassDB::bind_method(D_METHOD("instance_set_transform", "instance", "transform"), &RenderingServer::instance_set_transform);
-	ClassDB::bind_method(D_METHOD("instance_attach_object_instance_id", "instance", "id"), &RenderingServer::instance_attach_object_instance_id);
-	ClassDB::bind_method(D_METHOD("instance_set_blend_shape_weight", "instance", "shape", "weight"), &RenderingServer::instance_set_blend_shape_weight);
-	ClassDB::bind_method(D_METHOD("instance_set_surface_override_material", "instance", "surface", "material"), &RenderingServer::instance_set_surface_override_material);
-	ClassDB::bind_method(D_METHOD("instance_set_visible", "instance", "visible"), &RenderingServer::instance_set_visible);
-	ClassDB::bind_method(D_METHOD("instance_geometry_set_transparency", "instance", "transparency"), &RenderingServer::instance_geometry_set_transparency);
-
-	ClassDB::bind_method(D_METHOD("instance_teleport", "instance"), &RenderingServer::instance_teleport);
-
-	ClassDB::bind_method(D_METHOD("instance_set_custom_aabb", "instance", "aabb"), &RenderingServer::instance_set_custom_aabb);
-
-	ClassDB::bind_method(D_METHOD("instance_set_rt_procedural", "instance", "procedural", "aabb"), &RenderingServer::instance_set_rt_procedural);
-	ClassDB::bind_method(D_METHOD("instance_set_rt_procedural_bounds", "instance", "aabb_data", "expose_bounds"), &RenderingServer::instance_set_rt_procedural_bounds);
-
-	ClassDB::bind_method(D_METHOD("instance_attach_skeleton", "instance", "skeleton"), &RenderingServer::instance_attach_skeleton);
-	ClassDB::bind_method(D_METHOD("instance_set_extra_visibility_margin", "instance", "margin"), &RenderingServer::instance_set_extra_visibility_margin);
-	ClassDB::bind_method(D_METHOD("instance_set_visibility_parent", "instance", "parent"), &RenderingServer::instance_set_visibility_parent);
-	ClassDB::bind_method(D_METHOD("instance_set_ignore_culling", "instance", "enabled"), &RenderingServer::instance_set_ignore_culling);
-
-	ClassDB::bind_method(D_METHOD("instance_geometry_set_flag", "instance", "flag", "enabled"), &RenderingServer::instance_geometry_set_flag);
-	ClassDB::bind_method(D_METHOD("instance_geometry_set_cast_shadows_setting", "instance", "shadow_casting_setting"), &RenderingServer::instance_geometry_set_cast_shadows_setting);
-	ClassDB::bind_method(D_METHOD("instance_geometry_set_material_override", "instance", "material"), &RenderingServer::instance_geometry_set_material_override);
-	ClassDB::bind_method(D_METHOD("instance_geometry_set_material_overlay", "instance", "material"), &RenderingServer::instance_geometry_set_material_overlay);
-	ClassDB::bind_method(D_METHOD("instance_geometry_set_visibility_range", "instance", "min", "max", "min_margin", "max_margin", "fade_mode"), &RenderingServer::instance_geometry_set_visibility_range);
-	ClassDB::bind_method(D_METHOD("instance_geometry_set_lightmap", "instance", "lightmap", "lightmap_uv_scale", "lightmap_slice"), &RenderingServer::instance_geometry_set_lightmap);
-	ClassDB::bind_method(D_METHOD("instance_geometry_set_lod_bias", "instance", "lod_bias"), &RenderingServer::instance_geometry_set_lod_bias);
-
-	ClassDB::bind_method(D_METHOD("instance_geometry_set_shader_parameter", "instance", "parameter", "value"), &RenderingServer::instance_geometry_set_shader_parameter);
-	ClassDB::bind_method(D_METHOD("instance_geometry_get_shader_parameter", "instance", "parameter"), &RenderingServer::instance_geometry_get_shader_parameter);
-	ClassDB::bind_method(D_METHOD("instance_geometry_get_shader_parameter_default_value", "instance", "parameter"), &RenderingServer::instance_geometry_get_shader_parameter_default_value);
-	ClassDB::bind_method(D_METHOD("instance_geometry_get_shader_parameter_list", "instance"), &RenderingServer::_instance_geometry_get_shader_parameter_list);
-
-	ClassDB::bind_method(D_METHOD("instances_cull_aabb", "aabb", "scenario"), &RenderingServer::_instances_cull_aabb_bind, DEFVAL(RID()));
-	ClassDB::bind_method(D_METHOD("instances_cull_ray", "from", "to", "scenario"), &RenderingServer::_instances_cull_ray_bind, DEFVAL(RID()));
-	ClassDB::bind_method(D_METHOD("instances_cull_convex", "convex", "scenario"), &RenderingServer::_instances_cull_convex_bind, DEFVAL(RID()));
-
 	BIND_ENUM_CONSTANT(RSE::INSTANCE_NONE);
 	BIND_ENUM_CONSTANT(RSE::INSTANCE_MESH);
 	BIND_ENUM_CONSTANT(RSE::INSTANCE_MULTIMESH);
@@ -3320,12 +3250,6 @@ void RenderingServer::_bind_methods() {
 	BIND_ENUM_CONSTANT(RSE::INSTANCE_MAX);
 
 	BIND_ENUM_CONSTANT(RSE::INSTANCE_GEOMETRY_MASK);
-
-	BIND_ENUM_CONSTANT(RSE::INSTANCE_FLAG_USE_BAKED_LIGHT);
-	BIND_ENUM_CONSTANT(RSE::INSTANCE_FLAG_USE_DYNAMIC_GI);
-	BIND_ENUM_CONSTANT(RSE::INSTANCE_FLAG_DRAW_NEXT_FRAME_IF_VISIBLE);
-	BIND_ENUM_CONSTANT(RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING);
-	BIND_ENUM_CONSTANT(RSE::INSTANCE_FLAG_MAX);
 
 	BIND_ENUM_CONSTANT(RSE::SHADOW_CASTING_SETTING_OFF);
 	BIND_ENUM_CONSTANT(RSE::SHADOW_CASTING_SETTING_ON);
@@ -3676,13 +3600,6 @@ void RenderingServer::set_boot_image(const Ref<Image> &p_image, const Color &p_c
 	set_boot_image_with_stretch(p_image, p_color, stretch_mode, p_use_filter);
 }
 #endif
-
-RID RenderingServer::instance_create2(RID p_base, RID p_scenario) {
-	RID instance = instance_create();
-	instance_set_base(instance, p_base);
-	instance_set_scenario(instance, p_scenario);
-	return instance;
-}
 
 bool RenderingServer::is_render_loop_enabled() const {
 	return render_loop_enabled;

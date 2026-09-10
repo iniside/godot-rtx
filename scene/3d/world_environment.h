@@ -42,12 +42,7 @@ class WorldEnvironment : public Node {
 	Ref<CameraAttributes> camera_attributes;
 	Ref<Compositor> compositor;
 
-	void _update_current_environment();
-	void _update_current_camera_attributes();
-	void _update_current_compositor();
-
 protected:
-	void _notification(int p_what);
 	static void _bind_methods();
 
 public:
@@ -59,8 +54,6 @@ public:
 
 	void set_compositor(const Ref<Compositor> &p_compositor);
 	Ref<Compositor> get_compositor() const;
-
-	PackedStringArray get_configuration_warnings() const override;
 
 	WorldEnvironment();
 };

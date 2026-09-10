@@ -71,9 +71,7 @@ DDGIEffect::DDGIEffect() {
 	sampler_state.repeat_w = RD::SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE;
 	sampler = RD::get_singleton()->sampler_create(sampler_state);
 	String scene_defines;
-#ifdef REAL_T_IS_DOUBLE
 	scene_defines += "#define USE_DOUBLE_PRECISION\n";
-#endif
 	trace_shader.initialize(Vector<String>{ "\n", "\n#define USE_RADIANCE_OCTMAP_ARRAY\n" }, scene_defines);
 	trace_version = trace_shader.version_create();
 	camera_shader.initialize(Vector<String>{ "\n" }, scene_defines);
@@ -231,8 +229,10 @@ bool DDGIEffect::_state(Context &p_context, uint32_t p_cascade, StateMode p_mode
 	return dispatched;
 }
 
-bool DDGIEffect::prepare(Context &p_context, const Vector3 &p_camera, const Vector3 &p_rt_origin, uint64_t p_history_epoch, int p_update_budget) {
-	ERR_FAIL_COND_V(!p_camera.is_finite() || !p_rt_origin.is_finite(), false);
+bool DDGIEffect::prepare(Context &p_context, const double *p_camera, const double *p_rt_origin, uint64_t p_history_epoch, int p_update_budget) {
+	for (int axis = 0; axis < 3; axis++) {
+		ERR_FAIL_COND_V(!Math::is_finite(p_camera[axis]) || !Math::is_finite(p_rt_origin[axis]), false);
+	}
 	p_context.frame++;
 	p_context.camera_rendered = false;
 	p_context.camera_scene_data = RID();
@@ -462,9 +462,7 @@ bool DDGIEffect::render_debug(Context &p_context, RID p_framebuffer, RID p_rt_fr
 	RD *rd = RD::get_singleton();
 	if (debug_version.is_null()) {
 		String defines;
-#ifdef REAL_T_IS_DOUBLE
 		defines += "#define USE_DOUBLE_PRECISION\n";
-#endif
 		debug_shader.initialize(Vector<String>{ "\n" }, defines);
 		debug_version = debug_shader.version_create();
 		RID shader = debug_shader.version_get_shader(debug_version, 0);

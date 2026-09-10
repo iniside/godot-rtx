@@ -110,14 +110,6 @@ class NavigationAgent3D : public Node {
 	float debug_path_custom_point_size = 4.0;
 	bool debug_use_custom = false;
 	Color debug_path_custom_color = Color(1.0, 1.0, 1.0, 1.0);
-#ifdef DEBUG_ENABLED
-	// Debug properties internal only
-	bool debug_path_dirty = true;
-	RID debug_path_instance;
-	Ref<ArrayMesh> debug_path_mesh;
-	Ref<StandardMaterial3D> debug_agent_path_line_custom_material;
-	Ref<StandardMaterial3D> debug_agent_path_point_custom_material;
-#endif // DEBUG_ENABLED
 
 protected:
 	static void _bind_methods();
@@ -293,8 +285,4 @@ private:
 	void _transition_to_navigation_finished();
 	void _transition_to_target_reached();
 
-#ifdef DEBUG_ENABLED
-	void _navigation_debug_changed();
-	void _update_debug_path();
-#endif // DEBUG_ENABLED
 };

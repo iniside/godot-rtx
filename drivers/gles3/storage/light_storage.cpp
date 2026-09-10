@@ -461,7 +461,7 @@ void LightStorage::light_instance_free(RID p_light_instance) {
 	light_instance_owner.free(p_light_instance);
 }
 
-void LightStorage::light_instance_set_transform(RID p_light_instance, const Transform3D &p_transform) {
+void LightStorage::light_instance_set_transform(RID p_light_instance, const Transform3D &p_transform, const double *p_origin) {
 	LightInstance *light_instance = light_instance_owner.get_or_null(p_light_instance);
 	ERR_FAIL_NULL(light_instance);
 
@@ -475,7 +475,7 @@ void LightStorage::light_instance_set_aabb(RID p_light_instance, const AABB &p_a
 	light_instance->aabb = p_aabb;
 }
 
-void LightStorage::light_instance_set_shadow_transform(RID p_light_instance, const Projection &p_projection, const Transform3D &p_transform, float p_far, float p_split, int p_pass, float p_shadow_texel_size, float p_bias_scale, float p_range_begin, const Vector2 &p_uv_scale) {
+void LightStorage::light_instance_set_shadow_transform(RID p_light_instance, const Projection &p_projection, const Transform3D &p_transform, float p_far, float p_split, int p_pass, float p_shadow_texel_size, float p_bias_scale, float p_range_begin, const Vector2 &p_uv_scale, const double *p_origin) {
 	LightInstance *light_instance = light_instance_owner.get_or_null(p_light_instance);
 	ERR_FAIL_NULL(light_instance);
 
@@ -791,7 +791,7 @@ void LightStorage::reflection_probe_instance_free(RID p_instance) {
 	reflection_probe_instance_owner.free(p_instance);
 }
 
-void LightStorage::reflection_probe_instance_set_transform(RID p_instance, const Transform3D &p_transform) {
+void LightStorage::reflection_probe_instance_set_transform(RID p_instance, const Transform3D &p_transform, const double *p_origin) {
 	ReflectionProbeInstance *rpi = reflection_probe_instance_owner.get_or_null(p_instance);
 	ERR_FAIL_NULL(rpi);
 
@@ -1318,7 +1318,7 @@ void LightStorage::lightmap_instance_free(RID p_lightmap) {
 	lightmap_instance_owner.free(p_lightmap);
 }
 
-void LightStorage::lightmap_instance_set_transform(RID p_lightmap, const Transform3D &p_transform) {
+void LightStorage::lightmap_instance_set_transform(RID p_lightmap, const Transform3D &p_transform, const double *p_origin) {
 	LightmapInstance *li = lightmap_instance_owner.get_or_null(p_lightmap);
 	ERR_FAIL_NULL(li);
 	li->transform = p_transform;

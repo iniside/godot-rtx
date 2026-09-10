@@ -69,6 +69,7 @@ private:
 	struct FogVolumeInstance {
 		RID volume;
 		Transform3D transform;
+		double origin[3] = {};
 		bool active = false;
 	};
 
@@ -124,6 +125,8 @@ private:
 
 			float to_prev_view[16];
 			float transform[16];
+			float camera_origin_high[4];
+			float camera_origin_low[4];
 		};
 
 		ShaderCompiler compiler;
@@ -271,10 +274,13 @@ public:
 	RID fog_volume_instance_create(RID p_fog_volume);
 	void fog_instance_free(RID p_rid);
 
-	void fog_volume_instance_set_transform(RID p_fog_volume_instance, const Transform3D &p_transform) {
+	void fog_volume_instance_set_transform(RID p_fog_volume_instance, const Transform3D &p_transform, const double *p_origin = nullptr) {
 		Fog::FogVolumeInstance *fvi = fog_volume_instance_owner.get_or_null(p_fog_volume_instance);
 		ERR_FAIL_NULL(fvi);
 		fvi->transform = p_transform;
+		for (int axis = 0; axis < 3; axis++) {
+			fvi->origin[axis] = p_origin ? p_origin[axis] : double(p_transform.origin[axis]);
+		}
 	}
 
 	void fog_volume_instance_set_active(RID p_fog_volume_instance, bool p_active) {
@@ -373,7 +379,7 @@ public:
 		RID env;
 		SkyRD *sky;
 	};
-	void volumetric_fog_update(const VolumetricFogSettings &p_settings, const Projection &p_cam_projection, const Transform3D &p_cam_transform, const Transform3D &p_prev_cam_inv_transform, RID p_shadow_atlas, int p_directional_light_count, bool p_use_directional_shadows, int p_positional_light_count, int p_voxel_gi_count, const PagedArray<RID> &p_fog_volumes);
+	void volumetric_fog_update(const VolumetricFogSettings &p_settings, const Projection &p_cam_projection, const Transform3D &p_cam_transform, const Transform3D &p_prev_cam_inv_transform, RID p_shadow_atlas, int p_directional_light_count, bool p_use_directional_shadows, int p_positional_light_count, int p_voxel_gi_count, const PagedArray<RID> &p_fog_volumes, const double *p_cam_origin, const double *p_prev_cam_origin);
 };
 
 } // namespace RendererRD

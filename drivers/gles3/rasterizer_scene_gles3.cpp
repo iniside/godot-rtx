@@ -54,15 +54,16 @@
 
 RasterizerSceneGLES3 *RasterizerSceneGLES3::singleton = nullptr;
 
-RenderGeometryInstance *RasterizerSceneGLES3::geometry_instance_create(RID p_base) {
+RenderGeometryInstance *RasterizerSceneGLES3::geometry_instance_create(RID p_base, RenderSceneInstanceData *p_scene_data) {
 	RSE::InstanceType type = RSG::utilities->get_base_type(p_base);
 	ERR_FAIL_COND_V(!((1 << type) & RSE::INSTANCE_GEOMETRY_MASK), nullptr);
 
 	GeometryInstanceGLES3 *ginstance = geometry_instance_alloc.alloc();
 	ginstance->data = memnew(GeometryInstanceGLES3::Data);
+	ginstance->scene_data = p_scene_data;
 
-	ginstance->data->base = p_base;
-	ginstance->data->base_type = type;
+	ginstance->scene_data->base = p_base;
+	ginstance->scene_data->base_type = type;
 	ginstance->data->dependency_tracker.userdata = ginstance;
 	ginstance->data->dependency_tracker.changed_callback = _geometry_instance_dependency_changed;
 	ginstance->data->dependency_tracker.deleted_callback = _geometry_instance_dependency_deleted;
@@ -209,8 +210,8 @@ void RasterizerSceneGLES3::_geometry_instance_dependency_changed(Dependency::Dep
 		} break;
 		case Dependency::DEPENDENCY_CHANGED_MULTIMESH_VISIBLE_INSTANCES: {
 			GeometryInstanceGLES3 *ginstance = static_cast<GeometryInstanceGLES3 *>(p_tracker->userdata);
-			if (ginstance->data->base_type == RSE::INSTANCE_MULTIMESH) {
-				ginstance->instance_count = GLES3::MeshStorage::get_singleton()->multimesh_get_instances_to_draw(ginstance->data->base);
+			if (ginstance->scene_data->base_type == RSE::INSTANCE_MULTIMESH) {
+				ginstance->instance_count = GLES3::MeshStorage::get_singleton()->multimesh_get_instances_to_draw(ginstance->scene_data->base);
 			}
 		} break;
 		default: {
@@ -362,7 +363,7 @@ void RasterizerSceneGLES3::_geometry_instance_add_surface(GeometryInstanceGLES3 
 	GLES3::MaterialStorage *material_storage = GLES3::MaterialStorage::get_singleton();
 	RID m_src;
 
-	m_src = ginstance->data->material_override.is_valid() ? ginstance->data->material_override : p_material;
+	m_src = ginstance->scene_data->material_override.is_valid() ? ginstance->scene_data->material_override : p_material;
 
 	GLES3::SceneMaterialData *material_data = nullptr;
 
@@ -386,8 +387,8 @@ void RasterizerSceneGLES3::_geometry_instance_add_surface(GeometryInstanceGLES3 
 
 	_geometry_instance_add_surface_with_material_chain(ginstance, p_surface, material_data, m_src, p_mesh);
 
-	if (ginstance->data->material_overlay.is_valid()) {
-		m_src = ginstance->data->material_overlay;
+	if (ginstance->scene_data->material_overlay.is_valid()) {
+		m_src = ginstance->scene_data->material_overlay;
 
 		material_data = static_cast<GLES3::SceneMaterialData *>(material_storage->material_get_data(m_src, RSE::SHADER_SPATIAL));
 		if (material_data && material_data->shader_data->valid) {
@@ -411,17 +412,17 @@ void RasterizerSceneGLES3::_geometry_instance_update(RenderGeometryInstance *p_g
 	}
 
 	//add geometry for drawing
-	switch (ginstance->data->base_type) {
+	switch (ginstance->scene_data->base_type) {
 		case RSE::INSTANCE_MESH: {
 			const RID *materials = nullptr;
 			uint32_t surface_count;
-			RID mesh = ginstance->data->base;
+			RID mesh = ginstance->scene_data->base;
 
 			materials = mesh_storage->mesh_get_surface_count_and_materials(mesh, surface_count);
 			if (materials) {
 				//if no materials, no surfaces.
-				const RID *inst_materials = ginstance->data->surface_materials.ptr();
-				uint32_t surf_mat_count = ginstance->data->surface_materials.size();
+				const RID *inst_materials = ginstance->scene_data->materials.ptr();
+				uint32_t surf_mat_count = ginstance->scene_data->materials.size();
 
 				for (uint32_t j = 0; j < surface_count; j++) {
 					RID material = (j < surf_mat_count && inst_materials[j].is_valid()) ? inst_materials[j] : materials[j];
@@ -434,7 +435,7 @@ void RasterizerSceneGLES3::_geometry_instance_update(RenderGeometryInstance *p_g
 		} break;
 
 		case RSE::INSTANCE_MULTIMESH: {
-			RID mesh = mesh_storage->multimesh_get_mesh(ginstance->data->base);
+			RID mesh = mesh_storage->multimesh_get_mesh(ginstance->scene_data->base);
 			if (mesh.is_valid()) {
 				const RID *materials = nullptr;
 				uint32_t surface_count;
@@ -446,15 +447,15 @@ void RasterizerSceneGLES3::_geometry_instance_update(RenderGeometryInstance *p_g
 					}
 				}
 
-				ginstance->instance_count = mesh_storage->multimesh_get_instances_to_draw(ginstance->data->base);
+				ginstance->instance_count = mesh_storage->multimesh_get_instances_to_draw(ginstance->scene_data->base);
 			}
 
 		} break;
 		case RSE::INSTANCE_PARTICLES: {
-			int draw_passes = particles_storage->particles_get_draw_passes(ginstance->data->base);
+			int draw_passes = particles_storage->particles_get_draw_passes(ginstance->scene_data->base);
 
 			for (int j = 0; j < draw_passes; j++) {
-				RID mesh = particles_storage->particles_get_draw_pass_mesh(ginstance->data->base, j);
+				RID mesh = particles_storage->particles_get_draw_pass_mesh(ginstance->scene_data->base, j);
 				if (!mesh.is_valid()) {
 					continue;
 				}
@@ -470,7 +471,7 @@ void RasterizerSceneGLES3::_geometry_instance_update(RenderGeometryInstance *p_g
 				}
 			}
 
-			ginstance->instance_count = particles_storage->particles_get_amount(ginstance->data->base);
+			ginstance->instance_count = particles_storage->particles_get_amount(ginstance->scene_data->base);
 		} break;
 
 		default: {
@@ -480,33 +481,33 @@ void RasterizerSceneGLES3::_geometry_instance_update(RenderGeometryInstance *p_g
 	bool store_transform = true;
 	ginstance->base_flags = 0;
 
-	if (ginstance->data->base_type == RSE::INSTANCE_MULTIMESH) {
+	if (ginstance->scene_data->base_type == RSE::INSTANCE_MULTIMESH) {
 		ginstance->base_flags |= INSTANCE_DATA_FLAG_MULTIMESH;
-		if (mesh_storage->multimesh_get_transform_format(ginstance->data->base) == RSE::MULTIMESH_TRANSFORM_2D) {
+		if (mesh_storage->multimesh_get_transform_format(ginstance->scene_data->base) == RSE::MULTIMESH_TRANSFORM_2D) {
 			ginstance->base_flags |= INSTANCE_DATA_FLAG_MULTIMESH_FORMAT_2D;
 		}
-		if (mesh_storage->multimesh_uses_colors(ginstance->data->base)) {
+		if (mesh_storage->multimesh_uses_colors(ginstance->scene_data->base)) {
 			ginstance->base_flags |= INSTANCE_DATA_FLAG_MULTIMESH_HAS_COLOR;
 		}
-		if (mesh_storage->multimesh_uses_custom_data(ginstance->data->base)) {
+		if (mesh_storage->multimesh_uses_custom_data(ginstance->scene_data->base)) {
 			ginstance->base_flags |= INSTANCE_DATA_FLAG_MULTIMESH_HAS_CUSTOM_DATA;
 		}
 
-	} else if (ginstance->data->base_type == RSE::INSTANCE_PARTICLES) {
+	} else if (ginstance->scene_data->base_type == RSE::INSTANCE_PARTICLES) {
 		ginstance->base_flags |= INSTANCE_DATA_FLAG_PARTICLES;
 		ginstance->base_flags |= INSTANCE_DATA_FLAG_MULTIMESH;
 
 		ginstance->base_flags |= INSTANCE_DATA_FLAG_MULTIMESH_HAS_COLOR;
 		ginstance->base_flags |= INSTANCE_DATA_FLAG_MULTIMESH_HAS_CUSTOM_DATA;
 
-		if (!particles_storage->particles_is_using_local_coords(ginstance->data->base)) {
+		if (!particles_storage->particles_is_using_local_coords(ginstance->scene_data->base)) {
 			store_transform = false;
 		}
 
-	} else if (ginstance->data->base_type == RSE::INSTANCE_MESH) {
-		if (mesh_storage->skeleton_is_valid(ginstance->data->skeleton)) {
+	} else if (ginstance->scene_data->base_type == RSE::INSTANCE_MESH) {
+		if (mesh_storage->skeleton_is_valid(ginstance->scene_data->skeleton)) {
 			if (ginstance->data->dirty_dependencies) {
-				mesh_storage->skeleton_update_dependency(ginstance->data->skeleton, &ginstance->data->dependency_tracker);
+				mesh_storage->skeleton_update_dependency(ginstance->scene_data->skeleton, &ginstance->data->dependency_tracker);
 			}
 		}
 	}
@@ -1238,7 +1239,7 @@ RID RasterizerSceneGLES3::fog_volume_instance_create(RID p_fog_volume) {
 	return RID();
 }
 
-void RasterizerSceneGLES3::fog_volume_instance_set_transform(RID p_fog_volume_instance, const Transform3D &p_transform) {
+void RasterizerSceneGLES3::fog_volume_instance_set_transform(RID p_fog_volume_instance, const Transform3D &p_transform, const double *p_origin) {
 }
 
 void RasterizerSceneGLES3::fog_volume_instance_set_active(RID p_fog_volume_instance, bool p_active) {
@@ -1256,7 +1257,7 @@ RID RasterizerSceneGLES3::voxel_gi_instance_create(RID p_voxel_gi) {
 	return RID();
 }
 
-void RasterizerSceneGLES3::voxel_gi_instance_set_transform_to_data(RID p_probe, const Transform3D &p_xform) {
+void RasterizerSceneGLES3::voxel_gi_instance_set_transform_to_data(RID p_probe, const Transform3D &p_xform, const double *p_origin) {
 }
 
 bool RasterizerSceneGLES3::voxel_gi_needs_update(RID p_probe) const {
@@ -1311,15 +1312,15 @@ void RasterizerSceneGLES3::_fill_render_list(RenderListType p_render_list, const
 
 		Vector3 center = inst->transform.origin;
 		if (p_render_data->cam_orthogonal) {
-			if (inst->use_aabb_center) {
-				center = inst->transformed_aabb.get_support(-near_plane.normal);
+			if (inst->scene_data->use_aabb_center) {
+				center = inst->scene_data->transformed_aabb.get_support(-near_plane.normal);
 			}
-			inst->depth = near_plane.distance_to(center) - inst->sorting_offset;
+			inst->depth = near_plane.distance_to(center) - inst->scene_data->sorting_offset;
 		} else {
-			if (inst->use_aabb_center) {
-				center = inst->transformed_aabb.position + (inst->transformed_aabb.size * 0.5);
+			if (inst->scene_data->use_aabb_center) {
+				center = inst->scene_data->transformed_aabb.position + (inst->scene_data->transformed_aabb.size * 0.5);
 			}
-			inst->depth = p_render_data->cam_transform.origin.distance_to(center) - inst->sorting_offset;
+			inst->depth = p_render_data->cam_transform.origin.distance_to(center) - inst->scene_data->sorting_offset;
 		}
 		uint32_t depth_layer = CLAMP(int(inst->depth * 16 / z_max), 0, 15);
 
@@ -1413,7 +1414,7 @@ void RasterizerSceneGLES3::_fill_render_list(RenderListType p_render_list, const
 					RID atlas = light_storage->reflection_probe_instance_get_atlas(probe_instance);
 					RID probe = light_storage->reflection_probe_instance_get_probe(probe_instance);
 					uint32_t reflection_mask = light_storage->reflection_probe_get_reflection_mask(probe);
-					if (atlas.is_valid() && (inst->layer_mask & reflection_mask)) {
+					if (atlas.is_valid() && (inst->scene_data->layer_mask & reflection_mask)) {
 						Transform3D local_matrix = p_render_data->inv_cam_transform * light_storage->reflection_probe_instance_get_transform(probe_instance);
 						inst->reflection_probes_local_transform_cache.push_back(local_matrix.affine_inverse());
 						inst->reflection_probe_rid_cache.push_back(probe_instance);
@@ -1431,8 +1432,8 @@ void RasterizerSceneGLES3::_fill_render_list(RenderListType p_render_list, const
 		if (p_render_data->cam_orthogonal) {
 			lod_distance = 1.0;
 		} else {
-			Vector3 aabb_min = inst->transformed_aabb.position;
-			Vector3 aabb_max = inst->transformed_aabb.position + inst->transformed_aabb.size;
+			Vector3 aabb_min = inst->scene_data->transformed_aabb.position;
+			Vector3 aabb_max = inst->scene_data->transformed_aabb.position + inst->scene_data->transformed_aabb.size;
 			Vector3 camera_position = p_render_data->main_cam_transform.origin;
 			Vector3 surface_distance = Vector3(0.0, 0.0, 0.0).max(aabb_min - camera_position).max(camera_position - aabb_max);
 
@@ -1444,7 +1445,7 @@ void RasterizerSceneGLES3::_fill_render_list(RenderListType p_render_list, const
 
 			if (p_render_data->screen_mesh_lod_threshold > 0.0 && mesh_storage->mesh_surface_has_lod(surf->surface)) {
 				uint32_t indices = 0;
-				surf->lod_index = mesh_storage->mesh_surface_get_lod(surf->surface, inst->lod_model_scale * inst->lod_bias, lod_distance * p_render_data->lod_distance_multiplier, p_render_data->screen_mesh_lod_threshold, indices);
+				surf->lod_index = mesh_storage->mesh_surface_get_lod(surf->surface, inst->lod_model_scale * inst->scene_data->lod_bias, lod_distance * p_render_data->lod_distance_multiplier, p_render_data->screen_mesh_lod_threshold, indices);
 				surf->index_count = indices;
 
 				if (p_render_data->render_info) {
@@ -3454,7 +3455,7 @@ void RasterizerSceneGLES3::_render_list_template(RenderListParameters *p_params,
 			if (p_pass_mode == PASS_MODE_MATERIAL || (p_pass_mode == PASS_MODE_SHADOW && (surf->flags & GeometryInstanceSurface::FLAG_USES_DOUBLE_SIDED_SHADOWS))) {
 				cull_mode = RSE::CULL_MODE_DISABLED;
 			} else {
-				bool mirror = inst->mirror;
+				bool mirror = inst->scene_data->mirror;
 				if (p_params->reverse_cull) {
 					mirror = !mirror;
 				}
@@ -3482,8 +3483,8 @@ void RasterizerSceneGLES3::_render_list_template(RenderListParameters *p_params,
 			}
 
 			// Skeleton and blend shapes.
-			if (surf->owner->mesh_instance.is_valid()) {
-				mesh_storage->mesh_instance_surface_get_vertex_arrays_and_format(surf->owner->mesh_instance, surf->surface_index, vertex_input_mask, p_pass_mode == PASS_MODE_MOTION_VECTORS, vertex_array_gl);
+			if (surf->owner->scene_data->mesh_instance.is_valid()) {
+				mesh_storage->mesh_instance_surface_get_vertex_arrays_and_format(surf->owner->scene_data->mesh_instance, surf->surface_index, vertex_input_mask, p_pass_mode == PASS_MODE_MOTION_VECTORS, vertex_array_gl);
 			} else {
 				mesh_storage->mesh_surface_get_vertex_arrays_and_format(mesh_surface, vertex_input_mask, p_pass_mode == PASS_MODE_MOTION_VECTORS, vertex_array_gl);
 			}
@@ -3649,7 +3650,7 @@ void RasterizerSceneGLES3::_render_list_template(RenderListParameters *p_params,
 						// Render directional lights.
 
 						uint32_t shadow_id = MAX_DIRECTIONAL_LIGHTS - 1 - (pass - int32_t(inst->light_passes.size()));
-						if (!(scene_state.directional_lights[shadow_id].mask & inst->layer_mask)) {
+						if (!(scene_state.directional_lights[shadow_id].mask & inst->scene_data->layer_mask)) {
 							// Disable additive lighting when masks are not overlapping.
 							spec_constants &= ~SceneShaderGLES3::USE_ADDITIVE_LIGHTING;
 						}
@@ -3905,7 +3906,7 @@ void RasterizerSceneGLES3::_render_list_template(RenderListParameters *p_params,
 			if (p_pass_mode == PASS_MODE_MATERIAL) {
 				material_storage->shaders.scene_shader.version_set_uniform(SceneShaderGLES3::UV_OFFSET, p_params->uv_offset, shader->version, instance_variant, spec_constants);
 			} else if (p_pass_mode == PASS_MODE_COLOR || p_pass_mode == PASS_MODE_COLOR_TRANSPARENT) {
-				material_storage->shaders.scene_shader.version_set_uniform(SceneShaderGLES3::LAYER_MASK, inst->layer_mask, shader->version, instance_variant, spec_constants);
+				material_storage->shaders.scene_shader.version_set_uniform(SceneShaderGLES3::LAYER_MASK, inst->scene_data->layer_mask, shader->version, instance_variant, spec_constants);
 			}
 
 			// Can be index count or vertex count
@@ -3935,11 +3936,11 @@ void RasterizerSceneGLES3::_render_list_template(RenderListParameters *p_params,
 				GLuint instance_buffer = 0;
 				uint32_t stride = 0;
 				if (inst->flags_cache & INSTANCE_DATA_FLAG_PARTICLES) {
-					instance_buffer = particles_storage->particles_get_gl_buffer(inst->data->base);
+					instance_buffer = particles_storage->particles_get_gl_buffer(inst->scene_data->base);
 					stride = 16; // 12 bytes for instance transform and 4 bytes for packed color and custom.
 				} else {
-					instance_buffer = mesh_storage->multimesh_get_gl_buffer(inst->data->base);
-					stride = mesh_storage->multimesh_get_stride(inst->data->base);
+					instance_buffer = mesh_storage->multimesh_get_gl_buffer(inst->scene_data->base);
+					stride = mesh_storage->multimesh_get_stride(inst->scene_data->base);
 				}
 
 				if (instance_buffer == 0) {
@@ -3955,9 +3956,9 @@ void RasterizerSceneGLES3::_render_list_template(RenderListParameters *p_params,
 				if (p_pass_mode == PASS_MODE_MOTION_VECTORS) {
 					GLuint prev_instance_buffer = 0;
 					if (inst->flags_cache & INSTANCE_DATA_FLAG_PARTICLES) {
-						prev_instance_buffer = particles_storage->particles_get_prev_gl_buffer(inst->data->base);
+						prev_instance_buffer = particles_storage->particles_get_prev_gl_buffer(inst->scene_data->base);
 					} else {
-						prev_instance_buffer = mesh_storage->multimesh_get_prev_gl_buffer(inst->data->base);
+						prev_instance_buffer = mesh_storage->multimesh_get_prev_gl_buffer(inst->scene_data->base);
 					}
 
 					if (prev_instance_buffer == 0) {
@@ -3966,13 +3967,13 @@ void RasterizerSceneGLES3::_render_list_template(RenderListParameters *p_params,
 
 					GLuint secondary_instance_buffer = 0;
 					if (inst->flags_cache & INSTANCE_DATA_FLAG_PARTICLES) {
-						if (particles_storage->particles_get_last_change(inst->data->base) == RSG::rasterizer->get_frame_number()) {
+						if (particles_storage->particles_get_last_change(inst->scene_data->base) == RSG::rasterizer->get_frame_number()) {
 							secondary_instance_buffer = prev_instance_buffer;
 						} else {
 							secondary_instance_buffer = instance_buffer;
 						}
 					} else {
-						if (mesh_storage->multimesh_get_last_change(inst->data->base) == RSG::rasterizer->get_frame_number()) {
+						if (mesh_storage->multimesh_get_last_change(inst->scene_data->base) == RSG::rasterizer->get_frame_number()) {
 							secondary_instance_buffer = prev_instance_buffer;
 						} else {
 							secondary_instance_buffer = instance_buffer;
@@ -4029,7 +4030,7 @@ void RasterizerSceneGLES3::_render_list_template(RenderListParameters *p_params,
 void RasterizerSceneGLES3::render_material(const Transform3D &p_cam_transform, const Projection &p_cam_projection, bool p_cam_orthogonal, const PagedArray<RenderGeometryInstance *> &p_instances, RID p_framebuffer, const Rect2i &p_region) {
 }
 
-void RasterizerSceneGLES3::render_particle_collider_heightfield(RID p_collider, const Transform3D &p_transform, const PagedArray<RenderGeometryInstance *> &p_instances) {
+void RasterizerSceneGLES3::render_particle_collider_heightfield(RID p_collider, const Transform3D &p_transform, const PagedArray<RenderGeometryInstance *> &p_instances, const double *p_origin, RID p_scenario, uint32_t p_layers) {
 	GLES3::ParticlesStorage *particles_storage = GLES3::ParticlesStorage::get_singleton();
 
 	ERR_FAIL_COND(!particles_storage->particles_collision_is_heightfield(p_collider));
@@ -4394,7 +4395,8 @@ TypedArray<Image> RasterizerSceneGLES3::bake_render_uv2(RID p_base, const TypedA
 		return TypedArray<Image>();
 	}
 
-	RenderGeometryInstance *gi_inst = geometry_instance_create(p_base);
+	RenderSceneInstanceData scene_data;
+	RenderGeometryInstance *gi_inst = geometry_instance_create(p_base, &scene_data);
 	ERR_FAIL_NULL_V(gi_inst, TypedArray<Image>());
 
 	uint32_t sc = RSG::mesh_storage->mesh_get_surface_count(p_base);
@@ -4407,7 +4409,8 @@ TypedArray<Image> RasterizerSceneGLES3::bake_render_uv2(RID p_base, const TypedA
 		}
 	}
 
-	gi_inst->set_surface_materials(materials);
+	scene_data.materials = materials;
+	gi_inst->scene_data_changed();
 
 	if (cull_argument.size() == 0) {
 		cull_argument.push_back(nullptr);

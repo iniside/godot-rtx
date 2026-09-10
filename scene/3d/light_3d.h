@@ -81,14 +81,12 @@ private:
 	real_t distance_fade_length = 10.0;
 	RSE::LightType type = RSE::LIGHT_DIRECTIONAL;
 	bool editor_only = false;
-	void _update_visibility();
 	BakeMode bake_mode = BAKE_DYNAMIC;
 	Ref<Texture2D> projector;
 	Color correlated_color = Color(1.0, 1.0, 1.0);
 	float temperature = 6500.0;
 	// bind helpers
 
-	virtual void owner_changed_notify() override;
 
 protected:
 	RID light;

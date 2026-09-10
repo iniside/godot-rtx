@@ -210,7 +210,6 @@ private:
 	Ref<CameraAttributes> camera_attributes;
 
 	Ref<LightmapGIData> light_data;
-	Node *last_owner = nullptr;
 
 	struct LightsFound {
 		Transform3D xform;
@@ -233,8 +232,6 @@ private:
 
 	void _find_meshes_and_lights(Node *p_at_node, Vector<MeshesFound> &meshes, Vector<LightsFound> &lights, Vector<Vector3> &probes);
 
-	void _assign_lightmaps();
-	void _clear_lightmaps();
 
 	struct BSPSimplex {
 		int vertices[4] = {};
@@ -282,7 +279,6 @@ private:
 protected:
 	void _validate_property(PropertyInfo &p_property) const;
 	static void _bind_methods();
-	void _notification(int p_what);
 
 public:
 	void set_light_data(const Ref<LightmapGIData> &p_data);

@@ -32,6 +32,7 @@
 
 #include "core/templates/list.h"
 #include "scene/main/node.h"
+#include "scene/resources/entity_scene.h"
 #include "scene/resources/texture.h"
 
 class ConfigFile;
@@ -112,6 +113,7 @@ public:
 
 	struct EditedScene {
 		Node *root = nullptr;
+		Ref<EntityScene> document;
 		String path;
 		uint64_t file_modified_time = 0;
 		Dictionary editor_states;
@@ -201,6 +203,8 @@ public:
 	int add_edited_scene(int p_at_pos);
 	void remove_scene(int p_idx);
 	void set_scene_root(int p_idx, Node *p_root);
+	void set_scene_document(int p_idx, const Ref<EntityScene> &p_document);
+	Ref<EntityScene> get_scene_document(int p_idx = -1) const;
 	void set_edited_scene(int p_idx);
 	void set_edited_scene_root(Node *p_root);
 	int get_edited_scene() const;

@@ -10,7 +10,7 @@
 		All objects are drawn to a viewport. You can use the [Viewport] attached to the [SceneTree] or you can create one yourself with [method viewport_create]. When using a custom scenario or canvas, the scenario or canvas needs to be attached to the viewport using [method viewport_set_scenario] or [method viewport_attach_canvas].
 		[b]Scenarios:[/b] In 3D, all visual objects must be associated with a scenario. The scenario is a visual representation of the world. If accessing the rendering server from a running game, the scenario can be accessed from the scene tree from any [Node3D] node with [method Node3D.get_world_3d]. Otherwise, a scenario can be created with [method scenario_create].
 		Similarly, in 2D, a canvas is needed to draw all canvas items.
-		[b]3D:[/b] In 3D, all visible objects are comprised of a resource and an instance. A resource can be a mesh, a particle system, a light, or any other 3D object. In order to be visible resources must be attached to an instance using [method instance_set_base]. The instance must also be attached to the scenario using [method instance_set_scenario] in order to be visible. RenderingServer methods that don't have a prefix are usually 3D-specific (but not always).
+		[b]3D:[/b] Native entity worlds publish renderer data directly. Shared meshes, materials, textures and other rendering assets retain their resource APIs.
 		[b]2D:[/b] In 2D, all visible objects are some form of canvas item. In order to be visible, a canvas item needs to be the child of a canvas attached to a viewport, or it needs to be the child of another canvas item that is eventually attached to the canvas. 2D-specific RenderingServer methods generally start with [code]canvas_*[/code].
 		[b]Headless mode:[/b] Starting the engine with the [code]--headless[/code] [url=$DOCS_URL/tutorials/editor/command_line_tutorial.html]command line argument[/url] disables all rendering and window management functions. Most functions from [RenderingServer] will return dummy values in this case.
 	</description>
@@ -23,7 +23,6 @@
 			<description>
 				Creates a new area light and adds it to the RenderingServer. It can be accessed with the RID that is returned. This RID can be used in most [code]light_*[/code] RenderingServer functions.
 				Once finished with your RID, you will want to free the RID using the RenderingServer's [method free_rid] method.
-				To place in a scene, attach this area light to an instance using [method instance_set_base] using the returned RID.
 				[b]Note:[/b] The equivalent node is [AreaLight3D].
 			</description>
 		</method>
@@ -1149,7 +1148,6 @@
 			<description>
 				Creates a decal and adds it to the RenderingServer. It can be accessed with the RID that is returned. This RID will be used in all [code]decal_*[/code] RenderingServer functions.
 				Once finished with your RID, you will want to free the RID using the RenderingServer's [method free_rid] method.
-				To place in a scene, attach this decal to an instance using [method instance_set_base] using the returned RID.
 				[b]Note:[/b] The equivalent node is [Decal].
 			</description>
 		</method>
@@ -1241,7 +1239,6 @@
 			<description>
 				Creates a directional light and adds it to the RenderingServer. It can be accessed with the RID that is returned. This RID can be used in most [code]light_*[/code] RenderingServer functions.
 				Once finished with your RID, you will want to free the RID using the RenderingServer's [method free_rid] method.
-				To place in a scene, attach this directional light to an instance using [method instance_set_base] using the returned RID.
 				[b]Note:[/b] The equivalent node is [DirectionalLight3D].
 			</description>
 		</method>
@@ -1889,302 +1886,6 @@
 				Returns [code]true[/code] if the OS supports a certain [param feature]. Features might be [code]s3tc[/code], [code]etc[/code], and [code]etc2[/code].
 			</description>
 		</method>
-		<method name="instance_attach_object_instance_id">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="id" type="int" />
-			<description>
-				Attaches a unique Object ID to instance. Object ID must be attached to instance for proper culling with [method instances_cull_aabb], [method instances_cull_convex], and [method instances_cull_ray].
-			</description>
-		</method>
-		<method name="instance_attach_skeleton">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="skeleton" type="RID" />
-			<description>
-				Attaches a skeleton to an instance. Removes the previous skeleton from the instance.
-			</description>
-		</method>
-		<method name="instance_create">
-			<return type="RID" />
-			<description>
-				Creates a visual instance and adds it to the RenderingServer. It can be accessed with the RID that is returned. This RID will be used in all [code]instance_*[/code] RenderingServer functions.
-				Once finished with your RID, you will want to free the RID using the RenderingServer's [method free_rid] method.
-				An instance is a way of placing a 3D object in the scenario. Objects like particles, meshes, reflection probes and decals need to be associated with an instance to be visible in the scenario using [method instance_set_base].
-				[b]Note:[/b] The equivalent node is [VisualInstance3D].
-			</description>
-		</method>
-		<method name="instance_create2">
-			<return type="RID" />
-			<param index="0" name="base" type="RID" />
-			<param index="1" name="scenario" type="RID" />
-			<description>
-				Creates a visual instance, adds it to the RenderingServer, and sets both base and scenario. It can be accessed with the RID that is returned. This RID will be used in all [code]instance_*[/code] RenderingServer functions.
-				Once finished with your RID, you will want to free the RID using the RenderingServer's [method free_rid] method. This is a shorthand for using [method instance_create] and setting the base and scenario manually.
-			</description>
-		</method>
-		<method name="instance_geometry_get_shader_parameter" qualifiers="const">
-			<return type="Variant" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="parameter" type="StringName" />
-			<description>
-				Returns the value of the per-instance shader uniform from the specified 3D geometry instance. Equivalent to [method GeometryInstance3D.get_instance_shader_parameter].
-				[b]Note:[/b] Per-instance shader parameter names are case-sensitive.
-			</description>
-		</method>
-		<method name="instance_geometry_get_shader_parameter_default_value" qualifiers="const">
-			<return type="Variant" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="parameter" type="StringName" />
-			<description>
-				Returns the default value of the per-instance shader uniform from the specified 3D geometry instance. Equivalent to [method GeometryInstance3D.get_instance_shader_parameter].
-			</description>
-		</method>
-		<method name="instance_geometry_get_shader_parameter_list" qualifiers="const">
-			<return type="Dictionary[]" />
-			<param index="0" name="instance" type="RID" />
-			<description>
-				Returns a dictionary of per-instance shader uniform names of the per-instance shader uniform from the specified 3D geometry instance. The returned dictionary is in PropertyInfo format, with the keys [code]name[/code], [code]class_name[/code], [code]type[/code], [code]hint[/code], [code]hint_string[/code] and [code]usage[/code]. Equivalent to [method GeometryInstance3D.get_instance_shader_parameter].
-			</description>
-		</method>
-		<method name="instance_geometry_set_cast_shadows_setting">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="shadow_casting_setting" type="int" enum="RenderingServer.ShadowCastingSetting" />
-			<description>
-				Sets the shadow casting setting. Equivalent to [member GeometryInstance3D.cast_shadow].
-			</description>
-		</method>
-		<method name="instance_geometry_set_flag">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="flag" type="int" enum="RenderingServer.InstanceFlags" />
-			<param index="2" name="enabled" type="bool" />
-			<description>
-				Sets the [param flag] for a given [param instance] to [param enabled].
-			</description>
-		</method>
-		<method name="instance_geometry_set_lightmap">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="lightmap" type="RID" />
-			<param index="2" name="lightmap_uv_scale" type="Rect2" />
-			<param index="3" name="lightmap_slice" type="int" />
-			<description>
-				Sets the lightmap GI instance to use for the specified 3D geometry instance. The lightmap UV scale for the specified instance (equivalent to [member GeometryInstance3D.gi_lightmap_scale]) and lightmap atlas slice must also be specified.
-			</description>
-		</method>
-		<method name="instance_geometry_set_lod_bias">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="lod_bias" type="float" />
-			<description>
-				Sets the level of detail bias to use when rendering the specified 3D geometry instance. Higher values result in higher detail from further away. Equivalent to [member GeometryInstance3D.lod_bias].
-			</description>
-		</method>
-		<method name="instance_geometry_set_material_overlay">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="material" type="RID" />
-			<description>
-				Sets a material that will be rendered for all surfaces on top of active materials for the mesh associated with this instance. Equivalent to [member GeometryInstance3D.material_overlay].
-			</description>
-		</method>
-		<method name="instance_geometry_set_material_override">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="material" type="RID" />
-			<description>
-				Sets a material that will override the material for all surfaces on the mesh associated with this instance. Equivalent to [member GeometryInstance3D.material_override].
-			</description>
-		</method>
-		<method name="instance_geometry_set_shader_parameter">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="parameter" type="StringName" />
-			<param index="2" name="value" type="Variant" />
-			<description>
-				Sets the per-instance shader uniform on the specified 3D geometry instance. Equivalent to [method GeometryInstance3D.set_instance_shader_parameter].
-			</description>
-		</method>
-		<method name="instance_geometry_set_transparency">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="transparency" type="float" />
-			<description>
-				Sets the transparency for the given geometry instance. Equivalent to [member GeometryInstance3D.transparency].
-				A transparency of [code]0.0[/code] is fully opaque, while [code]1.0[/code] is fully transparent. Values greater than [code]0.0[/code] (exclusive) will force the geometry's materials to go through the transparent pipeline, which is slower to render and can exhibit rendering issues due to incorrect transparency sorting. However, unlike using a transparent material, setting [param transparency] to a value greater than [code]0.0[/code] (exclusive) will [i]not[/i] disable shadow rendering.
-				In spatial shaders, [code]1.0 - transparency[/code] is set as the default value of the [code]ALPHA[/code] built-in.
-				[b]Note:[/b] [param transparency] is clamped between [code]0.0[/code] and [code]1.0[/code], so this property cannot be used to make transparent materials more opaque than they originally are.
-			</description>
-		</method>
-		<method name="instance_geometry_set_visibility_range">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="min" type="float" />
-			<param index="2" name="max" type="float" />
-			<param index="3" name="min_margin" type="float" />
-			<param index="4" name="max_margin" type="float" />
-			<param index="5" name="fade_mode" type="int" enum="RenderingServer.VisibilityRangeFadeMode" />
-			<description>
-				Sets the visibility range values for the given geometry instance. Equivalent to [member GeometryInstance3D.visibility_range_begin] and related properties.
-			</description>
-		</method>
-		<method name="instance_set_base">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="base" type="RID" />
-			<description>
-				Sets the base of the instance. A base can be any of the 3D objects that are created in the RenderingServer that can be displayed. For example, any of the light types, mesh, multimesh, particle system, reflection probe, decal, lightmap, voxel GI and visibility notifiers are all types that can be set as the base of an instance in order to be displayed in the scenario.
-			</description>
-		</method>
-		<method name="instance_set_blend_shape_weight">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="shape" type="int" />
-			<param index="2" name="weight" type="float" />
-			<description>
-				Sets the weight for a given blend shape associated with this instance.
-			</description>
-		</method>
-		<method name="instance_set_custom_aabb">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="aabb" type="AABB" />
-			<description>
-				Sets a custom AABB to use when culling objects from the view frustum. Equivalent to setting [member GeometryInstance3D.custom_aabb].
-			</description>
-		</method>
-		<method name="instance_set_extra_visibility_margin">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="margin" type="float" />
-			<description>
-				Sets a margin to increase the size of the AABB when culling objects from the view frustum. This allows you to avoid culling objects that fall outside the view frustum. Equivalent to [member GeometryInstance3D.extra_cull_margin].
-			</description>
-		</method>
-		<method name="instance_set_ignore_culling">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="enabled" type="bool" />
-			<description>
-				If [code]true[/code], ignores all culling on the specified 3D geometry instance, including frustum culling, occlusion culling, and layer culling. This is not the same as [member GeometryInstance3D.ignore_occlusion_culling], which only ignores occlusion culling but leaves frustum and layer culling intact.
-			</description>
-		</method>
-		<method name="instance_set_layer_mask">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="mask" type="int" />
-			<description>
-				Sets the render layers that this instance will be drawn to. Equivalent to [member VisualInstance3D.layers].
-			</description>
-		</method>
-		<method name="instance_set_pivot_data">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="sorting_offset" type="float" />
-			<param index="2" name="use_aabb_center" type="bool" />
-			<description>
-				Sets the sorting offset and switches between using the bounding box or instance origin for depth sorting.
-			</description>
-		</method>
-		<method name="instance_set_rt_procedural">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="procedural" type="bool" />
-			<param index="2" name="aabb" type="AABB" />
-			<description>
-				Enables or disables procedural ray tracing geometry for the given [param instance]. When [param procedural] is [code]true[/code], the instance uses AABB-based intersection for ray tracing instead of triangle geometry. [param aabb] defines the conservative bounding volume used for culling the instance in the Top-Level Acceleration Structure (TLAS). The actual per-primitive AABBs must be provided separately via [method instance_set_rt_procedural_bounds].
-				[b]Note:[/b] Only supported on mesh instances. The mesh still drives CPU-side culling; only the ray tracing path is affected.
-			</description>
-		</method>
-		<method name="instance_set_rt_procedural_bounds">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="aabb_data" type="PackedFloat32Array" />
-			<param index="2" name="expose_bounds" type="bool" />
-			<description>
-				Sets the per-primitive axis-aligned bounding boxes used by the ray tracer for a procedural instance. [param aabb_data] is a flat array of [code skip-lint]float[/code] values, with each AABB occupying 6 consecutive values ([code]min_x, min_y, min_z, max_x, max_y, max_z[/code]). Each AABB corresponds to one procedural primitive visible to intersection shaders via [code]gl_PrimitiveID[/code].
-				If [param expose_bounds] is [code]true[/code], the AABBs are also accessible from ray hit shaders, which allows intersection shaders to skip the ray-AABB test and use precomputed results.
-				[b]Note:[/b] [method instance_set_rt_procedural] must be called with [code]procedural = true[/code] before this method has any effect.
-			</description>
-		</method>
-		<method name="instance_set_scenario">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="scenario" type="RID" />
-			<description>
-				Sets the scenario that the instance is in. The scenario is the 3D world that the objects will be displayed in.
-			</description>
-		</method>
-		<method name="instance_set_surface_override_material">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="surface" type="int" />
-			<param index="2" name="material" type="RID" />
-			<description>
-				Sets the override material of a specific surface. Equivalent to [method MeshInstance3D.set_surface_override_material].
-			</description>
-		</method>
-		<method name="instance_set_transform">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="transform" type="Transform3D" />
-			<description>
-				Sets the world space transform of the instance. Equivalent to [member Node3D.global_transform].
-			</description>
-		</method>
-		<method name="instance_set_visibility_parent">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="parent" type="RID" />
-			<description>
-				Sets the visibility parent for the given instance. Equivalent to [member Node3D.visibility_parent].
-			</description>
-		</method>
-		<method name="instance_set_visible">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<param index="1" name="visible" type="bool" />
-			<description>
-				Sets whether an instance is drawn or not. Equivalent to [member Node3D.visible].
-			</description>
-		</method>
-		<method name="instance_teleport">
-			<return type="void" />
-			<param index="0" name="instance" type="RID" />
-			<description>
-				Resets motion vectors and other interpolated values. Use this [i]after[/i] teleporting a mesh from one position to another to avoid ghosting artifacts.
-			</description>
-		</method>
-		<method name="instances_cull_aabb" qualifiers="const">
-			<return type="PackedInt64Array" />
-			<param index="0" name="aabb" type="AABB" />
-			<param index="1" name="scenario" type="RID" default="RID()" />
-			<description>
-				Returns an array of object IDs intersecting with the provided AABB. Only 3D nodes that inherit from [VisualInstance3D] are considered, such as [MeshInstance3D] or [DirectionalLight3D]. Use [method @GlobalScope.instance_from_id] to obtain the actual nodes. A scenario RID must be provided, which is available in the [World3D] you want to query. This forces an update for all resources queued to update.
-				[b]Warning:[/b] This function is primarily intended for editor usage. For in-game use cases, prefer physics collision.
-			</description>
-		</method>
-		<method name="instances_cull_convex" qualifiers="const">
-			<return type="PackedInt64Array" />
-			<param index="0" name="convex" type="Plane[]" />
-			<param index="1" name="scenario" type="RID" default="RID()" />
-			<description>
-				Returns an array of object IDs intersecting with the provided convex shape. Only 3D nodes that inherit from [VisualInstance3D] are considered, such as [MeshInstance3D] or [DirectionalLight3D]. Use [method @GlobalScope.instance_from_id] to obtain the actual nodes. A scenario RID must be provided, which is available in the [World3D] you want to query. This forces an update for all resources queued to update.
-				[b]Warning:[/b] This function is primarily intended for editor usage. For in-game use cases, prefer physics collision.
-			</description>
-		</method>
-		<method name="instances_cull_ray" qualifiers="const">
-			<return type="PackedInt64Array" />
-			<param index="0" name="from" type="Vector3" />
-			<param index="1" name="to" type="Vector3" />
-			<param index="2" name="scenario" type="RID" default="RID()" />
-			<description>
-				Returns an array of object IDs intersecting with the provided 3D ray. Only 3D nodes that inherit from [VisualInstance3D] are considered, such as [MeshInstance3D] or [DirectionalLight3D]. Use [method @GlobalScope.instance_from_id] to obtain the actual nodes. A scenario RID must be provided, which is available in the [World3D] you want to query. This forces an update for all resources queued to update.
-				[b]Warning:[/b] This function is primarily intended for editor usage. For in-game use cases, prefer physics collision.
-			</description>
-		</method>
 		<method name="is_on_render_thread">
 			<return type="bool" />
 			<description>
@@ -2319,7 +2020,7 @@
 			<param index="0" name="light" type="RID" />
 			<param index="1" name="enabled" type="bool" />
 			<description>
-				If [code]true[/code], reverses the backface culling of the mesh. This can be useful when you have a flat mesh that has a light behind it. If you need to cast a shadow on both sides of the mesh, set the mesh to use double-sided shadows with [method instance_geometry_set_cast_shadows_setting]. Equivalent to [member Light3D.shadow_reverse_cull_face].
+				If [code]true[/code], reverses the backface culling of the mesh. This can be useful when you have a flat mesh that has a light behind it. If you need to cast a shadow on both sides of the mesh, enable double-sided shadows in the native geometry component. Equivalent to [member Light3D.shadow_reverse_cull_face].
 			</description>
 		</method>
 		<method name="light_set_shadow">
@@ -2566,7 +2267,6 @@
 			<description>
 				Creates a new mesh and adds it to the RenderingServer. It can be accessed with the RID that is returned. This RID will be used in all [code]mesh_*[/code] RenderingServer functions.
 				Once finished with your RID, you will want to free the RID using the RenderingServer's [method free_rid] method.
-				To place in a scene, attach this mesh to an instance using [method instance_set_base] using the returned RID.
 				[b]Note:[/b] The equivalent resource is [Mesh].
 			</description>
 		</method>
@@ -2578,7 +2278,6 @@
 				Creates a new mesh with predefined surfaces for it and adds the mesh to the RenderingServer. It can be accessed with the RID that is returned. This RID will be used in all [code]mesh_*[/code] RenderingServer functions. This method is more efficient for creating meshes with multiple surfaces compared to creating an empty mesh with [method mesh_create] and adding surfaces one by one with [method mesh_add_surface].
 				Each element in the [param surfaces] array must follow the same structure as described in [method mesh_add_surface]. The [param blend_shape_count] parameter must match the blend shape data defined in all surfaces.
 				Once finished with your RID, you will want to free the RID using the RenderingServer's [method free_rid] method.
-				To place in a scene, attach this mesh to an instance using [method instance_set_base] using the returned RID.
 				[b]Note:[/b] The equivalent resource is [Mesh].
 			</description>
 		</method>
@@ -2836,7 +2535,6 @@
 			<description>
 				Creates a new multimesh on the RenderingServer and returns an [RID] handle. This RID will be used in all [code]multimesh_*[/code] RenderingServer functions.
 				Once finished with your RID, you will want to free the RID using the RenderingServer's [method free_rid] method.
-				To place in a scene, attach this multimesh to an instance using [method instance_set_base] using the returned RID.
 				[b]Note:[/b] The equivalent resource is [MultiMesh].
 			</description>
 		</method>
@@ -3095,7 +2793,6 @@
 			<description>
 				Creates a new omni light and adds it to the RenderingServer. It can be accessed with the RID that is returned. This RID can be used in most [code]light_*[/code] RenderingServer functions.
 				Once finished with your RID, you will want to free the RID using the RenderingServer's [method free_rid] method.
-				To place in a scene, attach this omni light to an instance using [method instance_set_base] using the returned RID.
 				[b]Note:[/b] The equivalent node is [OmniLight3D].
 			</description>
 		</method>
@@ -3198,7 +2895,6 @@
 			<description>
 				Creates a GPU-based particle system and adds it to the RenderingServer. It can be accessed with the RID that is returned. This RID will be used in all [code]particles_*[/code] RenderingServer functions.
 				Once finished with your RID, you will want to free the RID using the RenderingServer's [method free_rid] method.
-				To place in a scene, attach these particles to an instance using [method instance_set_base] using the returned RID.
 				[b]Note:[/b] The equivalent nodes are [GPUParticles2D] and [GPUParticles3D].
 				[b]Note:[/b] All [code]particles_*[/code] methods only apply to GPU-based particles, not CPU-based particles. [CPUParticles2D] and [CPUParticles3D] do not have equivalent RenderingServer functions available, as these use [MultiMeshInstance2D] and [MultiMeshInstance3D] under the hood (see [code]multimesh_*[/code] methods).
 			</description>
@@ -3240,7 +2936,7 @@
 			<return type="void" />
 			<param index="0" name="particles" type="RID" />
 			<description>
-				Add particle system to list of particle systems that need to be updated. Update will take place on the next frame, or on the next call to [method instances_cull_aabb], [method instances_cull_convex], or [method instances_cull_ray].
+				Add particle system to list of particle systems that need to be updated. Update will take place on the next renderer update.
 			</description>
 		</method>
 		<method name="particles_request_process_time">
@@ -3507,7 +3203,6 @@
 			<description>
 				Creates a reflection probe and adds it to the RenderingServer. It can be accessed with the RID that is returned. This RID will be used in all [code]reflection_probe_*[/code] RenderingServer functions.
 				Once finished with your RID, you will want to free the RID using the RenderingServer's [method free_rid] method.
-				To place in a scene, attach this reflection probe to an instance using [method instance_set_base] using the returned RID.
 				[b]Note:[/b] The equivalent node is [ReflectionProbe].
 			</description>
 		</method>
@@ -3903,7 +3598,6 @@
 			<description>
 				Creates a spot light and adds it to the RenderingServer. It can be accessed with the RID that is returned. This RID can be used in most [code]light_*[/code] RenderingServer functions.
 				Once finished with your RID, you will want to free the RID using the RenderingServer's [method free_rid] method.
-				To place in a scene, attach this spot light to an instance using [method instance_set_base] using the returned RID.
 			</description>
 		</method>
 		<method name="sub_surface_scattering_set_quality">
@@ -4663,7 +4357,6 @@
 			<description>
 				Creates a new 3D visibility notifier object and adds it to the RenderingServer. It can be accessed with the RID that is returned. This RID will be used in all [code]visibility_notifier_*[/code] RenderingServer functions.
 				Once finished with your RID, you will want to free the RID using the RenderingServer's [method free_rid] method.
-				To place in a scene, attach this notifier to an instance using [method instance_set_base] using the returned RID.
 				[b]Note:[/b] The equivalent node is [VisibleOnScreenNotifier3D].
 			</description>
 		</method>
@@ -6206,21 +5899,6 @@
 		</constant>
 		<constant name="INSTANCE_GEOMETRY_MASK" value="14" enum="InstanceType">
 			A combination of the flags of geometry instances (mesh, multimesh, immediate and particles).
-		</constant>
-		<constant name="INSTANCE_FLAG_USE_BAKED_LIGHT" value="0" enum="InstanceFlags">
-			Allows the instance to be used in baked lighting.
-		</constant>
-		<constant name="INSTANCE_FLAG_USE_DYNAMIC_GI" value="1" enum="InstanceFlags">
-			Allows the instance to be used with dynamic global illumination.
-		</constant>
-		<constant name="INSTANCE_FLAG_DRAW_NEXT_FRAME_IF_VISIBLE" value="2" enum="InstanceFlags">
-			When set, manually requests to draw geometry on next frame.
-		</constant>
-		<constant name="INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING" value="3" enum="InstanceFlags">
-			Always draw, even if the instance would be culled by occlusion culling. Does not affect view frustum culling.
-		</constant>
-		<constant name="INSTANCE_FLAG_MAX" value="4" enum="InstanceFlags">
-			Represents the size of the [enum InstanceFlags] enum.
 		</constant>
 		<constant name="SHADOW_CASTING_SETTING_OFF" value="0" enum="ShadowCastingSetting">
 			Disable shadows from this instance.

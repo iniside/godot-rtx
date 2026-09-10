@@ -135,6 +135,9 @@ private:
 		float particle_size;
 
 		float emission_transform[16];
+		float simulation_origin_high[4] = {};
+		float simulation_origin_low[4] = {};
+		float sub_emitter_transform[16];
 
 		float emitter_velocity[3];
 		float interp_to_end;
@@ -245,6 +248,9 @@ private:
 		bool force_sub_emit = false;
 
 		Transform3D emission_transform;
+		double emission_origin[3] = {};
+		double simulation_origin[3] = {};
+		bool simulation_origin_initialized = false;
 		Vector3 emitter_velocity;
 		float interp_to_end = 0.0;
 		float amount_ratio = 1.0;
@@ -426,6 +432,7 @@ private:
 	struct ParticlesCollisionInstance {
 		RID collision;
 		Transform3D transform;
+		double origin[3] = {};
 		bool active = false;
 	};
 
@@ -493,7 +500,8 @@ public:
 	virtual AABB particles_get_current_aabb(RID p_particles) override;
 	virtual AABB particles_get_aabb(RID p_particles) const override;
 
-	virtual void particles_set_emission_transform(RID p_particles, const Transform3D &p_transform) override;
+	virtual void particles_set_emission_transform(RID p_particles, const Transform3D &p_transform, const double *p_origin = nullptr) override;
+	const double *particles_get_simulation_origin(RID p_particles) const;
 	virtual void particles_set_emitter_velocity(RID p_particles, const Vector3 &p_velocity) override;
 	virtual void particles_set_interp_to_end(RID p_particles, float p_interp_to_end) override;
 
@@ -609,7 +617,7 @@ public:
 
 	virtual RID particles_collision_instance_create(RID p_collision) override;
 	virtual void particles_collision_instance_free(RID p_rid) override;
-	virtual void particles_collision_instance_set_transform(RID p_collision_instance, const Transform3D &p_transform) override;
+	virtual void particles_collision_instance_set_transform(RID p_collision_instance, const Transform3D &p_transform, const double *p_origin = nullptr) override;
 	virtual void particles_collision_instance_set_active(RID p_collision_instance, bool p_active) override;
 };
 

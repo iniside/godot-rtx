@@ -272,10 +272,10 @@ VoxelGIData::~VoxelGIData() {
 
 void VoxelGI::set_probe_data(const Ref<VoxelGIData> &p_data) {
 	if (p_data.is_valid()) {
-		RS::get_singleton()->instance_set_base(get_instance(), p_data->get_rid());
+		set_base(p_data->get_rid());
 		RS::get_singleton()->voxel_gi_set_baked_exposure_normalization(p_data->get_rid(), _get_camera_exposure_normalization());
 	} else {
-		RS::get_singleton()->instance_set_base(get_instance(), RID());
+		set_base(RID());
 	}
 
 	probe_data = p_data;

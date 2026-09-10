@@ -45,8 +45,6 @@ void RayCast3D::set_target_position(const Vector3 &p_point) {
 		if (is_inside_tree()) {
 			_update_debug_shape_vertices();
 		}
-	} else if (debug_instance.is_valid()) {
-		_update_debug_shape();
 	}
 }
 
@@ -125,9 +123,7 @@ void RayCast3D::set_enabled(bool p_enabled) {
 
 	if (is_inside_tree() && get_tree()->is_debugging_collisions_hint()) {
 		if (p_enabled) {
-			_update_debug_shape();
 		} else {
-			_clear_debug_shape();
 		}
 	}
 }
@@ -173,7 +169,6 @@ void RayCast3D::_notification(int p_what) {
 			}
 
 			if (get_tree()->is_debugging_collisions_hint()) {
-				_update_debug_shape();
 			}
 
 			if (Object::cast_to<CollisionObject3D>(get_parent())) {
@@ -190,15 +185,9 @@ void RayCast3D::_notification(int p_what) {
 				set_physics_process_internal(false);
 			}
 
-			if (debug_instance.is_valid()) {
-				_clear_debug_shape();
-			}
 		} break;
 
 		case NOTIFICATION_VISIBILITY_CHANGED: {
-			if (is_inside_tree() && debug_instance.is_valid()) {
-				RenderingServer::get_singleton()->instance_set_visible(debug_instance, is_visible_in_tree());
-			}
 		} break;
 
 		case NOTIFICATION_INTERNAL_PHYSICS_PROCESS: {
@@ -211,9 +200,6 @@ void RayCast3D::_notification(int p_what) {
 			if (get_tree()->is_debugging_collisions_hint()) {
 				if (prev_collision_state != collided) {
 					_update_debug_shape_material(true);
-				}
-				if (is_inside_tree() && debug_instance.is_valid()) {
-					RenderingServer::get_singleton()->instance_set_transform(debug_instance, get_global_transform());
 				}
 			}
 		} break;
@@ -431,8 +417,6 @@ void RayCast3D::set_debug_shape_thickness(const int p_debug_shape_thickness) {
 		if (is_inside_tree()) {
 			_update_debug_shape_vertices();
 		}
-	} else if (debug_instance.is_valid()) {
-		_update_debug_shape();
 	}
 }
 
@@ -458,18 +442,6 @@ Ref<StandardMaterial3D> RayCast3D::get_debug_material() {
 
 const Color &RayCast3D::get_debug_shape_custom_color() const {
 	return debug_shape_custom_color;
-}
-
-void RayCast3D::_create_debug_shape() {
-	_update_debug_shape_material();
-
-	if (!debug_instance.is_valid()) {
-		debug_instance = RenderingServer::get_singleton()->instance_create();
-	}
-
-	if (debug_mesh.is_null()) {
-		debug_mesh.instantiate();
-	}
 }
 
 void RayCast3D::_update_debug_shape_material(bool p_check_collision) {
@@ -502,63 +474,6 @@ void RayCast3D::_update_debug_shape_material(bool p_check_collision) {
 
 	Ref<StandardMaterial3D> material = static_cast<Ref<StandardMaterial3D>>(debug_material);
 	material->set_albedo(color);
-}
-
-void RayCast3D::_update_debug_shape() {
-	if (!enabled) {
-		return;
-	}
-
-	if (!debug_instance.is_valid()) {
-		_create_debug_shape();
-	}
-
-	if (!debug_instance.is_valid() || debug_mesh.is_null()) {
-		return;
-	}
-
-	_update_debug_shape_vertices();
-
-	debug_mesh->clear_surfaces();
-
-	Array a;
-	a.resize(Mesh::ARRAY_MAX);
-
-	uint32_t flags = 0;
-	int surface_count = 0;
-
-	if (!debug_line_vertices.is_empty()) {
-		a[Mesh::ARRAY_VERTEX] = debug_line_vertices;
-		debug_mesh->add_surface_from_arrays(Mesh::PRIMITIVE_LINES, a, Array(), Dictionary(), flags);
-		debug_mesh->surface_set_material(surface_count, debug_material);
-		++surface_count;
-	}
-
-	if (!debug_shape_vertices.is_empty()) {
-		a[Mesh::ARRAY_VERTEX] = debug_shape_vertices;
-		debug_mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLE_STRIP, a, Array(), Dictionary(), flags);
-		debug_mesh->surface_set_material(surface_count, debug_material);
-		++surface_count;
-	}
-
-	RenderingServer::get_singleton()->instance_set_base(debug_instance, debug_mesh->get_rid());
-	if (is_inside_tree()) {
-		RenderingServer::get_singleton()->instance_set_scenario(debug_instance, get_world_3d()->get_scenario());
-		RenderingServer::get_singleton()->instance_set_visible(debug_instance, is_visible_in_tree());
-		RenderingServer::get_singleton()->instance_set_transform(debug_instance, get_global_transform());
-	}
-}
-
-void RayCast3D::_clear_debug_shape() {
-	ERR_FAIL_NULL(RenderingServer::get_singleton());
-	if (debug_instance.is_valid()) {
-		RenderingServer::get_singleton()->free_rid(debug_instance);
-		debug_instance = RID();
-	}
-	if (debug_mesh.is_valid()) {
-		RenderingServer::get_singleton()->free_rid(debug_mesh->get_rid());
-		debug_mesh = Ref<ArrayMesh>();
-	}
 }
 
 RayCast3D::RayCast3D() {

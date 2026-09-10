@@ -65,7 +65,6 @@ private:
 		ObjectID owner_id;
 		Transform3D xform;
 		struct ShapeBase {
-			RID debug_shape;
 			Ref<Shape3D> shape;
 			int index = 0;
 		};
@@ -83,17 +82,9 @@ private:
 	bool capture_input_on_drag = false;
 	bool ray_pickable = true;
 
-	HashSet<uint32_t> debug_shapes_to_update;
-	int debug_shapes_count = 0;
-	Transform3D debug_shape_old_transform;
 
 	void _update_pickable();
 
-	bool _are_collision_shapes_visible();
-	void _update_shape_data(uint32_t p_owner);
-	void _shape_changed(const Ref<Shape3D> &p_shape);
-	void _update_debug_shapes();
-	void _clear_debug_shapes();
 
 	void _apply_disabled();
 	void _apply_enabled();
@@ -110,7 +101,6 @@ protected:
 	void _notification(int p_what);
 	static void _bind_methods();
 
-	void _on_transform_changed();
 
 	friend class Viewport;
 	virtual void _input_event_call(Camera3D *p_camera, const Ref<InputEvent> &p_input_event, const Vector3 &p_pos, const Vector3 &p_normal, int p_shape);

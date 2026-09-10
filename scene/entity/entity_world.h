@@ -3,6 +3,7 @@
 #include "entity_catalog.h"
 #include "entity_component_schema.gen.h"
 #include "entity_component_schema.h"
+#include "entity_render_system.h"
 #include "entity_transform_system.h"
 
 #include "core/os/thread.h"
@@ -30,6 +31,7 @@ class EntityWorld {
 	uint64_t change_serial = 0;
 	Thread::ID owner_thread = Thread::get_caller_id();
 	EntityTransformSystem transforms;
+	EntityRenderSystem rendering;
 	RID scenario;
 	RID camera;
 	RID navigation_map;
@@ -37,8 +39,8 @@ class EntityWorld {
 
 	bool _is_owner() const { return owner_thread == Thread::get_caller_id(); }
 	EntityHandle _materialize(EntityId p_id);
-	void _mark_changed(EntityId p_id);
-	void _component_changed(EntityHandle p_handle);
+	void _mark_changed(EntityId p_id, uint32_t p_render_mask = EntityRenderUpdate::ALL);
+	void _component_changed(EntityHandle p_handle, uint64_t p_component = 0);
 	bool _has_resident_children(EntityHandle p_handle) const;
 
 public:
@@ -61,6 +63,7 @@ public:
 	EntityRef get_parent(EntityId p_id) const { return catalog.get_parent(p_id); }
 	Error teleport(EntityHandle p_handle, const EntityPose &p_local);
 	EntityTransformSystem &get_transforms() { return transforms; }
+	EntityRenderSystem &get_rendering() { return rendering; }
 	Error initialize_services();
 	void finalize_services();
 	Error load_default_environment();
@@ -105,7 +108,7 @@ public:
 			}
 		}
 		ecs.entity(p_handle.entity).template set<T>(value);
-		_component_changed(p_handle);
+		_component_changed(p_handle, EntityComponentTraits<T>::id);
 		return OK;
 	}
 
@@ -140,7 +143,7 @@ public:
 				transforms.teleport(p_handle.entity);
 			}
 			ecs.entity(p_handle.entity).template remove<T>();
-			_component_changed(p_handle);
+			_component_changed(p_handle, EntityComponentTraits<T>::id);
 		}
 		return OK;
 	}

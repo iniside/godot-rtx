@@ -81,16 +81,16 @@ using namespace Node3DEditorConstants;
 Node3DEditorSelectedItem::~Node3DEditorSelectedItem() {
 	ERR_FAIL_NULL(RenderingServer::get_singleton());
 	if (sbox_instance.is_valid()) {
-		RenderingServer::get_singleton()->free_rid(sbox_instance);
+		sbox_instance.clear();
 	}
 	if (sbox_instance_offset.is_valid()) {
-		RenderingServer::get_singleton()->free_rid(sbox_instance_offset);
+		sbox_instance_offset.clear();
 	}
 	if (sbox_instance_xray.is_valid()) {
-		RenderingServer::get_singleton()->free_rid(sbox_instance_xray);
+		sbox_instance_xray.clear();
 	}
 	if (sbox_instance_xray_offset.is_valid()) {
-		RenderingServer::get_singleton()->free_rid(sbox_instance_xray_offset);
+		sbox_instance_xray_offset.clear();
 	}
 }
 
@@ -1888,12 +1888,6 @@ void Node3DEditorViewport::_surface_mouse_enter() {
 	}
 }
 
-void Node3DEditorViewport::_surface_mouse_exit() {
-	_remove_preview_node();
-	_reset_preview_material();
-	_remove_preview_material();
-}
-
 void Node3DEditorViewport::_surface_focus_enter() {
 	view_display_menu->set_disable_shortcuts(false);
 }
@@ -2325,7 +2319,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 					}
 
 					if (spatial_editor->get_tool_mode() == Node3DEditor::TOOL_RULER) {
-						EditorNode::get_singleton()->get_scene_root()->add_child(ruler);
+						ruler_active = true;
 						collision_reposition = true;
 						break;
 					}
@@ -2529,10 +2523,12 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 
 					surface->queue_redraw();
 				} else {
-					if (ruler->is_inside_tree()) {
-						EditorNode::get_singleton()->get_scene_root()->remove_child(ruler);
-						ruler_start_point->set_visible(false);
-						ruler_end_point->set_visible(false);
+					if (ruler_active) {
+						ruler_active = false;
+						for (ToolRenderData *record : { &ruler_line, &ruler_line_xray, &ruler_triangle_lines, &ruler_triangle_lines_xray }) {
+							record->visible = false;
+							record->publish();
+						}
 						ruler_label->set_visible(false);
 						ruler_label_x->set_visible(false);
 						ruler_label_y->set_visible(false);
@@ -3269,9 +3265,14 @@ void Node3DEditorViewport::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_PROCESS: {
-			if (ruler->is_inside_tree()) {
-				Vector3 start_pos = ruler_start_point->get_global_position();
-				Vector3 end_pos = ruler_end_point->get_global_position();
+			if (ruler_active) {
+				for (ToolRenderData *record : { &ruler_line, &ruler_line_xray, &ruler_triangle_lines, &ruler_triangle_lines_xray }) {
+					record->scenario = spatial_editor->get_entity_world()->get_scenario();
+					record->visible = true;
+					record->publish();
+				}
+				Vector3 start_pos = ruler_start_position;
+				Vector3 end_pos = ruler_end_position;
 
 				geometry->clear_surfaces();
 				geometry->surface_begin(Mesh::PRIMITIVE_LINES);
@@ -3302,8 +3303,8 @@ void Node3DEditorViewport::_notification(int p_what) {
 				bool show_components = Input::get_singleton()->is_key_pressed(Key::SHIFT);
 
 				if (show_components) {
-					Ref<ImmediateMesh> triangle_mesh = ruler_triangle_lines->get_mesh();
-					Ref<ImmediateMesh> triangle_mesh_xray = ruler_triangle_lines_xray->get_mesh();
+					Ref<ImmediateMesh> triangle_mesh = ruler_triangle_lines.base_asset;
+					Ref<ImmediateMesh> triangle_mesh_xray = ruler_triangle_lines_xray.base_asset;
 
 					if (triangle_mesh.is_valid() && triangle_mesh_xray.is_valid()) {
 						Vector3 delta = end_pos - start_pos;
@@ -3390,8 +3391,8 @@ void Node3DEditorViewport::_notification(int p_what) {
 						triangle_mesh_xray->surface_end();
 					}
 				} else {
-					Ref<ImmediateMesh> triangle_mesh = ruler_triangle_lines->get_mesh();
-					Ref<ImmediateMesh> triangle_mesh_xray = ruler_triangle_lines_xray->get_mesh();
+					Ref<ImmediateMesh> triangle_mesh = ruler_triangle_lines.base_asset;
+					Ref<ImmediateMesh> triangle_mesh_xray = ruler_triangle_lines_xray.base_asset;
 
 					if (triangle_mesh.is_valid()) {
 						triangle_mesh->clear_surfaces();
@@ -3660,10 +3661,14 @@ void Node3DEditorViewport::_notification(int p_what) {
 					t_offset.basis = t_offset.basis * aabb_s;
 				}
 
-				RenderingServer::get_singleton()->instance_set_transform(se->sbox_instance, t);
-				RenderingServer::get_singleton()->instance_set_transform(se->sbox_instance_offset, t_offset);
-				RenderingServer::get_singleton()->instance_set_transform(se->sbox_instance_xray, t);
-				RenderingServer::get_singleton()->instance_set_transform(se->sbox_instance_xray_offset, t_offset);
+				se->sbox_instance.transform = t;
+				se->sbox_instance.publish();
+				se->sbox_instance_offset.transform = t_offset;
+				se->sbox_instance_offset.publish();
+				se->sbox_instance_xray.transform = t;
+				se->sbox_instance_xray.publish();
+				se->sbox_instance_xray_offset.transform = t_offset;
+				se->sbox_instance_xray_offset.publish();
 			}
 
 			if (changed || (spatial_editor->is_gizmo_visible() && !exist)) {
@@ -3696,7 +3701,7 @@ void Node3DEditorViewport::_notification(int p_what) {
 			}
 
 			if (show_info) {
-				const String viewport_size = vformat(U"%d × %d", viewport->get_size().x * viewport->get_scaling_3d_scale(), viewport->get_size().y * viewport->get_scaling_3d_scale());
+				const String viewport_size = vformat(U"%d Ãƒâ€” %d", viewport->get_size().x * viewport->get_scaling_3d_scale(), viewport->get_size().y * viewport->get_scaling_3d_scale());
 				String text;
 				text += vformat(TTR("X: %s"), rtos(current_camera->get_position().x).pad_decimals(1)) + "\n";
 				text += vformat(TTR("Y: %s"), rtos(current_camera->get_position().y).pad_decimals(1)) + "\n";
@@ -3813,21 +3818,13 @@ void Node3DEditorViewport::_notification(int p_what) {
 			if (collision_reposition) {
 				Node3D *selected_node = nullptr;
 
-				if (ruler->is_inside_tree()) {
-					if (ruler_start_point->is_visible()) {
-						selected_node = ruler_end_point;
-					} else {
-						selected_node = ruler_start_point;
-					}
-				} else {
-					const List<Node *> &selection = editor_selection->get_top_selected_node_list();
-					if (selection.size() == 1) {
-						selected_node = Object::cast_to<Node3D>(selection.front()->get());
-					}
+				const List<Node *> &selection = editor_selection->get_top_selected_node_list();
+				if (selection.size() == 1) {
+					selected_node = Object::cast_to<Node3D>(selection.front()->get());
 				}
 
 				if (selected_node) {
-					if (!ruler->is_inside_tree()) {
+					if (!ruler_active) {
 						double snap = EDITOR_GET("interface/inspector/default_float_step");
 						int snap_step_decimals = Math::range_step_decimals(snap);
 						set_message(vformat(TTR("Translating: %s"), vformat("%.*v", snap_step_decimals, selected_node->get_global_position())));
@@ -3835,33 +3832,9 @@ void Node3DEditorViewport::_notification(int p_what) {
 
 					selected_node->set_global_position(spatial_editor->snap_point(_get_instance_position(_edit.mouse_pos, selected_node)));
 
-					if (ruler->is_inside_tree() && !ruler_start_point->is_visible()) {
-						ruler_end_point->set_global_position(ruler_start_point->get_global_position());
-						ruler_start_point->set_visible(true);
-						ruler_end_point->set_visible(true);
-						ruler_label->set_visible(true);
-						ruler_label_x->set_visible(false);
-						ruler_label_y->set_visible(false);
-						ruler_label_z->set_visible(false);
-					}
 				}
 			}
 
-			if (!update_preview_node) {
-				return;
-			}
-			if (preview_node->is_inside_tree()) {
-				preview_node_pos = spatial_editor->snap_point(_get_instance_position(preview_node_viewport_pos, preview_node));
-				double snap = EDITOR_GET("interface/inspector/default_float_step");
-				int snap_step_decimals = Math::range_step_decimals(snap);
-				set_message(vformat(TTR("Instantiating: %s"), vformat("%.*v", snap_step_decimals, preview_node_pos)));
-				Transform3D preview_gl_transform = Transform3D(Basis(), preview_node_pos);
-				preview_node->set_global_transform(preview_gl_transform);
-				if (!preview_node->is_visible()) {
-					preview_node->show();
-				}
-			}
-			update_preview_node = false;
 		} break;
 
 		case NOTIFICATION_APPLICATION_FOCUS_OUT:
@@ -3892,7 +3865,6 @@ void Node3DEditorViewport::_notification(int p_what) {
 			surface->connect(SceneStringName(draw), callable_mp(this, &Node3DEditorViewport::_draw));
 			surface->connect(SceneStringName(gui_input), callable_mp(this, &Node3DEditorViewport::_sinput));
 			surface->connect(SceneStringName(mouse_entered), callable_mp(this, &Node3DEditorViewport::_surface_mouse_enter));
-			surface->connect(SceneStringName(mouse_exited), callable_mp(this, &Node3DEditorViewport::_surface_mouse_exit));
 			surface->connect(SceneStringName(focus_entered), callable_mp(this, &Node3DEditorViewport::_surface_focus_enter));
 			surface->connect(SceneStringName(focus_exited), callable_mp(this, &Node3DEditorViewport::_surface_focus_exit));
 
@@ -3964,16 +3936,6 @@ void Node3DEditorViewport::_notification(int p_what) {
 			ruler_label_z->add_theme_constant_override("outline_size", 4 * EDSCALE);
 			ruler_label_z->add_theme_font_size_override(SceneStringName(font_size), 15 * EDSCALE);
 			ruler_label_z->add_theme_font_override(SceneStringName(font), get_theme_font(SNAME("bold"), EditorStringName(EditorFonts)));
-		} break;
-
-		case NOTIFICATION_DRAG_END: {
-			// Clear preview material when dropped outside applicable object.
-			if (spatial_editor->get_preview_material().is_valid() && !is_drag_successful()) {
-				_reset_preview_material();
-				_remove_preview_material();
-			} else {
-				_remove_preview_node();
-			}
 		} break;
 
 		case EditorSettings::NOTIFICATION_EDITOR_SETTINGS_CHANGED: {
@@ -4839,91 +4801,147 @@ void Node3DEditorViewport::_init_gizmo_instance(int p_idx) {
 	uint32_t layer = 1 << (GIZMO_BASE_LAYER + p_idx);
 
 	for (int i = 0; i < 3; i++) {
-		move_gizmo_instance[i] = RS::get_singleton()->instance_create();
-		RS::get_singleton()->instance_set_base(move_gizmo_instance[i], spatial_editor->get_move_gizmo(i)->get_rid());
-		RS::get_singleton()->instance_set_scenario(move_gizmo_instance[i], spatial_editor->get_entity_world()->get_scenario());
-		RS::get_singleton()->instance_set_visible(move_gizmo_instance[i], false);
-		RS::get_singleton()->instance_geometry_set_cast_shadows_setting(move_gizmo_instance[i], RSE::SHADOW_CASTING_SETTING_OFF);
-		RS::get_singleton()->instance_set_layer_mask(move_gizmo_instance[i], layer);
-		RS::get_singleton()->instance_geometry_set_flag(move_gizmo_instance[i], RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
-		RS::get_singleton()->instance_geometry_set_flag(move_gizmo_instance[i], RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
+		move_gizmo_instance[i] = ToolRenderData::create();
+		move_gizmo_instance[i].base = spatial_editor->get_move_gizmo(i)->get_rid();
+		move_gizmo_instance[i].base_asset = spatial_editor->get_move_gizmo(i);
+		move_gizmo_instance[i].publish();
+		move_gizmo_instance[i].scenario = spatial_editor->get_entity_world()->get_scenario();
+		move_gizmo_instance[i].publish();
+		move_gizmo_instance[i].visible = false;
+		move_gizmo_instance[i].publish();
+		move_gizmo_instance[i].cast_shadows = RSE::SHADOW_CASTING_SETTING_OFF;
+		move_gizmo_instance[i].publish();
+		move_gizmo_instance[i].layers = layer;
+		move_gizmo_instance[i].publish();
+		move_gizmo_instance[i].ignore_occlusion_culling = true;
+		move_gizmo_instance[i].publish();
+		move_gizmo_instance[i].baked_light = false;
+		move_gizmo_instance[i].publish();
 
-		move_plane_gizmo_instance[i] = RS::get_singleton()->instance_create();
-		RS::get_singleton()->instance_set_base(move_plane_gizmo_instance[i], spatial_editor->get_move_plane_gizmo(i)->get_rid());
-		RS::get_singleton()->instance_set_scenario(move_plane_gizmo_instance[i], spatial_editor->get_entity_world()->get_scenario());
-		RS::get_singleton()->instance_set_visible(move_plane_gizmo_instance[i], false);
-		RS::get_singleton()->instance_geometry_set_cast_shadows_setting(move_plane_gizmo_instance[i], RSE::SHADOW_CASTING_SETTING_OFF);
-		RS::get_singleton()->instance_set_layer_mask(move_plane_gizmo_instance[i], layer);
-		RS::get_singleton()->instance_geometry_set_flag(move_plane_gizmo_instance[i], RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
-		RS::get_singleton()->instance_geometry_set_flag(move_plane_gizmo_instance[i], RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
+		move_plane_gizmo_instance[i] = ToolRenderData::create();
+		move_plane_gizmo_instance[i].base = spatial_editor->get_move_plane_gizmo(i)->get_rid();
+		move_plane_gizmo_instance[i].base_asset = spatial_editor->get_move_plane_gizmo(i);
+		move_plane_gizmo_instance[i].publish();
+		move_plane_gizmo_instance[i].scenario = spatial_editor->get_entity_world()->get_scenario();
+		move_plane_gizmo_instance[i].publish();
+		move_plane_gizmo_instance[i].visible = false;
+		move_plane_gizmo_instance[i].publish();
+		move_plane_gizmo_instance[i].cast_shadows = RSE::SHADOW_CASTING_SETTING_OFF;
+		move_plane_gizmo_instance[i].publish();
+		move_plane_gizmo_instance[i].layers = layer;
+		move_plane_gizmo_instance[i].publish();
+		move_plane_gizmo_instance[i].ignore_occlusion_culling = true;
+		move_plane_gizmo_instance[i].publish();
+		move_plane_gizmo_instance[i].baked_light = false;
+		move_plane_gizmo_instance[i].publish();
 
-		scale_gizmo_instance[i] = RS::get_singleton()->instance_create();
-		RS::get_singleton()->instance_set_base(scale_gizmo_instance[i], spatial_editor->get_scale_gizmo(i)->get_rid());
-		RS::get_singleton()->instance_set_scenario(scale_gizmo_instance[i], spatial_editor->get_entity_world()->get_scenario());
-		RS::get_singleton()->instance_set_visible(scale_gizmo_instance[i], false);
-		RS::get_singleton()->instance_geometry_set_cast_shadows_setting(scale_gizmo_instance[i], RSE::SHADOW_CASTING_SETTING_OFF);
-		RS::get_singleton()->instance_set_layer_mask(scale_gizmo_instance[i], layer);
-		RS::get_singleton()->instance_geometry_set_flag(scale_gizmo_instance[i], RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
-		RS::get_singleton()->instance_geometry_set_flag(scale_gizmo_instance[i], RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
+		scale_gizmo_instance[i] = ToolRenderData::create();
+		scale_gizmo_instance[i].base = spatial_editor->get_scale_gizmo(i)->get_rid();
+		scale_gizmo_instance[i].base_asset = spatial_editor->get_scale_gizmo(i);
+		scale_gizmo_instance[i].publish();
+		scale_gizmo_instance[i].scenario = spatial_editor->get_entity_world()->get_scenario();
+		scale_gizmo_instance[i].publish();
+		scale_gizmo_instance[i].visible = false;
+		scale_gizmo_instance[i].publish();
+		scale_gizmo_instance[i].cast_shadows = RSE::SHADOW_CASTING_SETTING_OFF;
+		scale_gizmo_instance[i].publish();
+		scale_gizmo_instance[i].layers = layer;
+		scale_gizmo_instance[i].publish();
+		scale_gizmo_instance[i].ignore_occlusion_culling = true;
+		scale_gizmo_instance[i].publish();
+		scale_gizmo_instance[i].baked_light = false;
+		scale_gizmo_instance[i].publish();
 
-		scale_plane_gizmo_instance[i] = RS::get_singleton()->instance_create();
-		RS::get_singleton()->instance_set_base(scale_plane_gizmo_instance[i], spatial_editor->get_scale_plane_gizmo(i)->get_rid());
-		RS::get_singleton()->instance_set_scenario(scale_plane_gizmo_instance[i], spatial_editor->get_entity_world()->get_scenario());
-		RS::get_singleton()->instance_set_visible(scale_plane_gizmo_instance[i], false);
-		RS::get_singleton()->instance_geometry_set_cast_shadows_setting(scale_plane_gizmo_instance[i], RSE::SHADOW_CASTING_SETTING_OFF);
-		RS::get_singleton()->instance_set_layer_mask(scale_plane_gizmo_instance[i], layer);
-		RS::get_singleton()->instance_geometry_set_flag(scale_plane_gizmo_instance[i], RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
-		RS::get_singleton()->instance_geometry_set_flag(scale_plane_gizmo_instance[i], RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
+		scale_plane_gizmo_instance[i] = ToolRenderData::create();
+		scale_plane_gizmo_instance[i].base = spatial_editor->get_scale_plane_gizmo(i)->get_rid();
+		scale_plane_gizmo_instance[i].base_asset = spatial_editor->get_scale_plane_gizmo(i);
+		scale_plane_gizmo_instance[i].publish();
+		scale_plane_gizmo_instance[i].scenario = spatial_editor->get_entity_world()->get_scenario();
+		scale_plane_gizmo_instance[i].publish();
+		scale_plane_gizmo_instance[i].visible = false;
+		scale_plane_gizmo_instance[i].publish();
+		scale_plane_gizmo_instance[i].cast_shadows = RSE::SHADOW_CASTING_SETTING_OFF;
+		scale_plane_gizmo_instance[i].publish();
+		scale_plane_gizmo_instance[i].layers = layer;
+		scale_plane_gizmo_instance[i].publish();
+		scale_plane_gizmo_instance[i].ignore_occlusion_culling = true;
+		scale_plane_gizmo_instance[i].publish();
+		scale_plane_gizmo_instance[i].baked_light = false;
+		scale_plane_gizmo_instance[i].publish();
 
-		axis_gizmo_instance[i] = RS::get_singleton()->instance_create();
+		axis_gizmo_instance[i] = ToolRenderData::create();
 	}
 
 	for (int i = 0; i < 3; i++) {
-		RS::get_singleton()->instance_set_base(axis_gizmo_instance[i], spatial_editor->get_axis_gizmo(i)->get_rid());
-		RS::get_singleton()->instance_set_scenario(axis_gizmo_instance[i], spatial_editor->get_entity_world()->get_scenario());
-		RS::get_singleton()->instance_set_visible(axis_gizmo_instance[i], true);
-		RS::get_singleton()->instance_geometry_set_cast_shadows_setting(axis_gizmo_instance[i], RSE::SHADOW_CASTING_SETTING_OFF);
-		RS::get_singleton()->instance_set_layer_mask(axis_gizmo_instance[i], layer);
-		RS::get_singleton()->instance_geometry_set_flag(axis_gizmo_instance[i], RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
-		RS::get_singleton()->instance_geometry_set_flag(axis_gizmo_instance[i], RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
+		axis_gizmo_instance[i].base = spatial_editor->get_axis_gizmo(i)->get_rid();
+		axis_gizmo_instance[i].base_asset = spatial_editor->get_axis_gizmo(i);
+		axis_gizmo_instance[i].publish();
+		axis_gizmo_instance[i].scenario = spatial_editor->get_entity_world()->get_scenario();
+		axis_gizmo_instance[i].publish();
+		axis_gizmo_instance[i].visible = true;
+		axis_gizmo_instance[i].publish();
+		axis_gizmo_instance[i].cast_shadows = RSE::SHADOW_CASTING_SETTING_OFF;
+		axis_gizmo_instance[i].publish();
+		axis_gizmo_instance[i].layers = layer;
+		axis_gizmo_instance[i].publish();
+		axis_gizmo_instance[i].ignore_occlusion_culling = true;
+		axis_gizmo_instance[i].publish();
+		axis_gizmo_instance[i].baked_light = false;
+		axis_gizmo_instance[i].publish();
 	}
 
 	for (int i = 0; i < 4; i++) {
-		rotate_gizmo_instance[i] = RS::get_singleton()->instance_create();
-		RS::get_singleton()->instance_set_base(rotate_gizmo_instance[i], spatial_editor->get_rotate_gizmo(i)->get_rid());
-		RS::get_singleton()->instance_set_scenario(rotate_gizmo_instance[i], spatial_editor->get_entity_world()->get_scenario());
-		RS::get_singleton()->instance_set_visible(rotate_gizmo_instance[i], false);
-		RS::get_singleton()->instance_geometry_set_cast_shadows_setting(rotate_gizmo_instance[i], RSE::SHADOW_CASTING_SETTING_OFF);
-		RS::get_singleton()->instance_set_layer_mask(rotate_gizmo_instance[i], layer);
-		RS::get_singleton()->instance_geometry_set_flag(rotate_gizmo_instance[i], RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
-		RS::get_singleton()->instance_geometry_set_flag(rotate_gizmo_instance[i], RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
+		rotate_gizmo_instance[i] = ToolRenderData::create();
+		rotate_gizmo_instance[i].base = spatial_editor->get_rotate_gizmo(i)->get_rid();
+		rotate_gizmo_instance[i].base_asset = spatial_editor->get_rotate_gizmo(i);
+		rotate_gizmo_instance[i].publish();
+		rotate_gizmo_instance[i].scenario = spatial_editor->get_entity_world()->get_scenario();
+		rotate_gizmo_instance[i].publish();
+		rotate_gizmo_instance[i].visible = false;
+		rotate_gizmo_instance[i].publish();
+		rotate_gizmo_instance[i].cast_shadows = RSE::SHADOW_CASTING_SETTING_OFF;
+		rotate_gizmo_instance[i].publish();
+		rotate_gizmo_instance[i].layers = layer;
+		rotate_gizmo_instance[i].publish();
+		rotate_gizmo_instance[i].ignore_occlusion_culling = true;
+		rotate_gizmo_instance[i].publish();
+		rotate_gizmo_instance[i].baked_light = false;
+		rotate_gizmo_instance[i].publish();
 	}
 
 	// Create trackball sphere instance
-	trackball_sphere_instance = RS::get_singleton()->instance_create();
-	RS::get_singleton()->instance_set_base(trackball_sphere_instance, spatial_editor->get_trackball_sphere_gizmo()->get_rid());
-	RS::get_singleton()->instance_set_scenario(trackball_sphere_instance, spatial_editor->get_entity_world()->get_scenario());
-	RS::get_singleton()->instance_set_visible(trackball_sphere_instance, false);
-	RS::get_singleton()->instance_geometry_set_cast_shadows_setting(trackball_sphere_instance, RSE::SHADOW_CASTING_SETTING_OFF);
-	RS::get_singleton()->instance_set_layer_mask(trackball_sphere_instance, layer);
-	RS::get_singleton()->instance_geometry_set_flag(trackball_sphere_instance, RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
-	RS::get_singleton()->instance_geometry_set_flag(trackball_sphere_instance, RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
+	trackball_sphere_instance = ToolRenderData::create();
+	trackball_sphere_instance.base = spatial_editor->get_trackball_sphere_gizmo()->get_rid();
+	trackball_sphere_instance.base_asset = spatial_editor->get_trackball_sphere_gizmo();
+	trackball_sphere_instance.publish();
+	trackball_sphere_instance.scenario = spatial_editor->get_entity_world()->get_scenario();
+	trackball_sphere_instance.publish();
+	trackball_sphere_instance.visible = false;
+	trackball_sphere_instance.publish();
+	trackball_sphere_instance.cast_shadows = RSE::SHADOW_CASTING_SETTING_OFF;
+	trackball_sphere_instance.publish();
+	trackball_sphere_instance.layers = layer;
+	trackball_sphere_instance.publish();
+	trackball_sphere_instance.ignore_occlusion_culling = true;
+	trackball_sphere_instance.publish();
+	trackball_sphere_instance.baked_light = false;
+	trackball_sphere_instance.publish();
 }
 
 void Node3DEditorViewport::_finish_gizmo_instances() {
 	ERR_FAIL_NULL(RenderingServer::get_singleton());
 	for (int i = 0; i < 3; i++) {
-		RS::get_singleton()->free_rid(move_gizmo_instance[i]);
-		RS::get_singleton()->free_rid(move_plane_gizmo_instance[i]);
-		RS::get_singleton()->free_rid(rotate_gizmo_instance[i]);
-		RS::get_singleton()->free_rid(scale_gizmo_instance[i]);
-		RS::get_singleton()->free_rid(scale_plane_gizmo_instance[i]);
-		RS::get_singleton()->free_rid(axis_gizmo_instance[i]);
+		move_gizmo_instance[i].clear();
+		move_plane_gizmo_instance[i].clear();
+		rotate_gizmo_instance[i].clear();
+		scale_gizmo_instance[i].clear();
+		scale_plane_gizmo_instance[i].clear();
+		axis_gizmo_instance[i].clear();
 	}
 	// Rotation white outline
-	RS::get_singleton()->free_rid(rotate_gizmo_instance[3]);
+	rotate_gizmo_instance[3].clear();
 
-	RS::get_singleton()->free_rid(trackball_sphere_instance);
+	trackball_sphere_instance.clear();
 }
 
 void Node3DEditorViewport::_disable_follow_mode() {
@@ -5078,14 +5096,21 @@ void Node3DEditorViewport::update_transform_gizmo_view() {
 
 	if (xform.origin.is_equal_approx(camera_xform.origin)) {
 		for (int i = 0; i < 3; i++) {
-			RenderingServer::get_singleton()->instance_set_visible(move_gizmo_instance[i], false);
-			RenderingServer::get_singleton()->instance_set_visible(move_plane_gizmo_instance[i], false);
-			RenderingServer::get_singleton()->instance_set_visible(rotate_gizmo_instance[i], false);
-			RenderingServer::get_singleton()->instance_set_visible(scale_gizmo_instance[i], false);
-			RenderingServer::get_singleton()->instance_set_visible(scale_plane_gizmo_instance[i], false);
-			RenderingServer::get_singleton()->instance_set_visible(axis_gizmo_instance[i], false);
+			move_gizmo_instance[i].visible = false;
+			move_gizmo_instance[i].publish();
+			move_plane_gizmo_instance[i].visible = false;
+			move_plane_gizmo_instance[i].publish();
+			rotate_gizmo_instance[i].visible = false;
+			rotate_gizmo_instance[i].publish();
+			scale_gizmo_instance[i].visible = false;
+			scale_gizmo_instance[i].publish();
+			scale_plane_gizmo_instance[i].visible = false;
+			scale_plane_gizmo_instance[i].publish();
+			axis_gizmo_instance[i].visible = false;
+			axis_gizmo_instance[i].publish();
 		}
-		RenderingServer::get_singleton()->instance_set_visible(rotate_gizmo_instance[3], false);
+		rotate_gizmo_instance[3].visible = false;
+		rotate_gizmo_instance[3].publish();
 		return;
 	}
 
@@ -5110,14 +5135,21 @@ void Node3DEditorViewport::update_transform_gizmo_view() {
 	// this prevents supplying bad values to the renderer and then having to filter it out again.
 	if (xform.basis.determinant() == 0) {
 		for (int i = 0; i < 3; i++) {
-			RenderingServer::get_singleton()->instance_set_visible(move_gizmo_instance[i], false);
-			RenderingServer::get_singleton()->instance_set_visible(move_plane_gizmo_instance[i], false);
-			RenderingServer::get_singleton()->instance_set_visible(rotate_gizmo_instance[i], false);
-			RenderingServer::get_singleton()->instance_set_visible(scale_gizmo_instance[i], false);
-			RenderingServer::get_singleton()->instance_set_visible(scale_plane_gizmo_instance[i], false);
-			RenderingServer::get_singleton()->instance_set_visible(axis_gizmo_instance[i], false);
+			move_gizmo_instance[i].visible = false;
+			move_gizmo_instance[i].publish();
+			move_plane_gizmo_instance[i].visible = false;
+			move_plane_gizmo_instance[i].publish();
+			rotate_gizmo_instance[i].visible = false;
+			rotate_gizmo_instance[i].publish();
+			scale_gizmo_instance[i].visible = false;
+			scale_gizmo_instance[i].publish();
+			scale_plane_gizmo_instance[i].visible = false;
+			scale_plane_gizmo_instance[i].publish();
+			axis_gizmo_instance[i].visible = false;
+			axis_gizmo_instance[i].publish();
 		}
-		RenderingServer::get_singleton()->instance_set_visible(rotate_gizmo_instance[3], false);
+		rotate_gizmo_instance[3].visible = false;
+		rotate_gizmo_instance[3].publish();
 		return;
 	}
 
@@ -5159,17 +5191,28 @@ void Node3DEditorViewport::update_transform_gizmo_view() {
 		}
 		axis_angle.basis.scale(scale);
 		axis_angle.origin = xform.origin;
-		RenderingServer::get_singleton()->instance_set_transform(move_gizmo_instance[i], axis_angle);
-		RenderingServer::get_singleton()->instance_set_visible(move_gizmo_instance[i], show_gizmo && (spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_TRANSFORM || spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_MOVE));
-		RenderingServer::get_singleton()->instance_set_transform(move_plane_gizmo_instance[i], axis_angle);
-		RenderingServer::get_singleton()->instance_set_visible(move_plane_gizmo_instance[i], show_gizmo && (spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_TRANSFORM || spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_MOVE));
-		RenderingServer::get_singleton()->instance_set_transform(rotate_gizmo_instance[i], axis_angle);
-		RenderingServer::get_singleton()->instance_set_visible(rotate_gizmo_instance[i], show_rotate_gizmo && i != arc_replaces_ring);
-		RenderingServer::get_singleton()->instance_set_transform(scale_gizmo_instance[i], axis_angle);
-		RenderingServer::get_singleton()->instance_set_visible(scale_gizmo_instance[i], show_gizmo && (spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_SCALE));
-		RenderingServer::get_singleton()->instance_set_transform(scale_plane_gizmo_instance[i], axis_angle);
-		RenderingServer::get_singleton()->instance_set_visible(scale_plane_gizmo_instance[i], show_gizmo && (spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_SCALE));
-		RenderingServer::get_singleton()->instance_set_transform(axis_gizmo_instance[i], xform);
+		move_gizmo_instance[i].transform = axis_angle;
+		move_gizmo_instance[i].publish();
+		move_gizmo_instance[i].visible = show_gizmo && (spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_TRANSFORM || spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_MOVE);
+		move_gizmo_instance[i].publish();
+		move_plane_gizmo_instance[i].transform = axis_angle;
+		move_plane_gizmo_instance[i].publish();
+		move_plane_gizmo_instance[i].visible = show_gizmo && (spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_TRANSFORM || spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_MOVE);
+		move_plane_gizmo_instance[i].publish();
+		rotate_gizmo_instance[i].transform = axis_angle;
+		rotate_gizmo_instance[i].publish();
+		rotate_gizmo_instance[i].visible = show_rotate_gizmo && i != arc_replaces_ring;
+		rotate_gizmo_instance[i].publish();
+		scale_gizmo_instance[i].transform = axis_angle;
+		scale_gizmo_instance[i].publish();
+		scale_gizmo_instance[i].visible = show_gizmo && (spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_SCALE);
+		scale_gizmo_instance[i].publish();
+		scale_plane_gizmo_instance[i].transform = axis_angle;
+		scale_plane_gizmo_instance[i].publish();
+		scale_plane_gizmo_instance[i].visible = show_gizmo && (spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_SCALE);
+		scale_plane_gizmo_instance[i].publish();
+		axis_gizmo_instance[i].transform = xform;
+		axis_gizmo_instance[i].publish();
 	}
 
 	Transform3D view_rotation_xform = xform;
@@ -5179,20 +5222,27 @@ void Node3DEditorViewport::update_transform_gizmo_view() {
 	bool show_trackball_sphere = can_show_trackball && (spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_TRANSFORM || spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_ROTATE) && !hide_gizmo_during_trackball;
 	Transform3D trackball_xform = view_rotation_xform;
 	trackball_xform.basis.scale(scale);
-	RenderingServer::get_singleton()->instance_set_transform(trackball_sphere_instance, trackball_xform);
-	RenderingServer::get_singleton()->instance_set_visible(trackball_sphere_instance, show_trackball_sphere);
+	trackball_sphere_instance.transform = trackball_xform;
+	trackball_sphere_instance.publish();
+	trackball_sphere_instance.visible = show_trackball_sphere;
+	trackball_sphere_instance.publish();
 
 	bool shrink_view_ring = arc_replaces_ring >= 0 && arc_replaces_ring < 3;
 	Vector3 view_ring_scale = shrink_view_ring ? scale : scale * (spatial_editor->gizmo_view_rotation_scale / GIZMO_CIRCLE_SIZE);
 	view_rotation_xform.basis.scale(view_ring_scale);
-	RenderingServer::get_singleton()->instance_set_transform(rotate_gizmo_instance[3], view_rotation_xform);
-	RenderingServer::get_singleton()->instance_set_visible(rotate_gizmo_instance[3], show_rotate_gizmo && arc_replaces_ring != 3);
+	rotate_gizmo_instance[3].transform = view_rotation_xform;
+	rotate_gizmo_instance[3].publish();
+	rotate_gizmo_instance[3].visible = show_rotate_gizmo && arc_replaces_ring != 3;
+	rotate_gizmo_instance[3].publish();
 
 	bool show_axes = spatial_editor->is_gizmo_visible() && _edit.mode != TRANSFORM_NONE && !hide_gizmo_during_trackball;
 	RenderingServer *rs = RenderingServer::get_singleton();
-	rs->instance_set_visible(axis_gizmo_instance[0], show_axes && (_edit.plane == TRANSFORM_X_AXIS || _edit.plane == TRANSFORM_XY || _edit.plane == TRANSFORM_XZ));
-	rs->instance_set_visible(axis_gizmo_instance[1], show_axes && (_edit.plane == TRANSFORM_Y_AXIS || _edit.plane == TRANSFORM_XY || _edit.plane == TRANSFORM_YZ));
-	rs->instance_set_visible(axis_gizmo_instance[2], show_axes && (_edit.plane == TRANSFORM_Z_AXIS || _edit.plane == TRANSFORM_XZ || _edit.plane == TRANSFORM_YZ));
+	axis_gizmo_instance[0].visible = show_axes && (_edit.plane == TRANSFORM_X_AXIS || _edit.plane == TRANSFORM_XY || _edit.plane == TRANSFORM_XZ);
+	axis_gizmo_instance[0].publish();
+	axis_gizmo_instance[1].visible = show_axes && (_edit.plane == TRANSFORM_Y_AXIS || _edit.plane == TRANSFORM_XY || _edit.plane == TRANSFORM_YZ);
+	axis_gizmo_instance[1].publish();
+	axis_gizmo_instance[2].visible = show_axes && (_edit.plane == TRANSFORM_Z_AXIS || _edit.plane == TRANSFORM_XZ || _edit.plane == TRANSFORM_YZ);
+	axis_gizmo_instance[2].publish();
 }
 
 void Node3DEditorViewport::update_transform_gizmo_highlight() {
@@ -5408,6 +5458,38 @@ void Node3DEditorViewport::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("clicked"));
 }
 
+void Node3DEditorViewport::set_document_scenario(RID p_scenario) {
+	RenderingServer::get_singleton()->viewport_set_scenario(viewport->get_viewport_rid(), p_scenario);
+	auto retarget = [&](ToolRenderData &p_record) {
+		if (p_record.is_valid()) {
+			p_record.scenario = p_scenario;
+			p_record.publish();
+		}
+	};
+	for (int i = 0; i < 3; i++) {
+		retarget(move_gizmo_instance[i]);
+		retarget(move_plane_gizmo_instance[i]);
+		retarget(scale_gizmo_instance[i]);
+		retarget(scale_plane_gizmo_instance[i]);
+		retarget(axis_gizmo_instance[i]);
+	}
+	for (int i = 0; i < 4; i++) {
+		retarget(rotate_gizmo_instance[i]);
+	}
+	retarget(trackball_sphere_instance);
+	retarget(ruler_line);
+	retarget(ruler_line_xray);
+	retarget(ruler_triangle_lines);
+	retarget(ruler_triangle_lines_xray);
+}
+
+void Node3DEditorViewport::set_document_camera(const Transform3D &p_transform, bool p_orthogonal, real_t p_size) {
+	view_3d_controller->set_orthogonal(p_orthogonal);
+	view_3d_controller->cursor.distance = p_orthogonal ? p_size : View3DControllerConsts::DISTANCE_DEFAULT;
+	_sync_cursor_from_transform(p_transform);
+	view_3d_controller->update_camera();
+}
+
 void Node3DEditorViewport::reset() {
 	view_3d_controller->set_orthogonal(false);
 	view_3d_controller->set_view_type(View3DController::VIEW_TYPE_USER);
@@ -5463,27 +5545,6 @@ void Node3DEditorViewport::focus_selection() {
 	view_3d_controller->cursor.pos = center;
 }
 
-void Node3DEditorViewport::assign_pending_data_pointers(Node3D *p_preview_node, AABB *p_preview_bounds, AcceptDialog *p_accept) {
-	preview_node = p_preview_node;
-	preview_bounds = p_preview_bounds;
-	accept = p_accept;
-}
-
-void _insert_collision_object_rid_recursive(Node *p_node, HashSet<RID> &p_col_obj_rids) {
-	CollisionObject3D *col_obj = Object::cast_to<CollisionObject3D>(p_node);
-
-	if (col_obj) {
-		p_col_obj_rids.insert(col_obj->get_rid());
-	} else if (p_node->is_class("CSGShape3D")) { // HACK: We should avoid referencing module logic.
-		p_col_obj_rids.insert(p_node->call("_get_root_collision_instance"));
-	}
-
-	for (int i = 0; i < p_node->get_child_count(); i++) {
-		Node *child = p_node->get_child(i);
-		_insert_collision_object_rid_recursive(child, p_col_obj_rids);
-	}
-}
-
 Vector3 Node3DEditorViewport::_get_instance_position(const Point2 &p_pos, Node3D *p_node) const {
 	ERR_FAIL_V_MSG(Vector3(), "Placing objects in the 3D viewport is not available yet.");
 }
@@ -5526,385 +5587,6 @@ AABB Node3DEditorViewport::_calculate_spatial_bounds(const Node3D *p_parent, boo
 	return bounds;
 }
 
-Node *Node3DEditorViewport::_sanitize_preview_node(Node *p_node) const {
-	Node3D *node_3d = Object::cast_to<Node3D>(p_node);
-	if (node_3d == nullptr) {
-		Node3D *replacement_node = memnew(Node3D);
-		replacement_node->set_name(p_node->get_name());
-		p_node->replace_by(replacement_node);
-		memdelete(p_node);
-		p_node = replacement_node;
-	} else {
-		VisualInstance3D *visual_instance = Object::cast_to<VisualInstance3D>(node_3d);
-		if (visual_instance == nullptr) {
-			Node3D *replacement_node = memnew(Node3D);
-			replacement_node->set_name(node_3d->get_name());
-			replacement_node->set_visible(node_3d->is_visible());
-			replacement_node->set_transform(node_3d->get_transform());
-			replacement_node->set_rotation_edit_mode(node_3d->get_rotation_edit_mode());
-			replacement_node->set_rotation_order(node_3d->get_rotation_order());
-			replacement_node->set_as_top_level(node_3d->is_set_as_top_level());
-			p_node->replace_by(replacement_node);
-			memdelete(p_node);
-			p_node = replacement_node;
-		}
-	}
-
-	for (int i = 0; i < p_node->get_child_count(); i++) {
-		_sanitize_preview_node(p_node->get_child(i));
-	}
-
-	return p_node;
-}
-
-void Node3DEditorViewport::_create_preview_node(const Vector<String> &files) const {
-	bool add_preview = false;
-	for (const String &path : files) {
-		Ref<Resource> res = ResourceLoader::load(path);
-		ERR_CONTINUE(res.is_null());
-
-		Ref<PackedScene> scene = res;
-		if (scene.is_valid()) {
-			Node *instance = scene->instantiate();
-			if (instance) {
-				instance = _sanitize_preview_node(instance);
-				preview_node->add_child(instance);
-				Node3D *node_3d = Object::cast_to<Node3D>(instance);
-				if (node_3d) {
-					node_3d->set_as_top_level(false);
-				}
-			}
-			add_preview = true;
-		}
-
-		Ref<Mesh> mesh = res;
-		if (mesh.is_valid()) {
-			MeshInstance3D *mesh_instance = memnew(MeshInstance3D);
-			mesh_instance->set_mesh(mesh);
-			preview_node->add_child(mesh_instance);
-			add_preview = true;
-		}
-
-		Ref<AudioStream> audio = res;
-		if (audio.is_valid()) {
-			Sprite3D *sprite = memnew(Sprite3D);
-			sprite->set_texture(get_editor_theme_icon(SNAME("Gizmo3DSamplePlayer")));
-			sprite->set_billboard_mode(StandardMaterial3D::BILLBOARD_ENABLED);
-			sprite->set_pixel_size(0.005);
-			preview_node->add_child(sprite);
-			add_preview = true;
-		}
-	}
-	if (add_preview) {
-		EditorNode::get_singleton()->get_scene_root()->add_child(preview_node);
-		*preview_bounds = _calculate_spatial_bounds(preview_node);
-	}
-}
-
-void Node3DEditorViewport::_remove_preview_node() {
-	tooltip_panel->hide();
-
-	set_message("");
-	if (preview_node->get_parent()) {
-		for (int i = preview_node->get_child_count() - 1; i >= 0; i--) {
-			Node *node = preview_node->get_child(i);
-			node->queue_free();
-			preview_node->remove_child(node);
-		}
-		EditorNode::get_singleton()->get_scene_root()->remove_child(preview_node);
-	}
-}
-
-bool Node3DEditorViewport::_apply_preview_material(ObjectID p_target, const Point2 &p_point) const {
-	_reset_preview_material();
-
-	if (p_target.is_null()) {
-		return false;
-	}
-
-	spatial_editor->set_preview_material_target(p_target);
-
-	Object *target_inst = ObjectDB::get_instance(p_target);
-
-	bool is_ctrl = Input::get_singleton()->is_key_pressed(Key::CTRL);
-
-	MeshInstance3D *mesh_instance = Object::cast_to<MeshInstance3D>(target_inst);
-	if (is_ctrl && mesh_instance) {
-		Ref<Mesh> mesh = mesh_instance->get_mesh();
-		int surface_count = mesh->get_surface_count();
-
-		Vector3 world_ray = get_ray(p_point);
-		Vector3 world_pos = get_ray_pos(p_point);
-
-		int closest_surface = -1;
-		float closest_dist = 1e20;
-
-		Transform3D gt = mesh_instance->get_global_transform();
-
-		Transform3D ai = gt.affine_inverse();
-		Vector3 xform_ray = ai.basis.xform(world_ray).normalized();
-		Vector3 xform_pos = ai.xform(world_pos);
-
-		for (int surface_idx = 0; surface_idx < surface_count; surface_idx++) {
-			Ref<TriangleMesh> surface_mesh = mesh->generate_surface_triangle_mesh(surface_idx);
-
-			Vector3 rpos, rnorm;
-			if (surface_mesh->intersect_ray(xform_pos, xform_ray, rpos, rnorm)) {
-				Vector3 hitpos = gt.xform(rpos);
-
-				const real_t dist = world_pos.distance_to(hitpos);
-
-				if (dist < 0) {
-					continue;
-				}
-
-				if (dist < closest_dist) {
-					closest_surface = surface_idx;
-					closest_dist = dist;
-				}
-			}
-		}
-
-		if (closest_surface == -1) {
-			return false;
-		}
-
-		spatial_editor->set_preview_material_surface(closest_surface);
-		spatial_editor->set_preview_reset_material(mesh_instance->get_surface_override_material(closest_surface));
-		mesh_instance->set_surface_override_material(closest_surface, spatial_editor->get_preview_material());
-
-		return true;
-	}
-
-	GeometryInstance3D *geometry_instance = Object::cast_to<GeometryInstance3D>(target_inst);
-	if (geometry_instance) {
-		spatial_editor->set_preview_material_surface(-1);
-		spatial_editor->set_preview_reset_material(geometry_instance->get_material_override());
-		geometry_instance->set_material_override(spatial_editor->get_preview_material());
-		return true;
-	}
-
-	return false;
-}
-
-void Node3DEditorViewport::_reset_preview_material() const {
-	ObjectID last_target = spatial_editor->get_preview_material_target();
-	if (last_target.is_null()) {
-		return;
-	}
-	Object *last_target_inst = ObjectDB::get_instance(last_target);
-
-	MeshInstance3D *mesh_instance = Object::cast_to<MeshInstance3D>(last_target_inst);
-	GeometryInstance3D *geometry_instance = Object::cast_to<GeometryInstance3D>(last_target_inst);
-	if (mesh_instance && spatial_editor->get_preview_material_surface() != -1) {
-		mesh_instance->set_surface_override_material(spatial_editor->get_preview_material_surface(), spatial_editor->get_preview_reset_material());
-	} else if (geometry_instance) {
-		geometry_instance->set_material_override(spatial_editor->get_preview_reset_material());
-	}
-}
-
-void Node3DEditorViewport::_remove_preview_material() {
-	tooltip_panel->hide();
-
-	spatial_editor->set_preview_material(Ref<Material>());
-	spatial_editor->set_preview_reset_material(Ref<Material>());
-	spatial_editor->set_preview_material_target(ObjectID());
-	spatial_editor->set_preview_material_surface(-1);
-}
-
-bool Node3DEditorViewport::_cyclical_dependency_exists(const String &p_target_scene_path, Node *p_desired_node) const {
-	if (p_desired_node->get_scene_file_path() == p_target_scene_path) {
-		return true;
-	}
-
-	int childCount = p_desired_node->get_child_count();
-	for (int i = 0; i < childCount; i++) {
-		Node *child = p_desired_node->get_child(i);
-		if (_cyclical_dependency_exists(p_target_scene_path, child)) {
-			return true;
-		}
-	}
-	return false;
-}
-
-bool Node3DEditorViewport::_create_instance(Node *p_parent, const String &p_path, const Point2 &p_point) {
-	Ref<Resource> res = ResourceLoader::load(p_path);
-	ERR_FAIL_COND_V(res.is_null(), false);
-
-	Ref<PackedScene> scene = res;
-	Ref<Mesh> mesh = res;
-
-	Node *instantiated_scene = nullptr;
-
-	if (mesh.is_valid() || scene.is_valid()) {
-		if (mesh.is_valid()) {
-			MeshInstance3D *mesh_instance = memnew(MeshInstance3D);
-			mesh_instance->set_mesh(mesh);
-
-			// Adjust casing according to project setting. The file name is expected to be in snake_case, but will work for others.
-			const String &node_name = Node::adjust_name_casing(p_path.get_file().get_basename());
-			if (!node_name.is_empty()) {
-				mesh_instance->set_name(node_name);
-			}
-
-			instantiated_scene = mesh_instance;
-		} else {
-			if (scene.is_null()) { // invalid scene
-				return false;
-			} else {
-				instantiated_scene = scene->instantiate(PackedScene::GEN_EDIT_STATE_INSTANCE);
-			}
-		}
-	}
-
-	if (instantiated_scene == nullptr) {
-		return false;
-	}
-
-	if (!EditorNode::get_singleton()->get_edited_scene()->get_scene_file_path().is_empty()) { // Cyclic instantiation.
-		if (_cyclical_dependency_exists(EditorNode::get_singleton()->get_edited_scene()->get_scene_file_path(), instantiated_scene)) {
-			memdelete(instantiated_scene);
-			return false;
-		}
-	}
-
-	if (scene.is_valid()) {
-		instantiated_scene->set_scene_file_path(ProjectSettings::get_singleton()->localize_path(p_path));
-	}
-
-	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
-	undo_redo->add_do_method(p_parent, "add_child", instantiated_scene, true);
-	undo_redo->add_do_method(instantiated_scene, "set_owner", EditorNode::get_singleton()->get_edited_scene());
-	undo_redo->add_do_reference(instantiated_scene);
-	undo_redo->add_undo_method(p_parent, "remove_child", instantiated_scene);
-	undo_redo->add_do_method(editor_selection, "add_node", instantiated_scene);
-
-	String new_name = p_parent->validate_child_name(instantiated_scene);
-	EditorDebuggerNode *ed = EditorDebuggerNode::get_singleton();
-	undo_redo->add_do_method(ed, "live_debug_instantiate_node", EditorNode::get_singleton()->get_edited_scene()->get_path_to(p_parent), p_path, new_name);
-	undo_redo->add_undo_method(ed, "live_debug_remove_node", NodePath(String(EditorNode::get_singleton()->get_edited_scene()->get_path_to(p_parent)) + "/" + new_name));
-
-	Node3D *node3d = Object::cast_to<Node3D>(instantiated_scene);
-	if (node3d) {
-		Transform3D parent_tf;
-		Node3D *parent_node3d = Object::cast_to<Node3D>(p_parent);
-		if (parent_node3d) {
-			parent_tf = parent_node3d->get_global_gizmo_transform();
-		}
-
-		Transform3D new_tf = node3d->get_transform();
-		if (node3d->is_set_as_top_level()) {
-			new_tf.origin += preview_node_pos;
-		} else {
-			new_tf.origin = parent_tf.affine_inverse().xform(preview_node_pos + node3d->get_position());
-			new_tf.basis = parent_tf.affine_inverse().basis * new_tf.basis;
-		}
-
-		undo_redo->add_do_method(instantiated_scene, "set_transform", new_tf);
-	}
-
-	return true;
-}
-
-bool Node3DEditorViewport::_create_audio_node(Node *p_parent, const String &p_path, const Point2 &p_point) {
-	Ref<AudioStream> audio = ResourceLoader::load(p_path);
-	ERR_FAIL_COND_V(audio.is_null(), false);
-
-	AudioStreamPlayer3D *audio_player = memnew(AudioStreamPlayer3D);
-	audio_player->set_stream(audio);
-
-	// Adjust casing according to project setting. The file name is expected to be in snake_case, but will work for others.
-	const String &node_name = Node::adjust_name_casing(p_path.get_file().get_basename());
-	if (!node_name.is_empty()) {
-		audio_player->set_name(node_name);
-	}
-
-	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
-	undo_redo->add_do_method(p_parent, "add_child", audio_player, true);
-	undo_redo->add_do_method(audio_player, "set_owner", EditorNode::get_singleton()->get_edited_scene());
-	undo_redo->add_do_reference(audio_player);
-	undo_redo->add_undo_method(p_parent, "remove_child", audio_player);
-	undo_redo->add_do_method(editor_selection, "add_node", audio_player);
-
-	const String new_name = p_parent->validate_child_name(audio_player);
-	EditorDebuggerNode *ed = EditorDebuggerNode::get_singleton();
-	undo_redo->add_do_method(ed, "live_debug_create_node", EditorNode::get_singleton()->get_edited_scene()->get_path_to(p_parent), audio_player->get_class(), new_name);
-	undo_redo->add_undo_method(ed, "live_debug_remove_node", NodePath(String(EditorNode::get_singleton()->get_edited_scene()->get_path_to(p_parent)) + "/" + new_name));
-
-	Transform3D parent_tf;
-	Node3D *parent_node3d = Object::cast_to<Node3D>(p_parent);
-	if (parent_node3d) {
-		parent_tf = parent_node3d->get_global_gizmo_transform();
-	}
-
-	Transform3D new_tf = audio_player->get_transform();
-	new_tf.origin = parent_tf.affine_inverse().xform(preview_node_pos + audio_player->get_position());
-	new_tf.basis = parent_tf.affine_inverse().basis * new_tf.basis;
-
-	undo_redo->add_do_method(audio_player, "set_transform", new_tf);
-
-	return true;
-}
-
-void Node3DEditorViewport::_perform_drop_data() {
-	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
-	if (spatial_editor->get_preview_material_target().is_valid()) {
-		GeometryInstance3D *geometry_instance = ObjectDB::get_instance<GeometryInstance3D>(spatial_editor->get_preview_material_target());
-		MeshInstance3D *mesh_instance = ObjectDB::get_instance<MeshInstance3D>(spatial_editor->get_preview_material_target());
-		if (mesh_instance && spatial_editor->get_preview_material_surface() != -1) {
-			undo_redo->create_action(vformat(TTR("Set Surface %d Override Material"), spatial_editor->get_preview_material_surface()));
-			undo_redo->add_do_method(geometry_instance, "set_surface_override_material", spatial_editor->get_preview_material_surface(), spatial_editor->get_preview_material());
-			undo_redo->add_undo_method(geometry_instance, "set_surface_override_material", spatial_editor->get_preview_material_surface(), spatial_editor->get_preview_reset_material());
-			undo_redo->commit_action();
-		} else if (geometry_instance) {
-			undo_redo->create_action(TTR("Set Material Override"));
-			undo_redo->add_do_method(geometry_instance, "set_material_override", spatial_editor->get_preview_material());
-			undo_redo->add_undo_method(geometry_instance, "set_material_override", spatial_editor->get_preview_reset_material());
-			undo_redo->commit_action();
-		}
-
-		_remove_preview_material();
-		return;
-	}
-
-	_remove_preview_node();
-
-	PackedStringArray error_files;
-
-	undo_redo->create_action(TTR("Create Node"), UndoRedo::MERGE_DISABLE, target_node);
-	undo_redo->add_do_method(editor_selection, "clear");
-
-	for (int i = 0; i < selected_files.size(); i++) {
-		String path = selected_files[i];
-		Ref<Resource> res = ResourceLoader::load(path);
-		if (res.is_null()) {
-			continue;
-		}
-
-		Ref<PackedScene> scene = res;
-		Ref<Mesh> mesh = res;
-		if (mesh.is_valid() || scene.is_valid()) {
-			if (!_create_instance(target_node, path, drop_pos)) {
-				error_files.push_back(path.get_file());
-			}
-		}
-
-		Ref<AudioStream> audio = res;
-		if (audio.is_valid()) {
-			if (!_create_audio_node(target_node, path, drop_pos)) {
-				error_files.push_back(path.get_file());
-			}
-		}
-	}
-
-	undo_redo->commit_action();
-
-	if (error_files.size() > 0) {
-		accept->set_text(vformat(TTR("Error instantiating scene from %s."), String(", ").join(error_files)));
-		accept->popup_centered();
-	}
-}
-
 void Node3DEditorViewport::_show_tooltip(const String &p_title, const String &p_description) const {
 	tooltip_panel->set_text(
 			vformat("[font_size=%s][b][color=%s]%s[/color][/b][/font_size]\n%s",
@@ -5912,50 +5594,6 @@ void Node3DEditorViewport::_show_tooltip(const String &p_title, const String &p_
 					get_theme_color(SNAME("accent_color"), EditorStringName(Editor)).to_html(false),
 					p_title, p_description));
 	tooltip_panel->show();
-}
-
-bool Node3DEditorViewport::can_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) {
-	return false;
-}
-
-void Node3DEditorViewport::drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) {
-	if (!can_drop_data_fw(p_point, p_data, p_from)) {
-		return;
-	}
-
-	bool is_shift = Input::get_singleton()->is_key_pressed(Key::SHIFT);
-	bool is_alt = Input::get_singleton()->is_key_pressed(Key::ALT);
-
-	selected_files.clear();
-	Dictionary d = p_data;
-	if (d.has("type") && String(d["type"]) == "files") {
-		selected_files = d["files"];
-	}
-
-	const List<Node *> &selected_nodes = EditorNode::get_singleton()->get_editor_selection()->get_top_selected_node_list();
-	Node *root_node = EditorNode::get_singleton()->get_edited_scene();
-	if (selected_nodes.size() > 0) {
-		Node *selected_node = selected_nodes.front()->get();
-		if (is_alt) {
-			target_node = root_node;
-		} else if (is_shift) {
-			target_node = selected_node;
-		} else { // Default behavior.
-			target_node = (selected_node != root_node) ? selected_node->get_parent() : root_node;
-		}
-	} else {
-		if (root_node) {
-			target_node = root_node;
-		} else {
-			// Create a root node so we can add child nodes to it.
-			SceneTreeDock::get_singleton()->add_root_node(memnew(Node3D));
-			target_node = get_tree()->get_edited_scene_root();
-		}
-	}
-
-	drop_pos = p_point;
-
-	_perform_drop_data();
 }
 
 void Node3DEditorViewport::begin_transform(TransformMode p_mode, bool instant) {
@@ -6566,7 +6204,6 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 
 	c->add_child(viewport);
 	surface = memnew(Control);
-	SET_DRAG_FORWARDING_CD(surface, Node3DEditorViewport);
 	add_child(surface);
 	surface->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	surface->set_clip_contents(true);
@@ -6776,8 +6413,6 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	previewing = nullptr;
 	gizmo_scale = 1.0;
 
-	preview_node = nullptr;
-
 	bottom_center_vbox = memnew(VBoxContainer);
 	bottom_center_vbox->set_anchors_preset(LayoutPreset::PRESET_CENTER);
 	bottom_center_vbox->set_anchor_and_offset(SIDE_TOP, ANCHOR_END, -20 * EDSCALE);
@@ -6820,7 +6455,7 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	locked_label->hide();
 
 	zoom_limit_label = memnew(Label);
-	zoom_limit_label->set_text(TTRC(U"To zoom further, change the camera's clipping planes (View → Settings...)"));
+	zoom_limit_label->set_text(TTRC(U"To zoom further, change the camera's clipping planes (View Ã¢â€ â€™ Settings...)"));
 	zoom_limit_label->set_name("ZoomLimitMessageLabel");
 	zoom_limit_label->add_theme_color_override(SceneStringName(font_color), Color(1, 1, 1, 1));
 	zoom_limit_label->hide();
@@ -6902,8 +6537,6 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 
 	surface->add_child(top_right_vbox);
 
-	accept = nullptr;
-
 	selection_menu = memnew(PopupMenu);
 	add_child(selection_menu);
 	selection_menu->set_min_size(Size2(100, 0) * EDSCALE);
@@ -6914,14 +6547,6 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 		view_display_menu->get_popup()->set_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_AUDIO_LISTENER), true);
 		viewport->set_as_audio_listener_3d(true);
 	}
-
-	ruler = memnew(Node);
-
-	ruler_start_point = memnew(Node3D);
-	ruler_start_point->set_visible(false);
-
-	ruler_end_point = memnew(Node3D);
-	ruler_end_point->set_visible(false);
 
 	ruler_material.instantiate();
 	ruler_material->set_albedo(Color(1.0, 0.9, 0.0, 1.0));
@@ -6941,13 +6566,19 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 
 	geometry_xray.instantiate();
 
-	ruler_line = memnew(MeshInstance3D);
-	ruler_line->set_mesh(geometry);
-	ruler_line->set_material_override(ruler_material);
+	ruler_line = ToolRenderData::create(geometry->get_rid(), RID(), geometry);
+	ruler_line.material_override = ruler_material->get_rid();
+	ruler_line.material_asset = ruler_material;
+	ruler_line.visible = false;
+	ruler_line.cast_shadows = RSE::SHADOW_CASTING_SETTING_OFF;
+	ruler_line.publish();
 
-	ruler_line_xray = memnew(MeshInstance3D);
-	ruler_line_xray->set_mesh(geometry_xray);
-	ruler_line_xray->set_material_override(ruler_material_xray);
+	ruler_line_xray = ToolRenderData::create(geometry_xray->get_rid(), RID(), geometry_xray);
+	ruler_line_xray.material_override = ruler_material_xray->get_rid();
+	ruler_line_xray.material_asset = ruler_material_xray;
+	ruler_line_xray.visible = false;
+	ruler_line_xray.cast_shadows = RSE::SHADOW_CASTING_SETTING_OFF;
+	ruler_line_xray.publish();
 
 	ruler_triangle_material.instantiate();
 	ruler_triangle_material->set_albedo(Color(1.0, 1.0, 1.0, 1.0));
@@ -6965,17 +6596,23 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	ruler_triangle_material_xray->set_render_priority(BaseMaterial3D::RENDER_PRIORITY_MAX);
 	ruler_triangle_material_xray->set_flag(BaseMaterial3D::FLAG_ALBEDO_FROM_VERTEX_COLOR, true);
 
-	ruler_triangle_lines = memnew(MeshInstance3D);
 	Ref<ImmediateMesh> triangle_mesh;
 	triangle_mesh.instantiate();
-	ruler_triangle_lines->set_mesh(triangle_mesh);
-	ruler_triangle_lines->set_material_override(ruler_triangle_material);
+	ruler_triangle_lines = ToolRenderData::create(triangle_mesh->get_rid(), RID(), triangle_mesh);
+	ruler_triangle_lines.material_override = ruler_triangle_material->get_rid();
+	ruler_triangle_lines.material_asset = ruler_triangle_material;
+	ruler_triangle_lines.visible = false;
+	ruler_triangle_lines.cast_shadows = RSE::SHADOW_CASTING_SETTING_OFF;
+	ruler_triangle_lines.publish();
 
-	ruler_triangle_lines_xray = memnew(MeshInstance3D);
 	Ref<ImmediateMesh> triangle_mesh_xray;
 	triangle_mesh_xray.instantiate();
-	ruler_triangle_lines_xray->set_mesh(triangle_mesh_xray);
-	ruler_triangle_lines_xray->set_material_override(ruler_triangle_material_xray);
+	ruler_triangle_lines_xray = ToolRenderData::create(triangle_mesh_xray->get_rid(), RID(), triangle_mesh_xray);
+	ruler_triangle_lines_xray.material_override = ruler_triangle_material_xray->get_rid();
+	ruler_triangle_lines_xray.material_asset = ruler_triangle_material_xray;
+	ruler_triangle_lines_xray.visible = false;
+	ruler_triangle_lines_xray.cast_shadows = RSE::SHADOW_CASTING_SETTING_OFF;
+	ruler_triangle_lines_xray.publish();
 
 	ruler_label = memnew(Label);
 	ruler_label->set_visible(false);
@@ -6988,13 +6625,6 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 
 	ruler_label_z = memnew(Label);
 	ruler_label_z->set_visible(false);
-
-	ruler->add_child(ruler_start_point);
-	ruler->add_child(ruler_end_point);
-	ruler->add_child(ruler_line);
-	ruler->add_child(ruler_line_xray);
-	ruler->add_child(ruler_triangle_lines);
-	ruler->add_child(ruler_triangle_lines_xray);
 
 	viewport->add_child(ruler_label);
 	viewport->add_child(ruler_label_x);
@@ -7017,7 +6647,10 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 }
 
 Node3DEditorViewport::~Node3DEditorViewport() {
-	memdelete(ruler);
+	ruler_line.clear();
+	ruler_line_xray.clear();
+	ruler_triangle_lines.clear();
+	ruler_triangle_lines_xray.clear();
 }
 
 //////////////////////////////////////////////////////////////

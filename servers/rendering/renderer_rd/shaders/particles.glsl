@@ -77,6 +77,9 @@ struct FrameParams {
 	float particle_size;
 
 	mat4 emission_transform;
+	vec4 simulation_origin_high;
+	vec4 simulation_origin_low;
+	mat4 sub_emitter_transform;
 	vec3 emitter_velocity;
 	float interp_to_end;
 
@@ -208,8 +211,11 @@ bool emit_subparticle(mat4 p_xform, vec3 p_velocity, vec4 p_color, vec4 p_custom
 		return false;
 	}
 
-	dst_particles.data[dst_index].xform = p_xform;
-	dst_particles.data[dst_index].velocity = p_velocity;
+	#ifndef GENERATED_PARTICLE_PROCESS_MATERIAL
+	p_xform[3].xyz = (p_xform[3].xyz - frame_history.data[0].simulation_origin_high.xyz) - frame_history.data[0].simulation_origin_low.xyz;
+#endif
+	dst_particles.data[dst_index].xform = frame_history.data[0].sub_emitter_transform * p_xform;
+	dst_particles.data[dst_index].velocity = mat3(frame_history.data[0].sub_emitter_transform) * p_velocity;
 	dst_particles.data[dst_index].color = p_color;
 	dst_particles.data[dst_index].custom = p_custom;
 	dst_particles.data[dst_index].flags = p_flags;
@@ -226,6 +232,10 @@ vec3 safe_normalize(vec3 direction) {
 }
 
 #GLOBALS
+
+#ifdef GENERATED_PARTICLE_PROCESS_MATERIAL
+#define m_particle_world_position(position) (((position) + FRAME.simulation_origin_low.xyz) + FRAME.simulation_origin_high.xyz)
+#endif
 
 void main() {
 	uint particle = gl_GlobalInvocationID.x;
@@ -257,6 +267,10 @@ void main() {
 	bool apply_forces = true;
 	bool apply_velocity = true;
 	float local_delta = FRAME.delta;
+	mat4 emission_transform = FRAME.emission_transform;
+#ifndef GENERATED_PARTICLE_PROCESS_MATERIAL
+	emission_transform[3].xyz = (emission_transform[3].xyz + FRAME.simulation_origin_low.xyz) + FRAME.simulation_origin_high.xyz;
+#endif
 
 	float mass = 1.0;
 
@@ -278,6 +292,9 @@ void main() {
 				vec4(0.0, 1.0, 0.0, 0.0),
 				vec4(0.0, 0.0, 1.0, 0.0),
 				vec4(0.0, 0.0, 0.0, 1.0));
+#ifndef GENERATED_PARTICLE_PROCESS_MATERIAL
+		PARTICLE.xform[3].xyz = -FRAME.simulation_origin_high.xyz - FRAME.simulation_origin_low.xyz;
+#endif
 	}
 
 	//clear started flag if set
@@ -445,7 +462,17 @@ void main() {
 	uint particle_number = (PARTICLE.flags >> PARTICLE_FRAME_SHIFT) * uint(params.total_particles) + index;
 
 	if (restart && particle_active) {
+#ifndef GENERATED_PARTICLE_PROCESS_MATERIAL
+		vec3 relative_position = PARTICLE.xform[3].xyz;
+		vec3 public_position = (relative_position + FRAME.simulation_origin_low.xyz) + FRAME.simulation_origin_high.xyz;
+		PARTICLE.xform[3].xyz = public_position;
+#endif
 #CODE : START
+#ifndef GENERATED_PARTICLE_PROCESS_MATERIAL
+		for (int axis = 0; axis < 3; axis++) {
+			PARTICLE.xform[3][axis] = PARTICLE.xform[3][axis] == public_position[axis] ? relative_position[axis] : (PARTICLE.xform[3][axis] - FRAME.simulation_origin_high[axis]) - FRAME.simulation_origin_low[axis];
+		}
+#endif
 	}
 
 	if (particle_active) {
@@ -668,7 +695,17 @@ void main() {
 	}
 
 	if (particle_active) {
+#ifndef GENERATED_PARTICLE_PROCESS_MATERIAL
+		vec3 relative_position = PARTICLE.xform[3].xyz;
+		vec3 public_position = (relative_position + FRAME.simulation_origin_low.xyz) + FRAME.simulation_origin_high.xyz;
+		PARTICLE.xform[3].xyz = public_position;
+#endif
 #CODE : PROCESS
+#ifndef GENERATED_PARTICLE_PROCESS_MATERIAL
+		for (int axis = 0; axis < 3; axis++) {
+			PARTICLE.xform[3][axis] = PARTICLE.xform[3][axis] == public_position[axis] ? relative_position[axis] : (PARTICLE.xform[3][axis] - FRAME.simulation_origin_high[axis]) - FRAME.simulation_origin_low[axis];
+		}
+#endif
 	}
 
 	PARTICLE.flags &= ~PARTICLE_FLAG_ACTIVE;

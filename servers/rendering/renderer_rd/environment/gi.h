@@ -144,6 +144,7 @@ public:
 		bool has_dynamic_object_data = false;
 
 		Transform3D transform;
+		double origin[3] = {};
 
 		void update(bool p_update_light_instances, const Vector<RID> &p_light_instances, const PagedArray<RenderGeometryInstance *> &p_dynamic_objects);
 		void debug(RD::DrawListID p_draw_list, RID p_framebuffer, const Projection &p_camera_with_transform, bool p_lighting, bool p_emission, float p_alpha);
@@ -839,7 +840,7 @@ public:
 	void process_gi(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_normal_roughness_slices, RID p_voxel_gi_buffer, RID p_environment, uint32_t p_view_count, const Projection *p_projections, const Vector3 *p_eye_offsets, const Transform3D &p_cam_transform, const PagedArray<RID> &p_voxel_gi_instances);
 
 	RID voxel_gi_instance_create(RID p_base);
-	void voxel_gi_instance_set_transform_to_data(RID p_probe, const Transform3D &p_xform);
+	void voxel_gi_instance_set_transform_to_data(RID p_probe, const Transform3D &p_xform, const double *p_origin = nullptr);
 	bool voxel_gi_needs_update(RID p_probe) const;
 	void voxel_gi_update(RID p_probe, bool p_update_light_instances, const Vector<RID> &p_light_instances, const PagedArray<RenderGeometryInstance *> &p_dynamic_objects);
 	void debug_voxel_gi(RID p_voxel_gi, RD::DrawListID p_draw_list, RID p_framebuffer, const Projection &p_camera_with_transform, bool p_lighting, bool p_emission, float p_alpha);

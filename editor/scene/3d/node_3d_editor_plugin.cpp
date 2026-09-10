@@ -104,6 +104,7 @@
 #include "scene/gui/spin_box.h"
 #include "scene/gui/split_container.h"
 #include "scene/main/scene_tree.h"
+#include "scene/resources/particle_process_material.h"
 #include "scene/resources/3d/sky_material.h"
 #include "scene/resources/sky.h"
 #include "scene/resources/surface_tool.h"
@@ -228,46 +229,46 @@ Object *Node3DEditor::_get_editor_data(Object *p_what) {
 	Node3DEditorSelectedItem *si = memnew(Node3DEditorSelectedItem);
 
 	si->sp = sp;
-	si->sbox_instance = RenderingServer::get_singleton()->instance_create2(
-			selection_box->get_rid(),
-			entity_world->get_scenario());
-	si->sbox_instance_offset = RenderingServer::get_singleton()->instance_create2(
-			selection_box->get_rid(),
-			entity_world->get_scenario());
-	RS::get_singleton()->instance_geometry_set_cast_shadows_setting(
-			si->sbox_instance,
-			RSE::SHADOW_CASTING_SETTING_OFF);
-	RS::get_singleton()->instance_geometry_set_cast_shadows_setting(
-			si->sbox_instance_offset,
-			RSE::SHADOW_CASTING_SETTING_OFF);
+	si->sbox_instance = ToolRenderData::create(selection_box->get_rid(), entity_world->get_scenario(), selection_box);
+	si->sbox_instance_offset = ToolRenderData::create(selection_box->get_rid(), entity_world->get_scenario(), selection_box);
+	si->sbox_instance.cast_shadows = RSE::SHADOW_CASTING_SETTING_OFF;
+	si->sbox_instance.publish();
+	si->sbox_instance_offset.cast_shadows = RSE::SHADOW_CASTING_SETTING_OFF;
+	si->sbox_instance_offset.publish();
 	// Use the Edit layer to hide the selection box when View Gizmos is disabled, since it is a bit distracting.
 	// It's still possible to approximately guess what is selected by looking at the manipulation gizmo position.
-	RS::get_singleton()->instance_set_layer_mask(si->sbox_instance, 1 << Node3DEditorViewport::GIZMO_EDIT_LAYER);
-	RS::get_singleton()->instance_set_layer_mask(si->sbox_instance_offset, 1 << Node3DEditorViewport::GIZMO_EDIT_LAYER);
-	RS::get_singleton()->instance_geometry_set_flag(si->sbox_instance, RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
-	RS::get_singleton()->instance_geometry_set_flag(si->sbox_instance, RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
-	RS::get_singleton()->instance_geometry_set_flag(si->sbox_instance_offset, RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
-	RS::get_singleton()->instance_geometry_set_flag(si->sbox_instance_offset, RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
-	si->sbox_instance_xray = RenderingServer::get_singleton()->instance_create2(
-			selection_box_xray->get_rid(),
-			entity_world->get_scenario());
-	si->sbox_instance_xray_offset = RenderingServer::get_singleton()->instance_create2(
-			selection_box_xray->get_rid(),
-			entity_world->get_scenario());
-	RS::get_singleton()->instance_geometry_set_cast_shadows_setting(
-			si->sbox_instance_xray,
-			RSE::SHADOW_CASTING_SETTING_OFF);
-	RS::get_singleton()->instance_geometry_set_cast_shadows_setting(
-			si->sbox_instance_xray_offset,
-			RSE::SHADOW_CASTING_SETTING_OFF);
+	si->sbox_instance.layers = 1 << Node3DEditorViewport::GIZMO_EDIT_LAYER;
+	si->sbox_instance.publish();
+	si->sbox_instance_offset.layers = 1 << Node3DEditorViewport::GIZMO_EDIT_LAYER;
+	si->sbox_instance_offset.publish();
+	si->sbox_instance.ignore_occlusion_culling = true;
+	si->sbox_instance.publish();
+	si->sbox_instance.baked_light = false;
+	si->sbox_instance.publish();
+	si->sbox_instance_offset.ignore_occlusion_culling = true;
+	si->sbox_instance_offset.publish();
+	si->sbox_instance_offset.baked_light = false;
+	si->sbox_instance_offset.publish();
+	si->sbox_instance_xray = ToolRenderData::create(selection_box_xray->get_rid(), entity_world->get_scenario(), selection_box_xray);
+	si->sbox_instance_xray_offset = ToolRenderData::create(selection_box_xray->get_rid(), entity_world->get_scenario(), selection_box_xray);
+	si->sbox_instance_xray.cast_shadows = RSE::SHADOW_CASTING_SETTING_OFF;
+	si->sbox_instance_xray.publish();
+	si->sbox_instance_xray_offset.cast_shadows = RSE::SHADOW_CASTING_SETTING_OFF;
+	si->sbox_instance_xray_offset.publish();
 	// Use the Edit layer to hide the selection box when View Gizmos is disabled, since it is a bit distracting.
 	// It's still possible to approximately guess what is selected by looking at the manipulation gizmo position.
-	RS::get_singleton()->instance_set_layer_mask(si->sbox_instance_xray, 1 << Node3DEditorViewport::GIZMO_EDIT_LAYER);
-	RS::get_singleton()->instance_set_layer_mask(si->sbox_instance_xray_offset, 1 << Node3DEditorViewport::GIZMO_EDIT_LAYER);
-	RS::get_singleton()->instance_geometry_set_flag(si->sbox_instance_xray, RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
-	RS::get_singleton()->instance_geometry_set_flag(si->sbox_instance_xray, RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
-	RS::get_singleton()->instance_geometry_set_flag(si->sbox_instance_xray_offset, RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
-	RS::get_singleton()->instance_geometry_set_flag(si->sbox_instance_xray_offset, RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
+	si->sbox_instance_xray.layers = 1 << Node3DEditorViewport::GIZMO_EDIT_LAYER;
+	si->sbox_instance_xray.publish();
+	si->sbox_instance_xray_offset.layers = 1 << Node3DEditorViewport::GIZMO_EDIT_LAYER;
+	si->sbox_instance_xray_offset.publish();
+	si->sbox_instance_xray.ignore_occlusion_culling = true;
+	si->sbox_instance_xray.publish();
+	si->sbox_instance_xray.baked_light = false;
+	si->sbox_instance_xray.publish();
+	si->sbox_instance_xray_offset.ignore_occlusion_culling = true;
+	si->sbox_instance_xray_offset.publish();
+	si->sbox_instance_xray_offset.baked_light = false;
+	si->sbox_instance_xray_offset.publish();
 
 	return si;
 }
@@ -530,7 +531,8 @@ void Node3DEditor::set_state(const Dictionary &p_state) {
 
 		if (use != view_layout_menu->get_popup()->is_item_checked(view_layout_menu->get_popup()->get_item_index(MENU_VIEW_ORIGIN))) {
 			view_layout_menu->get_popup()->set_item_checked(view_layout_menu->get_popup()->get_item_index(MENU_VIEW_ORIGIN), use);
-			RenderingServer::get_singleton()->instance_set_visible(origin_instance, use);
+			origin_instance.visible = use;
+			origin_instance.publish();
 		}
 	}
 
@@ -944,7 +946,8 @@ void Node3DEditor::_menu_item_pressed(int p_option) {
 			bool is_checked = view_layout_menu->get_popup()->is_item_checked(view_layout_menu->get_popup()->get_item_index(p_option));
 
 			origin_enabled = !is_checked;
-			RenderingServer::get_singleton()->instance_set_visible(origin_instance, origin_enabled);
+			origin_instance.visible = origin_enabled;
+			origin_instance.publish();
 			// Update the grid since its appearance depends on whether the origin is enabled
 			_finish_grid();
 			_init_grid();
@@ -1189,12 +1192,16 @@ void fragment() {
 			}
 		}
 
-		origin_instance = RenderingServer::get_singleton()->instance_create2(origin_multimesh, entity_world->get_scenario());
-		RS::get_singleton()->instance_set_layer_mask(origin_instance, 1 << Node3DEditorViewport::GIZMO_GRID_LAYER);
-		RS::get_singleton()->instance_geometry_set_flag(origin_instance, RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
-		RS::get_singleton()->instance_geometry_set_flag(origin_instance, RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
+		origin_instance = ToolRenderData::create(origin_multimesh, entity_world->get_scenario());
+		origin_instance.layers = 1 << Node3DEditorViewport::GIZMO_GRID_LAYER;
+		origin_instance.publish();
+		origin_instance.ignore_occlusion_culling = true;
+		origin_instance.publish();
+		origin_instance.baked_light = false;
+		origin_instance.publish();
 
-		RenderingServer::get_singleton()->instance_geometry_set_cast_shadows_setting(origin_instance, RSE::SHADOW_CASTING_SETTING_OFF);
+		origin_instance.cast_shadows = RSE::SHADOW_CASTING_SETTING_OFF;
+		origin_instance.publish();
 
 		Ref<Shader> grid_shader = memnew(Shader);
 		grid_shader->set_code(R"(
@@ -1928,19 +1935,24 @@ void Node3DEditor::_init_grid() {
 		d[RSE::ARRAY_NORMAL] = (Vector<Vector3>)grid_normals[c];
 		RenderingServer::get_singleton()->mesh_add_surface_from_arrays(grid[c], RSE::PRIMITIVE_LINES, d);
 		RenderingServer::get_singleton()->mesh_surface_set_material(grid[c], 0, grid_mat[c]->get_rid());
-		grid_instance[c] = RenderingServer::get_singleton()->instance_create2(grid[c], entity_world->get_scenario());
+		grid_instance[c] = ToolRenderData::create(grid[c], entity_world->get_scenario());
 
 		// Yes, the end of this line is supposed to be a.
-		RenderingServer::get_singleton()->instance_set_visible(grid_instance[c], grid_visible[a]);
-		RenderingServer::get_singleton()->instance_geometry_set_cast_shadows_setting(grid_instance[c], RSE::SHADOW_CASTING_SETTING_OFF);
-		RS::get_singleton()->instance_set_layer_mask(grid_instance[c], 1 << Node3DEditorViewport::GIZMO_GRID_LAYER);
-		RS::get_singleton()->instance_geometry_set_flag(grid_instance[c], RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
-		RS::get_singleton()->instance_geometry_set_flag(grid_instance[c], RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
+		grid_instance[c].visible = grid_visible[a];
+		grid_instance[c].publish();
+		grid_instance[c].cast_shadows = RSE::SHADOW_CASTING_SETTING_OFF;
+		grid_instance[c].publish();
+		grid_instance[c].layers = 1 << Node3DEditorViewport::GIZMO_GRID_LAYER;
+		grid_instance[c].publish();
+		grid_instance[c].ignore_occlusion_culling = true;
+		grid_instance[c].publish();
+		grid_instance[c].baked_light = false;
+		grid_instance[c].publish();
 	}
 }
 
 void Node3DEditor::_finish_indicators() {
-	RenderingServer::get_singleton()->free_rid(origin_instance);
+	origin_instance.clear();
 	RenderingServer::get_singleton()->free_rid(origin_multimesh);
 	RenderingServer::get_singleton()->free_rid(origin_mesh);
 
@@ -1949,7 +1961,7 @@ void Node3DEditor::_finish_indicators() {
 
 void Node3DEditor::_finish_grid() {
 	for (int i = 0; i < 3; i++) {
-		RenderingServer::get_singleton()->free_rid(grid_instance[i]);
+		grid_instance[i].clear();
 		RenderingServer::get_singleton()->free_rid(grid[i]);
 	}
 }
@@ -2016,15 +2028,31 @@ void Node3DEditor::_selection_changed() {
 		}
 
 		if (sp == editor_selection->get_top_selected_node_list().back()->get()) {
-			RenderingServer::get_singleton()->instance_set_base(se->sbox_instance, active_selection_box->get_rid());
-			RenderingServer::get_singleton()->instance_set_base(se->sbox_instance_xray, active_selection_box_xray->get_rid());
-			RenderingServer::get_singleton()->instance_set_base(se->sbox_instance_offset, active_selection_box->get_rid());
-			RenderingServer::get_singleton()->instance_set_base(se->sbox_instance_xray_offset, active_selection_box_xray->get_rid());
+			se->sbox_instance.base = active_selection_box->get_rid();
+			se->sbox_instance.base_asset = active_selection_box;
+			se->sbox_instance.publish();
+			se->sbox_instance_xray.base = active_selection_box_xray->get_rid();
+			se->sbox_instance_xray.base_asset = active_selection_box_xray;
+			se->sbox_instance_xray.publish();
+			se->sbox_instance_offset.base = active_selection_box->get_rid();
+			se->sbox_instance_offset.base_asset = active_selection_box;
+			se->sbox_instance_offset.publish();
+			se->sbox_instance_xray_offset.base = active_selection_box_xray->get_rid();
+			se->sbox_instance_xray_offset.base_asset = active_selection_box_xray;
+			se->sbox_instance_xray_offset.publish();
 		} else {
-			RenderingServer::get_singleton()->instance_set_base(se->sbox_instance, selection_box->get_rid());
-			RenderingServer::get_singleton()->instance_set_base(se->sbox_instance_xray, selection_box_xray->get_rid());
-			RenderingServer::get_singleton()->instance_set_base(se->sbox_instance_offset, selection_box->get_rid());
-			RenderingServer::get_singleton()->instance_set_base(se->sbox_instance_xray_offset, selection_box_xray->get_rid());
+			se->sbox_instance.base = selection_box->get_rid();
+			se->sbox_instance.base_asset = selection_box;
+			se->sbox_instance.publish();
+			se->sbox_instance_xray.base = selection_box_xray->get_rid();
+			se->sbox_instance_xray.base_asset = selection_box_xray;
+			se->sbox_instance_xray.publish();
+			se->sbox_instance_offset.base = selection_box->get_rid();
+			se->sbox_instance_offset.base_asset = selection_box;
+			se->sbox_instance_offset.publish();
+			se->sbox_instance_xray_offset.base = selection_box_xray->get_rid();
+			se->sbox_instance_xray_offset.base_asset = selection_box_xray;
+			se->sbox_instance_xray_offset.publish();
 		}
 	}
 
@@ -2182,6 +2210,14 @@ void Node3DEditor::_update_theme() {
 
 void Node3DEditor::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_INTERNAL_PROCESS: {
+			entity_world->get_transforms().begin_tick();
+			entity_world->get_transforms().update();
+			entity_world->get_transforms().interpolate(1.0);
+			BaseMaterial3D::flush_changes();
+			ParticleProcessMaterial::flush_changes();
+			entity_world->get_rendering().publish();
+		} break;
 		case NOTIFICATION_TRANSLATION_CHANGED: {
 			const String show_list_tooltip = TTR("Alt+RMB: Show list of all nodes at position clicked, including locked.");
 			tool_button[TOOL_MODE_TRANSFORM]->set_tooltip_text(vformat(TTR("%s+Drag: Rotate selected node around pivot."), keycode_get_string((Key)KeyModifierMask::CMD_OR_CTRL)) + "\n" + show_list_tooltip);
@@ -2225,7 +2261,11 @@ void Node3DEditor::_notification(int p_what) {
 
 		case NOTIFICATION_EXIT_TREE: {
 			_finish_indicators();
-			RenderingServer::get_singleton()->instance_set_scenario(preview_sun_instance, RID());
+			preview_sun_instance.scenario = RID();
+			preview_sun_instance.publish();
+			for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
+				viewports[i]->set_document_scenario(RID());
+			}
 			RenderingServer::get_singleton()->sync();
 			entity_world->finalize_services();
 		} break;
@@ -2682,7 +2722,8 @@ void Node3DEditor::clear() {
 	}
 
 	if (origin_instance.is_valid()) {
-		RenderingServer::get_singleton()->instance_set_visible(origin_instance, true);
+		origin_instance.visible = true;
+		origin_instance.publish();
 	}
 
 	view_layout_menu->get_popup()->set_item_checked(view_layout_menu->get_popup()->get_item_index(MENU_VIEW_ORIGIN), true);
@@ -2721,7 +2762,8 @@ void Node3DEditor::_preview_settings_changed() {
 		sun_rotation.y = Math::deg_to_rad(180.0 - sun_angle_azimuth->get_value());
 		Transform3D t;
 		t.basis = Basis::from_euler(Vector3(sun_rotation.x, sun_rotation.y, 0));
-		RenderingServer::get_singleton()->instance_set_transform(preview_sun_instance, t);
+		preview_sun_instance.transform = t;
+		preview_sun_instance.publish();
 		sun_direction->queue_redraw();
 		preview_sun_energy = sun_energy->get_value();
 		preview_sun_shadow_max_distance = sun_shadow_max_distance->get_value();
@@ -2779,6 +2821,60 @@ void Node3DEditor::_load_default_preview_settings() {
 	sun_environ_updating = false;
 }
 
+void Node3DEditor::set_scene_document(const Ref<EntityScene> &p_document, bool p_reset_view) {
+	ERR_FAIL_COND(p_document.is_null());
+	EntityWorld *next_world = p_document->get_world();
+	if (next_world->get_scenario().is_null()) {
+		ERR_FAIL_COND(next_world->initialize_services() != OK);
+	}
+	Ref<EntityScene> previous_document = scene_document;
+	scene_document = p_document;
+	document_status->set_text(vformat(TTR("Native scene: %d entities. Entity editing is not available yet."), p_document->get_resident_count()));
+	entity_world = next_world;
+	native_directional_light = false;
+	native_environment = false;
+	entity_world->query<EntityLight>().each([&](const EntityLight &p_light) {
+		native_directional_light |= p_light.type == RSE::LIGHT_DIRECTIONAL;
+	});
+	entity_world->query<EntityEnvironment>().each([&](const EntityEnvironment &) {
+		native_environment = true;
+	});
+	RID scenario = entity_world->get_scenario();
+	for (ToolRenderData *record : { &origin_instance, &grid_instance[0], &grid_instance[1], &grid_instance[2], &indicators_instance, &cursor_instance }) {
+		if (record->is_valid()) {
+			record->scenario = scenario;
+			record->publish();
+		}
+	}
+	for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
+		viewports[i]->set_document_scenario(scenario);
+	}
+	_update_default_environment();
+	_update_preview_environment();
+	entity_world->get_transforms().update();
+	entity_world->get_transforms().interpolate(1.0);
+	if (p_reset_view) {
+		clear();
+		bool camera_found = false;
+		entity_world->query<EntityCamera, EntityTransform>().each([&](const EntityCamera &p_camera, const EntityTransform &p_transform) {
+			if (!p_camera.current || camera_found) {
+				return;
+			}
+			camera_found = true;
+			settings_fov->set_value(p_camera.fov);
+			settings_znear->set_value(p_camera.near_distance);
+			settings_zfar->set_value(p_camera.far_distance);
+			const EntityPose &pose = p_transform.current;
+			Transform3D transform(pose.basis, Vector3(pose.translation.x, pose.translation.y, pose.translation.z));
+			viewports[0]->set_document_camera(transform, p_camera.projection == 1, p_camera.size);
+		});
+	}
+	BaseMaterial3D::flush_changes();
+	ParticleProcessMaterial::flush_changes();
+	entity_world->get_rendering().publish();
+	RenderingServer::get_singleton()->sync();
+}
+
 void Node3DEditor::_update_default_environment() {
 	if (entity_world->get_scenario().is_valid()) {
 		ERR_FAIL_COND(entity_world->load_default_environment() != OK);
@@ -2789,22 +2885,27 @@ void Node3DEditor::_update_preview_environment() {
 	if (entity_world->get_scenario().is_null()) {
 		return;
 	}
-	bool disable_light = directional_light_count > 0 || !sun_button->is_pressed();
-	sun_button->set_disabled(directional_light_count > 0);
-	RenderingServer::get_singleton()->instance_set_scenario(preview_sun_instance, disable_light ? RID() : entity_world->get_scenario());
+	const bool has_light = native_directional_light || directional_light_count > 0;
+	bool disable_light = has_light || !sun_button->is_pressed();
+	sun_button->set_disabled(has_light);
+	preview_sun_instance.scenario = disable_light ? RID() : entity_world->get_scenario();
+	preview_sun_instance.publish();
 	sun_state->set_visible(disable_light);
 	sun_vb->set_visible(!disable_light);
-	sun_state->set_text(directional_light_count > 0 ? TTRC("Scene contains\nDirectionalLight3D.\nPreview disabled.") : TTRC("Preview disabled."));
+	sun_state->set_text(has_light ? TTRC("Scene contains a directional light.\nPreview disabled.") : TTRC("Preview disabled."));
 	sun_angle_altitude->set_value_no_signal(-Math::rad_to_deg(sun_rotation.x));
 	sun_angle_azimuth->set_value_no_signal(180.0 - Math::rad_to_deg(sun_rotation.y));
 
-	bool disable_env = world_env_count > 0 || !environ_button->is_pressed();
-	environ_button->set_disabled(world_env_count > 0);
-	RenderingServer::get_singleton()->scenario_set_environment(entity_world->get_scenario(), disable_env ? RID() : environment->get_rid());
-	RenderingServer::get_singleton()->scenario_set_camera_attributes(entity_world->get_scenario(), !disable_env && camera_attributes.is_valid() ? camera_attributes->get_rid() : RID());
+	const bool has_environment = native_environment || world_env_count > 0;
+	bool disable_env = has_environment || !environ_button->is_pressed();
+	environ_button->set_disabled(has_environment);
+	if (!native_environment) {
+		RenderingServer::get_singleton()->scenario_set_environment(entity_world->get_scenario(), disable_env ? RID() : environment->get_rid());
+		RenderingServer::get_singleton()->scenario_set_camera_attributes(entity_world->get_scenario(), !disable_env && camera_attributes.is_valid() ? camera_attributes->get_rid() : RID());
+	}
 	environ_state->set_visible(disable_env);
 	environ_vb->set_visible(!disable_env);
-	environ_state->set_text(world_env_count > 0 ? TTRC("Scene contains\nWorldEnvironment.\nPreview disabled.") : TTRC("Preview disabled."));
+	environ_state->set_text(has_environment ? TTRC("Scene contains an environment.\nPreview disabled.") : TTRC("Preview disabled."));
 }
 
 void Node3DEditor::_sun_direction_input(const Ref<InputEvent> &p_event) {
@@ -2968,13 +3069,18 @@ void Node3DEditor::PreviewSunEnvPopup::shortcut_input(const Ref<InputEvent> &p_e
 }
 
 Node3DEditor::Node3DEditor() {
-	entity_world = memnew(EntityWorld(entity_catalog));
+	scene_document = EditorNode::get_singleton()->get_editor_data().get_scene_document();
+	entity_world = scene_document->get_world();
+	set_process_internal(true);
 	gizmo.visible = true;
 	gizmo.scale = 1.0;
 	gizmo_view_rotation_scale = GIZMO_CIRCLE_SIZE * (float)EDITOR_GET("editors/3d/view_plane_rotation_gizmo_scale");
 
 	viewport_environment.instantiate();
 	VBoxContainer *vbc = this;
+	document_status = memnew(Label);
+	document_status->set_text(TTR("Native scene display. Entity editing is not available yet."));
+	vbc->add_child(document_status);
 
 	ERR_FAIL_COND_MSG(singleton != nullptr, "A Node3DEditor singleton already exists.");
 	singleton = this;
@@ -3173,9 +3279,6 @@ Node3DEditor::Node3DEditor() {
 
 	main_menu_hbox->add_child(memnew(VSeparator));
 
-	// Drag and drop support;
-	preview_node = memnew(Node3D);
-	preview_bounds = AABB();
 
 	ED_SHORTCUT("spatial_editor/bottom_view", TTRC("Bottom View"), KeyModifierMask::ALT + Key::KP_7);
 	ED_SHORTCUT("spatial_editor/top_view", TTRC("Top View"), Key::KP_7);
@@ -3258,8 +3361,6 @@ Node3DEditor::Node3DEditor() {
 	p = view_layout_menu->get_popup();
 	p->set_hide_on_checkable_item_selection(false);
 
-	accept = memnew(AcceptDialog);
-	EditorNode::get_singleton()->get_gui_base()->add_child(accept);
 
 	p->add_radio_check_shortcut(ED_SHORTCUT("spatial_editor/1_viewport", TTRC("1 Viewport"), KeyModifierMask::CMD_OR_CTRL + Key::KEY_1, true), MENU_VIEW_USE_1_VIEWPORT);
 	p->add_radio_check_shortcut(ED_SHORTCUT("spatial_editor/2_viewports", TTRC("2 Viewports"), KeyModifierMask::CMD_OR_CTRL + Key::KEY_2, true), MENU_VIEW_USE_2_VIEWPORTS);
@@ -3310,7 +3411,6 @@ Node3DEditor::Node3DEditor() {
 		viewports[i] = memnew(Node3DEditorViewport(this, i));
 		viewports[i]->connect("toggle_maximize_view", callable_mp(this, &Node3DEditor::_toggle_maximize_view));
 		viewports[i]->connect("clicked", callable_mp(this, &Node3DEditor::_viewport_clicked).bind(i));
-		viewports[i]->assign_pending_data_pointers(preview_node, &preview_bounds, accept);
 		viewports[i]->set_h_size_flags(SIZE_EXPAND_FILL);
 		viewports[i]->set_v_size_flags(SIZE_EXPAND_FILL);
 		viewports[i]->set_custom_minimum_size(Size2(39, 39));
@@ -3341,7 +3441,7 @@ Node3DEditor::Node3DEditor() {
 	snap_rotate->set_min(0.0);
 	snap_rotate->set_step(0.1);
 	snap_rotate->set_max(360);
-	snap_rotate->set_suffix(U"°");
+	snap_rotate->set_suffix(U"ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°");
 	snap_rotate->set_accessibility_name(TTRC("Rotate Snap"));
 	snap_dialog_vbc->add_margin_child(TTR("Rotate Snap:"), snap_rotate);
 
@@ -3638,7 +3738,7 @@ void fragment() {
 
 		RenderingServer *server = RenderingServer::get_singleton();
 		preview_sun = server->directional_light_create();
-		preview_sun_instance = server->instance_create2(preview_sun, RID());
+		preview_sun_instance = ToolRenderData::create(preview_sun, RID());
 		server->light_set_shadow(preview_sun, true);
 		server->light_directional_set_shadow_mode(preview_sun, RSE::LIGHT_DIRECTIONAL_SHADOW_PARALLEL_4_SPLITS);
 		server->light_set_param(preview_sun, RSE::LIGHT_PARAM_SHADOW_NORMAL_BIAS, 2.0);
@@ -3667,15 +3767,14 @@ void fragment() {
 }
 Node3DEditor::~Node3DEditor() {
 	singleton = nullptr;
-	memdelete(preview_node);
 	RenderingServer *server = RenderingServer::get_singleton();
 	if (preview_sun_instance.is_valid()) {
-		server->free_rid(preview_sun_instance);
+		preview_sun_instance.clear();
 	}
 	if (preview_sun.is_valid()) {
 		server->free_rid(preview_sun);
 	}
-	memdelete(entity_world);
+	entity_world = nullptr;
 }
 
 void Node3DEditorPlugin::edited_scene_changed() {

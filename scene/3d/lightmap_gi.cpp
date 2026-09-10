@@ -1700,105 +1700,14 @@ LightmapGI::BakeError LightmapGI::bake(Node *p_from_node, String p_image_data_pa
 	return BAKE_ERROR_OK;
 }
 
-void LightmapGI::_notification(int p_what) {
-	switch (p_what) {
-		case NOTIFICATION_POST_ENTER_TREE: {
-			if (light_data.is_valid()) {
-				ERR_FAIL_COND_MSG(
-						light_data->is_using_spherical_harmonics() && !light_data->_is_using_packed_directional(),
-						vformat(
-								"%s (%s): The directional lightmap textures are stored in a format that isn't supported anymore. Please bake lightmaps again to make lightmaps display from this node again.",
-								get_light_data()->get_path(), get_name()));
-
-				if (last_owner && last_owner != get_owner()) {
-					light_data->clear_users();
-				}
-
-				_assign_lightmaps();
-			}
-		} break;
-
-		case NOTIFICATION_EXIT_TREE: {
-			last_owner = get_owner();
-
-			if (light_data.is_valid()) {
-				_clear_lightmaps();
-			}
-		} break;
-	}
-}
-
-void LightmapGI::_assign_lightmaps() {
-	ERR_FAIL_COND(light_data.is_null());
-
-	Vector<String> missing_node_paths;
-
-	for (int i = 0; i < light_data->get_user_count(); i++) {
-		NodePath user_path = light_data->get_user_path(i);
-		Node *node = get_node_or_null(user_path);
-		if (!node) {
-			missing_node_paths.push_back(String(user_path));
-			continue;
-		}
-		int instance_idx = light_data->get_user_sub_instance(i);
-		if (instance_idx >= 0) {
-			RID instance_id = node->call("get_bake_mesh_instance", instance_idx);
-			if (instance_id.is_valid()) {
-				RS::get_singleton()->instance_geometry_set_lightmap(instance_id, get_instance(), light_data->get_user_lightmap_uv_scale(i), light_data->get_user_lightmap_slice_index(i));
-			}
-		} else {
-			VisualInstance3D *vi = Object::cast_to<VisualInstance3D>(node);
-			ERR_CONTINUE(!vi);
-			RS::get_singleton()->instance_geometry_set_lightmap(vi->get_instance(), get_instance(), light_data->get_user_lightmap_uv_scale(i), light_data->get_user_lightmap_slice_index(i));
-		}
-	}
-
-	if (!missing_node_paths.is_empty()) {
-		String missing_paths_text;
-		if (missing_node_paths.size() <= 3) {
-			missing_paths_text = String(", ").join(missing_node_paths);
-		} else {
-			missing_paths_text = vformat("%s and %d more", String(", ").join(missing_node_paths.slice(0, 3)), missing_node_paths.size() - 3);
-		}
-		WARN_PRINT(vformat("%s couldn't find previously baked nodes and needs a rebake (missing nodes: %s).", get_name(), missing_paths_text));
-	}
-}
-
-void LightmapGI::_clear_lightmaps() {
-	ERR_FAIL_COND(light_data.is_null());
-	for (int i = 0; i < light_data->get_user_count(); i++) {
-		Node *node = get_node_or_null(light_data->get_user_path(i));
-		if (!node) {
-			continue;
-		}
-		int instance_idx = light_data->get_user_sub_instance(i);
-		if (instance_idx >= 0) {
-			RID instance_id = node->call("get_bake_mesh_instance", instance_idx);
-			if (instance_id.is_valid()) {
-				RS::get_singleton()->instance_geometry_set_lightmap(instance_id, RID(), Rect2(), 0);
-			}
-		} else {
-			VisualInstance3D *vi = Object::cast_to<VisualInstance3D>(node);
-			ERR_CONTINUE(!vi);
-			RS::get_singleton()->instance_geometry_set_lightmap(vi->get_instance(), RID(), Rect2(), 0);
-		}
-	}
-}
-
 void LightmapGI::set_light_data(const Ref<LightmapGIData> &p_data) {
 	if (light_data.is_valid()) {
-		if (is_inside_tree()) {
-			_clear_lightmaps();
-		}
 		set_base(RID());
 	}
 	light_data = p_data;
 
 	if (light_data.is_valid()) {
 		set_base(light_data->get_rid());
-		if (is_inside_tree()) {
-			_assign_lightmaps();
-		}
 		light_data->update_shadowmask_mode(shadowmask_mode);
 	}
 

@@ -90,7 +90,7 @@ void MaterialEditor::gui_input(const Ref<InputEvent> &p_event) {
 	if (mm.is_valid() && (mm->get_button_mask().has_flag(MouseButtonMask::LEFT))) {
 		rot.x -= mm->get_relative().y * 0.01;
 		rot.y -= mm->get_relative().x * 0.01;
-		if (quad_instance->is_visible()) {
+		if (quad_instance.visible) {
 			// Clamp rotation so the quad is always visible.
 			const real_t limit = Math::deg_to_rad(80.0);
 			rot = rot.clampf(-limit, limit);
@@ -126,6 +126,10 @@ void MaterialEditor::_update_theme_item_cache() {
 
 void MaterialEditor::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_POST_ENTER_TREE: {
+			RS::get_singleton()->viewport_set_scenario(viewport->get_viewport_rid(), scenario);
+			RS::get_singleton()->viewport_attach_camera(viewport->get_viewport_rid(), camera);
+		} break;
 		case NOTIFICATION_THEME_CHANGED: {
 			light_1_switch->set_button_icon(theme_cache.light_1_icon);
 			light_2_switch->set_button_icon(theme_cache.light_2_icon);
@@ -178,12 +182,18 @@ void MaterialEditor::_update_rotation() {
 	Transform3D t;
 	t.basis.rotate(Vector3(0, 1, 0), -rot.y);
 	t.basis.rotate(Vector3(1, 0, 0), -rot.x);
-	rotation->set_transform(t);
+	sphere_instance.transform = t * (Transform3D() * 0.375);
+	box_instance.transform = t * (Transform3D() * 0.25);
+	quad_instance.transform = t * (Transform3D() * 0.375);
+	sphere_instance.publish();
+	box_instance.publish();
+	quad_instance.publish();
 }
 
 void MaterialEditor::edit(Ref<Material> p_material, const Ref<Environment> &p_env) {
 	material = p_material;
-	camera->set_environment(p_env);
+	environment = p_env;
+	RS::get_singleton()->camera_set_environment(camera, environment.is_valid() ? environment->get_rid() : RID());
 
 	is_unsupported_shader_mode = false;
 	if (material.is_valid()) {
@@ -202,9 +212,15 @@ void MaterialEditor::edit(Ref<Material> p_material, const Ref<Environment> &p_en
 				if (!autohide_buttons) {
 					layout_3d->show();
 				}
-				sphere_instance->set_material_override(material);
-				box_instance->set_material_override(material);
-				quad_instance->set_material_override(material);
+				sphere_instance.material_override = material->get_rid();
+				sphere_instance.material_asset = material;
+				sphere_instance.publish();
+				box_instance.material_override = material->get_rid();
+				box_instance.material_asset = material;
+				box_instance.publish();
+				quad_instance.material_override = material->get_rid();
+				quad_instance.material_asset = material;
+				quad_instance.publish();
 				vc->show();
 				break;
 			default:
@@ -221,17 +237,22 @@ void MaterialEditor::edit(Ref<Material> p_material, const Ref<Environment> &p_en
 }
 
 void MaterialEditor::_on_light_1_switch_pressed() {
-	light1->set_visible(light_1_switch->is_pressed());
+	light1.visible = light_1_switch->is_pressed();
+	light1.publish();
 }
 
 void MaterialEditor::_on_light_2_switch_pressed() {
-	light2->set_visible(light_2_switch->is_pressed());
+	light2.visible = light_2_switch->is_pressed();
+	light2.publish();
 }
 
 void MaterialEditor::_on_sphere_switch_pressed() {
-	sphere_instance->show();
-	box_instance->hide();
-	quad_instance->hide();
+	sphere_instance.visible = true;
+	sphere_instance.publish();
+	box_instance.visible = false;
+	box_instance.publish();
+	quad_instance.visible = false;
+	quad_instance.publish();
 	box_switch->set_pressed(false);
 	quad_switch->set_pressed(false);
 	_set_rotation(-15.0, 30.0);
@@ -240,9 +261,12 @@ void MaterialEditor::_on_sphere_switch_pressed() {
 }
 
 void MaterialEditor::_on_box_switch_pressed() {
-	sphere_instance->hide();
-	box_instance->show();
-	quad_instance->hide();
+	sphere_instance.visible = false;
+	sphere_instance.publish();
+	box_instance.visible = true;
+	box_instance.publish();
+	quad_instance.visible = false;
+	quad_instance.publish();
 	sphere_switch->set_pressed(false);
 	quad_switch->set_pressed(false);
 	_set_rotation(-15.0, 30.0);
@@ -251,9 +275,12 @@ void MaterialEditor::_on_box_switch_pressed() {
 }
 
 void MaterialEditor::_on_quad_switch_pressed() {
-	sphere_instance->hide();
-	box_instance->hide();
-	quad_instance->show();
+	sphere_instance.visible = false;
+	sphere_instance.publish();
+	box_instance.visible = false;
+	box_instance.publish();
+	quad_instance.visible = true;
+	quad_instance.publish();
 	sphere_switch->set_pressed(false);
 	box_switch->set_pressed(false);
 	_set_rotation(0.0, 0.0);
@@ -310,57 +337,34 @@ MaterialEditor::MaterialEditor() {
 	add_child(vc);
 	vc->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
 	viewport = memnew(SubViewport);
-	Ref<World3D> world_3d;
-	world_3d.instantiate();
-	viewport->set_world_3d(world_3d); // Use own world.
 	vc->add_child(viewport);
 	viewport->set_disable_input(true);
 	viewport->set_transparent_background(true);
 	viewport->set_msaa_3d(Viewport::MSAA_4X);
-
-	camera = memnew(Camera3D);
-	camera->set_transform(Transform3D(Basis(), Vector3(0, 0, 1.1)));
-	// Use low field of view so the sphere/box/quad is fully encompassed within the preview,
-	// without much distortion.
-	camera->set_perspective(20, 0.1, 10);
-	camera->make_current();
+	RenderingServer *rs = RS::get_singleton();
+	scenario = rs->scenario_create();
+	camera = rs->camera_create();
+	rs->camera_set_transform(camera, Transform3D(Basis(), Vector3(0, 0, 1.1)));
+	rs->camera_set_perspective(camera, 20, 0.1, 10);
 	if (GLOBAL_GET("rendering/lights_and_shadows/use_physical_light_units")) {
 		camera_attributes.instantiate();
-		camera->set_attributes(camera_attributes);
+		rs->camera_set_camera_attributes(camera, camera_attributes->get_rid());
 	}
-	viewport->add_child(camera);
-
-	light1 = memnew(DirectionalLight3D);
-	light1->set_transform(Transform3D().looking_at(Vector3(-1, -1, -1), Vector3(0, 1, 0)));
-	viewport->add_child(light1);
-
-	light2 = memnew(DirectionalLight3D);
-	light2->set_transform(Transform3D().looking_at(Vector3(0, 1, 0), Vector3(0, 0, 1)));
-	light2->set_color(Color(0.7, 0.7, 0.7));
-	viewport->add_child(light2);
-
-	rotation = memnew(Node3D);
-	viewport->add_child(rotation);
-
-	sphere_instance = memnew(MeshInstance3D);
-	rotation->add_child(sphere_instance);
-
-	box_instance = memnew(MeshInstance3D);
-	rotation->add_child(box_instance);
-
-	quad_instance = memnew(MeshInstance3D);
-	rotation->add_child(quad_instance);
-
-	sphere_instance->set_transform(Transform3D() * 0.375);
-	box_instance->set_transform(Transform3D() * 0.25);
-	quad_instance->set_transform(Transform3D() * 0.375);
-
+	light1 = ToolRenderData::create(rs->directional_light_create(), scenario);
+	light1.transform = Transform3D().looking_at(Vector3(-1, -1, -1), Vector3(0, 1, 0));
+	rs->light_set_param(light1.base, RSE::LIGHT_PARAM_INTENSITY, 100000.0);
+	light1.publish();
+	light2 = ToolRenderData::create(rs->directional_light_create(), scenario);
+	light2.transform = Transform3D().looking_at(Vector3(0, 1, 0), Vector3(0, 0, 1));
+	rs->light_set_color(light2.base, Color(0.7, 0.7, 0.7));
+	rs->light_set_param(light2.base, RSE::LIGHT_PARAM_INTENSITY, 100000.0);
+	light2.publish();
 	sphere_mesh.instantiate();
-	sphere_instance->set_mesh(sphere_mesh);
 	box_mesh.instantiate();
-	box_instance->set_mesh(box_mesh);
 	quad_mesh.instantiate();
-	quad_instance->set_mesh(quad_mesh);
+	sphere_instance = ToolRenderData::create(sphere_mesh->get_rid(), scenario, sphere_mesh);
+	box_instance = ToolRenderData::create(box_mesh->get_rid(), scenario, box_mesh);
+	quad_instance = ToolRenderData::create(quad_mesh->get_rid(), scenario, quad_mesh);
 
 	layout_3d = memnew(HBoxContainer);
 	add_child(layout_3d);
@@ -427,16 +431,22 @@ MaterialEditor::MaterialEditor() {
 
 	String shape = EditorSettings::get_singleton()->get_project_metadata("inspector_options", "material_preview_mesh", "sphere");
 	if (shape == "sphere") {
-		box_instance->hide();
-		quad_instance->hide();
+		box_instance.visible = false;
+	box_instance.publish();
+		quad_instance.visible = false;
+	quad_instance.publish();
 		sphere_switch->set_pressed_no_signal(true);
 	} else if (shape == "box") {
-		sphere_instance->hide();
-		quad_instance->hide();
+		sphere_instance.visible = false;
+	sphere_instance.publish();
+		quad_instance.visible = false;
+	quad_instance.publish();
 		box_switch->set_pressed_no_signal(true);
 	} else {
-		sphere_instance->hide();
-		box_instance->hide();
+		sphere_instance.visible = false;
+	sphere_instance.publish();
+		box_instance.visible = false;
+	box_instance.publish();
 		quad_switch->set_pressed_no_signal(true);
 	}
 
@@ -448,6 +458,20 @@ MaterialEditor::MaterialEditor() {
 }
 
 ///////////////////////
+
+MaterialEditor::~MaterialEditor() {
+	RID light1_base = light1.base;
+	RID light2_base = light2.base;
+	sphere_instance.clear();
+	box_instance.clear();
+	quad_instance.clear();
+	light1.clear();
+	light2.clear();
+	RS::get_singleton()->free_rid(light1_base);
+	RS::get_singleton()->free_rid(light2_base);
+	RS::get_singleton()->free_rid(camera);
+	RS::get_singleton()->free_rid(scenario);
+}
 
 bool EditorInspectorPluginMaterial::can_handle(Object *p_object) {
 	Material *material = Object::cast_to<Material>(p_object);

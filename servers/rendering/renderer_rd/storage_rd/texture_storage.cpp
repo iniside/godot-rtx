@@ -4089,13 +4089,13 @@ void TextureStorage::decal_instance_free(RID p_decal_instance) {
 	decal_instance_owner.free(p_decal_instance);
 }
 
-void TextureStorage::decal_instance_set_transform(RID p_decal_instance, const Transform3D &p_transform) {
+void TextureStorage::decal_instance_set_transform(RID p_decal_instance, const Transform3D &p_transform, const double *p_origin) {
 	DecalInstance *di = decal_instance_owner.get_or_null(p_decal_instance);
 	ERR_FAIL_NULL(di);
-	if (di->transform == p_transform) {
-		return;
-	}
 	di->transform = p_transform;
+	for (int axis = 0; axis < 3; axis++) {
+		di->origin[axis] = p_origin ? p_origin[axis] : double(p_transform.origin[axis]);
+	}
 }
 
 void TextureStorage::decal_instance_set_sorting_offset(RID p_decal_instance, float p_sorting_offset) {
@@ -4134,7 +4134,7 @@ void TextureStorage::set_max_decals(const uint32_t p_max_decals) {
 	decal_buffer = RD::get_singleton()->storage_buffer_create(decal_buffer_size);
 }
 
-bool TextureStorage::_get_decal_sort(RID p_instance, const Transform3D &p_camera_xform, DecalInstanceSort &r_sort) const {
+bool TextureStorage::_get_decal_sort(RID p_instance, const Transform3D &p_camera_xform, DecalInstanceSort &r_sort, const double *p_camera_origin) const {
 	DecalInstance *instance = decal_instance_owner.get_or_null(p_instance);
 	if (!instance) {
 		return false;
@@ -4143,7 +4143,12 @@ bool TextureStorage::_get_decal_sort(RID p_instance, const Transform3D &p_camera
 	if (!decal) {
 		return false;
 	}
-	const real_t distance = p_camera_xform.origin.distance_to(instance->transform.origin);
+	double distance_squared = 0.0;
+	for (int axis = 0; axis < 3; axis++) {
+		double offset = instance->origin[axis] - (p_camera_origin ? p_camera_origin[axis] : double(p_camera_xform.origin[axis]));
+		distance_squared += offset * offset;
+	}
+	const double distance = Math::sqrt(distance_squared);
 	if (decal->distance_fade && distance > decal->distance_fade_begin && distance > decal->distance_fade_begin + decal->distance_fade_length) {
 		return false;
 	}
@@ -4153,7 +4158,7 @@ bool TextureStorage::_get_decal_sort(RID p_instance, const Transform3D &p_camera
 	return true;
 }
 
-bool TextureStorage::_pack_decal(const DecalInstanceSort &p_sort, const Transform3D &p_frame, DecalData &r_data) {
+bool TextureStorage::_pack_decal(const DecalInstanceSort &p_sort, const Transform3D &p_frame, DecalData &r_data, const double *p_frame_origin) {
 	r_data = {};
 	DecalInstance *decal_instance = p_sort.decal_instance;
 	Decal *decal = p_sort.decal;
@@ -4179,7 +4184,9 @@ bool TextureStorage::_pack_decal(const DecalInstanceSort &p_sort, const Transfor
 
 	Transform3D xform = decal_instance->transform;
 
-	xform.origin -= p_frame.origin;
+	for (int axis = 0; axis < 3; axis++) {
+		xform.origin[axis] = decal_instance->origin[axis] - (p_frame_origin ? p_frame_origin[axis] : double(p_frame.origin[axis]));
+	}
 	Transform3D camera_inverse_xform(p_frame.basis.inverse());
 
 	Transform3D to_decal_xform = (camera_inverse_xform * xform * scale_xform * uv_xform).affine_inverse();
@@ -4269,13 +4276,13 @@ bool TextureStorage::_pack_decal(const DecalInstanceSort &p_sort, const Transfor
 	return true;
 }
 
-void TextureStorage::prepare_decal_buffer(const PagedArray<RID> &p_decals, const Transform3D &p_camera_xform, DecalBufferPreparation &r_preparation) {
+void TextureStorage::prepare_decal_buffer(const PagedArray<RID> &p_decals, const Transform3D &p_camera_xform, DecalBufferPreparation &r_preparation, const double *p_camera_origin) {
 	decal_count = 0;
 	if (p_decals.size() == 0) {
 		return;
 	}
 		for (uint32_t i = 0; i < p_decals.size() && decal_count < max_decals; i++) {
-			if (_get_decal_sort(p_decals[i], p_camera_xform, decal_sort[decal_count])) {
+			if (_get_decal_sort(p_decals[i], p_camera_xform, decal_sort[decal_count], p_camera_origin)) {
 				decal_count++;
 			}
 		}
@@ -4283,15 +4290,15 @@ void TextureStorage::prepare_decal_buffer(const PagedArray<RID> &p_decals, const
 			SortArray<DecalInstanceSort>().sort(decal_sort, decal_count);
 		}
 		for (uint32_t i = 0; i < decal_count; i++) {
-			if (_pack_decal(decal_sort[i], p_camera_xform, decals[i])) {
-				r_preparation.cluster_decals.push_back({ decal_sort[i].decal_instance->transform, decal_sort[i].decal->size / 2 });
+			if (_pack_decal(decal_sort[i], p_camera_xform, decals[i], p_camera_origin)) {
+				r_preparation.cluster_decals.push_back({ decal_sort[i].decal_instance->transform, decal_sort[i].decal->size / 2, { decal_sort[i].decal_instance->origin[0], decal_sort[i].decal_instance->origin[1], decal_sort[i].decal_instance->origin[2] } });
 			}
 		}
 }
 
 void TextureStorage::publish_decal_buffer(const DecalBufferPreparation &p_preparation) {
 	for (const auto &decal : p_preparation.cluster_decals) {
-		RendererSceneRenderRD::get_singleton()->setup_added_decal(decal.transform, decal.half_size);
+		RendererSceneRenderRD::get_singleton()->setup_added_decal(decal.transform, decal.half_size, decal.origin);
 	}
 
 	ForwardIDStorage *forward_id_storage = ForwardIDStorage::get_singleton();
@@ -4308,19 +4315,19 @@ void TextureStorage::publish_decal_buffer(const DecalBufferPreparation &p_prepar
 	}
 }
 
-void TextureStorage::update_decal_buffer(const PagedArray<RID> &p_decals, const Transform3D &p_camera_xform) {
+void TextureStorage::update_decal_buffer(const PagedArray<RID> &p_decals, const Transform3D &p_camera_xform, const double *p_camera_origin) {
 	DecalBufferPreparation preparation;
-	prepare_decal_buffer(p_decals, p_camera_xform, preparation);
+	prepare_decal_buffer(p_decals, p_camera_xform, preparation, p_camera_origin);
 	publish_decal_buffer(preparation);
 }
 
-TextureStorage::RTDecalSnapshot TextureStorage::build_rt_decal_snapshot(const PagedArray<RID> &p_resident_decals, const PagedArray<RID> &p_camera_decals, const Transform3D &p_camera_xform, const Vector3 &p_rt_origin) {
+TextureStorage::RTDecalSnapshot TextureStorage::build_rt_decal_snapshot(const PagedArray<RID> &p_resident_decals, const PagedArray<RID> &p_camera_decals, const Transform3D &p_camera_xform, const double *p_rt_origin, const double *p_camera_origin) {
 	LocalVector<DecalInstanceSort> camera_decals;
 	HashSet<RID> camera_instances;
 	for (uint32_t i = 0; i < p_camera_decals.size(); i++) {
 		camera_instances.insert(p_camera_decals[i]);
 		DecalInstanceSort entry;
-		if (camera_decals.size() < max_decals && _get_decal_sort(p_camera_decals[i], p_camera_xform, entry)) {
+		if (camera_decals.size() < max_decals && _get_decal_sort(p_camera_decals[i], p_camera_xform, entry, p_camera_origin)) {
 			camera_decals.push_back(entry);
 		}
 	}
@@ -4333,7 +4340,7 @@ TextureStorage::RTDecalSnapshot TextureStorage::build_rt_decal_snapshot(const Pa
 			continue;
 		}
 		DecalInstanceSort entry;
-		if (_get_decal_sort(p_resident_decals[i], p_camera_xform, entry)) {
+		if (_get_decal_sort(p_resident_decals[i], p_camera_xform, entry, p_camera_origin)) {
 			offscreen_decals.push_back(entry);
 		}
 	}
@@ -4375,10 +4382,9 @@ TextureStorage::RTDecalSnapshot TextureStorage::build_rt_decal_snapshot(const Pa
 	snapshot.count = ordered.size();
 	snapshot.data.resize(snapshot.count * sizeof(DecalData));
 	Transform3D frame;
-	frame.origin = p_rt_origin;
 	for (uint32_t i = 0; i < snapshot.count; i++) {
 		DecalData data;
-		_pack_decal(ordered[i].decal, frame, data);
+		_pack_decal(ordered[i].decal, frame, data, p_rt_origin);
 		memcpy(snapshot.data.ptrw() + i * sizeof(DecalData), &data, sizeof(DecalData));
 	}
 	snapshot.data_generation = hash_djb2_buffer(snapshot.data.ptr(), snapshot.data.size());

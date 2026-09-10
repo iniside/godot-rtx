@@ -35,12 +35,15 @@
 /////////////////////////////////////////////////////////////////////////////
 // CameraData
 
-void RendererSceneRender::CameraData::set_camera(const Transform3D p_transform, const Projection p_projection, bool p_is_orthogonal, bool p_vaspect, const Vector2 &p_taa_jitter, float p_taa_frame_count, uint32_t p_visible_layers) {
+void RendererSceneRender::CameraData::set_camera(const Transform3D p_transform, const Projection p_projection, bool p_is_orthogonal, bool p_vaspect, const Vector2 &p_taa_jitter, float p_taa_frame_count, uint32_t p_visible_layers, const double *p_origin) {
 	view_count = 1;
 	is_orthogonal = p_is_orthogonal;
 	vaspect = p_vaspect;
 
 	main_transform = p_transform;
+	for (int axis = 0; axis < 3; axis++) {
+		main_origin[axis] = p_origin ? p_origin[axis] : double(p_transform.origin[axis]);
+	}
 	main_projection = p_projection;
 
 	visible_layers = p_visible_layers;

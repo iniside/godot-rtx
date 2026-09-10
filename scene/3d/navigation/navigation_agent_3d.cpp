@@ -259,11 +259,6 @@ void NavigationAgent3D::_notification(int p_what) {
 				NavigationServer3D::get_singleton()->agent_set_position(agent, agent_parent->get_global_transform().origin);
 			}
 
-#ifdef DEBUG_ENABLED
-			if (NavigationServer3D::get_singleton()->get_debug_enabled()) {
-				debug_path_dirty = true;
-			}
-#endif // DEBUG_ENABLED
 
 		} break;
 
@@ -288,11 +283,6 @@ void NavigationAgent3D::_notification(int p_what) {
 			set_agent_parent(nullptr);
 			set_physics_process_internal(false);
 
-#ifdef DEBUG_ENABLED
-			if (debug_path_instance.is_valid()) {
-				RS::get_singleton()->instance_set_visible(debug_path_instance, false);
-			}
-#endif // DEBUG_ENABLED
 		} break;
 
 		case NOTIFICATION_SUSPENDED:
@@ -339,11 +329,6 @@ void NavigationAgent3D::_notification(int p_what) {
 					}
 				}
 			}
-#ifdef DEBUG_ENABLED
-			if (debug_path_dirty) {
-				_update_debug_path();
-			}
-#endif // DEBUG_ENABLED
 		} break;
 	}
 }
@@ -380,9 +365,6 @@ NavigationAgent3D::NavigationAgent3D() {
 	navigation_result = Ref<NavigationPathQueryResult3D>();
 	navigation_result.instantiate();
 
-#ifdef DEBUG_ENABLED
-	NavigationServer3D::get_singleton()->connect(SNAME("navigation_debug_changed"), callable_mp(this, &NavigationAgent3D::_navigation_debug_changed));
-#endif // DEBUG_ENABLED
 }
 
 NavigationAgent3D::~NavigationAgent3D() {
@@ -390,17 +372,6 @@ NavigationAgent3D::~NavigationAgent3D() {
 	NavigationServer3D::get_singleton()->free_rid(agent);
 	agent = RID(); // Pointless
 
-#ifdef DEBUG_ENABLED
-	NavigationServer3D::get_singleton()->disconnect(SNAME("navigation_debug_changed"), callable_mp(this, &NavigationAgent3D::_navigation_debug_changed));
-
-	ERR_FAIL_NULL(RenderingServer::get_singleton());
-	if (debug_path_instance.is_valid()) {
-		RenderingServer::get_singleton()->free_rid(debug_path_instance);
-	}
-	if (debug_path_mesh.is_valid()) {
-		RenderingServer::get_singleton()->free_rid(debug_path_mesh->get_rid());
-	}
-#endif // DEBUG_ENABLED
 }
 
 void NavigationAgent3D::set_avoidance_enabled(bool p_enabled) {
@@ -849,9 +820,6 @@ void NavigationAgent3D::_update_navigation() {
 		}
 
 		NavigationServer3D::get_singleton()->query_path(navigation_query, navigation_result);
-#ifdef DEBUG_ENABLED
-		debug_path_dirty = true;
-#endif // DEBUG_ENABLED
 		navigation_finished = false;
 		last_waypoint_reached = false;
 		navigation_path_index = 0;
@@ -1072,14 +1040,11 @@ real_t NavigationAgent3D::get_avoidance_priority() const {
 ////////DEBUG////////////////////////////////////////////////////////////
 
 void NavigationAgent3D::set_debug_enabled(bool p_enabled) {
-#ifdef DEBUG_ENABLED
 	if (debug_enabled == p_enabled) {
 		return;
 	}
 
 	debug_enabled = p_enabled;
-	debug_path_dirty = true;
-#endif // DEBUG_ENABLED
 }
 
 bool NavigationAgent3D::get_debug_enabled() const {
@@ -1087,14 +1052,11 @@ bool NavigationAgent3D::get_debug_enabled() const {
 }
 
 void NavigationAgent3D::set_debug_use_custom(bool p_enabled) {
-#ifdef DEBUG_ENABLED
 	if (debug_use_custom == p_enabled) {
 		return;
 	}
 
 	debug_use_custom = p_enabled;
-	debug_path_dirty = true;
-#endif // DEBUG_ENABLED
 }
 
 bool NavigationAgent3D::get_debug_use_custom() const {
@@ -1102,14 +1064,11 @@ bool NavigationAgent3D::get_debug_use_custom() const {
 }
 
 void NavigationAgent3D::set_debug_path_custom_color(Color p_color) {
-#ifdef DEBUG_ENABLED
 	if (debug_path_custom_color == p_color) {
 		return;
 	}
 
 	debug_path_custom_color = p_color;
-	debug_path_dirty = true;
-#endif // DEBUG_ENABLED
 }
 
 Color NavigationAgent3D::get_debug_path_custom_color() const {
@@ -1117,107 +1076,13 @@ Color NavigationAgent3D::get_debug_path_custom_color() const {
 }
 
 void NavigationAgent3D::set_debug_path_custom_point_size(float p_point_size) {
-#ifdef DEBUG_ENABLED
 	if (Math::is_equal_approx(debug_path_custom_point_size, p_point_size)) {
 		return;
 	}
 
 	debug_path_custom_point_size = MAX(0.0, p_point_size);
-	debug_path_dirty = true;
-#endif // DEBUG_ENABLED
 }
 
 float NavigationAgent3D::get_debug_path_custom_point_size() const {
 	return debug_path_custom_point_size;
 }
-
-#ifdef DEBUG_ENABLED
-void NavigationAgent3D::_navigation_debug_changed() {
-	debug_path_dirty = true;
-}
-
-void NavigationAgent3D::_update_debug_path() {
-	if (!debug_path_dirty) {
-		return;
-	}
-	debug_path_dirty = false;
-
-	if (!debug_path_instance.is_valid()) {
-		debug_path_instance = RenderingServer::get_singleton()->instance_create();
-	}
-
-	if (debug_path_mesh.is_null()) {
-		debug_path_mesh.instantiate();
-	}
-
-	debug_path_mesh->clear_surfaces();
-
-	if (!(debug_enabled && NavigationServer3D::get_singleton()->get_debug_navigation_enable_agent_paths())) {
-		return;
-	}
-
-	if (!(agent_parent && agent_parent->is_inside_tree())) {
-		return;
-	}
-
-	const Vector<Vector3> &navigation_path = navigation_result->get_path();
-
-	if (navigation_path.size() <= 1) {
-		return;
-	}
-
-	Vector<Vector3> debug_path_lines_vertex_array;
-
-	for (int i = 0; i < navigation_path.size() - 1; i++) {
-		debug_path_lines_vertex_array.push_back(navigation_path[i]);
-		debug_path_lines_vertex_array.push_back(navigation_path[i + 1]);
-	}
-
-	Array debug_path_lines_mesh_array;
-	debug_path_lines_mesh_array.resize(Mesh::ARRAY_MAX);
-	debug_path_lines_mesh_array[Mesh::ARRAY_VERTEX] = debug_path_lines_vertex_array;
-
-	debug_path_mesh->add_surface_from_arrays(Mesh::PRIMITIVE_LINES, debug_path_lines_mesh_array);
-
-	Ref<StandardMaterial3D> debug_agent_path_line_material = NavigationServer3D::get_singleton()->get_debug_navigation_agent_path_line_material();
-	if (debug_use_custom) {
-		if (debug_agent_path_line_custom_material.is_null()) {
-			debug_agent_path_line_custom_material = debug_agent_path_line_material->duplicate();
-		}
-		debug_agent_path_line_custom_material->set_albedo(debug_path_custom_color);
-		debug_path_mesh->surface_set_material(0, debug_agent_path_line_custom_material);
-	} else {
-		debug_path_mesh->surface_set_material(0, debug_agent_path_line_material);
-	}
-
-	if (debug_path_custom_point_size > 0.0) {
-		Vector<Vector3> debug_path_points_vertex_array;
-
-		for (int i = 0; i < navigation_path.size(); i++) {
-			debug_path_points_vertex_array.push_back(navigation_path[i]);
-		}
-
-		Array debug_path_points_mesh_array;
-		debug_path_points_mesh_array.resize(Mesh::ARRAY_MAX);
-		debug_path_points_mesh_array[Mesh::ARRAY_VERTEX] = debug_path_points_vertex_array;
-
-		debug_path_mesh->add_surface_from_arrays(Mesh::PRIMITIVE_POINTS, debug_path_points_mesh_array);
-
-		Ref<StandardMaterial3D> debug_agent_path_point_material = NavigationServer3D::get_singleton()->get_debug_navigation_agent_path_point_material();
-		if (debug_use_custom) {
-			if (debug_agent_path_point_custom_material.is_null()) {
-				debug_agent_path_point_custom_material = debug_agent_path_point_material->duplicate();
-			}
-			debug_agent_path_point_custom_material->set_albedo(debug_path_custom_color);
-			debug_agent_path_point_custom_material->set_point_size(debug_path_custom_point_size);
-			debug_path_mesh->surface_set_material(1, debug_agent_path_point_custom_material);
-		} else {
-			debug_path_mesh->surface_set_material(1, debug_agent_path_point_material);
-		}
-	}
-
-	RS::get_singleton()->instance_set_base(debug_path_instance, debug_path_mesh->get_rid());
-	RS::get_singleton()->instance_set_scenario(debug_path_instance, agent_parent->get_world_3d()->get_scenario());
-	RS::get_singleton()->instance_set_visible(debug_path_instance, agent_parent->is_visible_in_tree());
-}
-#endif // DEBUG_ENABLED

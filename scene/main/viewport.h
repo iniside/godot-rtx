@@ -289,8 +289,6 @@ private:
 	bool size_allocated = false;
 
 	RID contact_2d_debug;
-	RID contact_3d_debug_multimesh;
-	RID contact_3d_debug_instance;
 
 	bool transparent_bg = false;
 	bool use_hdr_2d = false;

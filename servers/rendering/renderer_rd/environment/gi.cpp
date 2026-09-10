@@ -2972,7 +2972,7 @@ void GI::VoxelGIInstance::update(bool p_update_light_instances, const Vector<RID
 
 		{
 			Transform3D to_cell = gi->voxel_gi_get_to_cell_xform(probe);
-			Transform3D to_probe_xform = to_cell * transform.affine_inverse();
+			Transform3D to_probe_xform = to_cell * Transform3D(transform.basis, Vector3()).affine_inverse();
 
 			//update lights
 
@@ -3020,7 +3020,12 @@ void GI::VoxelGIInstance::update(bool p_update_light_instances, const Vector<RID
 
 				Vector2 area_size = RSG::light_storage->light_area_get_size(light);
 
-				Vector3 pos = to_probe_xform.xform(xform.origin);
+				Vector3 relative_position;
+				const double *light_origin = light_storage->light_instance_get_origin(light_instance);
+				for (int axis = 0; axis < 3; axis++) {
+					relative_position[axis] = light_origin[axis] - origin[axis];
+				}
+				Vector3 pos = to_probe_xform.xform(relative_position);
 				Vector3 dir = to_probe_xform.basis.xform(-xform.basis.get_column(2)).normalized();
 
 				l.position[0] = pos.x;
@@ -3182,7 +3187,7 @@ void GI::VoxelGIInstance::update(bool p_update_light_instances, const Vector<RID
 		oversample_scale.basis.scale(Vector3(multiplier, multiplier, multiplier));
 
 		Transform3D to_cell = oversample_scale * gi->voxel_gi_get_to_cell_xform(probe);
-		Transform3D to_world_xform = transform * to_cell.affine_inverse();
+		Transform3D to_world_xform = Transform3D(transform.basis, Vector3()) * to_cell.affine_inverse();
 		Transform3D to_probe_xform = to_world_xform.affine_inverse();
 
 		AABB probe_aabb(Vector3(), octree_size);
@@ -3202,7 +3207,7 @@ void GI::VoxelGIInstance::update(bool p_update_light_instances, const Vector<RID
 			RenderGeometryInstance *instance = p_dynamic_objects[i];
 
 			//transform aabb to voxel_gi
-			AABB aabb = (to_probe_xform * instance->get_transform()).xform(instance->get_aabb());
+			AABB aabb = (to_probe_xform * instance->get_camera_relative_transform(origin)).xform(instance->get_aabb());
 
 			//this needs to wrap to grid resolution to avoid jitter
 			//also extend margin a bit just in case
@@ -3276,7 +3281,13 @@ void GI::VoxelGIInstance::update(bool p_update_light_instances, const Vector<RID
 					exposure_normalization = gi->voxel_gi_get_baked_exposure_normalization(probe);
 				}
 
-				RendererSceneRenderRD::get_singleton()->_render_material(to_world_xform * xform, cm, true, RendererSceneRenderRD::get_singleton()->cull_argument, dynamic_maps[0].fb, Rect2i(Vector2i(), rect.size), exposure_normalization);
+				Transform3D camera_transform = to_world_xform * xform;
+				double camera_origin[3];
+				for (int axis = 0; axis < 3; axis++) {
+					camera_origin[axis] = origin[axis] + double(camera_transform.origin[axis]);
+					camera_transform.origin[axis] = camera_origin[axis];
+				}
+				RendererSceneRenderRD::get_singleton()->_render_material(camera_transform, cm, true, RendererSceneRenderRD::get_singleton()->cull_argument, dynamic_maps[0].fb, Rect2i(Vector2i(), rect.size), exposure_normalization, camera_origin);
 
 				Vector3 ps = octree_size / gi->voxel_gi_get_bounds(probe).size;
 				float cell_size = (1.0 / MAX(MAX(ps.x, ps.y), ps.z)); // probe size relative to 1 unit in world space
@@ -3851,9 +3862,6 @@ void GI::setup_voxel_gi_instances(RenderDataRD *p_render_data, Ref<RenderSceneBu
 
 	bool voxel_gi_instances_changed = false;
 
-	Transform3D to_camera;
-	to_camera.origin = p_transform.origin; //only translation, make local
-
 	for (int i = 0; i < MAX_VOXEL_GI_INSTANCES; i++) {
 		RID texture;
 		if (i < (int)p_voxel_gi_instances.size()) {
@@ -3865,7 +3873,11 @@ void GI::setup_voxel_gi_instances(RenderDataRD *p_render_data, Ref<RenderSceneBu
 
 				RID base_probe = gipi->probe;
 
-				Transform3D to_cell = voxel_gi_get_to_cell_xform(gipi->probe) * gipi->transform.affine_inverse() * to_camera;
+				Transform3D relative = gipi->transform;
+				for (int axis = 0; axis < 3; axis++) {
+					relative.origin[axis] = gipi->origin[axis] - p_render_data->scene_data->cam_origin[axis];
+				}
+				Transform3D to_cell = voxel_gi_get_to_cell_xform(gipi->probe) * relative.affine_inverse();
 
 				gipd.xform[0] = to_cell.basis.rows[0][0];
 				gipd.xform[1] = to_cell.basis.rows[1][0];
@@ -4288,11 +4300,14 @@ void GI::voxel_gi_instance_free(RID p_rid) {
 	voxel_gi_instance_owner.free(p_rid);
 }
 
-void GI::voxel_gi_instance_set_transform_to_data(RID p_probe, const Transform3D &p_xform) {
+void GI::voxel_gi_instance_set_transform_to_data(RID p_probe, const Transform3D &p_xform, const double *p_origin) {
 	VoxelGIInstance *voxel_gi = voxel_gi_instance_owner.get_or_null(p_probe);
 	ERR_FAIL_NULL(voxel_gi);
 
 	voxel_gi->transform = p_xform;
+	for (int axis = 0; axis < 3; axis++) {
+		voxel_gi->origin[axis] = p_origin ? p_origin[axis] : double(p_xform.origin[axis]);
+	}
 }
 
 bool GI::voxel_gi_needs_update(RID p_probe) const {

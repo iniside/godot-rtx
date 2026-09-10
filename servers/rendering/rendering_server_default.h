@@ -124,6 +124,9 @@ class RenderingServerDefault : public RenderingServer {
 	void _call_on_render_thread(const Callable &p_callable);
 
 public:
+	void scene_publish_entities(const EntityRenderPacket &p_packet) override;
+	RID tool_render_create() override;
+	void tool_render_update(const ToolRenderData &p_data) override;
 	//if editor is redrawing when it shouldn't, enable this and put a breakpoint in _changes_changed()
 	//#define DEBUG_CHANGES
 
@@ -334,6 +337,7 @@ public:
 	FUNC2(shader_set_code, RID, const String &)
 	FUNC2(shader_set_code_rt, RID, const String &)
 	FUNC2(shader_set_generated_standard_material, RID, bool)
+	FUNC2(shader_set_generated_particle_material, RID, bool)
 	FUNC2(shader_set_path_hint, RID, const String &)
 	FUNC1RC(String, shader_get_code, RID)
 
@@ -687,7 +691,15 @@ public:
 	FUNC3(particles_set_draw_pass_mesh, RID, int, RID)
 
 	FUNC1R(AABB, particles_get_current_aabb, RID)
-	FUNC2(particles_set_emission_transform, RID, const Transform3D &)
+	virtual void particles_set_emission_transform(RID p_particles, const Transform3D &p_transform) override {
+		WRITE_ACTION
+		if (ASYNC_COND_PUSH) {
+			command_queue.push(server_name, &ServerName::particles_set_emission_transform, p_particles, p_transform, static_cast<const double *>(nullptr));
+		} else {
+			command_queue.flush_if_pending();
+			server_name->particles_set_emission_transform(p_particles, p_transform, nullptr);
+		}
+	}
 	FUNC2(particles_set_emitter_velocity, RID, const Vector3 &)
 	FUNC2(particles_set_interp_to_end, RID, float)
 
@@ -974,51 +986,9 @@ public:
 	FUNC2(scenario_set_fallback_environment, RID, RID)
 	FUNC2(scenario_set_compositor, RID, RID)
 
-	/* INSTANCING API */
-	FUNCRIDSPLIT(instance)
-
-	FUNC2(instance_set_base, RID, RID)
-	FUNC2(instance_set_scenario, RID, RID)
-	FUNC2(instance_set_layer_mask, RID, uint32_t)
-	FUNC3(instance_set_pivot_data, RID, float, bool)
-	FUNC2(instance_set_transform, RID, const Transform3D &)
-	FUNC2(instance_attach_object_instance_id, RID, ObjectID)
-	FUNC3(instance_set_blend_shape_weight, RID, int, float)
-	FUNC3(instance_set_surface_override_material, RID, int, RID)
-	FUNC2(instance_set_visible, RID, bool)
-
-	FUNC1(instance_teleport, RID)
-
-	FUNC2(instance_set_custom_aabb, RID, AABB)
-
-	FUNC3(instance_set_rt_procedural, RID, bool, AABB)
-	FUNC3(instance_set_rt_procedural_bounds, RID, const PackedFloat32Array &, bool)
-
-	FUNC2(instance_attach_skeleton, RID, RID)
-
-	FUNC2(instance_set_extra_visibility_margin, RID, real_t)
-	FUNC2(instance_set_visibility_parent, RID, RID)
-
-	FUNC2(instance_set_ignore_culling, RID, bool)
-
-	// don't use these in a game!
-	FUNC2RC(Vector<ObjectID>, instances_cull_aabb, const AABB &, RID)
-	FUNC3RC(Vector<ObjectID>, instances_cull_ray, const Vector3 &, const Vector3 &, RID)
-	FUNC2RC(Vector<ObjectID>, instances_cull_convex, const Vector<Plane> &, RID)
-
-	FUNC3(instance_geometry_set_flag, RID, RSE::InstanceFlags, bool)
-	FUNC2(instance_geometry_set_cast_shadows_setting, RID, RSE::ShadowCastingSetting)
-	FUNC2(instance_geometry_set_material_override, RID, RID)
-	FUNC2(instance_geometry_set_material_overlay, RID, RID)
-
-	FUNC6(instance_geometry_set_visibility_range, RID, float, float, float, float, RSE::VisibilityRangeFadeMode)
-	FUNC4(instance_geometry_set_lightmap, RID, RID, const Rect2 &, int)
-	FUNC2(instance_geometry_set_lod_bias, RID, float)
-	FUNC2(instance_geometry_set_transparency, RID, float)
-	FUNC3(instance_geometry_set_shader_parameter, RID, const StringName &, const Variant &)
-	FUNC2RC(Variant, instance_geometry_get_shader_parameter, RID, const StringName &)
-	FUNC2RC(Variant, instance_geometry_get_shader_parameter_default_value, RID, const StringName &)
-	FUNC2C(instance_geometry_get_shader_parameter_list, RID, List<PropertyInfo> *)
+	FUNC2RC(Vector<EntityHandle>, scene_entities_cull_aabb, const AABB &, RID)
+	FUNC3RC(Vector<EntityHandle>, scene_entities_cull_ray, const Vector3 &, const Vector3 &, RID)
+	FUNC2RC(Vector<EntityHandle>, scene_entities_cull_convex, const Vector<Plane> &, RID)
 
 	FUNC3R(TypedArray<Image>, bake_render_uv2, RID, const TypedArray<RID> &, const Size2i &)
 	FUNC4R(PackedByteArray, bake_render_area_light_atlas, const TypedArray<RID> &, const TypedArray<Rect2> &, const Size2i &, int)

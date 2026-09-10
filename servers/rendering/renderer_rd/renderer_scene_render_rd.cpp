@@ -184,8 +184,8 @@ RID RendererSceneRenderRD::fog_volume_instance_create(RID p_fog_volume) {
 	return RendererRD::Fog::get_singleton()->fog_volume_instance_create(p_fog_volume);
 }
 
-void RendererSceneRenderRD::fog_volume_instance_set_transform(RID p_fog_volume_instance, const Transform3D &p_transform) {
-	RendererRD::Fog::get_singleton()->fog_volume_instance_set_transform(p_fog_volume_instance, p_transform);
+void RendererSceneRenderRD::fog_volume_instance_set_transform(RID p_fog_volume_instance, const Transform3D &p_transform, const double *p_origin) {
+	RendererRD::Fog::get_singleton()->fog_volume_instance_set_transform(p_fog_volume_instance, p_transform, p_origin);
 }
 
 void RendererSceneRenderRD::fog_volume_instance_set_active(RID p_fog_volume_instance, bool p_active) {
@@ -206,12 +206,12 @@ RID RendererSceneRenderRD::voxel_gi_instance_create(RID p_base) {
 	return gi.voxel_gi_instance_create(p_base);
 }
 
-void RendererSceneRenderRD::voxel_gi_instance_set_transform_to_data(RID p_probe, const Transform3D &p_xform) {
+void RendererSceneRenderRD::voxel_gi_instance_set_transform_to_data(RID p_probe, const Transform3D &p_xform, const double *p_origin) {
 	if (!is_dynamic_gi_supported()) {
 		return;
 	}
 
-	gi.voxel_gi_instance_set_transform_to_data(p_probe, p_xform);
+	gi.voxel_gi_instance_set_transform_to_data(p_probe, p_xform, p_origin);
 }
 
 bool RendererSceneRenderRD::voxel_gi_needs_update(RID p_probe) const {
@@ -1412,6 +1412,9 @@ void RendererSceneRenderRD::render_scene(const Ref<RenderSceneBuffers> &p_render
 	{
 		// Our first camera is used by default
 		scene_data.cam_transform = p_camera_data->main_transform;
+		for (int axis = 0; axis < 3; axis++) {
+			scene_data.cam_origin[axis] = p_camera_data->main_origin[axis];
+		}
 		scene_data.cam_projection = p_camera_data->main_projection;
 		scene_data.camera = p_camera;
 		scene_data.cam_orthogonal = p_camera_data->is_orthogonal;
@@ -1419,6 +1422,9 @@ void RendererSceneRenderRD::render_scene(const Ref<RenderSceneBuffers> &p_render
 		scene_data.taa_jitter = p_camera_data->taa_jitter;
 		scene_data.taa_frame_count = p_camera_data->taa_frame_count;
 		scene_data.main_cam_transform = p_camera_data->main_transform;
+		for (int axis = 0; axis < 3; axis++) {
+			scene_data.main_cam_origin[axis] = p_camera_data->main_origin[axis];
+		}
 		scene_data.flip_y = !p_reflection_probe.is_valid();
 
 		scene_data.view_count = p_camera_data->view_count;
@@ -1428,6 +1434,9 @@ void RendererSceneRenderRD::render_scene(const Ref<RenderSceneBuffers> &p_render
 		}
 
 		scene_data.prev_cam_transform = p_prev_camera_data->main_transform;
+		for (int axis = 0; axis < 3; axis++) {
+			scene_data.prev_cam_origin[axis] = p_prev_camera_data->main_origin[axis];
+		}
 		scene_data.prev_cam_projection = p_prev_camera_data->main_projection;
 		scene_data.prev_camera = p_prev_camera;
 		scene_data.prev_cam_orthogonal = p_prev_camera_data->is_orthogonal;
@@ -1557,7 +1566,7 @@ void RendererSceneRenderRD::render_material(const Transform3D &p_cam_transform, 
 	_render_material(p_cam_transform, p_cam_projection, p_cam_orthogonal, p_instances, p_framebuffer, p_region, 1.0);
 }
 
-void RendererSceneRenderRD::render_particle_collider_heightfield(RID p_collider, const Transform3D &p_transform, const PagedArray<RenderGeometryInstance *> &p_instances) {
+void RendererSceneRenderRD::render_particle_collider_heightfield(RID p_collider, const Transform3D &p_transform, const PagedArray<RenderGeometryInstance *> &p_instances, const double *p_origin, RID p_scenario, uint32_t p_layers) {
 	RendererRD::ParticlesStorage *particles_storage = RendererRD::ParticlesStorage::get_singleton();
 
 	ERR_FAIL_COND(!particles_storage->particles_collision_is_heightfield(p_collider));
@@ -1565,15 +1574,18 @@ void RendererSceneRenderRD::render_particle_collider_heightfield(RID p_collider,
 	Projection cm;
 	cm.set_orthogonal(-extents.x, extents.x, -extents.z, extents.z, 0, extents.y * 2.0);
 
-	Vector3 cam_pos = p_transform.origin;
-	cam_pos.y += extents.y;
-
+	const Vector3 direction = p_transform.basis.get_column(Vector3::AXIS_Y).normalized();
 	Transform3D cam_xform;
-	cam_xform.set_look_at(cam_pos, cam_pos - p_transform.basis.get_column(Vector3::AXIS_Y), -p_transform.basis.get_column(Vector3::AXIS_Z).normalized());
+	cam_xform.set_look_at(Vector3(), -direction, -p_transform.basis.get_column(Vector3::AXIS_Z).normalized());
+	double camera_origin[3];
+	for (int axis = 0; axis < 3; axis++) {
+		camera_origin[axis] = p_origin[axis] + double(direction[axis]) * double(extents.y);
+		cam_xform.origin[axis] = camera_origin[axis];
+	}
 
 	RID fb = particles_storage->particles_collision_get_heightfield_framebuffer(p_collider);
 
-	_render_particle_collider_heightfield(fb, cam_xform, cm, p_instances);
+	_render_particle_collider_heightfield(fb, cam_xform, cm, p_instances, camera_origin, p_scenario, p_layers);
 }
 
 bool RendererSceneRenderRD::free(RID p_rid) {
@@ -1666,7 +1678,8 @@ TypedArray<Image> RendererSceneRenderRD::bake_render_uv2(RID p_base, const Typed
 		}
 		bake_base = bake_mesh.mesh;
 	}
-	RenderGeometryInstance *gi_inst = geometry_instance_create(bake_base);
+	RenderSceneInstanceData scene_data;
+	RenderGeometryInstance *gi_inst = geometry_instance_create(bake_base, &scene_data);
 	ERR_FAIL_NULL_V(gi_inst, TypedArray<Image>());
 	RD::TextureFormat tf;
 	tf.format = RD::DATA_FORMAT_R8G8B8A8_UNORM;
@@ -1709,7 +1722,8 @@ TypedArray<Image> RendererSceneRenderRD::bake_render_uv2(RID p_base, const Typed
 		}
 	}
 
-	gi_inst->set_surface_materials(materials);
+	scene_data.materials = materials;
+	gi_inst->scene_data_changed();
 
 	if (cull_argument.size() == 0) {
 		cull_argument.push_back(nullptr);

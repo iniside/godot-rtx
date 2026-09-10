@@ -60,11 +60,8 @@ class RayCast3D : public Node3D {
 	Vector<Vector3> debug_shape_vertices;
 	Vector<Vector3> debug_line_vertices;
 
-	void _create_debug_shape();
-	void _update_debug_shape();
 	void _update_debug_shape_material(bool p_check_collision = false);
 	void _update_debug_shape_vertices();
-	void _clear_debug_shape();
 
 	bool collide_with_areas = false;
 	bool collide_with_bodies = true;
@@ -72,8 +69,6 @@ class RayCast3D : public Node3D {
 	bool hit_from_inside = false;
 	bool hit_back_faces = true;
 
-	RID debug_instance;
-	Ref<ArrayMesh> debug_mesh;
 
 protected:
 	void _notification(int p_what);

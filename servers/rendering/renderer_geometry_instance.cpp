@@ -30,45 +30,22 @@
 
 #include "servers/rendering/renderer_geometry_instance.h"
 
-void RenderGeometryInstanceBase::set_skeleton(RID p_skeleton) {
-	data->skeleton = p_skeleton;
-
-	_mark_dirty();
+void RenderGeometryInstanceBase::scene_data_changed() {
+	force_alpha = CLAMP(1.0f - scene_data->transparency, 0.0f, 1.0f);
+	data->cast_double_sided_shadows = scene_data->cast_shadows == RSE::SHADOW_CASTING_SETTING_DOUBLE_SIDED;
 	data->dirty_dependencies = true;
-}
-
-void RenderGeometryInstanceBase::set_material_override(RID p_override) {
-	data->material_override = p_override;
-
 	_mark_dirty();
-	data->dirty_dependencies = true;
-}
-
-void RenderGeometryInstanceBase::set_material_overlay(RID p_overlay) {
-	data->material_overlay = p_overlay;
-
-	_mark_dirty();
-	data->dirty_dependencies = true;
-}
-
-void RenderGeometryInstanceBase::set_surface_materials(const Vector<RID> &p_materials) {
-	data->surface_materials = p_materials;
-
-	_mark_dirty();
-	data->dirty_dependencies = true;
-}
-
-void RenderGeometryInstanceBase::set_mesh_instance(RID p_mesh_instance) {
-	mesh_instance = p_mesh_instance;
-
-	_mark_dirty();
+	_mark_instance_data_dirty();
 }
 
 void RenderGeometryInstanceBase::set_transform(const Transform3D &p_transform, const AABB &p_aabb, const AABB &p_transformed_aabb) {
 	transform = p_transform;
-	mirror = p_transform.basis.determinant() < 0;
-	data->aabb = p_aabb;
-	transformed_aabb = p_transformed_aabb;
+	for (int axis = 0; axis < 3; axis++) {
+		origin[axis] = scene_data->origin[axis];
+	}
+	scene_data->mirror = p_transform.basis.determinant() < 0;
+	scene_data->aabb = p_aabb;
+	scene_data->transformed_aabb = p_transformed_aabb;
 
 	Vector3 model_scale_vec = p_transform.basis.get_scale_abs();
 	// handle non uniform scale here
@@ -78,21 +55,6 @@ void RenderGeometryInstanceBase::set_transform(const Transform3D &p_transform, c
 	non_uniform_scale = max_scale >= 0.0 && (min_scale / max_scale) < 0.999;
 
 	lod_model_scale = max_scale;
-	_mark_instance_data_dirty();
-}
-
-void RenderGeometryInstanceBase::set_pivot_data(float p_sorting_offset, bool p_use_aabb_center) {
-	sorting_offset = p_sorting_offset;
-	use_aabb_center = p_use_aabb_center;
-}
-
-void RenderGeometryInstanceBase::set_lod_bias(float p_lod_bias) {
-	lod_bias = p_lod_bias;
-	_mark_instance_data_dirty();
-}
-
-void RenderGeometryInstanceBase::set_layer_mask(uint32_t p_layer_mask) {
-	layer_mask = p_layer_mask;
 	_mark_instance_data_dirty();
 }
 
@@ -111,31 +73,8 @@ void RenderGeometryInstanceBase::set_parent_fade_alpha(float p_alpha) {
 	_mark_instance_data_dirty();
 }
 
-void RenderGeometryInstanceBase::set_transparency(float p_transparency) {
-	force_alpha = CLAMP(1.0 - p_transparency, 0, 1);
-	_mark_instance_data_dirty();
-}
-
-void RenderGeometryInstanceBase::set_use_baked_light(bool p_enable) {
-	data->use_baked_light = p_enable;
-
-	_mark_dirty();
-}
-
-void RenderGeometryInstanceBase::set_use_dynamic_gi(bool p_enable) {
-	data->use_dynamic_gi = p_enable;
-
-	_mark_dirty();
-}
-
 void RenderGeometryInstanceBase::set_instance_shader_uniforms_offset(int32_t p_offset) {
 	shader_uniforms_offset = p_offset;
-
-	_mark_dirty();
-}
-
-void RenderGeometryInstanceBase::set_cast_double_sided_shadows(bool p_enable) {
-	data->cast_double_sided_shadows = p_enable;
 
 	_mark_dirty();
 }
@@ -147,16 +86,18 @@ Transform3D RenderGeometryInstanceBase::get_transform() {
 	return transform;
 }
 
-AABB RenderGeometryInstanceBase::get_aabb() {
-	return data->aabb;
+Transform3D RenderGeometryInstanceBase::get_camera_relative_transform(const double *p_origin) const {
+	Transform3D relative = transform;
+	for (int axis = 0; axis < 3; axis++) {
+		relative.origin[axis] = origin[axis] - p_origin[axis];
+	}
+	return relative;
 }
 
-void RenderGeometryInstanceBase::set_scene_membership(RID p_scenario, bool p_visible, RSE::ShadowCastingSetting p_shadows) {
-	if (scenario_rid == p_scenario && scene_visible == p_visible && scene_shadows == p_shadows) {
-		return;
-	}
-	scenario_rid = p_scenario;
-	scene_visible = p_visible;
-	scene_shadows = p_shadows;
+AABB RenderGeometryInstanceBase::get_aabb() {
+	return scene_data->aabb;
+}
+
+void RenderGeometryInstanceBase::scene_membership_changed() {
 	_mark_instance_data_dirty();
 }

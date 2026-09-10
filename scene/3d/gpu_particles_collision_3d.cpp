@@ -34,7 +34,6 @@
 #include "core/object/class_db.h"
 #include "core/object/worker_thread_pool.h"
 #include "core/os/os.h"
-#include "scene/3d/camera_3d.h"
 #include "scene/3d/mesh_instance_3d.h"
 #include "scene/main/viewport.h"
 #include "servers/rendering/rendering_server.h"
@@ -668,53 +667,6 @@ GPUParticlesCollisionSDF3D::~GPUParticlesCollisionSDF3D() {
 ////////////////////////////
 ////////////////////////////
 
-void GPUParticlesCollisionHeightField3D::_notification(int p_what) {
-	switch (p_what) {
-		case NOTIFICATION_INTERNAL_PROCESS: {
-			if (update_mode == UPDATE_MODE_ALWAYS) {
-				RS::get_singleton()->particles_collision_height_field_update(_get_collision());
-			}
-
-			if (follow_camera_mode && get_viewport()) {
-				Camera3D *cam = get_viewport()->get_camera_3d();
-				if (cam) {
-					Transform3D xform = get_global_transform();
-					Vector3 x_axis = xform.basis.get_column(Vector3::AXIS_X).normalized();
-					Vector3 z_axis = xform.basis.get_column(Vector3::AXIS_Z).normalized();
-					float x_len = xform.basis.get_scale().x;
-					float z_len = xform.basis.get_scale().z;
-
-					Vector3 cam_pos = cam->get_global_transform().origin;
-					Transform3D new_xform = xform;
-
-					while (x_axis.dot(cam_pos - new_xform.origin) > x_len) {
-						new_xform.origin += x_axis * x_len;
-					}
-					while (x_axis.dot(cam_pos - new_xform.origin) < -x_len) {
-						new_xform.origin -= x_axis * x_len;
-					}
-
-					while (z_axis.dot(cam_pos - new_xform.origin) > z_len) {
-						new_xform.origin += z_axis * z_len;
-					}
-					while (z_axis.dot(cam_pos - new_xform.origin) < -z_len) {
-						new_xform.origin -= z_axis * z_len;
-					}
-
-					if (new_xform != xform) {
-						set_global_transform(new_xform);
-						RS::get_singleton()->particles_collision_height_field_update(_get_collision());
-					}
-				}
-			}
-		} break;
-
-		case NOTIFICATION_TRANSFORM_CHANGED: {
-			RS::get_singleton()->particles_collision_height_field_update(_get_collision());
-		} break;
-	}
-}
-
 void GPUParticlesCollisionHeightField3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_size", "size"), &GPUParticlesCollisionHeightField3D::set_size);
 	ClassDB::bind_method(D_METHOD("get_size"), &GPUParticlesCollisionHeightField3D::get_size);
@@ -794,7 +746,6 @@ GPUParticlesCollisionHeightField3D::Resolution GPUParticlesCollisionHeightField3
 
 void GPUParticlesCollisionHeightField3D::set_update_mode(UpdateMode p_update_mode) {
 	update_mode = p_update_mode;
-	set_process_internal(follow_camera_mode || update_mode == UPDATE_MODE_ALWAYS);
 }
 
 GPUParticlesCollisionHeightField3D::UpdateMode GPUParticlesCollisionHeightField3D::get_update_mode() const {
@@ -830,7 +781,6 @@ bool GPUParticlesCollisionHeightField3D::get_heightfield_mask_value(int p_layer_
 
 void GPUParticlesCollisionHeightField3D::set_follow_camera_enabled(bool p_enabled) {
 	follow_camera_mode = p_enabled;
-	set_process_internal(follow_camera_mode || update_mode == UPDATE_MODE_ALWAYS);
 }
 
 bool GPUParticlesCollisionHeightField3D::is_follow_camera_enabled() const {

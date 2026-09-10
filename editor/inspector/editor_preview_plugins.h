@@ -30,6 +30,8 @@
 
 #pragma once
 
+#include "servers/rendering/renderer_scene_data.h"
+
 #include "core/io/image.h"
 #include "editor/inspector/editor_resource_preview.h"
 
@@ -78,13 +80,13 @@ class EditorMaterialPreviewPlugin : public EditorResourcePreviewGenerator {
 
 	RID scenario;
 	RID sphere;
-	RID sphere_instance;
+	mutable ToolRenderData sphere_instance;
 	RID viewport;
 	RID viewport_texture;
 	RID light;
-	RID light_instance;
+	mutable ToolRenderData light_instance;
 	RID light2;
-	RID light_instance2;
+	mutable ToolRenderData light_instance2;
 	RID camera;
 	RID camera_attributes;
 	mutable DrawRequester draw_requester;
@@ -122,13 +124,13 @@ class EditorMeshPreviewPlugin : public EditorResourcePreviewGenerator {
 	GDCLASS(EditorMeshPreviewPlugin, EditorResourcePreviewGenerator);
 
 	RID scenario;
-	RID mesh_instance;
+	mutable ToolRenderData mesh_instance;
 	RID viewport;
 	RID viewport_texture;
 	RID light;
-	RID light_instance;
+	mutable ToolRenderData light_instance;
 	RID light2;
-	RID light_instance2;
+	mutable ToolRenderData light_instance2;
 	RID camera;
 	RID camera_attributes;
 	mutable DrawRequester draw_requester;

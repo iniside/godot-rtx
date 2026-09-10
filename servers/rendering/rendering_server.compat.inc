@@ -54,14 +54,6 @@ void RenderingServer::_canvas_item_add_circle_bind_compat_84523(RID p_item, cons
 	canvas_item_add_circle(p_item, p_pos, p_radius, p_color, false);
 }
 
-void RenderingServer::_instance_set_interpolated_bind_compat_104269(RID p_instance, bool p_interpolated) {
-	WARN_PRINT_ONCE("instance_set_interpolated() is deprecated.");
-}
-
-void RenderingServer::_instance_reset_physics_interpolation_bind_compat_104269(RID p_instance) {
-	WARN_PRINT_ONCE("instance_reset_physics_interpolation() is deprecated.");
-}
-
 void RenderingServer::_viewport_set_size_compat_115799(RID p_viewport, int p_width, int p_height) {
 	viewport_set_size(p_viewport, p_width, p_height, 1);
 }
@@ -76,8 +68,6 @@ void RenderingServer::_bind_compatibility_methods() {
 	ClassDB::bind_compatibility_method(D_METHOD("canvas_item_add_multiline", "item", "points", "colors", "width"), &RenderingServer::_canvas_item_add_multiline_bind_compat_84523, DEFVAL(-1.0));
 	ClassDB::bind_compatibility_method(D_METHOD("canvas_item_add_rect", "item", "rect", "color"), &RenderingServer::_canvas_item_add_rect_bind_compat_84523);
 	ClassDB::bind_compatibility_method(D_METHOD("canvas_item_add_circle", "item", "pos", "radius", "color"), &RenderingServer::_canvas_item_add_circle_bind_compat_84523);
-	ClassDB::bind_compatibility_method(D_METHOD("instance_set_interpolated", "instance", "interpolated"), &RenderingServer::_instance_set_interpolated_bind_compat_104269);
-	ClassDB::bind_compatibility_method(D_METHOD("instance_reset_physics_interpolation", "instance"), &RenderingServer::_instance_reset_physics_interpolation_bind_compat_104269);
 	ClassDB::bind_compatibility_method(D_METHOD("viewport_set_size", "viewport", "width", "height"), &RenderingServer::_viewport_set_size_compat_115799);
 	ClassDB::bind_compatibility_method(D_METHOD("particles_request_process_time", "particles", "process_time"), &RenderingServer::_particles_request_process_time_bind_compat_109142);
 }

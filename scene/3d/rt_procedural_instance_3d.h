@@ -44,16 +44,10 @@ class RTProceduralInstance3D : public GeometryInstance3D {
 	Vector<AABB> bounds;
 	AABB custom_enclosing_aabb; // Zero-size = auto-compute from bounds.
 	bool expose_aabb_bounds = false;
-	// Empty ArrayMesh to satisfy the INSTANCE_MESH base-type gate in RendererSceneCull.
-	Ref<ArrayMesh> null_base_mesh;
 
-	void _update_procedural();
-	void _ensure_null_base_mesh();
-	PackedFloat32Array _pack_aabb_data() const;
 	AABB _compute_enclosing_aabb() const;
 
 protected:
-	void _notification(int p_what);
 	static void _bind_methods();
 
 public:
@@ -72,6 +66,6 @@ public:
 
 	virtual AABB get_aabb() const override;
 
-	RTProceduralInstance3D();
-	~RTProceduralInstance3D();
+	RTProceduralInstance3D() = default;
+	~RTProceduralInstance3D() = default;
 };

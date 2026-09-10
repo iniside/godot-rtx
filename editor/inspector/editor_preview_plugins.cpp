@@ -340,12 +340,16 @@ Ref<Texture2D> EditorMaterialPreviewPlugin::generate(const Ref<Resource> &p_from
 	ERR_FAIL_COND_V(material.is_null(), Ref<Texture2D>());
 
 	if (material->get_shader_mode() == Shader::MODE_SPATIAL) {
-		RS::get_singleton()->mesh_surface_set_material(sphere, 0, material->get_rid());
+		sphere_instance.material_override = material->get_rid();
+		sphere_instance.material_asset = material;
+		sphere_instance.publish();
 
 		draw_requester.request_and_wait(viewport);
 
 		Ref<Image> img = RS::get_singleton()->texture_2d_get(viewport_texture);
-		RS::get_singleton()->mesh_surface_set_material(sphere, 0, RID());
+		sphere_instance.material_override = RID();
+		sphere_instance.material_asset.unref();
+		sphere_instance.publish();
 
 		ERR_FAIL_COND_V(img.is_null(), Ref<ImageTexture>());
 
@@ -382,19 +386,21 @@ EditorMaterialPreviewPlugin::EditorMaterialPreviewPlugin() {
 	}
 
 	light = RS::get_singleton()->directional_light_create();
-	light_instance = RS::get_singleton()->instance_create2(light, scenario);
-	RS::get_singleton()->instance_set_transform(light_instance, Transform3D().looking_at(Vector3(-1, -1, -1), Vector3(0, 1, 0)));
+	light_instance = ToolRenderData::create(light, scenario);
+	light_instance.transform = Transform3D().looking_at(Vector3(-1, -1, -1), Vector3(0, 1, 0));
+	light_instance.publish();
 
 	light2 = RS::get_singleton()->directional_light_create();
 	RS::get_singleton()->light_set_color(light2, Color(0.7, 0.7, 0.7));
 	//RS::get_singleton()->light_set_color(light2, Color(0.7, 0.7, 0.7));
 
-	light_instance2 = RS::get_singleton()->instance_create2(light2, scenario);
+	light_instance2 = ToolRenderData::create(light2, scenario);
 
-	RS::get_singleton()->instance_set_transform(light_instance2, Transform3D().looking_at(Vector3(0, 1, 0), Vector3(0, 0, 1)));
+	light_instance2.transform = Transform3D().looking_at(Vector3(0, 1, 0), Vector3(0, 0, 1));
+	light_instance2.publish();
 
 	sphere = RS::get_singleton()->mesh_create();
-	sphere_instance = RS::get_singleton()->instance_create2(sphere, scenario);
+	sphere_instance = ToolRenderData::create(sphere, scenario);
 
 	int lats = 32;
 	int lons = 32;
@@ -478,12 +484,12 @@ EditorMaterialPreviewPlugin::EditorMaterialPreviewPlugin() {
 EditorMaterialPreviewPlugin::~EditorMaterialPreviewPlugin() {
 	ERR_FAIL_NULL(RenderingServer::get_singleton());
 	RS::get_singleton()->free_rid(sphere);
-	RS::get_singleton()->free_rid(sphere_instance);
+	sphere_instance.clear();
 	RS::get_singleton()->free_rid(viewport);
 	RS::get_singleton()->free_rid(light);
-	RS::get_singleton()->free_rid(light_instance);
+	light_instance.clear();
 	RS::get_singleton()->free_rid(light2);
-	RS::get_singleton()->free_rid(light_instance2);
+	light_instance2.clear();
 	RS::get_singleton()->free_rid(camera);
 	RS::get_singleton()->free_rid(camera_attributes);
 	RS::get_singleton()->free_rid(scenario);
@@ -737,8 +743,6 @@ Ref<Texture2D> EditorMeshPreviewPlugin::generate(const Ref<Resource> &p_from, co
 	Ref<Mesh> mesh = p_from;
 	ERR_FAIL_COND_V(mesh.is_null(), Ref<Texture2D>());
 
-	RS::get_singleton()->instance_set_base(mesh_instance, mesh->get_rid());
-
 	AABB aabb = mesh->get_aabb();
 	Vector3 ofs = aabb.get_center();
 	aabb.position -= ofs;
@@ -755,14 +759,19 @@ Ref<Texture2D> EditorMeshPreviewPlugin::generate(const Ref<Resource> &p_from, co
 	xform.basis.scale(Vector3(m, m, m));
 	xform.origin = -xform.basis.xform(ofs); //-ofs*m;
 	xform.origin.z -= rot_aabb.size.z * 2;
-	RS::get_singleton()->instance_set_transform(mesh_instance, xform);
+	mesh_instance.base = mesh->get_rid();
+	mesh_instance.base_asset = mesh;
+	mesh_instance.transform = xform;
+	mesh_instance.publish();
 
 	draw_requester.request_and_wait(viewport);
 
 	Ref<Image> img = RS::get_singleton()->texture_2d_get(viewport_texture);
-	ERR_FAIL_COND_V(img.is_null(), Ref<ImageTexture>());
 
-	RS::get_singleton()->instance_set_base(mesh_instance, RID());
+	mesh_instance.base = RID();
+	mesh_instance.base_asset = Ref<Resource>();
+	mesh_instance.publish();
+	ERR_FAIL_COND_V(img.is_null(), Ref<ImageTexture>());
 
 	img->convert(Image::FORMAT_RGBA8);
 
@@ -803,30 +812,33 @@ EditorMeshPreviewPlugin::EditorMeshPreviewPlugin() {
 	}
 
 	light = RS::get_singleton()->directional_light_create();
-	light_instance = RS::get_singleton()->instance_create2(light, scenario);
-	RS::get_singleton()->instance_set_transform(light_instance, Transform3D().looking_at(Vector3(-1, -1, -1), Vector3(0, 1, 0)));
+	light_instance = ToolRenderData::create(light, scenario);
+	light_instance.transform = Transform3D().looking_at(Vector3(-1, -1, -1), Vector3(0, 1, 0));
+	light_instance.publish();
 
 	light2 = RS::get_singleton()->directional_light_create();
 	RS::get_singleton()->light_set_color(light2, Color(0.7, 0.7, 0.7));
 	//RS::get_singleton()->light_set_color(light2, RSE::LIGHT_COLOR_SPECULAR, Color(0.0, 0.0, 0.0));
-	light_instance2 = RS::get_singleton()->instance_create2(light2, scenario);
+	light_instance2 = ToolRenderData::create(light2, scenario);
 
-	RS::get_singleton()->instance_set_transform(light_instance2, Transform3D().looking_at(Vector3(0, 1, 0), Vector3(0, 0, 1)));
+	light_instance2.transform = Transform3D().looking_at(Vector3(0, 1, 0), Vector3(0, 0, 1));
+	light_instance2.publish();
 
 	//sphere = RS::get_singleton()->mesh_create();
-	mesh_instance = RS::get_singleton()->instance_create();
-	RS::get_singleton()->instance_set_scenario(mesh_instance, scenario);
+	mesh_instance = ToolRenderData::create();
+	mesh_instance.scenario = scenario;
+	mesh_instance.publish();
 }
 
 EditorMeshPreviewPlugin::~EditorMeshPreviewPlugin() {
 	ERR_FAIL_NULL(RenderingServer::get_singleton());
 	//RS::get_singleton()->free(sphere);
-	RS::get_singleton()->free_rid(mesh_instance);
+	mesh_instance.clear();
 	RS::get_singleton()->free_rid(viewport);
 	RS::get_singleton()->free_rid(light);
-	RS::get_singleton()->free_rid(light_instance);
+	light_instance.clear();
 	RS::get_singleton()->free_rid(light2);
-	RS::get_singleton()->free_rid(light_instance2);
+	light_instance2.clear();
 	RS::get_singleton()->free_rid(camera);
 	RS::get_singleton()->free_rid(camera_attributes);
 	RS::get_singleton()->free_rid(scenario);

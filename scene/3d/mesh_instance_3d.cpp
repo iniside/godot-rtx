@@ -60,10 +60,6 @@ bool MeshInstance3D::_set(const StringName &p_name, const Variant &p_value) {
 	//this is not _too_ bad performance wise, really. it only arrives here if the property was not set anywhere else.
 	//add to it that it's probably found on first call to _set anyway.
 
-	if (!get_instance().is_valid()) {
-		return false;
-	}
-
 	HashMap<StringName, int>::Iterator E = blend_shape_properties.find(p_name);
 	if (E) {
 		set_blend_shape_value(E->value, p_value);
@@ -85,10 +81,6 @@ bool MeshInstance3D::_set(const StringName &p_name, const Variant &p_value) {
 }
 
 bool MeshInstance3D::_get(const StringName &p_name, Variant &r_ret) const {
-	if (!get_instance().is_valid()) {
-		return false;
-	}
-
 	HashMap<StringName, int>::ConstIterator E = blend_shape_properties.find(p_name);
 	if (E) {
 		r_ret = get_blend_shape_value(E->value);
@@ -178,7 +170,6 @@ void MeshInstance3D::set_blend_shape_value(int p_blend_shape, float p_value) {
 	ERR_FAIL_COND(mesh.is_null());
 	ERR_FAIL_INDEX(p_blend_shape, (int)blend_shape_tracks.size());
 	blend_shape_tracks[p_blend_shape] = p_value;
-	RenderingServer::get_singleton()->instance_set_blend_shape_weight(get_instance(), p_blend_shape, p_value);
 }
 
 void MeshInstance3D::_resolve_skeleton_path() {
@@ -200,11 +191,6 @@ void MeshInstance3D::_resolve_skeleton_path() {
 
 	skin_ref = new_skin_reference;
 
-	if (skin_ref.is_valid()) {
-		RenderingServer::get_singleton()->instance_attach_skeleton(get_instance(), skin_ref->get_skeleton());
-	} else {
-		RenderingServer::get_singleton()->instance_attach_skeleton(get_instance(), RID());
-	}
 }
 
 void MeshInstance3D::set_skin(const Ref<Skin> &p_skin) {
@@ -377,11 +363,6 @@ void MeshInstance3D::set_surface_override_material(int p_surface, const Ref<Mate
 
 	surface_override_materials.write[p_surface] = p_material;
 
-	if (surface_override_materials[p_surface].is_valid()) {
-		RS::get_singleton()->instance_set_surface_override_material(get_instance(), p_surface, surface_override_materials[p_surface]->get_rid());
-	} else {
-		RS::get_singleton()->instance_set_surface_override_material(get_instance(), p_surface, RID());
-	}
 }
 
 Ref<Material> MeshInstance3D::get_surface_override_material(int p_surface) const {
@@ -429,11 +410,6 @@ void MeshInstance3D::_mesh_changed() {
 		}
 	}
 
-	for (int surface_index = 0; surface_index < surface_count; ++surface_index) {
-		if (surface_override_materials[surface_index].is_valid()) {
-			RS::get_singleton()->instance_set_surface_override_material(get_instance(), surface_index, surface_override_materials[surface_index]->get_rid());
-		}
-	}
 
 	update_gizmos();
 }

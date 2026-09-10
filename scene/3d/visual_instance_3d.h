@@ -40,18 +40,14 @@ class VisualInstance3D : public Node3D {
 	GDCLASS(VisualInstance3D, Node3D);
 
 	RID base;
-	RID instance;
 	uint32_t layers = 1;
 	float sorting_offset = 0.0;
 	bool sorting_use_aabb_center = true;
 
 protected:
-	void _update_visibility();
 
 	void set_instance_use_identity_transform(bool p_enable);
-	virtual void fti_update_servers_xform() override;
 
-	void _notification(int p_what);
 	static void _bind_methods();
 
 	GDVIRTUAL0RC(AABB, _get_aabb)
@@ -65,7 +61,6 @@ public:
 
 	};
 
-	RID get_instance() const;
 	virtual AABB get_aabb() const;
 
 	void set_base(const RID &p_base);
@@ -84,7 +79,7 @@ public:
 	bool is_sorting_use_aabb_center() const;
 
 	VisualInstance3D();
-	~VisualInstance3D();
+	~VisualInstance3D() = default;
 };
 
 class GeometryInstance3D : public VisualInstance3D {

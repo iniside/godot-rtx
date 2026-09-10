@@ -159,6 +159,7 @@
 #include "scene/2d/node_2d.h"
 #include "scene/3d/bone_attachment_3d.h"
 #include "scene/animation/animation_tree.h"
+#include "scene/entity/entity_world.h"
 #include "scene/gui/color_picker.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/file_dialog.h"
@@ -373,7 +374,7 @@ void EditorNode::_version_control_menu_option(int p_idx) {
 void EditorNode::_update_title() {
 	const String appname = GLOBAL_GET("application/config/name");
 	String title = (appname.is_empty() ? TTR("Unnamed Project") : appname);
-	const String edited = editor_data.get_edited_scene_root() ? editor_data.get_edited_scene_root()->get_scene_file_path() : String();
+	const String edited = editor_data.get_edited_scene() >= 0 ? editor_data.get_scene_path(editor_data.get_edited_scene()) : String();
 	if (!edited.is_empty()) {
 		// Display the edited scene name before the program name so that it can be seen in the OS task bar.
 		title = vformat("%s - %s", edited.get_file(), title);
@@ -1721,7 +1722,8 @@ Error EditorNode::load_resource(const String &p_resource, bool p_ignore_broken_d
 }
 
 Error EditorNode::load_scene_or_resource(const String &p_path, bool p_ignore_broken_deps, bool p_change_scene_tab_if_already_open) {
-	if (ClassDB::is_parent_class(ResourceLoader::get_resource_type(p_path), "PackedScene")) {
+	const String type = ResourceLoader::get_resource_type(p_path);
+	if (type == "EntityScene" || ClassDB::is_parent_class(type, "PackedScene")) {
 		if (!p_change_scene_tab_if_already_open && EditorNode::get_singleton()->is_scene_open(p_path)) {
 			return OK;
 		}
@@ -2123,7 +2125,7 @@ void EditorNode::_dialog_display_load_error(String p_file, Error p_error) {
 void EditorNode::_save_editor_states(const String &p_file, int p_idx) {
 	Node *scene = editor_data.get_edited_scene_root(p_idx);
 	bool saving_current_scene = p_idx < 0 || editor_data.get_edited_scene() == p_idx;
-	if (saving_current_scene && !scene) {
+	if (p_file.is_empty()) {
 		return;
 	}
 
@@ -2141,7 +2143,9 @@ void EditorNode::_save_editor_states(const String &p_file, int p_idx) {
 		List<Node *> selection = editor_selection->get_full_selected_node_list();
 		TypedArray<NodePath> selection_paths;
 		for (Node *selected_node : selection) {
-			selection_paths.push_back(scene->get_path_to(selected_node));
+			if (scene) {
+				selection_paths.push_back(scene->get_path_to(selected_node));
+			}
 		}
 		cf->set_value("editor_states", "$selected_nodes", selection_paths);
 	} else {
@@ -2615,6 +2619,10 @@ void EditorNode::restart_editor(bool p_goto_project_manager) {
 void EditorNode::_save_all_scenes() {
 	scenes_to_save_as.clear(); // In case saving was canceled before.
 	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+		if (editor_data.get_scene_document(i).is_valid()) {
+			_save_editor_states(editor_data.get_scene_path(i), i);
+			continue;
+		}
 		if (!is_scene_unsaved(i)) {
 			continue;
 		}
@@ -3464,6 +3472,17 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 			} else if (p_option == EditorSceneTabs::SCENE_SAVE_SCENE) {
 				scene_idx = scene_tabs->get_option_tab();
 			}
+			const int document_idx = scene_idx < 0 ? editor_data.get_edited_scene() : scene_idx;
+			if (editor_data.get_scene_document(document_idx).is_valid()) {
+				_save_editor_states(editor_data.get_scene_path(document_idx), document_idx);
+				ScriptEditor::get_singleton()->save_current_script();
+				_save_external_resources(true);
+				save_editor_layout_delayed();
+				if (p_option == SCENE_TAB_CLOSE) {
+					_discard_changes();
+				}
+				break;
+			}
 			Node *scene = editor_data.get_edited_scene_root(scene_idx);
 
 			if (scene && !scene->get_scene_file_path().is_empty()) {
@@ -4201,6 +4220,11 @@ int EditorNode::_next_unsaved_scene(bool p_valid_filename, int p_start) {
 }
 
 void EditorNode::_exit_editor(int p_exit_code) {
+	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+		if (editor_data.get_scene_document(i).is_valid()) {
+			_save_editor_states(editor_data.get_scene_path(i), i);
+		}
+	}
 	exiting = true;
 	waiting_for_first_scan = false;
 	resource_preview->stop(); // Stop early to avoid crashes.
@@ -4601,6 +4625,7 @@ void EditorNode::set_edited_scene(Node *p_scene) {
 }
 
 void EditorNode::set_edited_scene_root(Node *p_scene, bool p_auto_add) {
+	ERR_FAIL_COND_MSG(p_scene, "Node-based scene authoring is unavailable.");
 	Node *old_edited_scene_root = get_editor_data().get_edited_scene_root();
 	ERR_FAIL_COND_MSG(p_scene && p_scene != old_edited_scene_root && p_scene->get_parent(), "Non-null nodes that are set as edited scene should not have a parent node.");
 
@@ -4668,7 +4693,9 @@ Dictionary EditorNode::_get_main_scene_state() {
 }
 
 void EditorNode::_set_main_scene_state(const Dictionary &p_state) {
-	if (get_edited_scene()) {
+	if (editor_data.get_scene_document().is_valid()) {
+		editor_main_screen->select(EditorMainScreen::EDITOR_3D);
+	} else if (get_edited_scene()) {
 		if (editor_main_screen->can_auto_switch_screens()) {
 			// Switch between 2D and 3D if currently in 2D or 3D.
 			Node *selected_node = SceneTreeDock::get_singleton()->get_tree_editor()->get_selected();
@@ -4737,45 +4764,22 @@ void EditorNode::_set_current_scene_nocheck(int p_idx, bool p_ignore_state) {
 		editor_data.save_edited_scene_state(editor_selection, &editor_history, _get_main_scene_state());
 	}
 
-	Node *old_scene = get_editor_data().get_edited_scene_root();
-
 	resource_count.clear();
 	editor_selection->clear();
 	SceneTreeDock::get_singleton()->clear_previous_node_selection();
 	editor_data.set_edited_scene(p_idx);
 
-	Node *new_scene = editor_data.get_edited_scene_root();
-
-	// Remove the scene only if it's a new scene, preventing performance issues when adding and removing scenes.
-	if (old_scene && new_scene != old_scene && old_scene->get_parent() == scene_root) {
-		scene_root->remove_child(old_scene);
-	}
-
-	if (Popup *p = Object::cast_to<Popup>(new_scene)) {
-		p->show();
-	}
-
-	SceneTreeDock::get_singleton()->set_edited_scene(new_scene);
+	SceneTreeDock::get_singleton()->set_edited_scene(nullptr);
 	if (get_tree()) {
-		get_tree()->set_edited_scene_root(new_scene);
+		get_tree()->set_edited_scene_root(nullptr);
 	}
 
-	if (new_scene && new_scene->get_parent() != scene_root) {
-		scene_root->add_child(new_scene, true);
-	}
-
-	if (editor_data.check_and_update_scene(p_idx)) {
-		if (!editor_data.get_scene_path(p_idx).is_empty()) {
-			editor_folding.load_scene_folding(editor_data.get_edited_scene_root(p_idx), scene_path);
-		}
-
-		EditorUndoRedoManager::get_singleton()->clear_history(editor_data.get_scene_history_id(p_idx), false);
-	}
 	SceneTreeDock::get_singleton()->get_tree_editor()->update_tree();
 
 	_update_title();
 
 	const Dictionary state = editor_data.restore_edited_scene_state(editor_selection, &editor_history);
+	Node3DEditor::get_singleton()->set_scene_document(editor_data.get_scene_document(), !editor_data.get_scene_editor_states(p_idx).has("3D"));
 	_set_main_scene_state(state);
 	_update_undo_redo_allowed();
 	_update_unsaved_cache();
@@ -4868,109 +4872,32 @@ int EditorNode::new_scene() {
 }
 
 Error EditorNode::load_scene(const String &p_scene, bool p_ignore_broken_deps, bool p_set_inherited, bool p_force_open_imported, bool p_update_tabs) {
-	const String lpath = ProjectSettings::get_singleton()->localize_path(ResourceUID::ensure_path(p_scene));
-	_update_prev_closed_scenes(lpath, false);
-
-	if (!p_set_inherited) {
-		for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
-			if (editor_data.get_scene_path(i) == lpath) {
-				// Already loaded, do nothing.
-				return OK;
-			}
-		}
-
-		if (!p_force_open_imported && FileAccess::exists(lpath + ".import")) {
-			open_imported->set_text(vformat(TTR("Scene '%s' was automatically imported, so it can't be modified.\nTo make changes to it, a new inherited scene can be created."), lpath.get_file()));
-			open_imported->popup_centered();
-			new_inherited_button->grab_focus();
-			open_import_request = lpath;
-			return OK;
+	const String path = ProjectSettings::get_singleton()->localize_path(ResourceUID::ensure_path(p_scene));
+	ERR_FAIL_COND_V_MSG(path.get_extension().to_lower() != "escn", ERR_UNAVAILABLE, "Node-based scene authoring is unavailable. Open a native EntityScene .escn document: " + path);
+	ERR_FAIL_COND_V_MSG(p_set_inherited, ERR_UNAVAILABLE, "Native scene inheritance authoring is not available yet.");
+	Error error = OK;
+	Ref<EntityScene> document = ResourceLoader::load(path, "EntityScene", ResourceFormatLoader::CACHE_MODE_IGNORE, &error);
+	ERR_FAIL_COND_V_MSG(error != OK || document.is_null(), error == OK ? ERR_INVALID_DATA : error, "Cannot load native EntityScene: " + path);
+	Vector<EntityId> initial;
+	for (EntityId id : document->get_catalog().get_ids()) {
+		if (document->get_catalog().get_state(id) != EntityReferenceState::DELETED) {
+			initial.push_back(id);
 		}
 	}
-
-	if (!lpath.begins_with("res://")) {
-		show_accept(TTR("Error loading scene, it must be inside the project path. Use 'Import' to open the scene, then save it inside the project path."), TTR("OK"));
-		return ERR_FILE_NOT_FOUND;
+	error = document->load_subset(initial);
+	ERR_FAIL_COND_V_MSG(error != OK, error, document->get_last_error());
+	error = document->get_world()->initialize_services();
+	ERR_FAIL_COND_V(error != OK, error);
+	int index = editor_data.add_edited_scene(-1);
+	editor_data.set_scene_document(index, document);
+	const Ref<ConfigFile> editor_state_cf = _load_scene_config(path);
+	if (editor_state_cf->has_section("editor_states")) {
+		editor_data.load_editor_plugin_states_from_config(editor_state_cf, index);
 	}
-
-	dependency_errors.clear();
-
-	Error err;
-	Ref<PackedScene> sdata = ResourceLoader::load(lpath, "", ResourceFormatLoader::CACHE_MODE_REPLACE, &err);
-
-	if (!p_ignore_broken_deps && !dependency_errors.is_empty()) {
-		current_menu_option = -1;
-		dependency_error->show(lpath, dependency_errors);
-		dependency_errors.clear();
-		return ERR_FILE_MISSING_DEPENDENCIES;
-	}
-
-	if (sdata.is_null()) {
-		_dialog_display_load_error(lpath, err);
-		return ERR_FILE_NOT_FOUND;
-	}
-
-	dependency_errors.erase(lpath); // At least not self path.
-
-	for (KeyValue<String, HashSet<String>> &E : dependency_errors) {
-		String txt = vformat(TTR("Scene '%s' has broken dependencies:"), E.key) + "\n";
-		for (const String &F : E.value) {
-			txt += "\t" + F + "\n";
-		}
-		add_io_error(txt);
-	}
-
-	if (ResourceCache::has(lpath)) {
-		// Used from somewhere else? No problem! Update state and replace sdata.
-		Ref<PackedScene> ps = ResourceCache::get_ref(lpath);
-		if (ps.is_valid()) {
-			ps->replace_state(sdata->get_state());
-			ps->set_last_modified_time(sdata->get_last_modified_time());
-			sdata = ps;
-		}
-	} else {
-		sdata->set_path(lpath, true); // Take over path.
-	}
-
-	Node *new_scene = sdata->instantiate(p_set_inherited ? PackedScene::GEN_EDIT_STATE_MAIN_INHERITED : PackedScene::GEN_EDIT_STATE_MAIN);
-	if (!new_scene) {
-		sdata.unref();
-		_dialog_display_load_error(lpath, ERR_FILE_CORRUPT);
-		return ERR_FILE_CORRUPT;
-	}
-
-	if (p_set_inherited) {
-		Ref<SceneState> state = sdata->get_state();
-		state->set_path(lpath);
-		new_scene->set_scene_inherited_state(state);
-		new_scene->set_scene_file_path(String());
-	}
-
-	new_scene->set_scene_instance_state(Ref<SceneState>());
-
 	if (!restoring_scenes) {
 		save_editor_layout_delayed();
-		_add_to_recent_scenes(lpath);
+		_add_to_recent_scenes(path);
 	}
-
-	int idx = editor_data.get_edited_scene();
-	if (idx == -1 || editor_data.get_edited_scene_root() || !editor_data.get_scene_path(idx).is_empty()) {
-		idx = editor_data.add_edited_scene(-1);
-	}
-	editor_data.set_scene_root(idx, new_scene);
-
-	const Ref<ConfigFile> editor_state_cf = _load_scene_config(lpath);
-	if (editor_state_cf->has_section("editor_states")) {
-		editor_data.load_editor_plugin_states_from_config(editor_state_cf, idx);
-	}
-
-	if (editor_folding.has_folding_data(lpath)) {
-		editor_folding.load_scene_folding(new_scene, lpath);
-	} else if (EDITOR_GET("interface/inspector/auto_unfold_foreign_scenes")) {
-		editor_folding.unfold_scene(new_scene);
-		editor_folding.save_scene_folding(new_scene, lpath);
-	}
-
 	if (p_update_tabs) {
 		scene_tabs->update_scene_tabs();
 	}
@@ -5000,27 +4927,8 @@ Error EditorNode::open_scene(const String &p_scene, bool p_ignore_broken_deps, b
 	}
 
 	int current_scene_idx = editor_data.get_edited_scene_count() - 1;
-	Node *new_scene = editor_data.get_edited_scene_root(current_scene_idx);
-	ERR_FAIL_NULL_V(new_scene, ERR_BUG);
-
 	_set_current_scene_nocheck(current_scene_idx);
-
-	// When editor plugins load in, they might use node transforms during their own setup, so make sure they're up to date.
-	get_tree()->flush_transform_notifications();
-
-	EditorDebuggerNode::get_singleton()->update_live_edit_root();
-
-	if (restoring_scenes) {
-		// Initialize history for restored scenes.
-		ObjectID id = new_scene->get_instance_id();
-		if (id != editor_history.get_current()) {
-			editor_history.add_object(id);
-		}
-	}
-
-	if (p_set_inherited) {
-		EditorUndoRedoManager::get_singleton()->set_history_as_unsaved(editor_data.get_current_edited_scene_history_id());
-	}
+	scene_tabs->update_scene_tabs();
 
 	_update_title();
 	return OK;
@@ -9432,6 +9340,9 @@ EditorNode::EditorNode() {
 
 	gui_base->add_child(project_data_missing);
 
+	editor_data.add_edited_scene(-1);
+	editor_data.set_edited_scene(0);
+
 	add_editor_plugin(memnew(CanvasItemEditorPlugin));
 	add_editor_plugin(memnew(Node3DEditorPlugin));
 	add_editor_plugin(memnew(ScriptEditorPlugin));
@@ -9630,8 +9541,6 @@ EditorNode::EditorNode() {
 		_init_callbacks[i]();
 	}
 
-	editor_data.add_edited_scene(-1);
-	editor_data.set_edited_scene(0);
 	scene_tabs->update_scene_tabs();
 
 	ImportDock::get_singleton()->initialize_import_options();

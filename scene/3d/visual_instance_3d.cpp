@@ -45,91 +45,12 @@ AABB VisualInstance3D::get_aabb() const {
 	return ret;
 }
 
-void VisualInstance3D::_update_visibility() {
-	if (!is_inside_tree()) {
-		return;
-	}
-
-	bool already_visible = _is_vi_visible();
-	bool visible = is_visible_in_tree();
-	_set_vi_visible(visible);
-
-	// If making visible, make sure the rendering server is up to date with the transform.
-	if (visible && !already_visible) {
-		if (!_is_using_identity_transform()) {
-			Transform3D gt = get_global_transform();
-			RS::get_singleton()->instance_set_transform(instance, gt);
-		}
-	}
-
-	RS::get_singleton()->instance_set_visible(instance, visible);
-}
-
 void VisualInstance3D::set_instance_use_identity_transform(bool p_enable) {
-	// Prevent sending instance transforms when using global coordinates.
 	_set_use_identity_transform(p_enable);
-
-	if (is_inside_tree()) {
-		if (p_enable) {
-			// Want to make sure instance is using identity transform.
-			RS::get_singleton()->instance_set_transform(instance, Transform3D());
-		} else {
-			// Want to make sure instance is up to date.
-			RS::get_singleton()->instance_set_transform(instance, get_global_transform());
-		}
-	}
-}
-
-void VisualInstance3D::fti_update_servers_xform() {
-	if (!_is_using_identity_transform()) {
-		RS::get_singleton()->instance_set_transform(get_instance(), _get_cached_global_transform_interpolated());
-	}
-}
-
-void VisualInstance3D::_notification(int p_what) {
-	switch (p_what) {
-		case NOTIFICATION_ENTER_WORLD: {
-			ERR_FAIL_COND(get_world_3d().is_null());
-			RenderingServer::get_singleton()->instance_set_scenario(instance, get_world_3d()->get_scenario());
-			_update_visibility();
-		} break;
-
-		case NOTIFICATION_TRANSFORM_CHANGED: {
-			// ToDo : Can we turn off notify transform for physics interpolated cases?
-			if (_is_vi_visible() && !(is_inside_tree() && get_tree()->is_physics_interpolation_enabled()) && !_is_using_identity_transform()) {
-				// Physics interpolation global off, always send.
-				RenderingServer::get_singleton()->instance_set_transform(instance, get_global_transform());
-			}
-		} break;
-
-		case NOTIFICATION_RESET_PHYSICS_INTERPOLATION: {
-			if (_is_vi_visible() && is_inside_tree()) {
-				// Allow resetting motion vectors etc
-				// at the same time as resetting physics interpolation,
-				// giving users one common interface.
-				RenderingServer::get_singleton()->instance_teleport(instance);
-			}
-		} break;
-
-		case NOTIFICATION_EXIT_WORLD: {
-			RenderingServer::get_singleton()->instance_set_scenario(instance, RID());
-			RenderingServer::get_singleton()->instance_attach_skeleton(instance, RID());
-			_set_vi_visible(false);
-		} break;
-
-		case NOTIFICATION_VISIBILITY_CHANGED: {
-			_update_visibility();
-		} break;
-	}
-}
-
-RID VisualInstance3D::get_instance() const {
-	return instance;
 }
 
 void VisualInstance3D::set_layer_mask(uint32_t p_mask) {
 	layers = p_mask;
-	RenderingServer::get_singleton()->instance_set_layer_mask(instance, p_mask);
 }
 
 uint32_t VisualInstance3D::get_layer_mask() const {
@@ -156,7 +77,6 @@ bool VisualInstance3D::get_layer_mask_value(int p_layer_number) const {
 
 void VisualInstance3D::set_sorting_offset(float p_offset) {
 	sorting_offset = p_offset;
-	RenderingServer::get_singleton()->instance_set_pivot_data(instance, sorting_offset, sorting_use_aabb_center);
 }
 
 float VisualInstance3D::get_sorting_offset() const {
@@ -165,7 +85,6 @@ float VisualInstance3D::get_sorting_offset() const {
 
 void VisualInstance3D::set_sorting_use_aabb_center(bool p_enabled) {
 	sorting_use_aabb_center = p_enabled;
-	RenderingServer::get_singleton()->instance_set_pivot_data(instance, sorting_offset, sorting_use_aabb_center);
 }
 
 bool VisualInstance3D::is_sorting_use_aabb_center() const {
@@ -175,7 +94,6 @@ bool VisualInstance3D::is_sorting_use_aabb_center() const {
 void VisualInstance3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_base", "base"), &VisualInstance3D::set_base);
 	ClassDB::bind_method(D_METHOD("get_base"), &VisualInstance3D::get_base);
-	ClassDB::bind_method(D_METHOD("get_instance"), &VisualInstance3D::get_instance);
 	ClassDB::bind_method(D_METHOD("set_layer_mask", "mask"), &VisualInstance3D::set_layer_mask);
 	ClassDB::bind_method(D_METHOD("get_layer_mask"), &VisualInstance3D::get_layer_mask);
 	ClassDB::bind_method(D_METHOD("set_layer_mask_value", "layer_number", "value"), &VisualInstance3D::set_layer_mask_value);
@@ -194,7 +112,6 @@ void VisualInstance3D::_bind_methods() {
 }
 
 void VisualInstance3D::set_base(const RID &p_base) {
-	RenderingServer::get_singleton()->instance_set_base(instance, p_base);
 	base = p_base;
 }
 
@@ -204,15 +121,6 @@ RID VisualInstance3D::get_base() const {
 
 VisualInstance3D::VisualInstance3D() {
 	_define_ancestry(AncestralClass::VISUAL_INSTANCE_3D);
-
-	instance = RenderingServer::get_singleton()->instance_create();
-	RenderingServer::get_singleton()->instance_attach_object_instance_id(instance, get_instance_id());
-	set_notify_transform(true);
-}
-
-VisualInstance3D::~VisualInstance3D() {
-	ERR_FAIL_NULL(RenderingServer::get_singleton());
-	RenderingServer::get_singleton()->free_rid(instance);
 }
 
 void GeometryInstance3D::set_material_override(const Ref<Material> &p_material) {
@@ -223,7 +131,6 @@ void GeometryInstance3D::set_material_override(const Ref<Material> &p_material) 
 	if (material_override.is_valid()) {
 		material_override->connect(CoreStringName(property_list_changed), callable_mp((Object *)this, &Object::notify_property_list_changed));
 	}
-	RS::get_singleton()->instance_geometry_set_material_override(get_instance(), p_material.is_valid() ? p_material->get_rid() : RID());
 }
 
 Ref<Material> GeometryInstance3D::get_material_override() const {
@@ -232,7 +139,6 @@ Ref<Material> GeometryInstance3D::get_material_override() const {
 
 void GeometryInstance3D::set_material_overlay(const Ref<Material> &p_material) {
 	material_overlay = p_material;
-	RS::get_singleton()->instance_geometry_set_material_overlay(get_instance(), p_material.is_valid() ? p_material->get_rid() : RID());
 }
 
 Ref<Material> GeometryInstance3D::get_material_overlay() const {
@@ -241,7 +147,6 @@ Ref<Material> GeometryInstance3D::get_material_overlay() const {
 
 void GeometryInstance3D::set_transparency(float p_transparency) {
 	transparency = CLAMP(p_transparency, 0.0f, 1.0f);
-	RS::get_singleton()->instance_geometry_set_transparency(get_instance(), transparency);
 	update_configuration_warnings();
 }
 
@@ -251,7 +156,6 @@ float GeometryInstance3D::get_transparency() const {
 
 void GeometryInstance3D::set_visibility_range_begin(float p_dist) {
 	visibility_range_begin = p_dist;
-	RS::get_singleton()->instance_geometry_set_visibility_range(get_instance(), visibility_range_begin, visibility_range_end, visibility_range_begin_margin, visibility_range_end_margin, (RSE::VisibilityRangeFadeMode)visibility_range_fade_mode);
 	update_configuration_warnings();
 }
 
@@ -261,7 +165,6 @@ float GeometryInstance3D::get_visibility_range_begin() const {
 
 void GeometryInstance3D::set_visibility_range_end(float p_dist) {
 	visibility_range_end = p_dist;
-	RS::get_singleton()->instance_geometry_set_visibility_range(get_instance(), visibility_range_begin, visibility_range_end, visibility_range_begin_margin, visibility_range_end_margin, (RSE::VisibilityRangeFadeMode)visibility_range_fade_mode);
 	update_configuration_warnings();
 }
 
@@ -271,7 +174,6 @@ float GeometryInstance3D::get_visibility_range_end() const {
 
 void GeometryInstance3D::set_visibility_range_begin_margin(float p_dist) {
 	visibility_range_begin_margin = p_dist;
-	RS::get_singleton()->instance_geometry_set_visibility_range(get_instance(), visibility_range_begin, visibility_range_end, visibility_range_begin_margin, visibility_range_end_margin, (RSE::VisibilityRangeFadeMode)visibility_range_fade_mode);
 	update_configuration_warnings();
 }
 
@@ -281,7 +183,6 @@ float GeometryInstance3D::get_visibility_range_begin_margin() const {
 
 void GeometryInstance3D::set_visibility_range_end_margin(float p_dist) {
 	visibility_range_end_margin = p_dist;
-	RS::get_singleton()->instance_geometry_set_visibility_range(get_instance(), visibility_range_begin, visibility_range_end, visibility_range_begin_margin, visibility_range_end_margin, (RSE::VisibilityRangeFadeMode)visibility_range_fade_mode);
 	update_configuration_warnings();
 }
 
@@ -291,7 +192,6 @@ float GeometryInstance3D::get_visibility_range_end_margin() const {
 
 void GeometryInstance3D::set_visibility_range_fade_mode(VisibilityRangeFadeMode p_mode) {
 	visibility_range_fade_mode = p_mode;
-	RS::get_singleton()->instance_geometry_set_visibility_range(get_instance(), visibility_range_begin, visibility_range_end, visibility_range_begin_margin, visibility_range_end_margin, (RSE::VisibilityRangeFadeMode)visibility_range_fade_mode);
 	update_configuration_warnings();
 }
 
@@ -351,29 +251,14 @@ bool GeometryInstance3D::_get(const StringName &p_name, Variant &r_ret) const {
 }
 
 void GeometryInstance3D::_get_property_list(List<PropertyInfo> *p_list) const {
-	List<PropertyInfo> pinfo;
-	RS::get_singleton()->instance_geometry_get_shader_parameter_list(get_instance(), &pinfo);
-	for (PropertyInfo &pi : pinfo) {
-		bool has_def_value = false;
-		Variant def_value = RS::get_singleton()->instance_geometry_get_shader_parameter_default_value(get_instance(), pi.name);
-		if (def_value.get_type() != Variant::NIL) {
-			has_def_value = true;
-		}
-		if (instance_shader_parameters.has(pi.name)) {
-			pi.usage = PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_STORAGE | (has_def_value ? (PROPERTY_USAGE_CHECKABLE | PROPERTY_USAGE_CHECKED) : PROPERTY_USAGE_NONE);
-		} else {
-			pi.usage = PROPERTY_USAGE_EDITOR | (has_def_value ? PROPERTY_USAGE_CHECKABLE : PROPERTY_USAGE_NONE); //do not save if not changed
-		}
-
-		pi.name = "instance_shader_parameters/" + pi.name;
-		p_list->push_back(pi);
+	for (const KeyValue<StringName, Variant> &entry : instance_shader_parameters) {
+		p_list->push_back(PropertyInfo(entry.value.get_type(), "instance_shader_parameters/" + String(entry.key), PROPERTY_HINT_NONE, String(), PROPERTY_USAGE_STORAGE));
 	}
 }
 
 void GeometryInstance3D::set_cast_shadows_setting(ShadowCastingSetting p_shadow_casting_setting) {
 	shadow_casting_setting = p_shadow_casting_setting;
 
-	RS::get_singleton()->instance_geometry_set_cast_shadows_setting(get_instance(), (RSE::ShadowCastingSetting)p_shadow_casting_setting);
 }
 
 GeometryInstance3D::ShadowCastingSetting GeometryInstance3D::get_cast_shadows_setting() const {
@@ -383,7 +268,6 @@ GeometryInstance3D::ShadowCastingSetting GeometryInstance3D::get_cast_shadows_se
 void GeometryInstance3D::set_extra_cull_margin(float p_margin) {
 	ERR_FAIL_COND(p_margin < 0);
 	extra_cull_margin = p_margin;
-	RS::get_singleton()->instance_set_extra_visibility_margin(get_instance(), extra_cull_margin);
 }
 
 float GeometryInstance3D::get_extra_cull_margin() const {
@@ -393,7 +277,6 @@ float GeometryInstance3D::get_extra_cull_margin() const {
 void GeometryInstance3D::set_lod_bias(float p_bias) {
 	ERR_FAIL_COND(p_bias < 0.0);
 	lod_bias = p_bias;
-	RS::get_singleton()->instance_geometry_set_lod_bias(get_instance(), lod_bias);
 }
 
 float GeometryInstance3D::get_lod_bias() const {
@@ -402,22 +285,15 @@ float GeometryInstance3D::get_lod_bias() const {
 
 void GeometryInstance3D::set_instance_shader_parameter(const StringName &p_name, const Variant &p_value) {
 	if (p_value.get_type() == Variant::NIL) {
-		Variant def_value = RS::get_singleton()->instance_geometry_get_shader_parameter_default_value(get_instance(), p_name);
-		RS::get_singleton()->instance_geometry_set_shader_parameter(get_instance(), p_name, def_value);
-		instance_shader_parameters.erase(p_value);
+		instance_shader_parameters.erase(p_name);
 	} else {
 		instance_shader_parameters[p_name] = p_value;
-		if (p_value.get_type() == Variant::OBJECT) {
-			RID tex_id = p_value;
-			RS::get_singleton()->instance_geometry_set_shader_parameter(get_instance(), p_name, tex_id);
-		} else {
-			RS::get_singleton()->instance_geometry_set_shader_parameter(get_instance(), p_name, p_value);
-		}
 	}
 }
 
 Variant GeometryInstance3D::get_instance_shader_parameter(const StringName &p_name) const {
-	return RS::get_singleton()->instance_geometry_get_shader_parameter(get_instance(), p_name);
+	const Variant *value = instance_shader_parameters.getptr(p_name);
+	return value ? *value : Variant();
 }
 
 void GeometryInstance3D::set_custom_aabb(AABB p_aabb) {
@@ -425,7 +301,6 @@ void GeometryInstance3D::set_custom_aabb(AABB p_aabb) {
 		return;
 	}
 	custom_aabb = p_aabb;
-	RS::get_singleton()->instance_set_custom_aabb(get_instance(), custom_aabb);
 	update_gizmos();
 }
 
@@ -477,22 +352,6 @@ GeometryInstance3D::LightmapScale GeometryInstance3D::get_lightmap_scale() const
 #endif // DISABLE_DEPRECATED
 
 void GeometryInstance3D::set_gi_mode(GIMode p_mode) {
-	switch (p_mode) {
-		case GI_MODE_DISABLED: {
-			RS::get_singleton()->instance_geometry_set_flag(get_instance(), RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
-			RS::get_singleton()->instance_geometry_set_flag(get_instance(), RSE::INSTANCE_FLAG_USE_DYNAMIC_GI, false);
-		} break;
-		case GI_MODE_STATIC: {
-			RS::get_singleton()->instance_geometry_set_flag(get_instance(), RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, true);
-			RS::get_singleton()->instance_geometry_set_flag(get_instance(), RSE::INSTANCE_FLAG_USE_DYNAMIC_GI, false);
-
-		} break;
-		case GI_MODE_DYNAMIC: {
-			RS::get_singleton()->instance_geometry_set_flag(get_instance(), RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
-			RS::get_singleton()->instance_geometry_set_flag(get_instance(), RSE::INSTANCE_FLAG_USE_DYNAMIC_GI, true);
-		} break;
-	}
-
 	gi_mode = p_mode;
 }
 
@@ -502,7 +361,6 @@ GeometryInstance3D::GIMode GeometryInstance3D::get_gi_mode() const {
 
 void GeometryInstance3D::set_ignore_occlusion_culling(bool p_enabled) {
 	ignore_occlusion_culling = p_enabled;
-	RS::get_singleton()->instance_geometry_set_flag(get_instance(), RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, ignore_occlusion_culling);
 }
 
 bool GeometryInstance3D::is_ignoring_occlusion_culling() {

@@ -8,7 +8,7 @@ import re
 import subprocess
 
 
-SCALARS = {"bool", "uint32_t", "double", "String", "Basis", "EntityId", "EntityRef"}
+SCALARS = {"bool", "uint32_t", "double", "String", "Basis", "Vector2", "Vector3", "Color", "Rect2", "AABB", "Variant", "EntityId", "EntityRef"}
 ANNOTATION = re.compile(r'ENTITY_(COMPONENT|VALUE|FIELD)\(\s*"([^"\n]+)"\s*\)')
 DECLARATION = re.compile(r'\b(?:struct|class)\s+ENTITY_(?:COMPONENT|VALUE)\(\s*"[^"\n]+"\s*\)\s+(\w+)')
 
@@ -98,7 +98,7 @@ def parse_records(ast_text, source_text):
         match = re.fullmatch(r"Vector<(.+)>", native_type)
         if match:
             return supported(match[1].strip())
-        return native_type in ("Ref<Mesh>", "Ref<Material>")
+        return native_type in ("Ref<Mesh>", "Ref<Material>", "Ref<MultiMesh>", "Ref<Texture2D>", "Ref<Texture3D>", "Ref<Environment>", "Ref<CameraAttributes>", "Ref<Compositor>", "Ref<Skin>", "Ref<VoxelGIData>", "Ref<LightmapGIData>")
 
     for record in records:
         for field in record["fields"]:

@@ -35,6 +35,7 @@
 #include "core/object/class_db.h"
 #include "core/os/os.h"
 #include "scene/main/scene_tree.h"
+#include "servers/rendering/renderer_scene_data.h"
 #include "servers/rendering/rendering_server.h"
 
 void Light3D::set_param(Param p_param, real_t p_value) {
@@ -234,45 +235,12 @@ Ref<Texture2D> Light3D::get_projector() const {
 	return projector;
 }
 
-void Light3D::owner_changed_notify() {
-	// For cases where owner changes _after_ entering tree (as example, editor editing).
-	_update_visibility();
-}
-
-// Temperature expressed in Kelvins. Valid range 1000 - 15000
-// First converts to CIE 1960 then to sRGB
-// As explained in the Filament documentation: https://google.github.io/filament/Filament.md.html#lighting/directlighting/lightsparameterization
-Color _color_from_temperature(float p_temperature) {
-	float T2 = p_temperature * p_temperature;
-	float u = (0.860117757f + 1.54118254e-4f * p_temperature + 1.28641212e-7f * T2) /
-			(1.0f + 8.42420235e-4f * p_temperature + 7.08145163e-7f * T2);
-	float v = (0.317398726f + 4.22806245e-5f * p_temperature + 4.20481691e-8f * T2) /
-			(1.0f - 2.89741816e-5f * p_temperature + 1.61456053e-7f * T2);
-
-	// Convert to xyY space.
-	float d = 1.0f / (2.0f * u - 8.0f * v + 4.0f);
-	float x = 3.0f * u * d;
-	float y = 2.0f * v * d;
-
-	// Convert to XYZ space
-	const float a = 1.0 / MAX(y, 1e-5f);
-	Vector3 xyz = Vector3(x * a, 1.0, (1.0f - x - y) * a);
-
-	// Convert from XYZ to sRGB(linear)
-	Vector3 linear = Vector3(3.2404542f * xyz.x - 1.5371385f * xyz.y - 0.4985314f * xyz.z,
-			-0.9692660f * xyz.x + 1.8760108f * xyz.y + 0.0415560f * xyz.z,
-			0.0556434f * xyz.x - 0.2040259f * xyz.y + 1.0572252f * xyz.z);
-	linear /= MAX(1e-5f, linear[linear.max_axis_index()]);
-	// Normalize, clamp, and convert to sRGB.
-	return Color(linear.x, linear.y, linear.z).clamp().linear_to_srgb();
-}
-
 void Light3D::set_temperature(const float p_temperature) {
 	temperature = p_temperature;
 	if (!GLOBAL_GET_CACHED(bool, "rendering/lights_and_shadows/use_physical_light_units")) {
 		return;
 	}
-	correlated_color = _color_from_temperature(temperature);
+	correlated_color = render_light_color_from_temperature(temperature);
 
 	Color combined = color.srgb_to_linear() * correlated_color.srgb_to_linear();
 
@@ -289,45 +257,16 @@ float Light3D::get_temperature() const {
 	return temperature;
 }
 
-void Light3D::_update_visibility() {
-	if (!is_inside_tree()) {
-		return;
-	}
-
-	bool editor_ok = true;
-
-#ifdef TOOLS_ENABLED
-	if (editor_only) {
-		if (!Engine::get_singleton()->is_editor_hint()) {
-			editor_ok = false;
-		} else {
-			editor_ok = (get_tree()->get_edited_scene_root() && (this == get_tree()->get_edited_scene_root() || get_owner() == get_tree()->get_edited_scene_root()));
-		}
-	}
-#else
-	if (editor_only) {
-		editor_ok = false;
-	}
-#endif
-
-	RS::get_singleton()->instance_set_visible(get_instance(), is_visible_in_tree() && editor_ok);
-}
-
 void Light3D::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_TRANSFORM_CHANGED: {
 			update_configuration_warnings();
-		} break;
-		case NOTIFICATION_VISIBILITY_CHANGED:
-		case NOTIFICATION_ENTER_TREE: {
-			_update_visibility();
 		} break;
 	}
 }
 
 void Light3D::set_editor_only(bool p_editor_only) {
 	editor_only = p_editor_only;
-	_update_visibility();
 }
 
 bool Light3D::is_editor_only() const {
@@ -479,7 +418,7 @@ Light3D::Light3D(RSE::LightType p_type) {
 		};
 	}
 
-	RS::get_singleton()->instance_set_base(get_instance(), light);
+	set_base(light);
 
 	set_color(Color(1, 1, 1, 1));
 	set_shadow(false);
@@ -519,7 +458,7 @@ Light3D::Light3D() {
 
 Light3D::~Light3D() {
 	ERR_FAIL_NULL(RenderingServer::get_singleton());
-	RS::get_singleton()->instance_set_base(get_instance(), RID());
+	set_base(RID());
 
 	if (light.is_valid()) {
 		RenderingServer::get_singleton()->free_rid(light);

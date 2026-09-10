@@ -35,6 +35,7 @@
 #include "editor/plugins/editor_resource_conversion_plugin.h"
 #include "scene/resources/3d/primitive_meshes.h"
 #include "scene/resources/environment.h"
+#include "servers/rendering/renderer_scene_data.h"
 #include "scene/resources/material.h"
 
 class Camera3D;
@@ -76,13 +77,14 @@ class MaterialEditor : public Control {
 
 	// 3D spatial materials.
 	Vector2 rot;
-	Node3D *rotation = nullptr;
-	MeshInstance3D *sphere_instance = nullptr;
-	MeshInstance3D *box_instance = nullptr;
-	MeshInstance3D *quad_instance = nullptr;
-	DirectionalLight3D *light1 = nullptr;
-	DirectionalLight3D *light2 = nullptr;
-	Camera3D *camera = nullptr;
+	ToolRenderData sphere_instance;
+	ToolRenderData box_instance;
+	ToolRenderData quad_instance;
+	ToolRenderData light1;
+	ToolRenderData light2;
+	RID scenario;
+	RID camera;
+	Ref<Environment> environment;
 	Ref<CameraAttributesPractical> camera_attributes;
 	Ref<SphereMesh> sphere_mesh;
 	Ref<BoxMesh> box_mesh;
@@ -116,6 +118,7 @@ public:
 	static Ref<ShaderMaterial> make_shader_material(const Ref<Material> &p_from, bool p_copy_params = true);
 	void edit(Ref<Material> p_material, const Ref<Environment> &p_env);
 	MaterialEditor();
+	~MaterialEditor();
 };
 
 class EditorInspectorPluginMaterial : public EditorInspectorPlugin {

@@ -197,6 +197,7 @@ void ParticleProcessMaterial::_update_shader() {
 	String code = "// NOTE: Shader automatically converted from " GODOT_VERSION_NAME " " GODOT_VERSION_FULL_CONFIG "'s ParticleProcessMaterial.\n\n";
 
 	code += "shader_type particles;\n";
+	code += "vec3 particle_world_position(vec3 position) { return position; }\n";
 	code += "render_mode disable_velocity;\n";
 	if (collision_scale) {
 		code += "render_mode collision_use_scale;\n";
@@ -972,7 +973,7 @@ void ParticleProcessMaterial::_update_shader() {
 	code += "		TRANSFORM[3].xyz = calculate_initial_position(params, alt_seed);\n";
 	if (turbulence_enabled) {
 		code += "		float initial_turbulence_displacement = mix(turbulence_initial_displacement_min, turbulence_initial_displacement_max, rand_from_seed(alt_seed));\n";
-		code += "		vec3 noise_direction = get_noise_direction(TRANSFORM[3].xyz);\n";
+		code += "		vec3 noise_direction = get_noise_direction(particle_world_position(TRANSFORM[3].xyz));\n";
 		code += "		TRANSFORM[3].xyz += noise_direction * initial_turbulence_displacement;\n";
 	}
 	code += "		TRANSFORM = EMISSION_TRANSFORM * TRANSFORM;\n";
@@ -1128,7 +1129,7 @@ void ParticleProcessMaterial::_update_shader() {
 			code += "	float turbulence_influence = 1.0;\n";
 		}
 		code += "\n";
-		code += "	vec3 noise_direction = get_noise_direction(TRANSFORM[3].xyz);\n";
+		code += "	vec3 noise_direction = get_noise_direction(particle_world_position(TRANSFORM[3].xyz));\n";
 
 		// Godot detects when the COLLIDED keyword is used. If it's used anywhere in the shader then Godot will generate the screen space SDF for collisions.
 		// We don't need it as long as collision is disabled. Refer to GH-83744 for more info.
@@ -1352,7 +1353,9 @@ void ParticleProcessMaterial::_update_shader() {
 	// We must create the shader outside the shader_map_mutex to avoid potential deadlocks with
 	// other tasks in the WorkerThreadPool simultaneously creating materials, which
 	// may also hold the shared shader_map_mutex lock.
-	RID new_shader = RS::get_singleton()->shader_create_from_code(code);
+	RID new_shader = RS::get_singleton()->shader_create();
+	RS::get_singleton()->shader_set_generated_particle_material(new_shader, true);
+	RS::get_singleton()->shader_set_code(new_shader, code);
 
 	MutexLock lock(shader_map_mutex);
 

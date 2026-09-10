@@ -285,6 +285,9 @@ void vertex_shader(in vec3 vertex,
 			in_inv_view_matrix[1],
 			in_inv_view_matrix[2],
 			vec4(0.0, 0.0, 0.0, 1.0)));
+#ifdef USE_DOUBLE_PRECISION
+	inv_view_matrix[3].xyz = -(inv_view_matrix[3].xyz + view_precision);
+#endif
 
 	mat4 model_matrix = transpose(mat4(in_model_matrix[0],
 			in_model_matrix[1],
@@ -459,7 +462,7 @@ void vertex_shader(in vec3 vertex,
 
 	// Overwrite the translation part of modelview with improved precision.
 	vec3 temp_precision; // Will be ignored.
-	modelview[3].xyz = double_add_vec3(model_origin, model_precision, inv_view_matrix[3].xyz, view_precision, temp_precision);
+	modelview[3].xyz = double_add_vec3(model_origin, model_precision, vec3(in_inv_view_matrix[0].w, in_inv_view_matrix[1].w, in_inv_view_matrix[2].w), view_precision, temp_precision);
 	modelview[3].xyz = mat3(read_view_matrix) * modelview[3].xyz;
 #else
 	mat4 modelview = read_view_matrix * model_matrix;
@@ -1097,6 +1100,9 @@ hvec4 fog_process(vec3 vertex) {
 				scene_data_block.data.inv_view_matrix[1],
 				scene_data_block.data.inv_view_matrix[2],
 				vec4(0.0, 0.0, 0.0, 1.0)));
+#ifdef USE_DOUBLE_PRECISION
+		inv_view_matrix[3].xyz = -(inv_view_matrix[3].xyz + scene_data_block.data.inv_view_precision.xyz);
+#endif
 
 		float y = (inv_view_matrix * vec4(vertex, 1.0)).y;
 
@@ -1230,6 +1236,9 @@ void main() {
 			scene_data.inv_view_matrix[1],
 			scene_data.inv_view_matrix[2],
 			vec4(0.0, 0.0, 0.0, 1.0)));
+#ifdef USE_DOUBLE_PRECISION
+	inv_view_matrix[3].xyz = -(inv_view_matrix[3].xyz + scene_data.inv_view_precision.xyz);
+#endif
 	mat4 read_model_matrix = transpose(mat4(instances.data[draw_call.instance_index].transform[0],
 			instances.data[draw_call.instance_index].transform[1],
 			instances.data[draw_call.instance_index].transform[2],
