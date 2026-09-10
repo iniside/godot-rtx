@@ -1,6 +1,7 @@
 #include "entity_world.h"
 
 #include "core/config/project_settings.h"
+#include "core/io/resource_loader.h"
 #include "servers/rendering/rendering_server.h"
 
 #ifndef NAVIGATION_3D_DISABLED
@@ -79,6 +80,21 @@ void EntityWorld::finalize_services() {
 		server->free_rid(scenario);
 		scenario = RID();
 	}
+	fallback_environment.unref();
+}
+
+Error EntityWorld::load_default_environment() {
+	ERR_FAIL_COND_V(!_is_owner(), ERR_UNAUTHORIZED);
+	ERR_FAIL_COND_V(scenario.is_null(), ERR_UNCONFIGURED);
+	String path = String(GLOBAL_GET("rendering/environment/defaults/default_environment")).strip_edges();
+	Ref<Environment> environment;
+	if (!path.is_empty()) {
+		environment = ResourceLoader::load(path);
+		ERR_FAIL_COND_V(environment.is_null(), ERR_CANT_OPEN);
+	}
+	RenderingServer::get_singleton()->scenario_set_fallback_environment(scenario, environment.is_valid() ? environment->get_rid() : RID());
+	fallback_environment = environment;
+	return OK;
 }
 
 void EntityWorld::_component_changed(EntityHandle p_handle) {
@@ -227,18 +243,40 @@ Error EntityWorld::reparent(EntityHandle p_handle, EntityRef p_parent, ReparentM
 		ERR_FAIL_COND_V(ancestor.id == id, ERR_CYCLIC_LINK);
 	}
 	transforms.update();
-	const EntityTransform *transform = get<EntityTransform>(p_handle);
-	EntityPose local;
-	if (transform && p_mode == KEEP_WORLD) {
-		local = transform->current;
+	struct LocalChange {
+		EntityHandle handle;
+		EntityPose local;
+	};
+	Vector<LocalChange> local_changes;
+	if (p_mode == KEEP_WORLD) {
+		EntityPose parent_pose;
 		for (EntityRef ancestor = p_parent; ancestor.id.is_valid(); ancestor = catalog.get_parent(ancestor.id)) {
 			const EntityTransform *parent_transform = get<EntityTransform>(resolve(ancestor).handle);
 			if (parent_transform) {
-				Error error = EntityTransformSystem::relative_to(transform->current, parent_transform->current, local);
+				parent_pose = parent_transform->current;
+				break;
+			}
+		}
+		Vector<EntityId> pending;
+		pending.push_back(id);
+		for (int i = 0; i < pending.size(); i++) {
+			EntityResolution descendant = resolve({ pending[i] });
+			ERR_FAIL_COND_V(descendant.state != EntityReferenceState::RESIDENT, ERR_UNAVAILABLE);
+			const EntityTransform *transform = get<EntityTransform>(descendant.handle);
+			if (transform) {
+				EntityPose local;
+				Error error = EntityTransformSystem::relative_to(transform->current, parent_pose, local);
 				if (error != OK) {
 					return error;
 				}
-				break;
+				local_changes.push_back({ descendant.handle, local });
+			} else {
+				const HashSet<EntityId, EntityIdHasher> *children = catalog.children.getptr(pending[i]);
+				if (children) {
+					for (EntityId child : *children) {
+						pending.push_back(child);
+					}
+				}
 			}
 		}
 	}
@@ -249,8 +287,11 @@ Error EntityWorld::reparent(EntityHandle p_handle, EntityRef p_parent, ReparentM
 		entity.remove<flecs::Parent>();
 	}
 	catalog._set_parent(id, p_parent);
-	if (transform && p_mode == KEEP_WORLD) {
-		entity.get_mut<EntityTransform>().local = local;
+	for (const LocalChange &change : local_changes) {
+		ecs.entity(change.handle.entity).get_mut<EntityTransform>().local = change.local;
+		if (!(change.handle == p_handle)) {
+			_component_changed(change.handle);
+		}
 	}
 	_component_changed(p_handle);
 	return OK;

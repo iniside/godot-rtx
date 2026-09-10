@@ -129,18 +129,7 @@ void Path3DGizmo::set_handle(int p_id, bool p_secondary, Camera3D *p_camera, con
 			// Only continue if inside physics frame and waiting for physics.
 		}
 		if (Path3DEditorPlugin::singleton->snap_to_collider) {
-			PhysicsDirectSpaceState3D *ss = p_camera->get_world_3d()->get_direct_space_state();
-
-			PhysicsDirectSpaceState3D::RayParameters ray_params;
-			ray_params.from = ray_from;
-			ray_params.to = ray_from + ray_dir * p_camera->get_far();
-			PhysicsDirectSpaceState3D::RayResult result;
-			if (ss->intersect_ray(ray_params, result)) {
-				Vector3 local = gi.xform(result.position);
-				c->set_point_position(idx, local);
-				return;
-			}
-			// Will continue and do the plane intersect_ray if doesn't hit anything.
+			ERR_FAIL_MSG("Snapping curve points to colliders is not available yet.");
 		}
 		if (p.intersects_ray(ray_from, ray_dir, &inters)) {
 			if (Node3DEditor::get_singleton()->is_snap_enabled()) {
@@ -713,12 +702,7 @@ EditorPlugin::AfterGUIInput Path3DEditorPlugin::forward_3d_gui_input(Camera3D *p
 				Vector3 ray_dir = viewport->get_ray(mbpos);
 
 				if (snap_to_collider) {
-					_edit.click_ray_pos = ray_from;
-					_edit.click_ray_dir = ray_dir * p_camera->get_far();
-					_edit.gizmo_camera = p_camera;
-					_edit.origin = origin;
-					_edit.waiting_point_physics = true;
-					return EditorPlugin::AFTER_GUI_INPUT_STOP;
+					ERR_FAIL_V_MSG(EditorPlugin::AFTER_GUI_INPUT_STOP, "Snapping curve points to colliders is not available yet.");
 				}
 
 				Plane p(p_camera->get_transform().basis.get_column(2), origin);
@@ -858,9 +842,7 @@ void Path3DEditorPlugin::_handle_option_pressed(int p_option) {
 			pm->set_item_checked(HANDLE_OPTION_LENGTH, mirror_handle_length);
 		} break;
 		case HANDLE_OPTION_SNAP_COLLIDER: {
-			bool is_checked = pm->is_item_checked(HANDLE_OPTION_SNAP_COLLIDER);
-			snap_to_collider = !is_checked;
-			pm->set_item_checked(HANDLE_OPTION_SNAP_COLLIDER, snap_to_collider);
+			ERR_FAIL_MSG("Snapping curve points to colliders is not available yet.");
 		} break;
 	}
 }
@@ -956,37 +938,6 @@ void Path3DEditorPlugin::_notification(int p_what) {
 			path->update_gizmos();
 		} break;
 		case NOTIFICATION_PHYSICS_PROCESS: {
-			if (_edit.waiting_point_physics) {
-				_edit.waiting_point_physics = false;
-				const Transform3D gt = path->get_global_transform();
-				const Transform3D it = gt.affine_inverse();
-				Ref<Curve3D> c = path->get_curve();
-				EditorUndoRedoManager *ur = EditorUndoRedoManager::get_singleton();
-				PhysicsDirectSpaceState3D *ss = get_tree()->get_root()->get_world_3d()->get_direct_space_state();
-				if (ss) {
-					PhysicsDirectSpaceState3D::RayParameters ray_params;
-					PhysicsDirectSpaceState3D::RayResult result;
-					ray_params.from = _edit.click_ray_pos;
-					ray_params.to = ray_params.from + _edit.click_ray_dir;
-					bool hit_something = false;
-					Vector3 inters;
-					if (ss->intersect_ray(ray_params, result)) {
-						inters = result.position;
-						hit_something = true;
-					} else {
-						Plane p(_edit.gizmo_camera->get_transform().basis.get_column(2), _edit.origin);
-						if (p.intersects_ray(ray_params.from, _edit.click_ray_dir, &inters)) {
-							hit_something = true;
-						}
-					}
-					if (hit_something) {
-						ur->create_action(TTR("Add Point to Curve"));
-						ur->add_do_method(c.ptr(), "add_point", it.xform(inters), Vector3(), Vector3(), -1);
-						ur->add_undo_method(c.ptr(), "remove_point", c->get_point_count());
-						ur->commit_action();
-					}
-				}
-			}
 			if (_edit.waiting_handle_physics) {
 				_edit.in_physics_frame = true;
 
@@ -1111,7 +1062,9 @@ Path3DEditorPlugin::Path3DEditorPlugin() {
 	menu->add_check_item(TTR("Mirror Handle Lengths"));
 	menu->set_item_checked(HANDLE_OPTION_LENGTH, mirror_handle_length);
 	menu->add_check_item(TTR("Snap to Colliders"));
-	menu->set_item_checked(HANDLE_OPTION_SNAP_COLLIDER, snap_to_collider);
+	snap_to_collider = false;
+	menu->set_item_disabled(HANDLE_OPTION_SNAP_COLLIDER, true);
+	menu->set_item_tooltip(HANDLE_OPTION_SNAP_COLLIDER, TTR("Snapping curve points to colliders is not available yet."));
 	menu->connect(SceneStringName(id_pressed), callable_mp(this, &Path3DEditorPlugin::_handle_option_pressed));
 
 	curve_edit->set_pressed_no_signal(true);

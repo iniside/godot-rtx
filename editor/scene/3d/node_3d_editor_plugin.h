@@ -34,6 +34,7 @@
 #include "editor/plugins/editor_plugin.h"
 #include "editor/scene/3d/node_3d_editor_gizmos.h"
 #include "scene/debugger/view_3d_controller.h"
+#include "scene/entity/entity_catalog.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/popup.h"
 
@@ -44,6 +45,7 @@ class ConfirmationDialog;
 class DirectionalLight3D;
 class EditorSelection;
 class EditorSpinSlider;
+class EntityWorld;
 class HSplitContainer;
 class LineEdit;
 class MenuButton;
@@ -94,6 +96,10 @@ public:
 	real_t gizmo_view_rotation_scale = 1.0;
 
 private:
+	EntityCatalog entity_catalog;
+	EntityWorld *entity_world = nullptr;
+	void _update_default_environment();
+
 	EditorSelection *editor_selection = nullptr;
 
 	Node3DEditorViewportContainer *viewport_base = nullptr;
@@ -299,9 +305,6 @@ private:
 	void _selection_changed();
 	void _refresh_menu_icons();
 
-	bool do_snap_selected_nodes_to_floor = false;
-	void _snap_selected_nodes_to_floor();
-
 	// Preview Sun and Environment
 
 	class PreviewSunEnvPopup : public PopupPanel {
@@ -347,10 +350,11 @@ private:
 
 	Button *sun_environ_settings = nullptr;
 
-	DirectionalLight3D *preview_sun = nullptr;
-	bool preview_sun_dangling = false;
-	WorldEnvironment *preview_environment = nullptr;
-	bool preview_env_dangling = false;
+	RID preview_sun;
+	RID preview_sun_instance;
+	Color preview_sun_color = Color(1, 1, 1);
+	real_t preview_sun_energy = 1.0;
+	real_t preview_sun_shadow_max_distance = 100.0;
 	Ref<Environment> environment;
 	Ref<CameraAttributesPractical> camera_attributes;
 	Ref<ProceduralSkyMaterial> sky_material;
@@ -379,9 +383,6 @@ private:
 	void _preview_settings_changed();
 	void _sun_environ_settings_pressed();
 
-	void _add_sun_to_scene(bool p_already_added_environment = false);
-	void _add_environment_to_scene(bool p_already_added_sun = false);
-
 	void _update_theme();
 
 	void _undo_redo_inspector_callback(Object *p_undo_redo, Object *p_edited, const String &p_property, const Variant &p_new_value);
@@ -395,6 +396,7 @@ protected:
 
 public:
 	static Node3DEditor *get_singleton() { return singleton; }
+	EntityWorld *get_entity_world() const { return entity_world; }
 
 	static Size2i get_camera_viewport_size(Camera3D *p_camera);
 

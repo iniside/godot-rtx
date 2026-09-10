@@ -248,14 +248,14 @@ void Camera3D::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_BECAME_CURRENT: {
-			if (viewport) {
+			if (viewport && viewport->find_world_3d().is_valid()) {
 				viewport->find_world_3d()->_register_camera(this);
 			}
 			_update_process_mode();
 		} break;
 
 		case NOTIFICATION_LOST_CURRENT: {
-			if (viewport) {
+			if (viewport && viewport->find_world_3d().is_valid()) {
 				viewport->find_world_3d()->_remove_camera(this);
 			}
 			_update_process_mode();

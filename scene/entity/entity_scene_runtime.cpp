@@ -4,7 +4,6 @@
 #include "core/config/project_settings.h"
 #include "core/input/input.h"
 #include "core/io/image_loader.h"
-#include "core/io/resource_loader.h"
 #include "core/object/callable_mp.h"
 #include "core/object/message_queue.h"
 #include "core/os/os.h"
@@ -64,14 +63,10 @@ Error EntitySceneRuntime::setup() {
 		server->viewport_set_vrs_texture(viewport, vrs_texture->get_rid());
 		server->viewport_set_vrs_mode(viewport, RSE::VIEWPORT_VRS_TEXTURE);
 	}
-	String environment_path = String(GLOBAL_DEF(PropertyInfo(Variant::STRING, "rendering/environment/defaults/default_environment", PROPERTY_HINT_FILE, "*.tres,*.res"), "")).strip_edges();
-	if (!environment_path.is_empty()) {
-		fallback_environment = ResourceLoader::load(environment_path);
-		if (fallback_environment.is_null()) {
-			_release();
-			return ERR_CANT_OPEN;
-		}
-		server->scenario_set_fallback_environment(world->get_scenario(), fallback_environment->get_rid());
+	error = world->load_default_environment();
+	if (error != OK) {
+		_release();
+		return error;
 	}
 	interpolation_enabled = GLOBAL_DEF("physics/common/physics_interpolation", false);
 	if (interpolation_enabled) {
@@ -215,7 +210,6 @@ void EntitySceneRuntime::_release() {
 		server->free_rid(viewport);
 		viewport = RID();
 	}
-	fallback_environment.unref();
 	vrs_texture.unref();
 	input_events.clear();
 }

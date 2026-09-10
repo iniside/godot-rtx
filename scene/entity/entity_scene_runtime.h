@@ -4,7 +4,6 @@
 
 #include "core/input/input_event.h"
 #include "core/os/main_loop.h"
-#include "scene/resources/environment.h"
 #include "scene/resources/texture.h"
 
 class EntitySceneRuntime : public MainLoop {
@@ -13,7 +12,6 @@ class EntitySceneRuntime : public MainLoop {
 	EntityCatalog catalog;
 	EntityWorld *world = nullptr;
 	RID viewport;
-	Ref<Environment> fallback_environment;
 	Ref<Texture2D> vrs_texture;
 	Vector<Ref<InputEvent>> input_events;
 	bool callbacks_connected = false;

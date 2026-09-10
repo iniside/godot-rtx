@@ -30,6 +30,10 @@
 
 #include "editor_node.h"
 
+#ifndef _3D_DISABLED
+#include "scene/entity/entity_world.h"
+#endif
+
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
 #include "core/extension/gdextension_manager.h"
@@ -3042,13 +3046,19 @@ void EditorNode::push_item_no_inspector(Object *p_object) {
 }
 
 void EditorNode::save_default_environment() {
-	Ref<Environment> fallback = get_tree()->get_root()->get_world_3d()->get_fallback_environment();
+#ifndef _3D_DISABLED
+	Node3DEditor *editor = Node3DEditor::get_singleton();
+	if (!editor) {
+		return;
+	}
+	Ref<Environment> fallback = editor->get_entity_world()->get_fallback_environment();
 
 	if (fallback.is_valid() && fallback->get_path().is_resource_file()) {
 		HashMap<Ref<Resource>, bool> processed;
 		_find_and_save_edited_subresources(fallback.ptr(), processed, 0);
 		save_resource_in_path(fallback, fallback->get_path());
 	}
+#endif
 }
 
 void EditorNode::hide_unused_editors(const Object *p_editing_owner) {

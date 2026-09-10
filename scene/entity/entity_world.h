@@ -7,6 +7,7 @@
 
 #include "core/os/thread.h"
 #include "core/templates/hash_set.h"
+#include "scene/resources/environment.h"
 
 class EntityWorld {
 	friend class EntityTransformSystem;
@@ -30,6 +31,7 @@ class EntityWorld {
 	RID scenario;
 	RID camera;
 	RID navigation_map;
+	Ref<Environment> fallback_environment;
 
 	bool _is_owner() const { return owner_thread == Thread::get_caller_id(); }
 	EntityHandle _materialize(EntityId p_id);
@@ -59,6 +61,8 @@ public:
 	EntityTransformSystem &get_transforms() { return transforms; }
 	Error initialize_services();
 	void finalize_services();
+	Error load_default_environment();
+	Ref<Environment> get_fallback_environment() const { return fallback_environment; }
 	RID get_scenario() const { return scenario; }
 	RID get_camera() const { return camera; }
 	RID get_navigation_map() const { return navigation_map; }

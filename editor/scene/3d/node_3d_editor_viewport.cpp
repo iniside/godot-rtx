@@ -64,6 +64,7 @@
 #include "scene/3d/physics/collision_object_3d.h"
 #include "scene/3d/physics/collision_shape_3d.h"
 #include "scene/3d/sprite_3d.h"
+#include "scene/entity/entity_world.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/color_picker.h"
 #include "scene/gui/rich_text_label.h"
@@ -3241,6 +3242,7 @@ void Node3DEditorViewport::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_READY: {
+			RS::get_singleton()->viewport_set_scenario(viewport->get_viewport_rid(), spatial_editor->get_entity_world()->get_scenario());
 			ProjectSettings::get_singleton()->connect("settings_changed", callable_mp(this, &Node3DEditorViewport::_project_settings_changed));
 			_update_navigation_controls_visibility();
 		} break;
@@ -4839,7 +4841,7 @@ void Node3DEditorViewport::_init_gizmo_instance(int p_idx) {
 	for (int i = 0; i < 3; i++) {
 		move_gizmo_instance[i] = RS::get_singleton()->instance_create();
 		RS::get_singleton()->instance_set_base(move_gizmo_instance[i], spatial_editor->get_move_gizmo(i)->get_rid());
-		RS::get_singleton()->instance_set_scenario(move_gizmo_instance[i], get_tree()->get_root()->get_world_3d()->get_scenario());
+		RS::get_singleton()->instance_set_scenario(move_gizmo_instance[i], spatial_editor->get_entity_world()->get_scenario());
 		RS::get_singleton()->instance_set_visible(move_gizmo_instance[i], false);
 		RS::get_singleton()->instance_geometry_set_cast_shadows_setting(move_gizmo_instance[i], RSE::SHADOW_CASTING_SETTING_OFF);
 		RS::get_singleton()->instance_set_layer_mask(move_gizmo_instance[i], layer);
@@ -4848,7 +4850,7 @@ void Node3DEditorViewport::_init_gizmo_instance(int p_idx) {
 
 		move_plane_gizmo_instance[i] = RS::get_singleton()->instance_create();
 		RS::get_singleton()->instance_set_base(move_plane_gizmo_instance[i], spatial_editor->get_move_plane_gizmo(i)->get_rid());
-		RS::get_singleton()->instance_set_scenario(move_plane_gizmo_instance[i], get_tree()->get_root()->get_world_3d()->get_scenario());
+		RS::get_singleton()->instance_set_scenario(move_plane_gizmo_instance[i], spatial_editor->get_entity_world()->get_scenario());
 		RS::get_singleton()->instance_set_visible(move_plane_gizmo_instance[i], false);
 		RS::get_singleton()->instance_geometry_set_cast_shadows_setting(move_plane_gizmo_instance[i], RSE::SHADOW_CASTING_SETTING_OFF);
 		RS::get_singleton()->instance_set_layer_mask(move_plane_gizmo_instance[i], layer);
@@ -4857,7 +4859,7 @@ void Node3DEditorViewport::_init_gizmo_instance(int p_idx) {
 
 		scale_gizmo_instance[i] = RS::get_singleton()->instance_create();
 		RS::get_singleton()->instance_set_base(scale_gizmo_instance[i], spatial_editor->get_scale_gizmo(i)->get_rid());
-		RS::get_singleton()->instance_set_scenario(scale_gizmo_instance[i], get_tree()->get_root()->get_world_3d()->get_scenario());
+		RS::get_singleton()->instance_set_scenario(scale_gizmo_instance[i], spatial_editor->get_entity_world()->get_scenario());
 		RS::get_singleton()->instance_set_visible(scale_gizmo_instance[i], false);
 		RS::get_singleton()->instance_geometry_set_cast_shadows_setting(scale_gizmo_instance[i], RSE::SHADOW_CASTING_SETTING_OFF);
 		RS::get_singleton()->instance_set_layer_mask(scale_gizmo_instance[i], layer);
@@ -4866,7 +4868,7 @@ void Node3DEditorViewport::_init_gizmo_instance(int p_idx) {
 
 		scale_plane_gizmo_instance[i] = RS::get_singleton()->instance_create();
 		RS::get_singleton()->instance_set_base(scale_plane_gizmo_instance[i], spatial_editor->get_scale_plane_gizmo(i)->get_rid());
-		RS::get_singleton()->instance_set_scenario(scale_plane_gizmo_instance[i], get_tree()->get_root()->get_world_3d()->get_scenario());
+		RS::get_singleton()->instance_set_scenario(scale_plane_gizmo_instance[i], spatial_editor->get_entity_world()->get_scenario());
 		RS::get_singleton()->instance_set_visible(scale_plane_gizmo_instance[i], false);
 		RS::get_singleton()->instance_geometry_set_cast_shadows_setting(scale_plane_gizmo_instance[i], RSE::SHADOW_CASTING_SETTING_OFF);
 		RS::get_singleton()->instance_set_layer_mask(scale_plane_gizmo_instance[i], layer);
@@ -4878,7 +4880,7 @@ void Node3DEditorViewport::_init_gizmo_instance(int p_idx) {
 
 	for (int i = 0; i < 3; i++) {
 		RS::get_singleton()->instance_set_base(axis_gizmo_instance[i], spatial_editor->get_axis_gizmo(i)->get_rid());
-		RS::get_singleton()->instance_set_scenario(axis_gizmo_instance[i], get_tree()->get_root()->get_world_3d()->get_scenario());
+		RS::get_singleton()->instance_set_scenario(axis_gizmo_instance[i], spatial_editor->get_entity_world()->get_scenario());
 		RS::get_singleton()->instance_set_visible(axis_gizmo_instance[i], true);
 		RS::get_singleton()->instance_geometry_set_cast_shadows_setting(axis_gizmo_instance[i], RSE::SHADOW_CASTING_SETTING_OFF);
 		RS::get_singleton()->instance_set_layer_mask(axis_gizmo_instance[i], layer);
@@ -4889,7 +4891,7 @@ void Node3DEditorViewport::_init_gizmo_instance(int p_idx) {
 	for (int i = 0; i < 4; i++) {
 		rotate_gizmo_instance[i] = RS::get_singleton()->instance_create();
 		RS::get_singleton()->instance_set_base(rotate_gizmo_instance[i], spatial_editor->get_rotate_gizmo(i)->get_rid());
-		RS::get_singleton()->instance_set_scenario(rotate_gizmo_instance[i], get_tree()->get_root()->get_world_3d()->get_scenario());
+		RS::get_singleton()->instance_set_scenario(rotate_gizmo_instance[i], spatial_editor->get_entity_world()->get_scenario());
 		RS::get_singleton()->instance_set_visible(rotate_gizmo_instance[i], false);
 		RS::get_singleton()->instance_geometry_set_cast_shadows_setting(rotate_gizmo_instance[i], RSE::SHADOW_CASTING_SETTING_OFF);
 		RS::get_singleton()->instance_set_layer_mask(rotate_gizmo_instance[i], layer);
@@ -4900,7 +4902,7 @@ void Node3DEditorViewport::_init_gizmo_instance(int p_idx) {
 	// Create trackball sphere instance
 	trackball_sphere_instance = RS::get_singleton()->instance_create();
 	RS::get_singleton()->instance_set_base(trackball_sphere_instance, spatial_editor->get_trackball_sphere_gizmo()->get_rid());
-	RS::get_singleton()->instance_set_scenario(trackball_sphere_instance, get_tree()->get_root()->get_world_3d()->get_scenario());
+	RS::get_singleton()->instance_set_scenario(trackball_sphere_instance, spatial_editor->get_entity_world()->get_scenario());
 	RS::get_singleton()->instance_set_visible(trackball_sphere_instance, false);
 	RS::get_singleton()->instance_geometry_set_cast_shadows_setting(trackball_sphere_instance, RSE::SHADOW_CASTING_SETTING_OFF);
 	RS::get_singleton()->instance_set_layer_mask(trackball_sphere_instance, layer);
@@ -5483,83 +5485,7 @@ void _insert_collision_object_rid_recursive(Node *p_node, HashSet<RID> &p_col_ob
 }
 
 Vector3 Node3DEditorViewport::_get_instance_position(const Point2 &p_pos, Node3D *p_node) const {
-	const float MAX_DISTANCE = 50.0;
-	const float FALLBACK_DISTANCE = 5.0;
-
-	Vector3 world_ray = get_ray(p_pos);
-	Vector3 world_pos = get_ray_pos(p_pos);
-
-	HashSet<RID> col_obj_rids_to_exclude;
-
-	if (preview_node && preview_node->get_child_count() > 0) {
-		_insert_collision_object_rid_recursive(preview_node, col_obj_rids_to_exclude);
-	} else if (!preview_node->is_inside_tree() && !ruler->is_inside_tree()) {
-		const List<Node *> &selection = editor_selection->get_top_selected_node_list();
-
-		Node3D *first_selected_node = Object::cast_to<Node3D>(selection.front()->get());
-
-		if (first_selected_node) {
-			_insert_collision_object_rid_recursive(first_selected_node, col_obj_rids_to_exclude);
-		}
-	}
-
-	PhysicsDirectSpaceState3D::RayParameters ray_params;
-	ray_params.exclude = col_obj_rids_to_exclude;
-	ray_params.from = world_pos;
-	ray_params.to = world_pos + world_ray * camera->get_far();
-
-	PhysicsDirectSpaceState3D *ss = get_tree()->get_root()->get_world_3d()->get_direct_space_state();
-	PhysicsDirectSpaceState3D::RayResult result;
-	if (ss->intersect_ray(ray_params, result) && (preview_node->get_child_count() > 0 || !preview_node->is_inside_tree())) {
-		// Calculate an offset for the `p_node` such that the its bounding box is on top of and touching the contact surface's plane.
-
-		// Use the Gram-Schmidt process to get an orthonormal Basis aligned with the surface normal.
-		const Vector3 bb_basis_x = result.normal;
-		Vector3 bb_basis_y = Vector3(0, 1, 0);
-		bb_basis_y = bb_basis_y - bb_basis_y.project(bb_basis_x);
-		if (bb_basis_y.is_zero_approx()) {
-			bb_basis_y = Vector3(0, 0, 1);
-			bb_basis_y = bb_basis_y - bb_basis_y.project(bb_basis_x);
-		}
-		bb_basis_y = bb_basis_y.normalized();
-		const Vector3 bb_basis_z = bb_basis_x.cross(bb_basis_y);
-		const Basis bb_basis = Basis(bb_basis_x, bb_basis_y, bb_basis_z);
-
-		// This normal-aligned Basis allows us to create an AABB that can fit on the surface plane as snugly as possible.
-		const Transform3D bb_transform = Transform3D(bb_basis, p_node->get_global_transform().origin);
-		const AABB p_node_bb = _calculate_spatial_bounds(p_node, true, &bb_transform);
-		// The x-axis's alignment with the surface normal also makes it trivial to get the distance from `p_node`'s origin at (0, 0, 0) to the correct AABB face.
-		const float offset_distance = -p_node_bb.position.x;
-
-		// `result_offset` is in global space.
-		const Vector3 result_offset = result.position + result.normal * offset_distance;
-
-		return result_offset;
-	}
-
-	const bool is_orthogonal = camera->get_projection() == Camera3D::PROJECTION_ORTHOGONAL;
-
-	// The XZ plane.
-	Vector3 intersection;
-	Plane plane(Vector3(0, 1, 0));
-	if (plane.intersects_ray(world_pos, world_ray, &intersection)) {
-		if (is_orthogonal || world_pos.distance_to(intersection) <= MAX_DISTANCE) {
-			return intersection;
-		}
-	}
-
-	// Plane facing the camera using fallback distance.
-	if (is_orthogonal) {
-		plane = Plane(world_ray, view_3d_controller->cursor.pos - world_ray * (view_3d_controller->cursor.distance - FALLBACK_DISTANCE));
-	} else {
-		plane = Plane(world_ray, world_pos + world_ray * FALLBACK_DISTANCE);
-	}
-	if (plane.intersects_ray(world_pos, world_ray, &intersection)) {
-		return intersection;
-	}
-
-	// Not likely, but just in case...
-	return world_pos + world_ray * FALLBACK_DISTANCE;
+	ERR_FAIL_V_MSG(Vector3(), "Placing objects in the 3D viewport is not available yet.");
 }
 
 AABB Node3DEditorViewport::_calculate_spatial_bounds(const Node3D *p_parent, bool p_omit_top_level, const Transform3D *p_bounds_orientation) {
@@ -5989,170 +5915,7 @@ void Node3DEditorViewport::_show_tooltip(const String &p_title, const String &p_
 }
 
 bool Node3DEditorViewport::can_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) {
-	if (previewing) {
-		return false;
-	}
-
-	if (p_point == Vector2(Math::INF, Math::INF)) {
-		tooltip_panel->hide();
-		return false;
-	}
-	preview_node_viewport_pos = p_point;
-
-	Dictionary d = p_data;
-	if (!d.has("type") || String(d["type"]) != "files") {
-		tooltip_panel->hide();
-		return false;
-	}
-	Vector<String> files = d["files"];
-
-	// If we already have a preview material or preview node,
-	// We just need to update them.
-	if (spatial_editor->get_preview_material().is_valid()) {
-		ObjectID new_preview_material_target = _select_ray(p_point);
-		return _apply_preview_material(new_preview_material_target, p_point);
-	}
-
-	if (preview_node->is_inside_tree()) {
-		preview_node_viewport_pos = p_point;
-		update_preview_node = true;
-		return true;
-	}
-
-	// If we don't already have a preview material or preview node,
-	// it means that this is the first time we are visiting this function.
-	// In that case, we need to check that the file(s) are droppable.
-	bool is_cyclical_dep = false;
-	String error_file;
-
-	enum {
-		SCENE = 1 << 0,
-		TEXTURE = 1 << 1,
-		AUDIO = 1 << 2,
-		MESH = 1 << 3,
-		MATERIAL = 1 << 4,
-	};
-	int instantiate_type = 0;
-
-	// Track whether a type other than PackedScene is valid to stop checking them and only
-	// continue to check if the rest of the scenes are valid (don't have cyclic dependencies).
-	bool is_other_valid = false;
-	// Check if at least one of the dragged files is a mesh, material, texture, or scene.
-	for (int i = 0; i < files.size(); i++) {
-		const String &res_type = ResourceLoader::get_resource_type(files[i]);
-		bool is_scene = ClassDB::is_parent_class(res_type, "PackedScene");
-		bool is_mesh = ClassDB::is_parent_class(res_type, "Mesh");
-		bool is_material = ClassDB::is_parent_class(res_type, "Material");
-		bool is_texture = ClassDB::is_parent_class(res_type, "Texture");
-		bool is_audio = ClassDB::is_parent_class(res_type, "AudioStream");
-
-		if (is_mesh || is_scene || is_material || is_texture || is_audio) {
-			Ref<Resource> res = ResourceLoader::load(files[i]);
-			if (res.is_null()) {
-				continue;
-			}
-			Ref<PackedScene> scn = res;
-			Ref<Mesh> mesh = res;
-			Ref<Material> mat = res;
-			Ref<Texture2D> tex = res;
-			Ref<AudioStream> audio = res;
-			if (scn.is_valid()) {
-				Node *instantiated_scene = scn->instantiate(PackedScene::GEN_EDIT_STATE_INSTANCE);
-				if (!instantiated_scene) {
-					continue;
-				}
-				Node *edited_scene = EditorNode::get_singleton()->get_edited_scene();
-				if (edited_scene && !edited_scene->get_scene_file_path().is_empty() && _cyclical_dependency_exists(edited_scene->get_scene_file_path(), instantiated_scene)) {
-					memdelete(instantiated_scene);
-					is_cyclical_dep = true;
-					error_file = files[i].get_file();
-					break;
-				}
-				memdelete(instantiated_scene);
-				instantiate_type |= SCENE;
-			} else if (!is_other_valid && mat.is_valid()) {
-				Ref<BaseMaterial3D> base_mat = res;
-				Ref<ShaderMaterial> shader_mat = res;
-
-				if (base_mat.is_null() && shader_mat.is_null()) {
-					continue;
-				}
-
-				spatial_editor->set_preview_material(mat);
-				is_other_valid = true;
-				instantiate_type |= MATERIAL;
-				continue;
-			} else if (!is_other_valid && mesh.is_valid()) {
-				// Let the mesh pass.
-				is_other_valid = true;
-				instantiate_type |= MESH;
-			} else if (!is_other_valid && tex.is_valid()) {
-				Ref<StandardMaterial3D> new_mat;
-				new_mat.instantiate();
-				new_mat->set_texture(BaseMaterial3D::TEXTURE_ALBEDO, tex);
-
-				spatial_editor->set_preview_material(new_mat);
-				is_other_valid = true;
-				instantiate_type |= TEXTURE;
-				continue;
-			} else if (!is_other_valid && audio.is_valid()) {
-				is_other_valid = true;
-				instantiate_type |= AUDIO;
-			} else {
-				continue;
-			}
-		}
-	}
-
-	String title = TTRN("Can't drop the file...", "Can't drop the files...", files.size());
-	if (is_cyclical_dep) {
-		_show_tooltip(title, vformat(TTR("Circular dependency found at %s."), error_file));
-		return false;
-	}
-
-	if (instantiate_type == 0) {
-		_show_tooltip(title, TTR("File format is not supported."));
-		return false;
-	}
-
-	// Only droppable file(s), on first frame, will make it to this point.
-	// Hence it is a good place to create the previews and tooltips.
-	_create_preview_node(files);
-	preview_node->hide();
-
-	String desc = "[ul]" +
-			TTRN("[b]Default:[/b] Add as sibling of selected node (except when root is selected).",
-					"[b]Default:[/b] Add as siblings of selected node (except when root is selected).",
-					files.size()) +
-			"\n" +
-			TTRN("[b]Hold Shift:[/b] Add as child of selected node.",
-					"[b]Hold Shift:[/b] Add as children of selected node.",
-					files.size()) +
-			"\n" +
-			TTRN("[b]Hold Alt:[/b] Add as child of root node.",
-					"[b]Hold Alt:[/b] Add as children of root node.",
-					files.size());
-
-	if (files.size() > 1) {
-		title = TTR("Dropping multiple files...");
-	} else if (instantiate_type & SCENE) {
-		title = TTR("Dropping a Scene file...");
-	} else if (instantiate_type & MESH) {
-		title = TTR("Dropping a Mesh file...");
-	} else if (instantiate_type & AUDIO) {
-		title = TTR("Dropping an Audio file...");
-	} else if (instantiate_type & MATERIAL || instantiate_type & TEXTURE) {
-		title = TTR("Dropping a Material...");
-		desc = "[ul]";
-		desc += vformat(TTR("[b]Default:[/b] Place in Geometry's Material Override slot.") +
-						"\n" + TTR("[b]Hold %s:[/b] Place in Mesh's Surface Material Override slot."),
-				keycode_get_string((Key)KeyModifierMask::CMD_OR_CTRL));
-	}
-	desc += "[/ul]";
-
-	_show_tooltip(title, desc);
-
-	return true;
+	return false;
 }
 
 void Node3DEditorViewport::drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) {

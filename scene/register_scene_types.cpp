@@ -398,6 +398,7 @@ static Ref<ResourceFormatLoaderShaderInclude> resource_loader_shader_include;
 
 void register_scene_types() {
 	OS::get_singleton()->benchmark_begin_measure("Scene", "Register Types");
+	GLOBAL_DEF(PropertyInfo(Variant::STRING, "rendering/environment/defaults/default_environment", PROPERTY_HINT_FILE, "*.tres,*.res"), "");
 
 #ifndef _3D_DISABLED
 	initialize_entity_types();

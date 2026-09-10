@@ -93,6 +93,7 @@
 #include "scene/3d/physics/collision_shape_3d.h"
 #include "scene/3d/physics/physics_body_3d.h"
 #include "scene/3d/world_environment.h"
+#include "scene/entity/entity_world.h"
 #include "scene/gui/button.h"
 #include "scene/gui/center_container.h"
 #include "scene/gui/color_picker.h"
@@ -229,10 +230,10 @@ Object *Node3DEditor::_get_editor_data(Object *p_what) {
 	si->sp = sp;
 	si->sbox_instance = RenderingServer::get_singleton()->instance_create2(
 			selection_box->get_rid(),
-			sp->get_world_3d()->get_scenario());
+			entity_world->get_scenario());
 	si->sbox_instance_offset = RenderingServer::get_singleton()->instance_create2(
 			selection_box->get_rid(),
-			sp->get_world_3d()->get_scenario());
+			entity_world->get_scenario());
 	RS::get_singleton()->instance_geometry_set_cast_shadows_setting(
 			si->sbox_instance,
 			RSE::SHADOW_CASTING_SETTING_OFF);
@@ -249,10 +250,10 @@ Object *Node3DEditor::_get_editor_data(Object *p_what) {
 	RS::get_singleton()->instance_geometry_set_flag(si->sbox_instance_offset, RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
 	si->sbox_instance_xray = RenderingServer::get_singleton()->instance_create2(
 			selection_box_xray->get_rid(),
-			sp->get_world_3d()->get_scenario());
+			entity_world->get_scenario());
 	si->sbox_instance_xray_offset = RenderingServer::get_singleton()->instance_create2(
 			selection_box_xray->get_rid(),
-			sp->get_world_3d()->get_scenario());
+			entity_world->get_scenario());
 	RS::get_singleton()->instance_geometry_set_cast_shadows_setting(
 			si->sbox_instance_xray,
 			RSE::SHADOW_CASTING_SETTING_OFF);
@@ -1060,12 +1061,7 @@ void Node3DEditor::_menu_item_pressed(int p_option) {
 			undo_redo->commit_action();
 		} break;
 		case MENU_RULER: {
-			for (int i = 0; i < TOOL_MAX; i++) {
-				tool_button[i]->set_pressed(i == p_option);
-			}
-			tool_button[TOOL_RULER]->set_pressed(true);
-			tool_mode = ToolMode::TOOL_RULER;
-			update_transform_gizmo();
+			ERR_FAIL_MSG("The ruler is not available yet.");
 		} break;
 	}
 }
@@ -1193,7 +1189,7 @@ void fragment() {
 			}
 		}
 
-		origin_instance = RenderingServer::get_singleton()->instance_create2(origin_multimesh, get_tree()->get_root()->get_world_3d()->get_scenario());
+		origin_instance = RenderingServer::get_singleton()->instance_create2(origin_multimesh, entity_world->get_scenario());
 		RS::get_singleton()->instance_set_layer_mask(origin_instance, 1 << Node3DEditorViewport::GIZMO_GRID_LAYER);
 		RS::get_singleton()->instance_geometry_set_flag(origin_instance, RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
 		RS::get_singleton()->instance_geometry_set_flag(origin_instance, RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
@@ -1932,7 +1928,7 @@ void Node3DEditor::_init_grid() {
 		d[RSE::ARRAY_NORMAL] = (Vector<Vector3>)grid_normals[c];
 		RenderingServer::get_singleton()->mesh_add_surface_from_arrays(grid[c], RSE::PRIMITIVE_LINES, d);
 		RenderingServer::get_singleton()->mesh_surface_set_material(grid[c], 0, grid_mat[c]->get_rid());
-		grid_instance[c] = RenderingServer::get_singleton()->instance_create2(grid[c], get_tree()->get_root()->get_world_3d()->get_scenario());
+		grid_instance[c] = RenderingServer::get_singleton()->instance_create2(grid[c], entity_world->get_scenario());
 
 		// Yes, the end of this line is supposed to be a.
 		RenderingServer::get_singleton()->instance_set_visible(grid_instance[c], grid_visible[a]);
@@ -2123,173 +2119,8 @@ void Node3DEditor::_refresh_menu_icons() {
 	tool_button[TOOL_UNGROUP_SELECTED]->set_disabled(!has_node3d_item);
 }
 
-template <typename T>
-HashSet<T *> _get_child_nodes(Node *parent_node) {
-	HashSet<T *> nodes = HashSet<T *>();
-	T *node = Node::cast_to<T>(parent_node);
-	if (node) {
-		nodes.insert(node);
-	}
-
-	for (int i = 0; i < parent_node->get_child_count(); i++) {
-		Node *child_node = parent_node->get_child(i);
-		HashSet<T *> child_nodes = _get_child_nodes<T>(child_node);
-		for (T *I : child_nodes) {
-			nodes.insert(I);
-		}
-	}
-
-	return nodes;
-}
-
-HashSet<RID> _get_physics_bodies_rid(Node *node) {
-	HashSet<RID> rids = HashSet<RID>();
-	PhysicsBody3D *pb = Node::cast_to<PhysicsBody3D>(node);
-	if (pb) {
-		rids.insert(pb->get_rid());
-	}
-	HashSet<PhysicsBody3D *> child_nodes = _get_child_nodes<PhysicsBody3D>(node);
-	for (const PhysicsBody3D *I : child_nodes) {
-		rids.insert(I->get_rid());
-	}
-
-	return rids;
-}
-
 void Node3DEditor::snap_selected_nodes_to_floor() {
-	do_snap_selected_nodes_to_floor = true;
-}
-
-void Node3DEditor::_snap_selected_nodes_to_floor() {
-	const List<Node *> &selection = editor_selection->get_top_selected_node_list();
-	Dictionary snap_data;
-
-	for (Node *E : selection) {
-		Node3D *sp = Object::cast_to<Node3D>(E);
-		if (sp) {
-			Vector3 from;
-			Vector3 position_offset;
-
-			// Priorities for snapping to floor are CollisionShapes, VisualInstances and then origin
-			HashSet<VisualInstance3D *> vi = _get_child_nodes<VisualInstance3D>(sp);
-			HashSet<CollisionShape3D *> cs = _get_child_nodes<CollisionShape3D>(sp);
-			bool found_valid_shape = false;
-
-			if (cs.size()) {
-				AABB aabb;
-				HashSet<CollisionShape3D *>::Iterator I = cs.begin();
-				if ((*I)->get_shape().is_valid()) {
-					CollisionShape3D *collision_shape = *cs.begin();
-					aabb = collision_shape->get_global_transform().xform(collision_shape->get_shape()->get_debug_mesh()->get_aabb());
-					found_valid_shape = true;
-				}
-
-				for (++I; I; ++I) {
-					CollisionShape3D *col_shape = *I;
-					if (col_shape->get_shape().is_valid()) {
-						aabb.merge_with(col_shape->get_global_transform().xform(col_shape->get_shape()->get_debug_mesh()->get_aabb()));
-						found_valid_shape = true;
-					}
-				}
-				if (found_valid_shape) {
-					Vector3 size = aabb.size * Vector3(0.5, 0.0, 0.5);
-					from = aabb.position + size;
-					position_offset.y = from.y - sp->get_global_transform().origin.y;
-				}
-			}
-			if (!found_valid_shape && vi.size()) {
-				VisualInstance3D *begin = *vi.begin();
-				AABB aabb = begin->get_global_transform().xform(begin->get_aabb());
-				for (const VisualInstance3D *I : vi) {
-					aabb.merge_with(I->get_global_transform().xform(I->get_aabb()));
-				}
-				Vector3 size = aabb.size * Vector3(0.5, 0.0, 0.5);
-				from = aabb.position + size;
-				position_offset.y = from.y - sp->get_global_transform().origin.y;
-			} else if (!found_valid_shape) {
-				from = sp->get_global_transform().origin;
-			}
-
-			// We add a bit of margin to the from position to avoid it from snapping
-			// when the spatial is already on a floor and there's another floor under
-			// it
-			from = from + Vector3(0.0, 1, 0.0);
-
-			Dictionary d;
-
-			d["from"] = from;
-			d["position_offset"] = position_offset;
-			snap_data[sp] = d;
-		}
-	}
-
-	PhysicsDirectSpaceState3D *ss = get_tree()->get_root()->get_world_3d()->get_direct_space_state();
-	PhysicsDirectSpaceState3D::RayResult result;
-
-	// The maximum height an object can travel to be snapped
-	const float max_snap_height = 500.0;
-
-	// Will be set to `true` if at least one node from the selection was successfully snapped
-	bool snapped_to_floor = false;
-
-	if (!snap_data.is_empty()) {
-		// For snapping to be performed, there must be solid geometry under at least one of the selected nodes.
-		// We need to check this before snapping to register the undo/redo action only if needed.
-		for (const KeyValue<Variant, Variant> &kv : snap_data) {
-			Node *node = Object::cast_to<Node>(kv.key);
-			Node3D *sp = Object::cast_to<Node3D>(node);
-			Dictionary d = kv.value;
-			Vector3 from = d["from"];
-			Vector3 to = from - Vector3(0.0, max_snap_height, 0.0);
-			HashSet<RID> excluded = _get_physics_bodies_rid(sp);
-
-			PhysicsDirectSpaceState3D::RayParameters ray_params;
-			ray_params.from = from;
-			ray_params.to = to;
-			ray_params.exclude = excluded;
-
-			if (ss->intersect_ray(ray_params, result)) {
-				snapped_to_floor = true;
-			}
-		}
-
-		if (snapped_to_floor) {
-			EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
-			undo_redo->create_action(TTR("Snap Nodes to Floor"));
-
-			// Perform snapping if at least one node can be snapped
-			for (const KeyValue<Variant, Variant> &kv : snap_data) {
-				Node *node = Object::cast_to<Node>(kv.key);
-				Node3D *sp = Object::cast_to<Node3D>(node);
-				Dictionary d = kv.value;
-				Vector3 from = d["from"];
-				Vector3 to = from - Vector3(0.0, max_snap_height, 0.0);
-				HashSet<RID> excluded = _get_physics_bodies_rid(sp);
-
-				PhysicsDirectSpaceState3D::RayParameters ray_params;
-				ray_params.from = from;
-				ray_params.to = to;
-				ray_params.exclude = excluded;
-
-				if (ss->intersect_ray(ray_params, result)) {
-					Vector3 position_offset = d["position_offset"];
-					Transform3D new_transform = sp->get_global_transform();
-
-					new_transform.origin.y = result.position.y;
-					new_transform.origin = new_transform.origin - position_offset;
-
-					Node3D *parent = sp->get_parent_node_3d();
-					Transform3D new_local_xform = parent ? parent->get_global_transform().affine_inverse() * new_transform : new_transform;
-					undo_redo->add_do_method(sp, "set_transform", new_local_xform);
-					undo_redo->add_undo_method(sp, "set_transform", sp->get_transform());
-				}
-			}
-
-			undo_redo->commit_action();
-		} else {
-			EditorNode::get_singleton()->show_warning(TTR("Couldn't find a solid floor to snap the selection to."));
-		}
-	}
+	ERR_FAIL_MSG("Snapping objects to the floor is not available yet.");
 }
 
 void Node3DEditor::shortcut_input(const Ref<InputEvent> &p_event) {
@@ -2307,72 +2138,7 @@ void Node3DEditor::_sun_environ_settings_pressed() {
 	sun_environ_popup->set_position(pos - Vector2(sun_environ_popup->get_contents_minimum_size().width / 2, 0));
 	sun_environ_popup->reset_size();
 	sun_environ_popup->popup();
-	// Grabbing the focus is required for Shift modifier checking to be functional
-	// (when the Add sun/environment buttons are pressed).
 	sun_environ_popup->grab_focus();
-}
-
-void Node3DEditor::_add_sun_to_scene(bool p_already_added_environment) {
-	sun_environ_popup->hide();
-
-	if (!p_already_added_environment && world_env_count == 0 && Input::get_singleton()->is_key_pressed(Key::SHIFT)) {
-		// Prevent infinite feedback loop between the sun and environment methods.
-		_add_environment_to_scene(true);
-	}
-
-	Node *base = get_tree()->get_edited_scene_root();
-	if (!base) {
-		// Create a root node so we can add child nodes to it.
-		SceneTreeDock::get_singleton()->add_root_node(memnew(Node3D));
-		base = get_tree()->get_edited_scene_root();
-	}
-	ERR_FAIL_NULL(base);
-	Node *new_sun = preview_sun->duplicate();
-
-	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
-	undo_redo->create_action(TTR("Add Preview Sun to Scene"));
-	undo_redo->add_do_method(base, "add_child", new_sun, true);
-	// Move to the beginning of the scene tree since more "global" nodes
-	// generally look better when placed at the top.
-	undo_redo->add_do_method(base, "move_child", new_sun, 0);
-	undo_redo->add_do_method(new_sun, "set_owner", base);
-	undo_redo->add_undo_method(base, "remove_child", new_sun);
-	undo_redo->add_do_reference(new_sun);
-	undo_redo->commit_action();
-}
-
-void Node3DEditor::_add_environment_to_scene(bool p_already_added_sun) {
-	sun_environ_popup->hide();
-
-	if (!p_already_added_sun && directional_light_count == 0 && Input::get_singleton()->is_key_pressed(Key::SHIFT)) {
-		// Prevent infinite feedback loop between the sun and environment methods.
-		_add_sun_to_scene(true);
-	}
-
-	Node *base = get_tree()->get_edited_scene_root();
-	if (!base) {
-		// Create a root node so we can add child nodes to it.
-		SceneTreeDock::get_singleton()->add_root_node(memnew(Node3D));
-		base = get_tree()->get_edited_scene_root();
-	}
-	ERR_FAIL_NULL(base);
-
-	WorldEnvironment *new_env = memnew(WorldEnvironment);
-	new_env->set_environment(preview_environment->get_environment()->duplicate(true));
-	if (GLOBAL_GET("rendering/lights_and_shadows/use_physical_light_units")) {
-		new_env->set_camera_attributes(preview_environment->get_camera_attributes()->duplicate(true));
-	}
-
-	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
-	undo_redo->create_action(TTR("Add Preview Environment to Scene"));
-	undo_redo->add_do_method(base, "add_child", new_env, true);
-	// Move to the beginning of the scene tree since more "global" nodes
-	// generally look better when placed at the top.
-	undo_redo->add_do_method(base, "move_child", new_env, 0);
-	undo_redo->add_do_method(new_env, "set_owner", base);
-	undo_redo->add_undo_method(base, "remove_child", new_env);
-	undo_redo->add_do_reference(new_env);
-	undo_redo->commit_action();
 }
 
 void Node3DEditor::_update_theme() {
@@ -2424,7 +2190,7 @@ void Node3DEditor::_notification(int p_what) {
 			tool_button[TOOL_MODE_SCALE]->set_tooltip_text(vformat(TTR("%s+Drag: Use snap."), keycode_get_string((Key)KeyModifierMask::CMD_OR_CTRL)) + "\n" + show_list_tooltip);
 			tool_button[TOOL_MODE_SELECT]->set_tooltip_text(show_list_tooltip);
 			tool_button[TOOL_MODE_LIST_SELECT]->set_tooltip_text(TTR("Show list of selectable nodes at position clicked.") + "\n" + show_list_tooltip);
-			tool_button[TOOL_RULER]->set_tooltip_text(TTR("LMB+Drag: Measure the distance between two points in 3D space.") + "\n" + show_list_tooltip);
+			tool_button[TOOL_RULER]->set_tooltip_text(TTR("The ruler is not available yet."));
 			_update_gizmos_menu();
 			_update_vertex_snap_tooltips();
 		} break;
@@ -2445,9 +2211,12 @@ void Node3DEditor::_notification(int p_what) {
 			environ_state->set_custom_minimum_size(environ_vb->get_combined_minimum_size());
 
 			ProjectSettings::get_singleton()->connect("settings_changed", callable_mp(this, &Node3DEditor::update_all_gizmos).bind(Variant()));
+			ProjectSettings::get_singleton()->connect("settings_changed", callable_mp(this, &Node3DEditor::_update_default_environment));
 		} break;
 
 		case NOTIFICATION_ENTER_TREE: {
+			ERR_FAIL_COND(entity_world->initialize_services() != OK);
+			_update_default_environment();
 			_update_theme();
 			_register_all_gizmos();
 			_init_indicators();
@@ -2456,6 +2225,9 @@ void Node3DEditor::_notification(int p_what) {
 
 		case NOTIFICATION_EXIT_TREE: {
 			_finish_indicators();
+			RenderingServer::get_singleton()->instance_set_scenario(preview_sun_instance, RID());
+			RenderingServer::get_singleton()->sync();
+			entity_world->finalize_services();
 		} break;
 
 		case NOTIFICATION_VISIBILITY_CHANGED: {
@@ -2503,13 +2275,6 @@ void Node3DEditor::_notification(int p_what) {
 			}
 			_update_vertex_snap_tooltips();
 		} break;
-
-		case NOTIFICATION_PHYSICS_PROCESS: {
-			if (do_snap_selected_nodes_to_floor) {
-				_snap_selected_nodes_to_floor();
-				do_snap_selected_nodes_to_floor = false;
-			}
-		}
 	}
 }
 
@@ -2939,7 +2704,7 @@ void Node3DEditor::clear() {
 
 void Node3DEditor::_sun_direction_draw() {
 	sun_direction->draw_rect(Rect2(Vector2(), sun_direction->get_size()), Color(1, 1, 1, 1));
-	Vector3 z_axis = preview_sun->get_transform().basis.get_column(Vector3::AXIS_Z);
+	Vector3 z_axis = Basis::from_euler(Vector3(sun_rotation.x, sun_rotation.y, 0)).get_column(Vector3::AXIS_Z);
 	z_axis = get_editor_viewport(0)->camera->get_camera_transform().basis.xform_inv(z_axis);
 	sun_direction_material->set_shader_parameter("sun_direction", Vector3(z_axis.x, -z_axis.y, z_axis.z));
 	Color color = sun_color->get_pick_color() * sun_energy->get_value();
@@ -2956,11 +2721,14 @@ void Node3DEditor::_preview_settings_changed() {
 		sun_rotation.y = Math::deg_to_rad(180.0 - sun_angle_azimuth->get_value());
 		Transform3D t;
 		t.basis = Basis::from_euler(Vector3(sun_rotation.x, sun_rotation.y, 0));
-		preview_sun->set_transform(t);
+		RenderingServer::get_singleton()->instance_set_transform(preview_sun_instance, t);
 		sun_direction->queue_redraw();
-		preview_sun->set_param(Light3D::PARAM_ENERGY, sun_energy->get_value());
-		preview_sun->set_param(Light3D::PARAM_SHADOW_MAX_DISTANCE, sun_shadow_max_distance->get_value());
-		preview_sun->set_color(sun_color->get_pick_color());
+		preview_sun_energy = sun_energy->get_value();
+		preview_sun_shadow_max_distance = sun_shadow_max_distance->get_value();
+		preview_sun_color = sun_color->get_pick_color();
+		RenderingServer::get_singleton()->light_set_param(preview_sun, RSE::LIGHT_PARAM_ENERGY, preview_sun_energy);
+		RenderingServer::get_singleton()->light_set_param(preview_sun, RSE::LIGHT_PARAM_SHADOW_MAX_DISTANCE, preview_sun_shadow_max_distance);
+		RenderingServer::get_singleton()->light_set_color(preview_sun, preview_sun_color);
 	}
 
 	{ //preview env
@@ -3011,62 +2779,32 @@ void Node3DEditor::_load_default_preview_settings() {
 	sun_environ_updating = false;
 }
 
-void Node3DEditor::_update_preview_environment() {
-	bool disable_light = directional_light_count > 0 || !sun_button->is_pressed();
-
-	sun_button->set_disabled(directional_light_count > 0);
-
-	if (disable_light) {
-		if (preview_sun->get_parent()) {
-			preview_sun->get_parent()->remove_child(preview_sun);
-			sun_state->show();
-			sun_vb->hide();
-			preview_sun_dangling = true;
-		}
-
-		if (directional_light_count > 0) {
-			sun_state->set_text(TTRC("Scene contains\nDirectionalLight3D.\nPreview disabled."));
-		} else {
-			sun_state->set_text(TTRC("Preview disabled."));
-		}
-
-	} else {
-		if (!preview_sun->get_parent()) {
-			add_child(preview_sun, true);
-			sun_state->hide();
-			sun_vb->show();
-			preview_sun_dangling = false;
-		}
+void Node3DEditor::_update_default_environment() {
+	if (entity_world->get_scenario().is_valid()) {
+		ERR_FAIL_COND(entity_world->load_default_environment() != OK);
 	}
+}
 
+void Node3DEditor::_update_preview_environment() {
+	if (entity_world->get_scenario().is_null()) {
+		return;
+	}
+	bool disable_light = directional_light_count > 0 || !sun_button->is_pressed();
+	sun_button->set_disabled(directional_light_count > 0);
+	RenderingServer::get_singleton()->instance_set_scenario(preview_sun_instance, disable_light ? RID() : entity_world->get_scenario());
+	sun_state->set_visible(disable_light);
+	sun_vb->set_visible(!disable_light);
+	sun_state->set_text(directional_light_count > 0 ? TTRC("Scene contains\nDirectionalLight3D.\nPreview disabled.") : TTRC("Preview disabled."));
 	sun_angle_altitude->set_value_no_signal(-Math::rad_to_deg(sun_rotation.x));
 	sun_angle_azimuth->set_value_no_signal(180.0 - Math::rad_to_deg(sun_rotation.y));
 
 	bool disable_env = world_env_count > 0 || !environ_button->is_pressed();
-
 	environ_button->set_disabled(world_env_count > 0);
-
-	if (disable_env) {
-		if (preview_environment->get_parent()) {
-			preview_environment->get_parent()->remove_child(preview_environment);
-			environ_state->show();
-			environ_vb->hide();
-			preview_env_dangling = true;
-		}
-		if (world_env_count > 0) {
-			environ_state->set_text(TTRC("Scene contains\nWorldEnvironment.\nPreview disabled."));
-		} else {
-			environ_state->set_text(TTRC("Preview disabled."));
-		}
-
-	} else {
-		if (!preview_environment->get_parent()) {
-			add_child(preview_environment);
-			environ_state->hide();
-			environ_vb->show();
-			preview_env_dangling = false;
-		}
-	}
+	RenderingServer::get_singleton()->scenario_set_environment(entity_world->get_scenario(), disable_env ? RID() : environment->get_rid());
+	RenderingServer::get_singleton()->scenario_set_camera_attributes(entity_world->get_scenario(), !disable_env && camera_attributes.is_valid() ? camera_attributes->get_rid() : RID());
+	environ_state->set_visible(disable_env);
+	environ_vb->set_visible(!disable_env);
+	environ_state->set_text(world_env_count > 0 ? TTRC("Scene contains\nWorldEnvironment.\nPreview disabled.") : TTRC("Preview disabled."));
 }
 
 void Node3DEditor::_sun_direction_input(const Ref<InputEvent> &p_event) {
@@ -3112,7 +2850,7 @@ void Node3DEditor::_sun_set_color(const Color &p_color) {
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	undo_redo->create_action(TTR("Set Preview Sun Color"), UndoRedo::MergeMode::MERGE_ENDS);
 	undo_redo->add_do_method(sun_color, "set_pick_color", p_color);
-	undo_redo->add_undo_method(sun_color, "set_pick_color", preview_sun->get_color());
+	undo_redo->add_undo_method(sun_color, "set_pick_color", preview_sun_color);
 	undo_redo->add_do_method(this, "_preview_settings_changed");
 	undo_redo->add_undo_method(this, "_preview_settings_changed");
 	undo_redo->commit_action();
@@ -3122,7 +2860,7 @@ void Node3DEditor::_sun_set_energy(float p_energy) {
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	undo_redo->create_action(TTR("Set Preview Sun Energy"), UndoRedo::MergeMode::MERGE_ENDS);
 	undo_redo->add_do_method(sun_energy, "set_value_no_signal", p_energy);
-	undo_redo->add_undo_method(sun_energy, "set_value_no_signal", preview_sun->get_param(Light3D::PARAM_ENERGY));
+	undo_redo->add_undo_method(sun_energy, "set_value_no_signal", preview_sun_energy);
 	undo_redo->add_do_method(this, "_preview_settings_changed");
 	undo_redo->add_undo_method(this, "_preview_settings_changed");
 	undo_redo->commit_action();
@@ -3132,7 +2870,7 @@ void Node3DEditor::_sun_set_shadow_max_distance(float p_shadow_max_distance) {
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	undo_redo->create_action(TTR("Set Preview Sun Max Shadow Distance"), UndoRedo::MergeMode::MERGE_ENDS);
 	undo_redo->add_do_method(sun_shadow_max_distance, "set_value_no_signal", p_shadow_max_distance);
-	undo_redo->add_undo_method(sun_shadow_max_distance, "set_value_no_signal", preview_sun->get_param(Light3D::PARAM_SHADOW_MAX_DISTANCE));
+	undo_redo->add_undo_method(sun_shadow_max_distance, "set_value_no_signal", preview_sun_shadow_max_distance);
 	undo_redo->add_do_method(this, "_preview_settings_changed");
 	undo_redo->add_undo_method(this, "_preview_settings_changed");
 	undo_redo->commit_action();
@@ -3230,6 +2968,7 @@ void Node3DEditor::PreviewSunEnvPopup::shortcut_input(const Ref<InputEvent> &p_e
 }
 
 Node3DEditor::Node3DEditor() {
+	entity_world = memnew(EntityWorld(entity_catalog));
 	gizmo.visible = true;
 	gizmo.scale = 1.0;
 	gizmo_view_rotation_scale = GIZMO_CIRCLE_SIZE * (float)EDITOR_GET("editors/3d/view_plane_rotation_gizmo_scale");
@@ -3357,7 +3096,7 @@ Node3DEditor::Node3DEditor() {
 	main_menu_hbox->add_child(tool_button[TOOL_RULER]);
 	tool_button[TOOL_RULER]->set_toggle_mode(true);
 	tool_button[TOOL_RULER]->set_theme_type_variation("FlatButton");
-	tool_button[TOOL_RULER]->connect(SceneStringName(pressed), callable_mp(this, &Node3DEditor::_menu_item_pressed).bind(MENU_RULER));
+	tool_button[TOOL_RULER]->set_disabled(true);
 	tool_button[TOOL_RULER]->set_tooltip_text(TTRC("LMB+Drag: Measure distance between two points.\nShift+LMB+Drag: Show component measurements."));
 	// Define the shortcut globally (without a context) so that it works if the Scene tree dock is currently focused.
 	tool_button[TOOL_RULER]->set_shortcut(ED_SHORTCUT("spatial_editor/measure", TTRC("Ruler Mode"), Key::M));
@@ -3478,6 +3217,8 @@ Node3DEditor::Node3DEditor() {
 
 	p = transform_menu->get_popup();
 	p->add_shortcut(ED_SHORTCUT("spatial_editor/snap_to_floor", TTRC("Snap Object to Floor"), Key::PAGEDOWN), MENU_SNAP_TO_FLOOR);
+	p->set_item_disabled(p->get_item_index(MENU_SNAP_TO_FLOOR), true);
+	p->set_item_tooltip(p->get_item_index(MENU_SNAP_TO_FLOOR), TTR("Snapping objects to the floor is not available yet."));
 	p->add_shortcut(ED_SHORTCUT("spatial_editor/transform_dialog", TTRC("Transform Dialog...")), MENU_TRANSFORM_DIALOG);
 
 	p->add_separator();
@@ -3809,8 +3550,8 @@ void fragment() {
 
 		sun_add_to_scene = memnew(Button);
 		sun_add_to_scene->set_text(TTRC("Add Sun to Scene"));
-		sun_add_to_scene->set_tooltip_text(TTRC("Adds a DirectionalLight3D node matching the preview sun settings to the current scene.\nHold Shift while clicking to also add the preview environment to the current scene."));
-		sun_add_to_scene->connect(SceneStringName(pressed), callable_mp(this, &Node3DEditor::_add_sun_to_scene).bind(false));
+		sun_add_to_scene->set_tooltip_text(TTRC("Adding a sun to the scene is not available yet."));
+		sun_add_to_scene->set_disabled(true);
 		sun_vb->add_spacer();
 		sun_vb->add_child(sun_add_to_scene);
 
@@ -3884,8 +3625,8 @@ void fragment() {
 
 		environ_add_to_scene = memnew(Button);
 		environ_add_to_scene->set_text(TTRC("Add Environment to Scene"));
-		environ_add_to_scene->set_tooltip_text(TTRC("Adds a WorldEnvironment node matching the preview environment settings to the current scene.\nHold Shift while clicking to also add the preview sun to the current scene."));
-		environ_add_to_scene->connect(SceneStringName(pressed), callable_mp(this, &Node3DEditor::_add_environment_to_scene).bind(false));
+		environ_add_to_scene->set_tooltip_text(TTRC("Adding an environment to the scene is not available yet."));
+		environ_add_to_scene->set_disabled(true);
 		environ_vb->add_spacer();
 		environ_vb->add_child(environ_add_to_scene);
 
@@ -3895,15 +3636,20 @@ void fragment() {
 		environ_state->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
 		environ_state->set_h_size_flags(SIZE_EXPAND_FILL);
 
-		preview_sun = memnew(DirectionalLight3D);
-		preview_sun->set_shadow(true);
-		preview_sun->set_shadow_mode(DirectionalLight3D::SHADOW_PARALLEL_4_SPLITS);
-		preview_environment = memnew(WorldEnvironment);
+		RenderingServer *server = RenderingServer::get_singleton();
+		preview_sun = server->directional_light_create();
+		preview_sun_instance = server->instance_create2(preview_sun, RID());
+		server->light_set_shadow(preview_sun, true);
+		server->light_directional_set_shadow_mode(preview_sun, RSE::LIGHT_DIRECTIONAL_SHADOW_PARALLEL_4_SPLITS);
+		server->light_set_param(preview_sun, RSE::LIGHT_PARAM_SHADOW_NORMAL_BIAS, 2.0);
+		server->light_set_param(preview_sun, RSE::LIGHT_PARAM_SPECULAR, 1.0);
+		server->light_set_param(preview_sun, RSE::LIGHT_PARAM_SHADOW_SPLIT_2_OFFSET, 0.2);
+		server->light_set_param(preview_sun, RSE::LIGHT_PARAM_SHADOW_SPLIT_3_OFFSET, 0.5);
+		server->light_set_param(preview_sun, RSE::LIGHT_PARAM_SHADOW_BIAS, 0.1);
+		server->light_set_param(preview_sun, RSE::LIGHT_PARAM_SHADOW_BLUR, 1.0);
 		environment.instantiate();
-		preview_environment->set_environment(environment);
 		if (GLOBAL_GET("rendering/lights_and_shadows/use_physical_light_units")) {
 			camera_attributes.instantiate();
-			preview_environment->set_camera_attributes(camera_attributes);
 		}
 		Ref<Sky> sky;
 		sky.instantiate();
@@ -3922,12 +3668,14 @@ void fragment() {
 Node3DEditor::~Node3DEditor() {
 	singleton = nullptr;
 	memdelete(preview_node);
-	if (preview_sun_dangling && preview_sun) {
-		memdelete(preview_sun);
+	RenderingServer *server = RenderingServer::get_singleton();
+	if (preview_sun_instance.is_valid()) {
+		server->free_rid(preview_sun_instance);
 	}
-	if (preview_env_dangling && preview_environment) {
-		memdelete(preview_environment);
+	if (preview_sun.is_valid()) {
+		server->free_rid(preview_sun);
 	}
+	memdelete(entity_world);
 }
 
 void Node3DEditorPlugin::edited_scene_changed() {
