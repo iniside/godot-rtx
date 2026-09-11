@@ -68,17 +68,19 @@ metadata and compatibility methods where current upstream practice requires it.
 Representative commands from the repository root:
 
 ```powershell
-scons platform=windows target=editor -j16
-scons platform=windows target=editor dev_build=yes -j16
-scons platform=windows target=template_debug -j16
-scons platform=windows target=editor compiledb=yes compiledb_gen_only=yes
+scons platform=windows target=editor precision=double accesskit=no d3d12=no -j16
+scons platform=windows target=editor precision=double dev_build=yes accesskit=no d3d12=no -j16
+scons platform=windows target=template_debug precision=double accesskit=no d3d12=no -j16
+scons platform=windows target=editor precision=double compiledb=yes compiledb_gen_only=yes
 pre-commit run --files <changed-files>
 ```
 
 Use only targets/options verified in `SConstruct` and the platform files. Do not
 run `scons -c` or delete `.sconsign*.dblite` as a troubleshooting shortcut.
-`precision=double` is a separate build axis; validate it only when the change
-touches that contract.
+`precision=double` is the primary and target build. Use it by default for
+builds, editor/project launches and performance validation. The Windows editor
+is `bin/godot.windows.editor.double.x86_64.exe`. Single-precision results are
+secondary and do not establish correctness or performance of the primary build.
 
 Writing, updating, or running automated tests requires explicit owner request.
 When requested, follow `docs/reference/testing.md`; test execution requires a

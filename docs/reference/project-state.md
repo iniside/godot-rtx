@@ -1,5 +1,14 @@
 # Project State
 
+Primary build decision (owner, 2026-09-11): `precision=double` is the main and
+target configuration. Default builds, launches and measurements use
+`bin/godot.windows.editor.double.x86_64.exe`; single-precision results below
+remain historical evidence for that build only. Double editor build at
+`62ddf0265b` passes in 4m03s, exit0; executable reports
+`4.8.dev.double.custom_build.62ddf0265`. This confirms compilation/version,
+not a new native scene or performance measurement. See
+[build authority](../../.agents/shared/godot-rules.md#build-and-validation---rule).
+
 Directional shadow scheduling (2026-09-11, source `235449ef33`): Forward+
 refreshes cascades on staggered 1/2/4/8-frame periods and selects shadow geometry
 at 1/2/4/8-texel error. Retained maps keep matching transforms; only updated

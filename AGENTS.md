@@ -12,6 +12,10 @@ plan lanes do not pin models.
 
 ## Always
 
+- `precision=double` is the primary and target build for this project. Build,
+  launch, validate and measure the double executable by default; on Windows
+  use `bin/godot.windows.editor.double.x86_64.exe`. A single-precision build
+  does not replace validation of the primary double build.
 - Preserve the owner's requested shape, exclusions, and authorized scope.
   Replace fork-local/game behavior at its authority and remove the old path in
   the same step. Do not introduce unrequested bridges or compatibility paths.
