@@ -1089,7 +1089,6 @@ void main(uint3 group_id : SV_GroupID, uint lane : SV_GroupIndex,
 		if (lane < micro_geometry_triangle_count) {
 			triangle = uint3(micro_geometry_load_byte(index_address + lane * 3), micro_geometry_load_byte(index_address + lane * 3 + 1), micro_geometry_load_byte(index_address + lane * 3 + 2));
 			valid = valid && all(triangle < micro_geometry_vertex_count);
-			valid = valid && micro_geometry_load_word(triangle_ids_address + lane * 4) < micro_geometry_surface.source_triangle_count;
 		}
 		if (!valid) {
 			InterlockedOr(micro_geometry_invalid, 1);
