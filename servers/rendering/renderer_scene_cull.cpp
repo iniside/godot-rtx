@@ -418,6 +418,74 @@ void RendererSceneCull::_instance_unpair(Instance *p_A, Instance *p_B) {
 	}
 }
 
+void RendererSceneCull::Scenario::shadow_caster_dirty(const AABB &p_box) {
+	const uint64_t generation = ++shadow_caster_generation;
+	if (shadow_caster_log_size == SHADOW_CASTER_LOG_CAPACITY) {
+		// The dropped entry is no longer scannable, so cascades older than it must refresh.
+		shadow_caster_overflow_generation = MAX(shadow_caster_overflow_generation, shadow_caster_log[shadow_caster_log_first].generation);
+		shadow_caster_log_first = (shadow_caster_log_first + 1) % SHADOW_CASTER_LOG_CAPACITY;
+		shadow_caster_log_size--;
+	}
+	ShadowCasterLogEntry &entry = shadow_caster_log[(shadow_caster_log_first + shadow_caster_log_size) % SHADOW_CASTER_LOG_CAPACITY];
+	entry.generation = generation;
+	entry.box = p_box;
+	shadow_caster_log_size++;
+}
+
+void RendererSceneCull::Scenario::shadow_caster_dirty_all() {
+	shadow_caster_overflow_generation = ++shadow_caster_generation;
+}
+
+bool RendererSceneCull::Scenario::shadow_casters_intersect(uint64_t p_generation, const Basis &p_basis, const double *p_origin, const Vector3 &p_minimum, const Vector3 &p_maximum, real_t p_margin) const {
+	if (p_generation < shadow_caster_overflow_generation) {
+		return true;
+	}
+
+	const Basis inverse_basis = p_basis.transposed();
+	for (uint32_t i = 0; i < shadow_caster_log_size; i++) {
+		const ShadowCasterLogEntry &entry = shadow_caster_log[(shadow_caster_log_first + i) % SHADOW_CASTER_LOG_CAPACITY];
+		if (entry.generation <= p_generation) {
+			continue;
+		}
+
+		Vector3 box_minimum;
+		Vector3 box_maximum;
+		for (int corner = 0; corner < 8; corner++) {
+			Vector3 point;
+			for (int axis = 0; axis < 3; axis++) {
+				const double extent = ((corner >> axis) & 1) ? double(entry.box.size[axis]) : 0.0;
+				point[axis] = double(entry.box.position[axis]) + extent - p_origin[axis];
+			}
+			const Vector3 caster = inverse_basis.xform(point);
+			if (corner == 0) {
+				box_minimum = caster;
+				box_maximum = caster;
+			} else {
+				for (int axis = 0; axis < 3; axis++) {
+					box_minimum[axis] = MIN(box_minimum[axis], caster[axis]);
+					box_maximum[axis] = MAX(box_maximum[axis], caster[axis]);
+				}
+			}
+		}
+
+		bool separated = false;
+		for (int axis = 0; axis < 2; axis++) {
+			if (box_maximum[axis] < p_minimum[axis] - p_margin || box_minimum[axis] > p_maximum[axis] + p_margin) {
+				separated = true;
+			}
+		}
+		// The cascade culls casters up to the light with an open far plane, so only the near side of z bounds them.
+		if (box_maximum.z < p_minimum.z - p_margin) {
+			separated = true;
+		}
+		if (!separated) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 RID RendererSceneCull::scenario_allocate() {
 	return scenario_owner.allocate_rid();
 }
@@ -2126,7 +2194,8 @@ void RendererSceneCull::_update_instance(Instance *p_instance) const {
 				light->make_shadow_dirty();
 			}
 			if (p_instance->scenario) {
-				p_instance->scenario->shadow_caster_generation++;
+				const AABB &previous_aabb = p_instance->prev_transformed_aabb;
+				p_instance->scenario->shadow_caster_dirty(previous_aabb == AABB() ? new_aabb : new_aabb.merge(previous_aabb));
 			}
 		}
 
@@ -2350,7 +2419,7 @@ void RendererSceneCull::_unpair_instance(Instance *p_instance) {
 	if ((1 << p_instance->base_type) & RSE::INSTANCE_GEOMETRY_MASK) {
 		p_instance->scenario->indexers[Scenario::INDEXER_GEOMETRY].remove(p_instance->indexer_id);
 		if (static_cast<InstanceGeometryData *>(p_instance->base_data)->can_cast_shadows) {
-			p_instance->scenario->shadow_caster_generation++;
+			p_instance->scenario->shadow_caster_dirty(p_instance->transformed_aabb);
 		}
 	} else {
 		p_instance->scenario->indexers[Scenario::INDEXER_VOLUMES].remove(p_instance->indexer_id);
@@ -2678,10 +2747,17 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 			const uint64_t age = frame - cached.frame;
 			const uint32_t period = 1u << i;
 			const uint32_t phase = i < 2 ? 0 : (1u << (i - 2)) * 2 - 1;
+			bool casters_unchanged = p_instance->scenario != nullptr && cached.caster_generation == caster_generation;
+			bool casters_scanned = false;
 			if (cached.valid) {
 				cached.max_age = MAX(cached.max_age, age);
+				const real_t margin = MAX(cached.maximum.x - cached.minimum.x, cached.maximum.y - cached.minimum.y) * 2.0 / MAX(texture_size, real_t(1));
 				if (cached.basis.get_column(2).dot(light_transform.basis.get_column(2)) < Math::cos(Math::deg_to_rad(0.5))) {
 					cached.force |= 1 << InstanceLightData::DirectionalShadowCache::SUN;
+				}
+				if (!casters_unchanged && p_instance->scenario != nullptr && !p_instance->scenario->shadow_casters_intersect(cached.caster_generation, cached.basis, cached.origin, cached.minimum, cached.maximum, margin)) {
+					casters_unchanged = true;
+					casters_scanned = true;
 				}
 				if (i == 0) {
 					bool pose_changed = cached.camera_basis != p_cam_transform.basis;
@@ -2697,7 +2773,6 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 						offset[axis] = p_cam_origin[axis] - cached.origin[axis];
 					}
 					const Basis inverse_basis = cached.basis.transposed();
-					const real_t margin = MAX(cached.maximum.x - cached.minimum.x, cached.maximum.y - cached.minimum.y) * 2.0 / MAX(texture_size, real_t(1));
 					for (const Vector3 &endpoint : endpoints) {
 						const Vector3 receiver = inverse_basis.xform(endpoint + offset);
 						for (int axis = 0; axis < 3; axis++) {
@@ -2708,8 +2783,10 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 					}
 				}
 			}
-			const bool casters_unchanged = p_instance->scenario != nullptr && cached.caster_generation == caster_generation;
 			if (cached.valid && cached.force == 0 && (casters_unchanged || (frame % period != phase && age < period))) {
+				if (casters_scanned) {
+					cached.caster_generation = caster_generation;
+				}
 				cached.reused++;
 				continue;
 			}
@@ -3911,7 +3988,7 @@ void RendererSceneCull::_render_scene(RID p_camera, const RendererSceneRender::C
 			visibility_cull_data.camera_position[axis] = p_camera_data->main_origin[axis];
 		}
 
-		bool shadow_casters_changed = false;
+		LocalVector<AABB> shadow_caster_boxes;
 
 		for (int i = scenario->instance_visibility.get_bin_count() - 1; i > 0; i--) { // We skip bin 0
 			visibility_cull_data.cull_offset = scenario->instance_visibility.get_bin_start(i);
@@ -3935,8 +4012,8 @@ void RendererSceneCull::_render_scene(RID p_camera, const RendererSceneRender::C
 					if (result.reset_motion) {
 						idata.instance_geometry->reset_motion_vectors();
 					}
-					if (result.shadow_caster_changed) {
-						shadow_casters_changed = true;
+					if (result.shadow_caster_changed && result.visibility.instance) {
+						shadow_caster_boxes.push_back(result.visibility.instance->transformed_aabb);
 					}
 				}
 			};
@@ -3948,8 +4025,8 @@ void RendererSceneCull::_render_scene(RID p_camera, const RendererSceneRender::C
 			pool->wait_for_group_task_completion(publish_job);
 		}
 
-		if (shadow_casters_changed) {
-			scenario->shadow_caster_generation++;
+		for (const AABB &box : shadow_caster_boxes) {
+			scenario->shadow_caster_dirty(box);
 		}
 	}
 
@@ -4765,7 +4842,7 @@ void RendererSceneCull::_update_dirty_instance(Instance *p_instance) const {
 				geom->can_cast_shadows = can_cast_shadows;
 
 				if (p_instance->scenario) {
-					p_instance->scenario->shadow_caster_generation++;
+					p_instance->scenario->shadow_caster_dirty(p_instance->transformed_aabb);
 				}
 			}
 

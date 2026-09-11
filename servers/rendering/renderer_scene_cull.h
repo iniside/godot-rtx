@@ -379,12 +379,30 @@ public:
 			INDEXER_MAX
 		};
 
+		enum {
+			SHADOW_CASTER_LOG_CAPACITY = 256
+		};
+
+		struct ShadowCasterLogEntry {
+			uint64_t generation = 0;
+			AABB box;
+		};
+
 		DynamicBVH indexers[INDEXER_MAX];
 
 		RID self;
 		uint64_t world_generation = 0;
 		uint64_t publication_sequence = 0;
 		uint64_t shadow_caster_generation = 1;
+		uint64_t shadow_caster_overflow_generation = 0;
+		ShadowCasterLogEntry shadow_caster_log[SHADOW_CASTER_LOG_CAPACITY];
+		uint32_t shadow_caster_log_first = 0;
+		uint32_t shadow_caster_log_size = 0;
+
+		void shadow_caster_dirty(const AABB &p_box);
+		void shadow_caster_dirty_all();
+		bool shadow_casters_intersect(uint64_t p_generation, const Basis &p_basis, const double *p_origin, const Vector3 &p_minimum, const Vector3 &p_maximum, real_t p_margin) const;
+
 		HashMap<EntityId, NativeEntity, EntityIdHasher> native_entities;
 		HashMap<EntityId, HashSet<Instance *>, EntityIdHasher> entity_dependents;
 		HashMap<EntityId, RID, EntityIdHasher> native_cameras;
@@ -579,7 +597,7 @@ public:
 					if (instance->scenario && ((1 << instance->base_type) & RSE::INSTANCE_GEOMETRY_MASK)) {
 						const InstanceGeometryData *geom = static_cast<const InstanceGeometryData *>(instance->base_data);
 						if (geom && geom->can_cast_shadows) {
-							instance->scenario->shadow_caster_generation++;
+							instance->scenario->shadow_caster_dirty_all();
 						}
 					}
 				} break;
