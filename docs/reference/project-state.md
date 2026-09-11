@@ -1,23 +1,29 @@
 # Project State
 
-Native stress repair (2026-09-11, source `ab4e61b17a`): the original false
-512 MiB replacement admission failure is repaired; sampled final camera active
-storage is 152.1 MB with no overflow or retired bytes. A tighter conservative
-transform scale bound replaces Frobenius scaling (identity previously sqrt(3)),
-retaining the 1 px target and existing shadow/RT tolerances. Same native 10000-instance editor scene/camera/resolution: no-profile median 23 -> 43.5 FPS with
-origin axes restored; final run exits 0 with no ERROR lines and pending pages 0.
-Matched origin-hidden profiling gives GPU 43.2 -> 22.9 ms and camera 171M -> 78M
-triangles. Simplified assets and live non-leaf selection are confirmed; 1 px is
-an error tolerance, not a triangle-per-pixel cap. Extra sampled counters expose
-refinement/readiness, cut retention, size buckets and HZB rejection reasons.
-Temporary 4 px sensitivity override and editor measurement settings are restored.
-The origin shader still invalidates shared-depth history; no overlay pass fix,
-motion/resize check or complete renderer optimization is claimed. See
-[results and evidence limits](../research/2026-09-10-2225-native-stress-repair-status.md)
-and the [repair plan with measured continuation](../plans/2026-09-10-2217-native-stress-selection-hzb-plan.md).
-The original [measurement](../research/2026-09-10-2211-native-stress-editor-profile-status.md)
-and [admission diagnosis](../research/2026-09-10-2214-native-stress-selection-repair-summary.md)
-remain historical evidence.
+Microgeometry HZB repair (2026-09-11, source `fa50c0398f`, `19f97459f7`):
+HZB now runs with visible editor axes. Deformed-material pixels are excluded
+only from its depth copy; original RTXDI temporal validity and other geometry
+vetoes remain. Bounded rectangle refinement replaces oversized coarse queries;
+the depth margin now scales with float precision and projection cancellation.
+At unchanged 1 px, camera and 10000-instance native stress scene, camera
+submission falls 79.12M -> 67.36M triangles; 140481 clusters are rejected and
+stationary recovery emits none. Both ordinary Vulkan builds and captures exit
+successfully without ERROR lines, and one brief source review passes.
+Performance remains unresolved: profile GPU 21.923 -> 23.707 ms; final unprofiled
+pair 40 -> 45 FPS conflicts with earlier 43.5/42 FPS runs. No stable frame-time
+win or roughly 9 ms budget is claimed. Camera raster remains about 12.3 ms.
+Editor measurement settings are restored, origin visible, scene hash unchanged.
+Movement/reveal/resize and visual quality were not evaluated. See
+[current results and limits](../research/2026-09-11-0615-microgeometry-hzb-repair-status.md)
+and [repair plan](../plans/2026-09-11-0604-microgeometry-hzb-repair-plan.md).
+
+Previous native stress repair (source `ab4e61b17a`) removes false 512 MiB
+replacement admission failure and replaces loose Frobenius transform scaling
+with a tighter conservative bound while retaining 1 px and RT/shadow tolerances.
+Its historical matched result was 23 -> 43.5 FPS, with simplified assets and
+live non-leaf selection confirmed. The 1 px target is error tolerance, not a
+triangle-per-pixel cap. See
+[prior results](../research/2026-09-10-2225-native-stress-repair-status.md).
 
 Entity scene model implementation authorized (2026-09-10, task-start `3a6a695fc8`): owner
 selects Flecs for the complete 3D world scene in editor/runtime, without
