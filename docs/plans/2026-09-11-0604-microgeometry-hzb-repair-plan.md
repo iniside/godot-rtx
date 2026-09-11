@@ -90,3 +90,20 @@ are existing Vulkan/CLAS renderer shader paths, not new backend APIs. Keep RD
 work on the render owner and existing uniform-cache/resource retirement paths.
 Commit the plan before source implementation and each completed source step;
 root records measured source/binary identity and updates project-state/status.
+
+## Measured continuation — reverse-Z numerical margin [inline]
+
+The first real-device run enables HZB and reduces camera submission79.1M->67.9M
+triangles, but leaves512920 queries failing on nonzero interior depth and no
+unprofiled FPS improvement. The previously preserved absolute1e-5 depth margin
+corresponds to about1.96 world units at distance100 with near0.05. Replace that
+constant at the existing occluded threshold with a float-arithmetic allowance:
+32 times float epsilon times (abs(nearest) + twice the projection cancellation
+term). For perspective the cancellation term is abs(P[10]); for orthographic
+it is abs(P[14]); use the same current/previous projection as the query.
+This retains a nonzero numerical margin including far-plane cancellation.
+It is not a formal bound on arbitrary model/view transform cancellation.
+No new helper, setting, resource or query strategy is required. All conservative
+bounds, recovery, budgets and scene/quality settings remain. Rebuild and repeat
+the same profile and unprofiled capture; report actual impact, not an assumed
+attribution of all nonzero failures to the old margin.
