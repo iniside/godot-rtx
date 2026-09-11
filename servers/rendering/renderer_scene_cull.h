@@ -1206,6 +1206,9 @@ public:
 
 	uint32_t thread_cull_threshold = 200;
 
+	static constexpr real_t shadow_sun_texel_error = 1.0;
+	static constexpr real_t shadow_sun_max_angle_degrees = 0.5;
+
 	mutable RID_Owner<Instance, true> instance_owner{ 65536, 4194304 };
 
 	uint32_t geometry_instance_pair_mask = 0; // used in traditional forward, unnecessary on clustered

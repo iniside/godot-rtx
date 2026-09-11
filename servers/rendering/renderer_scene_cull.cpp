@@ -2751,8 +2751,11 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 			bool casters_scanned = false;
 			if (cached.valid) {
 				cached.max_age = MAX(cached.max_age, age);
+				const real_t texel = (cached.maximum.x - cached.minimum.x) / MAX(texture_size, real_t(1));
 				const real_t margin = MAX(cached.maximum.x - cached.minimum.x, cached.maximum.y - cached.minimum.y) * 2.0 / MAX(texture_size, real_t(1));
-				if (cached.basis.get_column(2).dot(light_transform.basis.get_column(2)) < Math::cos(Math::deg_to_rad(0.5))) {
+				const real_t depth_range = MAX(cached.maximum.z - cached.minimum.z, texel);
+				const real_t sun_angle_max = MIN(Math::deg_to_rad(shadow_sun_max_angle_degrees), shadow_sun_texel_error * texel / depth_range);
+				if (cached.basis.get_column(2).dot(light_transform.basis.get_column(2)) < Math::cos(sun_angle_max)) {
 					cached.force |= 1 << InstanceLightData::DirectionalShadowCache::SUN;
 				}
 				if (!casters_unchanged && p_instance->scenario != nullptr && !p_instance->scenario->shadow_casters_intersect(cached.caster_generation, cached.basis, cached.origin, cached.minimum, cached.maximum, margin)) {
@@ -4288,7 +4291,7 @@ void RendererSceneCull::_render_scene(RID p_camera, const RendererSceneRender::C
 			if (cull.shadows[i].light_data && RSG::utilities->capturing_timestamps && frame % 120 == 0) {
 				for (uint32_t j = 0; j < cull.shadows[i].cascade_count; j++) {
 					auto &cached = cull.shadows[i].light_data->directional_shadow_cache.cascades[j];
-					print_line(vformat("ShadowCadence frame=%d light=%d cascade=%d period=%d refreshed=%d reused=%d age=%d max_age=%d error=%d casters=%d first=%d atlas=%d layout=%d camera=%d parameters=%d sun=%d coverage=%d", frame, i, j, 1u << j, cached.refreshed, cached.reused, frame - cached.frame, cached.max_age, 1u << j, cached.caster_generation, cached.forced[0], cached.forced[1], cached.forced[2], cached.forced[3], cached.forced[4], cached.forced[5], cached.forced[6]));
+					print_line(vformat("ShadowCadence frame=%d light=%d cascade=%d period=%d refreshed=%d reused=%d age=%d max_age=%d casters=%d first=%d atlas=%d layout=%d camera=%d parameters=%d sun=%d coverage=%d", frame, i, j, 1u << j, cached.refreshed, cached.reused, frame - cached.frame, cached.max_age, cached.caster_generation, cached.forced[0], cached.forced[1], cached.forced[2], cached.forced[3], cached.forced[4], cached.forced[5], cached.forced[6]));
 					cached.refreshed = 0;
 					cached.reused = 0;
 					cached.max_age = 0;
