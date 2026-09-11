@@ -93,6 +93,9 @@ RenderRaytracing::~RenderRaytracing() {
 	if (pathtracing) {
 		memdelete(pathtracing);
 	}
+	if (primary_version.is_valid()) {
+		primary_shader.version_free(primary_version);
+	}
 
 	_free_persistent_buffers();
 	if (geometry_positions_version.is_valid()) {
@@ -313,6 +316,15 @@ void RenderRaytracing::_free_viewport_state_internal(RTViewportState *p_state) {
 		RD::get_singleton()->free_rid(p_state->material_pipeline);
 	}
 	for (RID resource : { p_state->material_frame_buffer, p_state->decal_buffer, p_state->material_unused_buffer }) {
+		if (resource.is_valid()) {
+			RD::get_singleton()->free_rid(resource);
+		}
+	}
+	if (RD::get_singleton()->raytracing_pipeline_is_valid(p_state->primary_pipeline)) {
+		RD::get_singleton()->free_rid(p_state->primary_sbt);
+		RD::get_singleton()->free_rid(p_state->primary_pipeline);
+	}
+	for (RID resource : { p_state->primary_frame_buffer, p_state->primary_statistics }) {
 		if (resource.is_valid()) {
 			RD::get_singleton()->free_rid(resource);
 		}
@@ -2037,6 +2049,10 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 	parameters.layer_mask = p_render_data->scene_data->camera_visible_layers;
 	parameters.error = p_state->settings.geometry_error;
 	parameters.offscreen_multiplier = p_state->settings.geometry_offscreen_multiplier;
+	if (owner->primary_surface_trace) {
+		parameters.error = MIN(parameters.error, MicroGeometrySelection::Parameters().error);
+		parameters.offscreen_multiplier = 1.0f;
+	}
 	parameters.output_height = p_render_data->render_buffers->get_target_size().y;
 	parameters.near_plane = p_render_data->scene_data->cam_projection.get_z_near();
 	Projection correction;
@@ -5186,6 +5202,92 @@ RID RenderRaytracing::create_material_uniform_set(RTViewportState *p_state, RID 
 	append(RD::UNIFORM_TYPE_STORAGE_BUFFER, 22, p_ray_buffer.is_valid() ? p_ray_buffer : p_state->material_unused_buffer);
 	append(RD::UNIFORM_TYPE_STORAGE_BUFFER, 23, p_result_buffer.is_valid() ? p_result_buffer : p_state->material_unused_buffer);
 	return rd->uniform_set_create(uniforms, p_shader, 0, true);
+}
+
+void RenderRaytracing::_primary_statistics_received(const Vector<uint8_t> &p_bytes, uint64_t p_frame) {
+	if (p_bytes.size() == 16) {
+		print_line(vformat("Primary visibility: frame=%d rays=%d hits=%d misses=%d unsupported=%d", p_frame, decode_uint32(p_bytes.ptr()), decode_uint32(p_bytes.ptr() + 4), decode_uint32(p_bytes.ptr() + 8), decode_uint32(p_bytes.ptr() + 12)));
+	}
+}
+
+bool RenderRaytracing::render_primary_surface(RTViewportState *p_state, RID p_scene_data_buffer, Span<const RID> p_outputs, RID p_depth, const Size2i &p_size) {
+	ERR_FAIL_NULL_V(p_state, false);
+	ERR_FAIL_COND_V(p_outputs.size() != 6 || p_depth.is_null(), false);
+	for (RID output : p_outputs) {
+		ERR_FAIL_COND_V(output.is_null(), false);
+	}
+	RD *rd = RD::get_singleton();
+	if (primary_version.is_null()) {
+		primary_shader.initialize(Vector<String>{ "" }, "#define USE_DOUBLE_PRECISION\n");
+		primary_version = primary_shader.version_create();
+	}
+	RID shader = primary_shader.version_get_shader(primary_version, 0);
+	ERR_FAIL_COND_V(shader.is_null(), false);
+	if (p_state->primary_material_pipeline != p_state->material_pipeline || !rd->raytracing_pipeline_is_valid(p_state->primary_pipeline)) {
+		if (rd->raytracing_pipeline_is_valid(p_state->primary_pipeline)) {
+			rd->free_rid(p_state->primary_sbt);
+			rd->free_rid(p_state->primary_pipeline);
+		}
+		p_state->primary_pipeline = RID();
+		p_state->primary_sbt = RID();
+		RD::PipelineShader entry;
+		entry.shader = shader;
+		ERR_FAIL_COND_V(!create_material_pipeline(p_state, { &entry, 1 }, { &entry, 1 }, 1, p_state->primary_pipeline, p_state->primary_sbt), false);
+		p_state->primary_material_pipeline = p_state->material_pipeline;
+	}
+	const uint64_t frame_number = RSG::rasterizer->get_frame_number();
+	const bool sample_statistics = RSG::utilities->capturing_timestamps && frame_number % 120 == 0;
+	struct Frame {
+		uint32_t extent[2];
+		uint32_t layers;
+		uint32_t orthogonal;
+		uint32_t statistics;
+		uint32_t padding[3];
+	} frame = { { uint32_t(p_size.x), uint32_t(p_size.y) }, p_state->settings_visible_layers, uint32_t(p_state->camera_orthogonal), uint32_t(sample_statistics), {} };
+	if (owner->_primary_surface_editor_helper(1u << 25)) {
+		frame.layers &= ~((1u << 25) | (1u << 26) | (1u << 27));
+	}
+	if (p_state->primary_frame_buffer.is_null()) {
+		p_state->primary_frame_buffer = rd->uniform_buffer_create(sizeof(frame));
+	}
+	if (p_state->primary_statistics.is_null()) {
+		p_state->primary_statistics = rd->storage_buffer_create(16);
+	}
+	ERR_FAIL_COND_V(p_state->primary_frame_buffer.is_null() || p_state->primary_statistics.is_null(), false);
+	rd->buffer_update(p_state->primary_frame_buffer, 0, sizeof(frame), &frame);
+	if (sample_statistics) {
+		rd->buffer_clear(p_state->primary_statistics, 0, 16);
+	}
+	RID material_set = create_material_uniform_set(p_state, p_scene_data_buffer, shader);
+	ERR_FAIL_COND_V(material_set.is_null(), false);
+	RID bindless_set = get_bindless_uniform_set(shader);
+	LocalVector<RD::Uniform> uniforms;
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 0, { p_state->primary_frame_buffer }));
+	for (uint32_t i = 0; i < 6; i++) {
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 1 + i, { p_outputs[i] }));
+	}
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 7, { p_depth }));
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 8, { p_state->motion_index_buffer }));
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 9, { p_state->motion_transform_buffer }));
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 10, { p_state->primary_statistics }));
+	RID output_set = UniformSetCacheRD::get_singleton()->get_cache_vec(shader, 2, uniforms);
+	if (bindless_set.is_null() || output_set.is_null()) {
+		rd->free_rid(material_set);
+		return false;
+	}
+	RD::RaytracingListID list = rd->raytracing_list_begin();
+	rd->raytracing_list_bind_raytracing_pipeline(list, p_state->primary_pipeline);
+	rd->raytracing_list_bind_uniform_set(list, material_set, 0);
+	rd->raytracing_list_bind_uniform_set(list, bindless_set, 1);
+	rd->raytracing_list_bind_uniform_set(list, output_set, 2);
+	register_raytracing_buffer_dependencies(list);
+	rd->raytracing_list_trace_rays(list, 0, p_state->primary_sbt, p_size.x, p_size.y, 1);
+	rd->raytracing_list_end();
+	rd->free_rid(material_set);
+	if (sample_statistics) {
+		rd->buffer_get_data_async(p_state->primary_statistics, callable_mp_static(&RenderRaytracing::_primary_statistics_received).bind(frame_number), 0, 16);
+	}
+	return true;
 }
 
 bool RenderRaytracing::trace_material_rays(RTViewportState *p_state, RID p_scene_data_buffer, RID p_ray_buffer, RID p_result_buffer, uint32_t p_ray_count) {

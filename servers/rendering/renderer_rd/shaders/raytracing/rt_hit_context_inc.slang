@@ -182,6 +182,7 @@ struct RTVertexInterpolants {
 static RTVertexInterpolants rt_interpolants_dx;
 static RTVertexInterpolants rt_interpolants_dy;
 static float rt_hit_distance;
+static bool rt_primary_ray;
 
 struct RTValue<T> {
 	T value;
@@ -218,6 +219,14 @@ void rt_ray_footprint(GeometryHitInput hit, GeometryTriangle triangle, float3 ra
 	float denominator = (plane_dot < 0.0 ? -1.0 : 1.0) * max(abs(plane_dot), 1e-4);
 	rt_position_dx = dx - ray_direction * (dot(plane_normal, dx) / denominator);
 	rt_position_dy = dy - ray_direction * (dot(plane_normal, dy) / denominator);
+	if (rt_primary_ray) {
+		GeometryFootprint footprint;
+		footprint.world_to_clip = mul(transpose(scene_data_block.data.projection_matrix), geometry_inverse(rt_camera_to_rt(rt_frame, false)));
+		footprint.pixel_size = 1.0 / scene_data_block.data.viewport_size;
+		geometry_footprint_derivatives(hit, triangle, footprint, object_position, object_dx, object_dy, uv, uv_dx, uv_dy);
+		rt_position_dx = mul((float3x3)hit.object_to_world, object_dx);
+		rt_position_dy = mul((float3x3)hit.object_to_world, object_dy);
+	}
 	float3 bary_u = cross(p2 - p0, cross_normal) / max(dot(cross_normal, cross_normal), 1e-20);
 	float3 bary_v = cross(cross_normal, p1 - p0) / max(dot(cross_normal, cross_normal), 1e-20);
 	rt_bary_dx.yz = float2(dot(bary_u, rt_position_dx), dot(bary_v, rt_position_dx));
@@ -469,6 +478,10 @@ SurfaceData rt_evaluate_material(GeometryHitInput hit, GeometryTriangle triangle
 	rt_material_interpolate_vertices(hit, triangle, bary);
 	float3 world_position = mul(hit.object_to_world, float4(object_position, 1.0));
 	vertex = mul(rt_world_to_view, float4(world_position, 1.0)).xyz;
+	float4 clip_position = mul(float4(vertex, 1.0), scene_data.projection_matrix);
+	screen_uv = clip_position.xy / clip_position.w * 0.5 + 0.5;
+	fragment_coord = float4(screen_uv * read_viewport_size, clip_position.z / clip_position.w, 1.0 / clip_position.w);
+	fragment_depth = fragment_coord.z;
 	light_vertex = vertex;
 	view_highp = normalize(mul((float3x3)rt_world_to_view, -ray_direction));
 #ifdef DO_SIDE_CHECK

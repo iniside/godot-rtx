@@ -32,6 +32,7 @@
 
 #include "render_rtxdi.h"
 
+#include "core/config/engine.h"
 #include "core/config/project_settings.h"
 #include "core/io/marshalls.h"
 #include "core/object/callable_mp.h"
@@ -604,6 +605,9 @@ void RenderForwardClustered::_update_micro_geometry_instances(const LocalVector<
 }
 
 RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepare_micro_geometry(const RenderDataRD *p_render_data, PassMode p_pass) {
+	if (primary_surface_trace && p_pass == PASS_MODE_RTXDI_SURFACE) {
+		return nullptr;
+	}
 	if (!raytracing || !scene_shader.micro_geometry_mesh_supported || p_pass == PASS_MODE_SDF || p_pass == PASS_MODE_DEPTH_MATERIAL) {
 		return nullptr;
 	}
@@ -977,6 +981,9 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 	for (uint32_t i = p_from_element; i < p_to_element; i++) {
 		const GeometryInstanceSurfaceDataCache *surf = p_params->elements[i].surface;
 		const RenderElementInfo &element_info = p_params->element_info[i];
+		if (p_pass_mode == PASS_MODE_RTXDI_SURFACE && primary_surface_trace && !_primary_surface_editor_helper(surf->owner->scene_data->layer_mask)) {
+			continue;
+		}
 
 		if (surf->owner->instance_count == 0) {
 			continue;
@@ -2658,12 +2665,22 @@ void RenderForwardClustered::_render_3d_upscaling(const RenderDataRD *p_render_d
 	}
 }
 
+bool RenderForwardClustered::_primary_surface_editor_helper(uint32_t p_layer_mask) {
+#ifdef TOOLS_ENABLED
+	const uint32_t editor_layers = (1u << 25) | (1u << 26) | (1u << 27);
+	return Engine::get_singleton()->is_editor_hint() && p_layer_mask != 0 && (p_layer_mask & ~editor_layers) == 0;
+#else
+	return false;
+#endif
+}
+
 void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Color &p_default_bg_color) {
 #ifdef DEBUG_ENABLED
-	if (primary_visibility_mode != PRIMARY_VISIBILITY_RASTER) {
-		ERR_PRINT_ONCE("GODOT_PRIMARY_VISIBILITY currently supports only R; T, H-R and H-T are not implemented.");
+	if (primary_visibility_mode != PRIMARY_VISIBILITY_RASTER && primary_visibility_mode != PRIMARY_VISIBILITY_TRACE) {
+		ERR_PRINT_ONCE("GODOT_PRIMARY_VISIBILITY supports R and T; hybrid modes are not implemented.");
 		return;
 	}
+	primary_surface_trace = primary_visibility_mode == PRIMARY_VISIBILITY_TRACE;
 #endif
 	micro_geometry_scenario = p_render_data->scenario;
 	micro_geometry_visible_layers = p_render_data->scene_data->camera_visible_layers;
@@ -2701,6 +2718,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	}
 	const RendererEnvironmentStorage::RaytracingSettings &rt_settings = raytracing->_get_viewport_state(p_render_data)->settings;
 	const bool path_traced = rt_settings.raytracing_rendering_mode == RSE::RAYTRACING_RENDERING_MODE_PATH_TRACED;
+	ERR_FAIL_COND_MSG(primary_surface_trace && path_traced, "Primary visibility T requires RTXDI/DDGI lighting mode.");
 	const bool raw_path_traced = path_traced && rt_settings.raytracing_denoiser == RSE::RAYTRACING_DENOISER_NONE;
 	ERR_FAIL_COND_MSG(raw_path_traced && (rb->get_internal_size() != rb->get_target_size() || RSE::scaling_3d_mode_type(rb->get_scaling_3d_mode()) == RSE::VIEWPORT_SCALING_3D_TYPE_TEMPORAL || rb->get_use_taa() || rb->get_frame_generation()), "Raw path-traced reference requires native resolution, no temporal upscaler, TAA or frame generation.");
 	if (rt_settings.raytracing_denoiser == RSE::RAYTRACING_DENOISER_DLSS_RR) {
@@ -2778,6 +2796,34 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		WorkerThreadPool::get_singleton()->wait_for_group_task_completion(prepare_camera_motion_job);
 	}
 	_update_dirty_geometry_instances();
+	if (primary_surface_trace) {
+		if (primary_surface_validation_generation != micro_geometry_generation || primary_surface_validation_rt_generation != micro_geometry_rt_generation) {
+			for (auto *element = micro_geometry_surface_list.first(); element; element = element->next()) {
+				const auto *surface = element->self();
+				ERR_FAIL_COND_MSG(!surface->micro_geometry_rt_ready || !surface->micro_geometry_rt_element.in_list() || (surface->rtxdi_material_flags & GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_UNSUPPORTED), "Primary visibility T is ineligible: microgeometry material or CLAS is not ready for primary visibility.");
+			}
+			primary_surface_validation_generation = micro_geometry_generation;
+			primary_surface_validation_rt_generation = micro_geometry_rt_generation;
+		}
+		for (const PagedArray<RenderGeometryInstance *> *instances : { p_render_data->instances, p_render_data->rt_instances }) {
+			if (!instances) {
+				continue;
+			}
+			for (uint32_t index = 0; index < instances->size(); index++) {
+				const auto *instance = static_cast<GeometryInstanceForwardClustered *>((*instances)[index]);
+				if (_primary_surface_editor_helper(instance->scene_data->layer_mask)) {
+					continue;
+				}
+				for (auto *surface = instance->surface_caches; surface; surface = surface->next) {
+					const auto *shader = surface->shader;
+					if (shader && shader->uses_alpha_pass()) {
+						continue;
+					}
+					ERR_FAIL_COND_MSG(!shader || instance->rt_procedural || shader->uses_vertex || shader->uses_position || shader->writes_modelview_or_projection || shader->uses_z_clip_scale || shader->uses_point_size || shader->writes_depth || (surface->rtxdi_material_flags & GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_UNSUPPORTED), "Primary visibility T is ineligible: scene geometry or material requires unsupported raster behavior.");
+				}
+			}
+		}
+	}
 	bool invalid_deformation = false;
 	bool invalid_micro_geometry_history = false;
 	const bool profile_deformation = RSG::utilities->capturing_timestamps && engine_frame % 120 == 0;
@@ -2970,7 +3016,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		RD::get_singleton()->draw_list_begin(color_only_framebuffer, RD::DRAW_CLEAR_COLOR_0, Vector<Color>({ clear_color }));
 		RD::get_singleton()->draw_list_end();
 	}
-	if (!path_traced) {
+	if (!path_traced && !primary_surface_trace) {
 		RENDER_TIMESTAMP("RTXDI Surface");
 		RD::get_singleton()->draw_command_begin_label("RTXDI Surface");
 		Vector<Color> surface_clear;
@@ -3032,6 +3078,15 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	frame.history_valid = surface.history_valid;
 	frame.orthogonal = surface.orthogonal;
 	frame.time_step = time_step;
+	if (primary_surface_trace) {
+		RENDER_TIMESTAMP("Primary Surface Trace");
+		ERR_FAIL_COND_MSG(!raytracing->render_primary_surface(rt_state, frame.scene_data, { surface.current, 6 }, rb_data->get_primary_surface_trace_depth(), screen_size), "Native primary visibility tracing failed.");
+		RENDER_TIMESTAMP("Primary Surface Depth Resolve");
+		copy_effects->copy_r32f_to_depth_fb(rb_data->get_primary_surface_trace_depth(), rb_data->get_depth_fb(), Rect2i(Point2i(), screen_size));
+		RENDER_TIMESTAMP("Primary Surface Editor Composition");
+		RenderListParameters editor_params(render_list[RENDER_LIST_OPAQUE].elements.ptr(), render_list[RENDER_LIST_OPAQUE].element_info.ptr(), render_list[RENDER_LIST_OPAQUE].elements.size(), reverse_cull, PASS_MODE_RTXDI_SURFACE, true, p_render_data->directional_light_soft_shadows, rp_uniform_set, false, Vector2(), p_render_data->scene_data->lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, 1, 0, base_specialization);
+		_render_list_with_draw_list(&editor_params, color_framebuffer, RD::DRAW_DEFAULT_ALL, Vector<Color>(), 0.0f, 0u, p_render_data->render_region);
+	}
 	if (path_traced) {
 		if (!raytracing->pathtracing) {
 			raytracing->pathtracing = memnew(RenderPathtracing);

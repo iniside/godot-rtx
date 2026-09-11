@@ -44,6 +44,7 @@
 #include "servers/rendering/renderer_rd/forward_clustered/render_pathtracing.h"
 #include "servers/rendering/renderer_rd/shaders/forward_clustered/micro_geometry_rt.slang.gen.h"
 #include "servers/rendering/renderer_rd/shaders/raytracing/geometry_positions.slang.gen.h"
+#include "servers/rendering/renderer_rd/shaders/raytracing/primary_surface.slang.gen.h"
 #include "servers/rendering/renderer_rd/shaders/raytracing/multimesh_merge.glsl.gen.h"
 #include "servers/rendering/renderer_rd/storage_rd/micro_geometry_storage.h"
 #include "servers/rendering/rendering_device.h"
@@ -689,6 +690,11 @@ struct RTViewportState {
 	RID material_sbt;
 	RID material_frame_buffer;
 	RID material_unused_buffer;
+	RID primary_pipeline;
+	RID primary_sbt;
+	RID primary_material_pipeline;
+	RID primary_frame_buffer;
+	RID primary_statistics;
 	RID decal_buffer;
 	uint32_t decal_buffer_capacity = 0;
 	uint32_t decal_count = 0;
@@ -707,6 +713,9 @@ class RenderRaytracing {
 	friend class RenderForwardClustered;
 
 	RenderForwardClustered *owner = nullptr;
+	PrimarySurfaceShaderRD primary_shader;
+	RID primary_version;
+	static void _primary_statistics_received(const Vector<uint8_t> &p_bytes, uint64_t p_frame);
 	MicroGeometrySelection *micro_selection = nullptr;
 	MicroGeometryRtShaderRD micro_rt_shader;
 	RID micro_rt_version;
@@ -917,6 +926,7 @@ public:
 	void register_raytracing_buffer_dependencies(RD::RaytracingListID p_list);
 	bool create_material_pipeline(const RTViewportState *p_state, Span<RD::PipelineShader> p_raygen_shaders, Span<RD::PipelineShader> p_miss_shaders, uint32_t p_recursion_depth, RID &r_pipeline, RID &r_sbt) const;
 	bool trace_material_rays(RTViewportState *p_state, RID p_scene_data_buffer, RID p_ray_buffer, RID p_result_buffer, uint32_t p_ray_count);
+	bool render_primary_surface(RTViewportState *p_state, RID p_scene_data_buffer, Span<const RID> p_outputs, RID p_depth, const Size2i &p_size);
 	RID create_material_uniform_set(RTViewportState *p_state, RID p_scene_data_buffer, RID p_shader, RID p_ray_buffer = RID(), RID p_result_buffer = RID(), uint32_t p_ray_count = 0);
 
 	RID get_bindless_uniform_set(RID p_shader) const {

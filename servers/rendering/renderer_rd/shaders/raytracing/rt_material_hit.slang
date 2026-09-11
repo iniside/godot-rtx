@@ -41,6 +41,7 @@ static MaterialUniforms material;
 
 [shader("anyhit")]
 void main(inout RTHitPayload payload, BuiltInTriangleIntersectionAttributes attributes) {
+	rt_primary_ray = (payload.ray_flags & 4u) != 0u;
 	GeometryHitInput hit;
 	MaterialData material_data;
 	GeometryTriangle triangle;
@@ -81,6 +82,7 @@ static MaterialUniforms material;
 
 [shader("closesthit")]
 void main(inout RTHitPayload payload, BuiltInTriangleIntersectionAttributes attributes) {
+	rt_primary_ray = (payload.ray_flags & 4u) != 0u;
 	GeometryHitInput hit;
 	MaterialData material_data;
 	GeometryTriangle triangle;
@@ -90,6 +92,18 @@ void main(inout RTHitPayload payload, BuiltInTriangleIntersectionAttributes attr
 	}
 	bool native_front = HitKind() == HIT_KIND_TRIANGLE_FRONT_FACE;
 	payload.surface = rt_evaluate_material(hit, triangle, WorldRayDirection(), RayTCurrent(), native_front, payload.cone_width, payload.cone_spread);
+	if (rt_primary_ray && (scene_data_block.data.flags & SCENE_DATA_FLAGS_USE_ROUGHNESS_LIMITER) != 0u) {
+		float2 bary_dx = rt_bary_dx.yz;
+		float2 bary_dy = rt_bary_dy.yz;
+		GeometryHitInput neighbor = hit;
+		neighbor.barycentrics = hit.barycentrics + bary_dx;
+		float3 normal_dx = rt_evaluate_material(neighbor, triangle, WorldRayDirection(), RayTCurrent(), native_front, payload.cone_width, payload.cone_spread).normal - payload.surface.normal;
+		neighbor.barycentrics = hit.barycentrics + bary_dy;
+		float3 normal_dy = rt_evaluate_material(neighbor, triangle, WorldRayDirection(), RayTCurrent(), native_front, payload.cone_width, payload.cone_spread).normal - payload.surface.normal;
+		float variance = scene_data_block.data.roughness_limiter_amount * (dot(normal_dx, normal_dx) + dot(normal_dy, normal_dy));
+		float roughness = sqrt(min(1.0, payload.surface.material.roughness * payload.surface.material.roughness + min(2.0 * variance, scene_data_block.data.roughness_limiter_limit)));
+		payload.surface.material.roughness = roughness < 0.00000001 ? 0.0 : roughness;
+	}
 	payload.hit = 1u;
 	payload.hit_distance = RayTCurrent();
 	payload.cone_width = max(payload.cone_width + payload.hit_distance * payload.cone_spread, 0.0);

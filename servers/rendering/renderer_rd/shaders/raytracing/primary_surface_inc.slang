@@ -29,8 +29,8 @@ PrimarySurfaceData reconstruct_primary_surface(RTHitPayload hit, RayDesc ray, ui
 	float3 current_view, previous_view;
 	SurfaceBufferData packed = (SurfaceBufferData)0;
 	if (hit.hit != 0u) {
+		hit.surface.material.emission *= scene_data_block.data.emissive_exposure_normalization;
 		packed = encode_surface_buffers(hit.surface);
-		packed.emission.rgb *= scene_data_block.data.emissive_exposure_normalization;
 		current_view = mul(geometry_inverse(camera_to_rt), float4(hit.surface.world_position, 1.0)).xyz;
 		previous_view = mul(geometry_inverse(previous_to_rt), float4(primary_surface_previous_position(hit, motion_indices, instance_motion), 1.0)).xyz;
 	} else {
