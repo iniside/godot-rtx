@@ -448,6 +448,7 @@ private:
 	struct DirectionalShadow {
 		RID depth;
 		RID fb; //when renderign direct
+		uint64_t generation = 1;
 
 		int light_count = 0;
 		int size = 0;
@@ -1203,6 +1204,7 @@ public:
 
 	Rect2i get_directional_shadow_rect();
 	void update_directional_shadow_atlas();
+	uint64_t directional_shadow_get_generation() const { return directional_shadow.generation; }
 
 	_FORCE_INLINE_ RID directional_shadow_get_texture() {
 		return directional_shadow.depth;

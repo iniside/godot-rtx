@@ -364,6 +364,7 @@ protected:
 	RID micro_geometry_scenario;
 	uint32_t micro_geometry_visible_layers = UINT32_MAX;
 	uint32_t micro_geometry_shadow_layers = UINT32_MAX;
+	float micro_geometry_shadow_error = 1.0f;
 	Vector<Plane> micro_geometry_shadow_planes;
 	double micro_geometry_shadow_origin[3] = {};
 	bool _micro_geometry_eligible(const GeometryInstanceSurfaceDataCache *p_surface, PassMode p_pass) const;

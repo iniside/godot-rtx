@@ -735,6 +735,9 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 		return nullptr;
 	}
 	MicroGeometrySelection::Parameters parameters;
+	if (shadow) {
+		parameters.error = micro_geometry_shadow_error;
+	}
 	parameters.flags = 1 | 2 | (shadow ? 64 : 0);
 	parameters.scenario = p_render_data->scenario.get_id();
 	const uint32_t output_height = camera_pass ? p_render_data->render_buffers->get_target_size().y : MAX(1, micro_geometry_pass_size.y);
@@ -2367,10 +2370,7 @@ void RenderForwardClustered::_render_shadows(RenderDataRD *p_render_data) {
 		_discard_shadow_preparations();
 
 		if (p_render_data->directional_shadows.size()) {
-			//open the pass for directional shadows
 			light_storage->update_directional_shadow_atlas();
-			RD::get_singleton()->draw_list_begin(light_storage->direction_shadow_get_fb(), RD::DRAW_CLEAR_DEPTH, Vector<Color>(), 0.0f);
-			RD::get_singleton()->draw_list_end();
 		}
 	}
 
@@ -3288,6 +3288,7 @@ void RenderForwardClustered::_render_shadow_pass(RID p_light, RID p_shadow_atlas
 
 	RID base = light_storage->light_instance_get_base_light(p_light);
 	micro_geometry_shadow_layers = micro_geometry_visible_layers & light_storage->light_get_shadow_caster_mask(base);
+	micro_geometry_shadow_error = light_storage->light_get_type(base) == RSE::LIGHT_DIRECTIONAL ? float(1u << p_pass) : 1.0f;
 
 	Rect2i atlas_rect;
 	uint32_t atlas_size = 1;
@@ -3312,6 +3313,7 @@ void RenderForwardClustered::_render_shadow_pass(RID p_light, RID p_shadow_atlas
 	const double *shadow_origin = nullptr;
 
 	if (light_storage->light_get_type(base) == RSE::LIGHT_DIRECTIONAL) {
+		p_clear_region = true;
 		//set pssm stuff
 		uint64_t last_scene_shadow_pass = light_storage->light_instance_get_shadow_pass(p_light);
 		if (last_scene_shadow_pass != get_scene_pass()) {
@@ -3730,6 +3732,7 @@ void RenderForwardClustered::_render_particle_collider_heightfield(RID p_fb, con
 	}
 	scene_data.shadow_pass = true;
 	scene_data.camera_visible_layers = p_layers;
+	micro_geometry_shadow_error = 1.0f;
 	micro_geometry_shadow_planes = p_cam_projection.get_projection_planes(Transform3D(p_cam_transform.basis, Vector3()));
 	for (int axis = 0; axis < 3; axis++) {
 		micro_geometry_shadow_origin[axis] = p_origin[axis];

@@ -764,6 +764,42 @@ public:
 		uint64_t last_version;
 		List<Instance *>::Element *D; // directional light in scenario
 
+		struct DirectionalShadowCache {
+			enum ForceReason {
+				FIRST,
+				ATLAS,
+				LAYOUT,
+				CAMERA,
+				PARAMETERS,
+				SUN,
+				COVERAGE,
+				FORCE_REASON_COUNT,
+			};
+			struct Cascade {
+				bool valid = false;
+				uint64_t frame = 0;
+				Basis basis;
+				double origin[3] = {};
+				Vector3 minimum;
+				Vector3 maximum;
+				uint32_t force = 1 << FIRST;
+				uint32_t refreshed = 0;
+				uint32_t reused = 0;
+				uint32_t forced[FORCE_REASON_COUNT] = {};
+				uint64_t max_age = 0;
+			} cascades[RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES];
+			uint64_t atlas_generation = 0;
+			uint64_t layout_generation = 0;
+			uint64_t light_version = 0;
+			float light_size = 0;
+			RID scenario;
+			RID camera;
+			RID viewport;
+			ObjectID render_buffers;
+			Projection projection;
+			uint32_t layers = 0;
+		} directional_shadow_cache;
+
 		bool uses_projector = false;
 		bool uses_softshadow = false;
 
@@ -1185,7 +1221,9 @@ public:
 	void _unpair_instance(Instance *p_instance);
 
 	void _cull_shadow_geometry(Scenario *p_scenario, const Vector<Plane> &p_planes, const double *p_origin, PagedArray<Instance *> &r_instances);
-	void _light_instance_setup_directional_shadow(int p_shadow_index, Instance *p_instance, const Transform3D p_cam_transform, const Projection &p_cam_projection, bool p_cam_orthogonal, bool p_cam_vaspect, const double *p_cam_origin);
+	void _light_instance_setup_directional_shadow(int p_shadow_index, Instance *p_instance, const Transform3D p_cam_transform, const Projection &p_cam_projection, bool p_cam_orthogonal, bool p_cam_vaspect, const double *p_cam_origin, bool p_cache_shadows);
+	Vector<RID> directional_shadow_layout;
+	uint64_t directional_shadow_layout_generation = 0;
 
 	_FORCE_INLINE_ bool _light_instance_update_shadow(Instance *p_instance, const Transform3D p_cam_transform, const Projection &p_cam_projection, bool p_cam_orthogonal, bool p_cam_vaspect, RID p_shadow_atlas, Scenario *p_scenario, float p_screen_mesh_lod_threshold, uint32_t p_visible_layers = 0xFFFFFF);
 
@@ -1195,9 +1233,14 @@ public:
 	struct Cull {
 		struct Shadow {
 			RID light_instance;
+			InstanceLightData *light_data = nullptr;
 			uint32_t caster_mask;
 			struct Cascade {
 				Frustum frustum;
+				bool refresh = true;
+				bool full_coverage = false;
+				Vector3 coverage_minimum;
+				Vector3 coverage_maximum;
 
 				Projection projection;
 				Transform3D transform;
