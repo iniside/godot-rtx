@@ -384,6 +384,7 @@ public:
 		RID self;
 		uint64_t world_generation = 0;
 		uint64_t publication_sequence = 0;
+		uint64_t shadow_caster_generation = 1;
 		HashMap<EntityId, NativeEntity, EntityIdHasher> native_entities;
 		HashMap<EntityId, HashSet<Instance *>, EntityIdHasher> entity_dependents;
 		HashMap<EntityId, RID, EntityIdHasher> native_cameras;
@@ -787,6 +788,7 @@ public:
 				uint32_t reused = 0;
 				uint32_t forced[FORCE_REASON_COUNT] = {};
 				uint64_t max_age = 0;
+				uint64_t caster_generation = 0;
 			} cascades[RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES];
 			uint64_t atlas_generation = 0;
 			uint64_t layout_generation = 0;
@@ -1239,6 +1241,7 @@ public:
 				Frustum frustum;
 				bool refresh = true;
 				bool full_coverage = false;
+				uint64_t caster_generation = 0;
 				Vector3 coverage_minimum;
 				Vector3 coverage_maximum;
 

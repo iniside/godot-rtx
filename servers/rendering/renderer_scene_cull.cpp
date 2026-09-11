@@ -2125,6 +2125,9 @@ void RendererSceneCull::_update_instance(Instance *p_instance) const {
 				InstanceLightData *light = static_cast<InstanceLightData *>(E->base_data);
 				light->make_shadow_dirty();
 			}
+			if (p_instance->scenario) {
+				p_instance->scenario->shadow_caster_generation++;
+			}
 		}
 
 		if (!p_instance->lightmap && geom->lightmap_captures.size()) {
@@ -2346,6 +2349,9 @@ void RendererSceneCull::_unpair_instance(Instance *p_instance) {
 
 	if ((1 << p_instance->base_type) & RSE::INSTANCE_GEOMETRY_MASK) {
 		p_instance->scenario->indexers[Scenario::INDEXER_GEOMETRY].remove(p_instance->indexer_id);
+		if (static_cast<InstanceGeometryData *>(p_instance->base_data)->can_cast_shadows) {
+			p_instance->scenario->shadow_caster_generation++;
+		}
 	} else {
 		p_instance->scenario->indexers[Scenario::INDEXER_VOLUMES].remove(p_instance->indexer_id);
 	}
@@ -2637,9 +2643,12 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 	cull.shadows[p_shadow_index].light_data = p_cache_shadows ? light : nullptr;
 	cull.shadows[p_shadow_index].caster_mask = RSG::light_storage->light_get_shadow_caster_mask(p_instance->base);
 
+	const uint64_t caster_generation = p_instance->scenario ? p_instance->scenario->shadow_caster_generation : 0;
+
 	for (int i = 0; i < splits; i++) {
 		Cull::Shadow::Cascade &cascade = cull.shadows[p_shadow_index].cascades[i];
 		cascade.refresh = false;
+		cascade.caster_generation = caster_generation;
 		cascade.full_coverage = p_cache_shadows && i > 0;
 		RENDER_TIMESTAMP("Cull DirectionalLight3D, Split " + itos(i));
 
@@ -2691,7 +2700,8 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 					}
 				}
 			}
-			if (cached.valid && cached.force == 0 && frame % period != phase && age < period) {
+			const bool casters_unchanged = i > 0 && cached.caster_generation == caster_generation;
+			if (cached.valid && cached.force == 0 && (casters_unchanged || (frame % period != phase && age < period))) {
 				cached.reused++;
 				continue;
 			}
@@ -4157,6 +4167,7 @@ void RendererSceneCull::_render_scene(RID p_camera, const RendererSceneRender::C
 					}
 					cached.minimum = c.coverage_minimum;
 					cached.maximum = c.coverage_maximum;
+					cached.caster_generation = c.caster_generation;
 					cached.refreshed++;
 					for (uint32_t reason = 0; reason < InstanceLightData::DirectionalShadowCache::FORCE_REASON_COUNT; reason++) {
 						cached.forced[reason] += (cached.force >> reason) & 1;
@@ -4168,7 +4179,7 @@ void RendererSceneCull::_render_scene(RID p_camera, const RendererSceneRender::C
 			if (cull.shadows[i].light_data && RSG::utilities->capturing_timestamps && frame % 120 == 0) {
 				for (uint32_t j = 0; j < cull.shadows[i].cascade_count; j++) {
 					auto &cached = cull.shadows[i].light_data->directional_shadow_cache.cascades[j];
-					print_line(vformat("ShadowCadence frame=%d light=%d cascade=%d period=%d refreshed=%d reused=%d age=%d max_age=%d error=%d first=%d atlas=%d layout=%d camera=%d parameters=%d sun=%d coverage=%d", frame, i, j, 1u << j, cached.refreshed, cached.reused, frame - cached.frame, cached.max_age, 1u << j, cached.forced[0], cached.forced[1], cached.forced[2], cached.forced[3], cached.forced[4], cached.forced[5], cached.forced[6]));
+					print_line(vformat("ShadowCadence frame=%d light=%d cascade=%d period=%d refreshed=%d reused=%d age=%d max_age=%d error=%d casters=%d first=%d atlas=%d layout=%d camera=%d parameters=%d sun=%d coverage=%d", frame, i, j, 1u << j, cached.refreshed, cached.reused, frame - cached.frame, cached.max_age, 1u << j, cached.caster_generation, cached.forced[0], cached.forced[1], cached.forced[2], cached.forced[3], cached.forced[4], cached.forced[5], cached.forced[6]));
 					cached.refreshed = 0;
 					cached.reused = 0;
 					cached.max_age = 0;
@@ -4720,6 +4731,10 @@ void RendererSceneCull::_update_dirty_instance(Instance *p_instance) const {
 				}
 
 				geom->can_cast_shadows = can_cast_shadows;
+
+				if (p_instance->scenario) {
+					p_instance->scenario->shadow_caster_generation++;
+				}
 			}
 
 			geom->material_is_animated = is_animated;
