@@ -3906,7 +3906,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 		const uint32_t to = MIN(from + 256, rt_instances.size());
 		for (uint32_t i = from; i < to; i++) {
 			const Instance *instance = static_cast<const Instance *>(rt_instances[i]);
-			if (!instance || !instance->data) {
+			if (!instance || !instance->data || instance->micro_geometry_rt_only) {
 				continue;
 			}
 			if (instance->rt_procedural) {
@@ -4206,7 +4206,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 		for (uint32_t i = from; i < to; i++) {
 			const RenderForwardClustered::GeometryInstanceForwardClustered *inst =
 					static_cast<const RenderForwardClustered::GeometryInstanceForwardClustered *>(rt_instances[i]);
-			if (!inst || !inst->data) {
+			if (!inst || !inst->data || inst->micro_geometry_rt_only) {
 				continue;
 			}
 			Transform3D instance_transform = inst->transform;

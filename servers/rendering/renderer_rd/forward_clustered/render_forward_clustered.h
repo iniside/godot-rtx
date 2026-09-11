@@ -777,6 +777,7 @@ protected:
 		SelfList<GeometryInstanceForwardClustered> instance_data_dirty_element;
 		SelfList<GeometryInstanceForwardClustered> motion_update_element;
 		uint64_t persistent_instance = 0;
+		bool micro_geometry_rt_only = false;
 		bool persistent_surfaces_dirty = true;
 		Vector<uint64_t> persistent_surfaces;
 

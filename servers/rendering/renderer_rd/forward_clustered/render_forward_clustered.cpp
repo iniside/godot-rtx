@@ -525,6 +525,7 @@ void RenderForwardClustered::_update_micro_geometry_instances(const LocalVector<
 		const bool raster_ready = source.is_valid() && storage->is_ready(asset);
 		const bool rt_ready = source.is_valid() && storage->is_ready(asset, true);
 		bool raster_only = instance->surface_caches != nullptr;
+		bool rt_only = raster_only;
 		for (auto *surface = instance->surface_caches; surface; surface = surface->next) {
 			MicroGeometrySelection::Task task;
 			MicroGeometryRasterPass::Bin bins[2];
@@ -576,6 +577,7 @@ void RenderForwardClustered::_update_micro_geometry_instances(const LocalVector<
 				micro_geometry_generation++;
 			}
 			const bool rt_eligible = eligible && rt_ready && task.multimesh_count && !(surface->rt_pass_flags & GeometryInstanceSurfaceDataCache::FLAG_PASS_ALPHA);
+			rt_only &= rt_eligible;
 			const uint64_t material_generation = surface->persistent_surface ? raytracing->persistent_surfaces[uint32_t(surface->persistent_surface) - 1].data.material_generation : 0;
 			if (surface->micro_geometry_rt_element.in_list() != rt_eligible || (rt_eligible && (memcmp(&surface->micro_geometry_task, &task, sizeof(task)) != 0 || surface->micro_geometry_rt_material_generation != material_generation))) {
 				micro_geometry_rt_generation++;
@@ -600,6 +602,7 @@ void RenderForwardClustered::_update_micro_geometry_instances(const LocalVector<
 				surface->micro_geometry_element.remove_from_list();
 			}
 		}
+		instance->micro_geometry_rt_only = rt_only;
 		instance->set_micro_geometry_raster_only(raster_only);
 	}
 }
@@ -4903,6 +4906,7 @@ uint32_t RenderForwardClustered::sdfgi_get_pending_region_cascade(const Ref<Rend
 }
 
 void RenderForwardClustered::GeometryInstanceForwardClustered::_mark_dirty() {
+	micro_geometry_rt_only = false;
 	set_micro_geometry_raster_only(false);
 	persistent_surfaces_dirty = true;
 	_mark_instance_data_dirty();
