@@ -582,7 +582,7 @@ Error MicroGeometryData::read_page(uint32_t p_page, Vector<uint8_t> &r_data) con
 				} else {
 					ERR_FAIL_COND_V(low_min != high_min || low_max != high_max, ERR_FILE_CORRUPT);
 				}
-				ERR_FAIL_COND_V(low_min > low_max || low_max > high_min || high_min > high_max || bits > 17 || span > (uint64_t(1) << bits), ERR_FILE_CORRUPT);
+				ERR_FAIL_COND_V(low_min > low_max || high_min > high_max || bits > 17 || span > (uint64_t(1) << bits), ERR_FILE_CORRUPT);
 				uv_bits[channel * 2 + component] = bits;
 				uv_offset += CLUSTER_UV_HEADER_SIZE;
 			}

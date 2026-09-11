@@ -152,20 +152,22 @@ bool remap_meshes(Variant &r_value, HashSet<ObjectID> &r_visited, const HashMap<
 }
 
 template <typename T>
-Vector<T> permute_array(const Vector<T> &p_array, const Vector<uint32_t> &p_permutation) {
+Error permute_array(Variant &r_array, const Vector<uint32_t> &p_permutation) {
+	Vector<T> array = r_array;
 	uint32_t count = p_permutation.size();
-	ERR_FAIL_COND_V(!count || p_array.size() % count != 0, p_array);
-	uint32_t elements = p_array.size() / count;
+	ERR_FAIL_COND_V(!count || array.size() % count != 0, ERR_INVALID_DATA);
+	uint32_t elements = array.size() / count;
 	Vector<T> result;
-	ERR_FAIL_COND_V(result.resize(p_array.size()) != OK, p_array);
-	const T *source = p_array.ptr();
+	ERR_FAIL_COND_V(result.resize(array.size()) != OK, ERR_OUT_OF_MEMORY);
+	const T *source = array.ptr();
 	T *target = result.ptrw();
 	for (uint32_t i = 0; i < count; i++) {
 		for (uint32_t j = 0; j < elements; j++) {
 			target[uint64_t(i) * elements + j] = source[uint64_t(p_permutation[i]) * elements + j];
 		}
 	}
-	return result;
+	r_array = result;
+	return OK;
 }
 
 Error permute_arrays(Array &r_arrays, const Vector<uint32_t> &p_permutation) {
@@ -173,29 +175,33 @@ Error permute_arrays(Array &r_arrays, const Vector<uint32_t> &p_permutation) {
 		if (i == Mesh::ARRAY_INDEX) {
 			continue;
 		}
+		Error error = OK;
 		switch (r_arrays[i].get_type()) {
 			case Variant::NIL:
 				break;
 			case Variant::PACKED_VECTOR3_ARRAY:
-				r_arrays[i] = permute_array<Vector3>(r_arrays[i], p_permutation);
+				error = permute_array<Vector3>(r_arrays[i], p_permutation);
 				break;
 			case Variant::PACKED_VECTOR2_ARRAY:
-				r_arrays[i] = permute_array<Vector2>(r_arrays[i], p_permutation);
+				error = permute_array<Vector2>(r_arrays[i], p_permutation);
 				break;
 			case Variant::PACKED_FLOAT32_ARRAY:
-				r_arrays[i] = permute_array<float>(r_arrays[i], p_permutation);
+				error = permute_array<float>(r_arrays[i], p_permutation);
 				break;
 			case Variant::PACKED_INT32_ARRAY:
-				r_arrays[i] = permute_array<int32_t>(r_arrays[i], p_permutation);
+				error = permute_array<int32_t>(r_arrays[i], p_permutation);
 				break;
 			case Variant::PACKED_BYTE_ARRAY:
-				r_arrays[i] = permute_array<uint8_t>(r_arrays[i], p_permutation);
+				error = permute_array<uint8_t>(r_arrays[i], p_permutation);
 				break;
 			case Variant::PACKED_COLOR_ARRAY:
-				r_arrays[i] = permute_array<Color>(r_arrays[i], p_permutation);
+				error = permute_array<Color>(r_arrays[i], p_permutation);
 				break;
 			default:
 				ERR_FAIL_V_MSG(ERR_INVALID_DATA, "Unhandled array type.");
+		}
+		if (error != OK) {
+			return error;
 		}
 	}
 	return OK;
