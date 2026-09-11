@@ -2535,7 +2535,7 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 			ERR_PRINT("Unable to publish a complete shared RT microgeometry cut.");
 		}
 	}
-	uint64_t transform_signature = _rt_scene_hash(&p_state->rt_origin, sizeof(p_state->rt_origin), persistent_scene_generation);
+	uint64_t transform_signature = _rt_scene_hash(&p_state->rt_origin, sizeof(p_state->rt_origin), persistent_rt_generation);
 	auto prepare_signature = [&](uint32_t) {
 		for (uint32_t index = 0; index < blass.size(); index++) {
 			transform_signature = _rt_scene_hash(&blas_transforms[index], sizeof(Transform3D), transform_signature);
@@ -5354,6 +5354,7 @@ void RenderRaytracing::_update_persistent_material(RID p_material, RTMaterialDat
 	material.data = p_data->data;
 	_upload_persistent_record(persistent_material_buffer, persistent_material_capacity, sizeof(RTPersistentMaterialData), index, &material);
 	persistent_scene_generation++;
+	persistent_rt_generation++;
 }
 
 void RenderRaytracing::update_persistent_instances(const LocalVector<RenderGeometryInstance *> &p_instances) {
@@ -5378,6 +5379,7 @@ void RenderRaytracing::update_persistent_instances(const LocalVector<RenderGeome
 	struct Changed {
 		LocalVector<uint32_t> instances;
 		LocalVector<uint32_t> surfaces;
+		uint64_t rt_changes = 0;
 	};
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
 	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
@@ -5596,6 +5598,7 @@ void RenderRaytracing::update_persistent_instances(const LocalVector<RenderGeome
 					if (memcmp(&persistent_surfaces[index].data, &record, sizeof(record)) != 0) {
 						persistent_surfaces[index].data = record;
 						changed.surfaces.push_back(index);
+						changed.rt_changes += data.visible != 0;
 					}
 				}
 				instance->persistent_surfaces_dirty = false;
@@ -5604,6 +5607,7 @@ void RenderRaytracing::update_persistent_instances(const LocalVector<RenderGeome
 			data.first_surface = instance->persistent_surfaces.is_empty() ? 0 : instance->persistent_surfaces[0];
 			data.surface_count = instance->persistent_surfaces.size();
 			if (memcmp(&persistent_instances[instance_index].data, &data, sizeof(data)) != 0) {
+				changed.rt_changes += data.visible != 0 || persistent_instances[instance_index].data.visible != 0;
 				persistent_instances[instance_index].data = data;
 				changed.instances.push_back(instance_index);
 			}
@@ -5618,6 +5622,7 @@ void RenderRaytracing::update_persistent_instances(const LocalVector<RenderGeome
 	for (uint32_t index : retired_surfaces) {
 		_upload_persistent_record(persistent_surface_buffer, persistent_surface_capacity, sizeof(RTPersistentSurfaceData), index, &persistent_surfaces[index].data);
 		persistent_scene_generation++;
+		persistent_rt_generation++;
 	}
 	for (const Changed &changed : changes) {
 		for (uint32_t index : changed.surfaces) {
@@ -5628,11 +5633,13 @@ void RenderRaytracing::update_persistent_instances(const LocalVector<RenderGeome
 			_upload_persistent_record(persistent_instance_buffer, persistent_instance_capacity, sizeof(RTPersistentInstanceData), index, &persistent_instances[index].data);
 			persistent_scene_generation++;
 		}
+		persistent_rt_generation += changed.rt_changes;
 	}
 }
 
 void RenderRaytracing::release_persistent_instance(uint64_t p_handle, const Vector<uint64_t> &p_surfaces) {
 	persistent_scene_generation++;
+	persistent_rt_generation++;
 	for (uint64_t handle : p_surfaces) {
 		const uint32_t index = uint32_t(handle) - 1;
 		ERR_CONTINUE(index >= persistent_surfaces.size() || persistent_surfaces[index].data.handle != handle);

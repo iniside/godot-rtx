@@ -825,6 +825,7 @@ class RenderRaytracing {
 	LocalVector<uint32_t> persistent_instance_free_slots;
 	LocalVector<uint32_t> persistent_surface_free_slots;
 	uint64_t persistent_scene_generation = 1;
+	uint64_t persistent_rt_generation = 1;
 	RID persistent_instance_buffer;
 	RID persistent_surface_buffer;
 	RID persistent_material_buffer;
