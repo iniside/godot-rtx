@@ -31,9 +31,12 @@
 #include "editor/scene/entity/entity_scene_editor.h"
 #include "node_3d_editor_viewport.h"
 
+#include "core/config/engine.h"
 #include "core/config/project_settings.h"
 #include "core/input/input.h"
 #include "core/input/input_map.h"
+#include "core/io/dir_access.h"
+#include "core/io/json.h"
 #include "core/io/resource_loader.h"
 #include "core/math/geometry_3d.h"
 #include "core/math/math_funcs.h"
@@ -42,6 +45,7 @@
 #include "core/object/class_db.h"
 #include "core/os/keyboard.h"
 #include "core/os/os.h"
+#include "core/os/time.h"
 #include "core/string/translation_server.h"
 #include "drivers/streamline/streamline.h"
 #include "editor/animation/animation_player_editor_plugin.h"
@@ -136,6 +140,9 @@ void ViewportNavigationControl::_draw() {
 }
 
 void ViewportNavigationControl::_process_click(int p_index, Vector2 p_position, bool p_pressed) {
+	if (p_pressed) {
+		viewport->_camera_motion_finish("cancelled", "Navigation control interaction.");
+	}
 	hovered = false;
 	queue_redraw();
 
@@ -395,6 +402,9 @@ void ViewportRotationControl::_get_sorted_axis(Vector<Axis2D> &r_axis) {
 }
 
 void ViewportRotationControl::_process_click(int p_index, Vector2 p_position, bool p_pressed) {
+	if (p_pressed) {
+		viewport->_camera_motion_finish("cancelled", "Rotation control interaction.");
+	}
 	if (orbiting_index != -1 && orbiting_index != p_index) {
 		return;
 	}
@@ -2024,6 +2034,9 @@ void Node3DEditorViewport::input(const Ref<InputEvent> &p_event) {
 }
 
 void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
+	if (p_event->is_pressed() || p_event->is_class("InputEventGesture")) {
+		_camera_motion_finish("cancelled", "Viewport input.");
+	}
 	const Ref<InputEventKey> k = p_event;
 
 	if (k.is_valid() && k->is_pressed()) {
@@ -3018,6 +3031,288 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 	}
 }
 
+static Array camera_motion_transform(const Transform3D &p_transform) {
+	Array values;
+	for (int i = 0; i < 3; i++) {
+		Vector3 column = p_transform.basis.get_column(i);
+		values.push_back(Array{ column.x, column.y, column.z });
+	}
+	values.push_back(Array{ p_transform.origin.x, p_transform.origin.y, p_transform.origin.z });
+	return values;
+}
+
+static Dictionary camera_motion_statistics(Vector<double> p_values) {
+	Dictionary result;
+	result["samples"] = p_values.size();
+	if (!p_values.is_empty()) {
+		p_values.sort();
+		result["median_ms"] = (p_values[(p_values.size() - 1) / 2] + p_values[p_values.size() / 2]) * 0.5;
+		result["p95_ms"] = p_values[int(Math::ceil(p_values.size() * 0.95)) - 1];
+	}
+	return result;
+}
+
+bool Node3DEditorViewport::_camera_motion_available() const {
+	return is_visible_in_tree() && !previewing && !previewing_camera && !previewing_cinema && !pilot_preview_enabled &&
+			!view_3d_controller->is_freelook_enabled() && !view_3d_controller->is_navigating() && !view_3d_controller->is_locking_rotation() &&
+			!view_3d_controller->cursor.region_select && !transforming && _edit.mode == TRANSFORM_NONE && !selection_in_progress &&
+			!collision_reposition && !ruler_active && !vertex_snap_dragging && !follow_mode->is_visible() &&
+			Input::get_singleton()->get_mouse_button_mask().is_empty();
+}
+
+void Node3DEditorViewport::_camera_motion_write_status(const Dictionary &p_status) {
+	const String path = ProjectSettings::get_singleton()->get_project_data_path().path_join("editor/camera_motion.status.json");
+	Ref<FileAccess> file = FileAccess::open(path + ".tmp", FileAccess::WRITE);
+	ERR_FAIL_COND_MSG(file.is_null(), "Cannot write editor camera motion status.");
+	file->store_string(JSON::stringify(p_status, "\t", true, true));
+	file->close();
+	ERR_FAIL_COND_MSG(DirAccess::rename_absolute(path + ".tmp", path) != OK, "Cannot publish editor camera motion status.");
+}
+
+void Node3DEditorViewport::_camera_motion_poll() {
+	const String path = ProjectSettings::get_singleton()->get_project_data_path().path_join("editor/camera_motion.command.json");
+	if (!FileAccess::exists(path)) {
+		return;
+	}
+	if (DirAccess::rename_absolute(path, path + ".consumed") != OK) {
+		return;
+	}
+	Ref<FileAccess> file = FileAccess::open(path + ".consumed", FileAccess::READ);
+	String contents;
+	if (file.is_valid()) {
+		if (file->get_length() <= 16384) {
+			contents = file->get_as_text();
+		}
+		file->close();
+	}
+	DirAccess::remove_absolute(path + ".consumed");
+	JSON json;
+	Dictionary response;
+	response["id"] = "";
+	response["status"] = "error";
+	if (json.parse(contents) != OK || json.get_data().get_type() != Variant::DICTIONARY) {
+		response["reason"] = "Expected a JSON object no larger than 16384 bytes: " + json.get_error_message();
+		_camera_motion_write_status(response);
+		return;
+	}
+	const Dictionary command = json.get_data();
+	const Variant id = command.get("id", Variant());
+	if (id.get_type() != Variant::STRING || String(id).is_empty() || String(id).length() > 128) {
+		response["reason"] = "id must be a nonempty string of at most 128 characters.";
+		_camera_motion_write_status(response);
+		return;
+	}
+	response["id"] = id;
+	auto reject = [&](const String &p_reason) {
+		response["reason"] = p_reason;
+		_camera_motion_write_status(response);
+	};
+	if (command.get("cancel", false) == Variant(true)) {
+		if (camera_motion.active && camera_motion.id == String(id)) {
+			_camera_motion_finish("cancelled", "Client cancellation.");
+		} else {
+			reject("No active command with this id.");
+		}
+		return;
+	}
+	const Variant expires = command.get("expires_unix", Variant());
+	if ((expires.get_type() != Variant::FLOAT && expires.get_type() != Variant::INT) || !Math::is_finite(double(expires)) ||
+			double(expires) < Time::get_singleton()->get_unix_time_from_system() || double(expires) > Time::get_singleton()->get_unix_time_from_system() + 300) {
+		reject("expires_unix must be in the next 300 seconds; command expired or invalid.");
+		return;
+	}
+	if (camera_motion.active) {
+		reject("Another camera motion command is active.");
+		return;
+	}
+	if (!_camera_motion_available()) {
+		reject("Viewport must be visible and idle, without preview, pilot, freelook, rotation lock or editing/navigation interaction.");
+		return;
+	}
+	if (!view_3d_controller->to_camera_transform().is_equal_approx(camera->get_global_transform())) {
+		reject("Camera interpolation or external movement is still settling.");
+		return;
+	}
+	const Variant sequence = command.get("sequence", Variant());
+	if (sequence.get_type() != Variant::ARRAY || Array(sequence).is_empty() || Array(sequence).size() > 16) {
+		reject("sequence must contain 1 to 16 segments.");
+		return;
+	}
+	Vector<CameraMotionSegment> segments;
+	double total_duration = 0;
+	for (const Variant &entry : Array(sequence)) {
+		if (entry.get_type() != Variant::DICTIONARY) {
+			reject("Each segment must be an object.");
+			return;
+		}
+		const Dictionary item = entry;
+		const Variant duration = item.get("duration", Variant());
+		const Variant translation = item.get("translation", Array{ 0, 0, 0 });
+		const Variant rotation = item.get("rotation_degrees", Array{ 0, 0 });
+		if ((duration.get_type() != Variant::FLOAT && duration.get_type() != Variant::INT) || !Math::is_finite(double(duration)) ||
+				double(duration) < 0.1 || double(duration) > 60 || translation.get_type() != Variant::ARRAY || Array(translation).size() != 3 ||
+				rotation.get_type() != Variant::ARRAY || Array(rotation).size() != 2) {
+			reject("Segment needs duration in [0.1, 60], translation [x,y,z], rotation_degrees [pitch,yaw].");
+			return;
+		}
+		CameraMotionSegment segment;
+		segment.duration = duration;
+		for (int i = 0; i < 5; i++) {
+			const Variant value = i < 3 ? Array(translation)[i] : Array(rotation)[i - 3];
+			if ((value.get_type() != Variant::FLOAT && value.get_type() != Variant::INT) || !Math::is_finite(double(value)) || Math::abs(double(value)) > (i < 3 ? 10000 : 180)) {
+				reject("Translation must be finite within +/-10000 units; rotation within +/-180 degrees.");
+				return;
+			}
+			if (i < 3) {
+				segment.translation[i] = double(value);
+			} else {
+				segment.rotation[i - 3] = Math::deg_to_rad(double(value));
+			}
+		}
+		total_duration += segment.duration;
+		segments.push_back(segment);
+	}
+	if (total_duration > 180) {
+		reject("Total duration must not exceed 180 seconds.");
+		return;
+	}
+	camera_motion = CameraMotion();
+	camera_motion.id = id;
+	camera_motion.segments = segments;
+	camera_motion.original_cursor = view_3d_controller->cursor;
+	camera_motion.measure_render_time = frame_time_panel->is_visible();
+	camera_motion.active = true;
+	camera_motion.result["id"] = id;
+	camera_motion.result["status"] = "running";
+	camera_motion.result["start_transform_columns_origin"] = camera_motion_transform(camera->get_global_transform());
+	camera_motion.result["segments"] = Array();
+	camera_motion.result["metrics_note"] = "FPS uses engine-wide drawn frames / wall time. Process interval statistics are callback timing, not rendered frame times. CPU/GPU samples are delayed viewport observations, sampled on drawn-frame changes; duplicates and boundary lag are possible. Statistics retain the first 16384 samples per segment.";
+	RS::get_singleton()->viewport_set_measure_render_time(viewport->get_viewport_rid(), true);
+	_camera_motion_begin_segment();
+	print_line("Editor camera motion started: " + String(id));
+}
+
+void Node3DEditorViewport::_camera_motion_begin_segment() {
+	camera_motion.segment_cursor = view_3d_controller->cursor;
+	camera_motion.segment_transform = view_3d_controller->to_camera_transform();
+	camera_motion.start_usec = OS::get_singleton()->get_ticks_usec();
+	camera_motion.last_usec = camera_motion.start_usec;
+	camera_motion.start_frames = Engine::get_singleton()->get_frames_drawn();
+	camera_motion.last_frames = camera_motion.start_frames;
+	camera_motion.process_intervals = 0;
+	camera_motion.intervals.clear();
+	camera_motion.cpu_samples.clear();
+	camera_motion.gpu_samples.clear();
+	camera_motion.result["active_segment"] = camera_motion.segment;
+	_camera_motion_write_status(camera_motion.result);
+}
+
+void Node3DEditorViewport::_camera_motion_end_segment() {
+	const double elapsed = (OS::get_singleton()->get_ticks_usec() - camera_motion.start_usec) / 1000000.0;
+	const uint64_t frames = Engine::get_singleton()->get_frames_drawn() - camera_motion.start_frames;
+	const CameraMotionSegment &segment = camera_motion.segments[camera_motion.segment];
+	Dictionary result;
+	result["index"] = camera_motion.segment;
+	result["requested_duration_seconds"] = segment.duration;
+	result["actual_duration_seconds"] = elapsed;
+	result["translation"] = Array{ segment.translation.x, segment.translation.y, segment.translation.z };
+	result["rotation_degrees"] = Array{ Math::rad_to_deg(segment.rotation.x), Math::rad_to_deg(segment.rotation.y) };
+	result["engine_drawn_frames"] = frames;
+	result["drawn_fps"] = elapsed > 0 ? frames / elapsed : 0;
+	result["drawn_mean_interval_ms"] = frames > 0 ? Variant(elapsed * 1000 / frames) : Variant();
+	result["process_intervals"] = camera_motion.process_intervals;
+	result["process_interval"] = camera_motion_statistics(camera_motion.intervals);
+	result["viewport_cpu_delayed"] = camera_motion_statistics(camera_motion.cpu_samples);
+	result["viewport_gpu_delayed"] = camera_motion_statistics(camera_motion.gpu_samples);
+	result["start_transform_columns_origin"] = camera_motion_transform(camera_motion.segment_transform);
+	result["end_transform_columns_origin"] = camera_motion_transform(camera->get_global_transform());
+	Array results = camera_motion.result["segments"];
+	results.push_back(result);
+}
+
+void Node3DEditorViewport::_camera_motion_tick() {
+	if (index != 0) {
+		return;
+	}
+	const uint64_t now = OS::get_singleton()->get_ticks_usec();
+	if (now - camera_motion_poll_usec >= 250000) {
+		camera_motion_poll_usec = now;
+		const bool was_active = camera_motion.active;
+		_camera_motion_poll();
+		if (!was_active && camera_motion.active) {
+			return;
+		}
+	}
+	if (!camera_motion.active) {
+		return;
+	}
+	if (!_camera_motion_available() || _camera_moved_externally()) {
+		_camera_motion_finish("cancelled", "Editor camera context or interaction changed.");
+		return;
+	}
+	const uint64_t sample_time = OS::get_singleton()->get_ticks_usec();
+	if (sample_time > camera_motion.last_usec) {
+		camera_motion.process_intervals++;
+		if (camera_motion.intervals.size() < 16384) {
+			camera_motion.intervals.push_back((sample_time - camera_motion.last_usec) / 1000.0);
+		}
+	}
+	const uint64_t frames = Engine::get_singleton()->get_frames_drawn();
+	if (frames != camera_motion.last_frames) {
+		const double cpu = RS::get_singleton()->viewport_get_measured_render_time_cpu(viewport->get_viewport_rid());
+		const double gpu = RS::get_singleton()->viewport_get_measured_render_time_gpu(viewport->get_viewport_rid());
+		if (cpu > 0 && Math::is_finite(cpu) && camera_motion.cpu_samples.size() < 16384) {
+			camera_motion.cpu_samples.push_back(cpu);
+		}
+		if (gpu > 0 && Math::is_finite(gpu) && camera_motion.gpu_samples.size() < 16384) {
+			camera_motion.gpu_samples.push_back(gpu);
+		}
+	}
+	camera_motion.last_usec = sample_time;
+	camera_motion.last_frames = frames;
+	const CameraMotionSegment &segment = camera_motion.segments[camera_motion.segment];
+	const double fraction = MIN(1.0, (sample_time - camera_motion.start_usec) / (segment.duration * 1000000.0));
+	if (segment.translation != Vector3() || segment.rotation != Vector2()) {
+		view_3d_controller->cursor = camera_motion.segment_cursor;
+		view_3d_controller->cursor.x_rot -= segment.rotation.x * fraction;
+		view_3d_controller->cursor.y_rot -= segment.rotation.y * fraction;
+		view_3d_controller->cursor.unsnapped_x_rot = view_3d_controller->cursor.x_rot;
+		view_3d_controller->cursor.unsnapped_y_rot = view_3d_controller->cursor.y_rot;
+		const Vector3 eye = camera_motion.segment_transform.origin + camera_motion.segment_transform.basis.xform(segment.translation * fraction);
+		view_3d_controller->cursor.pos += eye - view_3d_controller->to_camera_transform().origin;
+		view_3d_controller->cursor.eye_pos = eye;
+		view_3d_controller->update_camera(0);
+	}
+	if (fraction >= 1) {
+		_camera_motion_end_segment();
+		camera_motion.segment++;
+		if (camera_motion.segment == camera_motion.segments.size()) {
+			_camera_motion_finish("completed", "Sequence finished.");
+		} else {
+			_camera_motion_begin_segment();
+		}
+	}
+}
+
+void Node3DEditorViewport::_camera_motion_finish(const String &p_status, const String &p_reason) {
+	if (!camera_motion.active) {
+		return;
+	}
+	if (camera_motion.segment < camera_motion.segments.size()) {
+		_camera_motion_end_segment();
+	}
+	camera_motion.result["end_transform_columns_origin"] = camera_motion_transform(camera->get_global_transform());
+	camera_motion.active = false;
+	view_3d_controller->cursor = camera_motion.original_cursor;
+	view_3d_controller->update_camera(0);
+	RS::get_singleton()->viewport_set_measure_render_time(viewport->get_viewport_rid(), camera_motion.measure_render_time);
+	camera_motion.result["restored_transform_columns_origin"] = camera_motion_transform(camera->get_global_transform());
+	camera_motion.result["status"] = p_status;
+	camera_motion.result["reason"] = p_reason;
+	_camera_motion_write_status(camera_motion.result);
+	print_line("Editor camera motion " + p_status + ": " + camera_motion.id + " (" + p_reason + ")");
+}
+
 void Node3DEditorViewport::_cursor_interpolated() {
 	last_camera_transform = view_3d_controller->interp_to_camera_transform();
 
@@ -3254,6 +3549,9 @@ void Node3DEditorViewport::_notification(int p_what) {
 
 		case NOTIFICATION_VISIBILITY_CHANGED: {
 			bool vp_visible = is_visible_in_tree();
+			if (!vp_visible) {
+				_camera_motion_finish("cancelled", "Viewport hidden.");
+			}
 
 			set_process(vp_visible);
 			set_physics_process(vp_visible);
@@ -3274,6 +3572,7 @@ void Node3DEditorViewport::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_PROCESS: {
+			_camera_motion_tick();
 			if (ruler_active) {
 				for (ToolRenderData *record : { &ruler_line, &ruler_line_xray, &ruler_triangle_lines, &ruler_triangle_lines_xray }) {
 					record->scenario = spatial_editor->get_entity_world()->get_scenario();
@@ -3608,13 +3907,13 @@ void Node3DEditorViewport::_notification(int p_what) {
 				}
 			}
 
-			if (_camera_moved_externally()) {
+			if (!camera_motion.active && _camera_moved_externally()) {
 				// If camera moved after this plugin last set it, presumably a tool script has moved it, accept the new camera transform as the cursor position.
 				pilot_undo_session_active = false;
 				pilot_undo_idle_time = 0.0;
 				_apply_camera_transform_to_cursor();
 				view_3d_controller->update_camera();
-			} else {
+			} else if (!camera_motion.active) {
 				view_3d_controller->update_camera(delta);
 			}
 
@@ -3767,7 +4066,7 @@ void Node3DEditorViewport::_notification(int p_what) {
 
 			if (show_fps != frame_time_panel->is_visible()) {
 				frame_time_panel->set_visible(show_fps);
-				RS::get_singleton()->viewport_set_measure_render_time(viewport->get_viewport_rid(), show_fps);
+				RS::get_singleton()->viewport_set_measure_render_time(viewport->get_viewport_rid(), show_fps || camera_motion.active);
 				for (int i = 0; i < FRAME_TIME_HISTORY; i++) {
 					// Initialize to 120 FPS, so that the initial estimation until we get enough data is always reasonable.
 					cpu_time_history[i] = 8.333333;
@@ -3881,6 +4180,7 @@ void Node3DEditorViewport::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_EXIT_TREE: {
+			_camera_motion_finish("cancelled", "Viewport exiting tree.");
 			_finish_gizmo_instances();
 		} break;
 
@@ -4334,6 +4634,7 @@ void Node3DEditorViewport::_apply_camera_transform_to_cursor() {
 }
 
 void Node3DEditorViewport::_menu_option(int p_option) {
+	_camera_motion_finish("cancelled", "Viewport menu changed.");
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	switch (p_option) {
 		case VIEW_TOP: {
@@ -4966,6 +5267,7 @@ void Node3DEditorViewport::_reset_follow_mode_count() {
 }
 
 void Node3DEditorViewport::_toggle_camera_preview(bool p_activate) {
+	_camera_motion_finish("cancelled", "Camera preview changed.");
 	ERR_FAIL_COND(p_activate && !preview);
 	ERR_FAIL_COND(!p_activate && !previewing);
 
@@ -5012,6 +5314,7 @@ void Node3DEditorViewport::_toggle_camera_preview(bool p_activate) {
 }
 
 void Node3DEditorViewport::_toggle_pilot_preview(bool p_activate) {
+	_camera_motion_finish("cancelled", "Camera pilot changed.");
 	if (!p_activate) {
 		_pilot_commit_undo_session();
 	}
@@ -5023,6 +5326,7 @@ void Node3DEditorViewport::_toggle_pilot_preview(bool p_activate) {
 }
 
 void Node3DEditorViewport::_toggle_cinema_preview(bool p_activate) {
+	_camera_motion_finish("cancelled", "Cinematic preview changed.");
 	previewing_cinema = p_activate;
 	_update_navigation_controls_visibility();
 
@@ -5262,6 +5566,7 @@ void Node3DEditorViewport::update_transform_gizmo_highlight() {
 }
 
 void Node3DEditorViewport::set_state(const Dictionary &p_state) {
+	_camera_motion_finish("cancelled", "Editor state changed.");
 	if (p_state.has("position")) {
 		view_3d_controller->cursor.pos = p_state["position"];
 	}
@@ -5419,10 +5724,11 @@ void Node3DEditorViewport::set_state(const Dictionary &p_state) {
 
 Dictionary Node3DEditorViewport::get_state() const {
 	Dictionary d;
-	d["position"] = view_3d_controller->cursor.pos;
-	d["x_rotation"] = view_3d_controller->cursor.x_rot;
-	d["y_rotation"] = view_3d_controller->cursor.y_rot;
-	d["distance"] = view_3d_controller->cursor.distance;
+	const View3DController::Cursor &saved_cursor = camera_motion.active ? camera_motion.original_cursor : view_3d_controller->cursor;
+	d["position"] = saved_cursor.pos;
+	d["x_rotation"] = saved_cursor.x_rot;
+	d["y_rotation"] = saved_cursor.y_rot;
+	d["distance"] = saved_cursor.distance;
 	d["use_environment"] = camera->get_environment().is_valid();
 	d["orthogonal"] = camera->get_projection() == Camera3D::PROJECTION_ORTHOGONAL;
 	d["view_type"] = view_3d_controller->get_view_type();
@@ -5468,6 +5774,7 @@ void Node3DEditorViewport::_bind_methods() {
 }
 
 void Node3DEditorViewport::set_document_scenario(RID p_scenario) {
+	_camera_motion_finish("cancelled", "Document scenario changed.");
 	RenderingServer::get_singleton()->viewport_set_scenario(viewport->get_viewport_rid(), p_scenario);
 	auto retarget = [&](ToolRenderData &p_record) {
 		if (p_record.is_valid()) {
@@ -5493,6 +5800,7 @@ void Node3DEditorViewport::set_document_scenario(RID p_scenario) {
 }
 
 void Node3DEditorViewport::set_document_camera(const Transform3D &p_transform, bool p_orthogonal, real_t p_size) {
+	_camera_motion_finish("cancelled", "Document camera changed.");
 	view_3d_controller->set_orthogonal(p_orthogonal);
 	view_3d_controller->cursor.distance = p_orthogonal ? p_size : View3DControllerConsts::DISTANCE_DEFAULT;
 	_sync_cursor_from_transform(p_transform);
@@ -5500,6 +5808,7 @@ void Node3DEditorViewport::set_document_camera(const Transform3D &p_transform, b
 }
 
 void Node3DEditorViewport::reset() {
+	_camera_motion_finish("cancelled", "Viewport reset.");
 	view_3d_controller->set_orthogonal(false);
 	view_3d_controller->set_view_type(View3DController::VIEW_TYPE_USER);
 	message_time = 0;
@@ -5510,6 +5819,7 @@ void Node3DEditorViewport::reset() {
 }
 
 void Node3DEditorViewport::focus_selection() {
+	_camera_motion_finish("cancelled", "Selection focused.");
 	Vector3 center;
 	int count = 0;
 
@@ -6217,6 +6527,7 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	surface->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	surface->set_clip_contents(true);
 	camera = memnew(Camera3D);
+	camera->connect(SceneStringName(tree_exiting), callable_mp(this, &Node3DEditorViewport::_camera_motion_finish).bind("cancelled", "Editor camera exiting tree."));
 	camera->set_disable_gizmos(true);
 	camera->set_cull_mask(((1 << 20) - 1) | (1 << (GIZMO_BASE_LAYER + p_index)) | (1 << GIZMO_EDIT_LAYER) | (1 << GIZMO_GRID_LAYER) | (1 << MISC_TOOL_LAYER));
 	viewport->add_child(camera);

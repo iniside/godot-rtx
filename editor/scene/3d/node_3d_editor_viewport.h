@@ -426,6 +426,38 @@ private:
 	} _edit;
 
 	Ref<View3DController> view_3d_controller;
+	struct CameraMotionSegment {
+		double duration = 0;
+		Vector3 translation;
+		Vector2 rotation;
+	};
+	struct CameraMotion {
+		bool active = false;
+		bool measure_render_time = false;
+		String id;
+		View3DController::Cursor original_cursor;
+		View3DController::Cursor segment_cursor;
+		Transform3D segment_transform;
+		Vector<CameraMotionSegment> segments;
+		int segment = 0;
+		uint64_t start_usec = 0;
+		uint64_t last_usec = 0;
+		uint64_t start_frames = 0;
+		uint64_t last_frames = 0;
+		uint64_t process_intervals = 0;
+		Vector<double> intervals;
+		Vector<double> cpu_samples;
+		Vector<double> gpu_samples;
+		Dictionary result;
+	} camera_motion;
+	uint64_t camera_motion_poll_usec = 0;
+	bool _camera_motion_available() const;
+	void _camera_motion_write_status(const Dictionary &p_status);
+	void _camera_motion_poll();
+	void _camera_motion_begin_segment();
+	void _camera_motion_end_segment();
+	void _camera_motion_tick();
+	void _camera_motion_finish(const String &p_status, const String &p_reason);
 	void _update_view_3d_controller(bool p_update_all = true);
 
 	void _cursor_interpolated();
