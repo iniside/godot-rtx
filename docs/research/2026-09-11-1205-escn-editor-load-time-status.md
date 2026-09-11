@@ -70,6 +70,37 @@ help cache is regenerated on the same trigger.
   (pending pages rise to 1763 at +20 s); that is a runtime issue outside
   this measurement.
 
+## Why Load Subset is slow (temporary probes, 2026-09-11 UTC)
+
+Uncommitted probe counters were added on top of `af99b2d5d3`, run twice
+(cold and warm shader cache) and reverted. Warm run, 10004 records,
+`load_subset` 8.20 s:
+
+| Cost | Time | Cause |
+| --- | ---: | --- |
+| 12 real `ResourceLoader::load` calls | 5.17 s | each first-referenced asset is loaded three times: `lucy.res` 3 x 1.29 s, `thai_statuette.res` 3 x 0.45 s |
+| `ResourceLoader::get_resource_type` in `_validate_fields` | 1.52 s | one call per asset reference per record; opens the `.res` file and reads its header only to fill `dependency["type"]` |
+| `set_serialized` (`entity_decode_struct`) | 2.06 s | `EntityComponentTraits<T>::fields()` rebuilds the whole field schema vector, including `entity_make_field` defaults, for every component of every record |
+| 29994 cache-hit loads | 0.11 s | cheap |
+| `_read_record` (seek, read, decode) | 0.26 s | |
+| `_component_changed`, `load_entity`, commit | 0.10 s | |
+
+The triple load comes from the resource cache being weak (`Resource`
+refcount) combined with three decodes per first reference:
+
+1. `EntityFieldSchema::validate` (`scene/entity/entity_component_schema.h`,
+   `entity_make_field`) decodes into a temporary `T value`; for `Ref<Mesh>`
+   that is a full load whose result is dropped, freeing the mesh, its RID and
+   its microgeometry metadata (`Microgeometry metadata admitted ... retired`
+   grows by one asset per drop and `.mgdata` is reloaded each time).
+2. `EntityScene::_validate_fields` (`scene/resources/entity_scene.cpp`) calls
+   `entity_decode_asset` again for the dependency record and drops it.
+3. `EntityWorld::write_component` -> `set_serialized` decodes a third time;
+   this copy is kept by the component.
+
+In the cold run the first `lucy.res` load took 4.92 s instead of 1.29 s
+because material shader variants compiled at the same time.
+
 ## Limits
 
 Two runs only; no variance estimate. Timing is wall clock on the main

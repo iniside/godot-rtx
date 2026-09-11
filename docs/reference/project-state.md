@@ -8,7 +8,12 @@ of which 6.4 s loads the two imported mesh `.scn` files on first reference and
 2.7 s is `write_component` decode for 10004 records. Publication and dock work
 stay under 100 ms. A first launch after any commit recompiles all shader
 variants (about 75 s) because the shader cache key includes the version hash.
-Three runs, no optimization. See
+Probe runs show why: every first-referenced asset is loaded three times
+(field validate, dependency validate, component write) because the resource
+cache is weak and the first two decodes are dropped (5.2 of 8.2 s);
+`get_resource_type` per reference costs 1.5 s; `entity_decode_struct`
+rebuilds the field schema vector per component per record (2.1 s).
+Five runs, no optimization. See
 [measurements and limits](../research/2026-09-11-1205-escn-editor-load-time-status.md).
 
 Editor camera movement profiling (2026-09-11, `244dc27176`): selection admission
