@@ -3,6 +3,7 @@
 #include "core/input/input.h"
 #include "core/math/triangle_mesh.h"
 #include "core/object/callable_mp.h"
+#include "core/os/os.h"
 #include "editor/docks/inspector_dock.h"
 #include "editor/editor_node.h"
 #include "editor/editor_undo_redo_manager.h"
@@ -496,8 +497,18 @@ void EntitySceneEditor::_history_changed() {
 void EntitySceneEditor::_document_changed() {
 	if (document.is_valid()) {
 		revision = document->get_revision();
+		const uint64_t catalog_begin = OS::get_singleton()->get_ticks_usec();
 		_refresh_catalog();
+		const uint64_t catalog_end = OS::get_singleton()->get_ticks_usec();
 		_inspect();
+		const uint64_t inspect_end = OS::get_singleton()->get_ticks_usec();
+		if (OS::get_singleton()->is_use_benchmark_set()) {
+			const double to_ms = 1.0 / 1000.0;
+			print_line(vformat("EntitySceneEditor document changed: entities=%d refresh_catalog=%.2fms inspect=%.2fms",
+					entities.size(),
+					double(catalog_end - catalog_begin) * to_ms,
+					double(inspect_end - catalog_end) * to_ms));
+		}
 	}
 }
 

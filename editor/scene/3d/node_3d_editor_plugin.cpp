@@ -2833,12 +2833,14 @@ void Node3DEditor::set_scene_document(const Ref<EntityScene> &p_document, bool p
 	entity_world = next_world;
 	native_directional_light = false;
 	native_environment = false;
+	const uint64_t queries_begin = OS::get_singleton()->get_ticks_usec();
 	entity_world->query<EntityLight>().each([&](const EntityLight &p_light) {
 		native_directional_light |= p_light.type == RSE::LIGHT_DIRECTIONAL;
 	});
 	entity_world->query<EntityEnvironment>().each([&](const EntityEnvironment &) {
 		native_environment = true;
 	});
+	const uint64_t queries_end = OS::get_singleton()->get_ticks_usec();
 	RID scenario = entity_world->get_scenario();
 	for (ToolRenderData *record : { &origin_instance, &grid_instance[0], &grid_instance[1], &grid_instance[2], &indicators_instance, &cursor_instance }) {
 		if (record->is_valid()) {
@@ -2851,8 +2853,10 @@ void Node3DEditor::set_scene_document(const Ref<EntityScene> &p_document, bool p
 	}
 	_update_default_environment();
 	_update_preview_environment();
+	const uint64_t transforms_begin = OS::get_singleton()->get_ticks_usec();
 	entity_world->get_transforms().update();
 	entity_world->get_transforms().interpolate(1.0);
+	const uint64_t transforms_end = OS::get_singleton()->get_ticks_usec();
 	if (p_reset_view) {
 		clear();
 		bool camera_found = false;
@@ -2871,8 +2875,20 @@ void Node3DEditor::set_scene_document(const Ref<EntityScene> &p_document, bool p
 	}
 	BaseMaterial3D::flush_changes();
 	ParticleProcessMaterial::flush_changes();
+	const uint64_t publish_begin = OS::get_singleton()->get_ticks_usec();
 	entity_world->get_rendering().publish();
+	const uint64_t publish_end = OS::get_singleton()->get_ticks_usec();
 	RenderingServer::get_singleton()->sync();
+	const uint64_t sync_end = OS::get_singleton()->get_ticks_usec();
+	if (OS::get_singleton()->is_use_benchmark_set()) {
+		const double to_ms = 1.0 / 1000.0;
+		print_line(vformat("Node3DEditor set_scene_document: entities=%d queries=%.2fms transforms=%.2fms publish=%.2fms sync=%.2fms",
+				p_document->get_resident_count(),
+				double(queries_end - queries_begin) * to_ms,
+				double(transforms_end - transforms_begin) * to_ms,
+				double(publish_end - publish_begin) * to_ms,
+				double(sync_end - publish_end) * to_ms));
+	}
 }
 
 void Node3DEditor::_update_default_environment() {

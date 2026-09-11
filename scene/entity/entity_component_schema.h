@@ -67,6 +67,8 @@ void register_entity_component_schemas(flecs::world &p_world, EntitySchemaRegist
 
 Error entity_encode_asset(const Ref<Resource> &p_asset, Variant &r_value);
 Error entity_decode_asset(const Variant &p_value, Ref<Resource> &r_asset);
+void entity_asset_profile_reset();
+void entity_asset_profile_get(uint64_t &r_usec, uint32_t &r_loads, uint32_t &r_cache_hits);
 
 template <typename T>
 ecs_entity_t entity_string_meta(flecs::world &p_world) {

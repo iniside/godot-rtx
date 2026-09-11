@@ -4913,7 +4913,10 @@ Error EditorNode::load_scene(const String &p_scene, bool p_ignore_broken_deps, b
 	ERR_FAIL_COND_V_MSG(path.get_extension().to_lower() != "escn", ERR_UNAVAILABLE, "Node-based scene authoring is unavailable. Open a native EntityScene .escn document: " + path);
 	ERR_FAIL_COND_V_MSG(p_set_inherited, ERR_UNAVAILABLE, "Native scene inheritance authoring is not available yet.");
 	Error error = OK;
+	const String benchmark_file = path.get_file();
+	OS::get_singleton()->benchmark_begin_measure("Scene Load", benchmark_file + ": Resource Load");
 	Ref<EntityScene> document = ResourceLoader::load(path, "EntityScene", ResourceFormatLoader::CACHE_MODE_IGNORE, &error);
+	OS::get_singleton()->benchmark_end_measure("Scene Load", benchmark_file + ": Resource Load");
 	ERR_FAIL_COND_V_MSG(error != OK || document.is_null(), error == OK ? ERR_INVALID_DATA : error, "Cannot load native EntityScene: " + path);
 	Vector<EntityId> initial;
 	for (EntityId id : document->get_catalog().get_ids()) {
@@ -4921,16 +4924,22 @@ Error EditorNode::load_scene(const String &p_scene, bool p_ignore_broken_deps, b
 			initial.push_back(id);
 		}
 	}
+	OS::get_singleton()->benchmark_begin_measure("Scene Load", benchmark_file + ": Load Subset");
 	error = document->load_subset(initial);
+	OS::get_singleton()->benchmark_end_measure("Scene Load", benchmark_file + ": Load Subset");
 	ERR_FAIL_COND_V_MSG(error != OK, error, document->get_last_error());
+	OS::get_singleton()->benchmark_begin_measure("Scene Load", benchmark_file + ": Initialize Services");
 	error = document->get_world()->initialize_services();
+	OS::get_singleton()->benchmark_end_measure("Scene Load", benchmark_file + ": Initialize Services");
 	ERR_FAIL_COND_V(error != OK, error);
+	OS::get_singleton()->benchmark_begin_measure("Scene Load", benchmark_file + ": Editor States");
 	int index = editor_data.add_edited_scene(-1);
 	editor_data.set_scene_document(index, document);
 	const Ref<ConfigFile> editor_state_cf = _load_scene_config(path);
 	if (editor_state_cf->has_section("editor_states")) {
 		editor_data.load_editor_plugin_states_from_config(editor_state_cf, index);
 	}
+	OS::get_singleton()->benchmark_end_measure("Scene Load", benchmark_file + ": Editor States");
 	if (!restoring_scenes) {
 		save_editor_layout_delayed();
 		_add_to_recent_scenes(path);
@@ -6408,6 +6417,8 @@ void EditorNode::_load_open_scenes_from_config(Ref<ConfigFile> p_layout) {
 
 	restoring_scenes = true;
 
+	OS::get_singleton()->benchmark_begin_measure("Editor", "Restore Session Scenes");
+
 	const PackedStringArray scenes = p_layout->get_value(EDITOR_NODE_CONFIG_SECTION, "open_scenes");
 	for (const String &scene_path : scenes) {
 		if (FileAccess::exists(scene_path)) {
@@ -6427,6 +6438,9 @@ void EditorNode::_load_open_scenes_from_config(Ref<ConfigFile> p_layout) {
 	if (!current_scene_found && editor_data.get_edited_scene_count() > 0) {
 		_set_current_scene_nocheck(0);
 	}
+
+	OS::get_singleton()->benchmark_end_measure("Editor", "Restore Session Scenes");
+	OS::get_singleton()->benchmark_dump();
 
 	save_editor_layout_delayed();
 

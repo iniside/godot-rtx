@@ -34,15 +34,22 @@ class EntityScene : public Resource {
 	String last_error;
 	Thread::ID owner_thread = 0;
 
+	struct LoadProfile {
+		uint64_t read_record = 0;
+		uint64_t install = 0;
+		uint64_t describe = 0;
+		uint64_t world = 0;
+	};
+
 	Error _owner();
 	Error _read_record(EntityId p_id, Dictionary &r_record, bool *r_stored = nullptr, bool p_prefer_stored = false);
 	Error _read_bytes(EntityId p_id, PackedByteArray &r_bytes);
 	Error _encode_record(EntityId p_id, Dictionary &r_record);
 	Error _collect_required(const Vector<EntityId> &p_ids, Vector<EntityId> &r_ids) const;
-	Error _prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_scene, bool p_prefer_stored = false);
+	Error _prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_scene, bool p_prefer_stored = false, LoadProfile *r_profile = nullptr);
 	Error _can_commit(const EntityScene &p_prepared, const Vector<EntityId> &p_ids) const;
 	void _commit(EntityScene &p_prepared, const Vector<EntityId> &p_ids, bool p_resident);
-	Error _install(EntityId p_id, const Dictionary &p_record);
+	Error _install(EntityId p_id, const Dictionary &p_record, LoadProfile *r_profile = nullptr);
 	Error _validate_fields(EntityId p_id, uint64_t p_type, const Dictionary &p_fields, Array *r_dependencies = nullptr, const String &p_prefix = String());
 	Error _describe(EntityId p_id, const Dictionary &p_record, Section &r_section);
 	Error _fail(EntityId p_id, const String &p_field, Error p_error);

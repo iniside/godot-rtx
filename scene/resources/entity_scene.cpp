@@ -2,6 +2,8 @@
 
 #include "entity_scene.h"
 #include "core/object/class_db.h"
+#include "core/os/os.h"
+#include "core/string/print_string.h"
 
 #include "scene/entity/entity_scene_commands.h"
 #include "scene/entity/entity_scene_io.h"
@@ -264,9 +266,15 @@ Error EntityScene::_describe(EntityId p_id, const Dictionary &p_record, Section 
 	return OK;
 }
 
-Error EntityScene::_install(EntityId p_id, const Dictionary &p_record) {
+Error EntityScene::_install(EntityId p_id, const Dictionary &p_record, LoadProfile *r_profile) {
 	Section section;
+	uint64_t phase_begin = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
 	Error error = _describe(p_id, p_record, section);
+	if (r_profile) {
+		const uint64_t now = OS::get_singleton()->get_ticks_usec();
+		r_profile->describe += now - phase_begin;
+		phase_begin = now;
+	}
 	if (error != OK) {
 		return error;
 	}
@@ -284,6 +292,9 @@ Error EntityScene::_install(EntityId p_id, const Dictionary &p_record) {
 		}
 	}
 	sections.insert(p_id, section);
+	if (r_profile) {
+		r_profile->world += OS::get_singleton()->get_ticks_usec() - phase_begin;
+	}
 	return OK;
 }
 
@@ -312,7 +323,7 @@ Error EntityScene::_collect_required(const Vector<EntityId> &p_ids, Vector<Entit
 	return OK;
 }
 
-Error EntityScene::_prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_scene, bool p_prefer_stored) {
+Error EntityScene::_prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_scene, bool p_prefer_stored, LoadProfile *r_profile) {
 	ERR_FAIL_COND_V(_owner() != OK, ERR_UNAUTHORIZED);
 	Vector<EntityId> required;
 	Error error = _collect_required(p_ids, required);
@@ -324,7 +335,11 @@ Error EntityScene::_prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_s
 	prepared->document_id = document_id;
 	for (EntityId id : required) {
 		Dictionary record;
+		const uint64_t read_begin = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
 		error = _read_record(id, record, nullptr, p_prefer_stored);
+		if (r_profile) {
+			r_profile->read_record += OS::get_singleton()->get_ticks_usec() - read_begin;
+		}
 		if (error != OK) {
 			return error;
 		}
@@ -332,7 +347,11 @@ Error EntityScene::_prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_s
 		prepared->order.insert(id, get_order(id));
 		if (!bool(record["deleted"])) {
 			prepared->catalog._set_parent(id, catalog.get_parent(id));
-			error = prepared->_install(id, record);
+			const uint64_t install_begin = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
+			error = prepared->_install(id, record, r_profile);
+			if (r_profile) {
+				r_profile->install += OS::get_singleton()->get_ticks_usec() - install_begin;
+			}
 			if (error != OK) {
 				last_error = prepared->last_error;
 				return error;
@@ -453,6 +472,12 @@ void EntityScene::_commit(EntityScene &p_prepared, const Vector<EntityId> &p_ids
 
 Error EntityScene::load_subset(const Vector<EntityId> &p_ids) {
 	ERR_FAIL_COND_V(_owner() != OK, ERR_UNAUTHORIZED);
+	const bool profiling = OS::get_singleton()->is_use_benchmark_set();
+	if (profiling) {
+		entity_asset_profile_reset();
+	}
+	LoadProfile profile;
+	const uint64_t started = OS::get_singleton()->get_ticks_usec();
 	Vector<EntityId> required;
 	Error error = _collect_required(p_ids, required);
 	if (error != OK) {
@@ -471,20 +496,45 @@ Error EntityScene::load_subset(const Vector<EntityId> &p_ids) {
 	if (unloaded.is_empty()) {
 		return OK;
 	}
+	const uint64_t collected = OS::get_singleton()->get_ticks_usec();
 	Ref<EntityScene> prepared;
-	error = _prepare(unloaded, prepared);
+	error = _prepare(unloaded, prepared, false, profiling ? &profile : nullptr);
 	if (error != OK) {
 		return error;
 	}
+	const uint64_t prepared_at = OS::get_singleton()->get_ticks_usec();
 	error = _can_commit(**prepared, unloaded);
 	if (error != OK) {
 		return error;
 	}
+	const uint64_t checked = OS::get_singleton()->get_ticks_usec();
 	uint64_t previous_revision = revision;
 	_commit(**prepared, unloaded, true);
 	revision = previous_revision;
+	const uint64_t committed = OS::get_singleton()->get_ticks_usec();
 	if (get_resident_count() == sections.size()) {
 		source.unref();
+	}
+	if (profiling) {
+		uint64_t asset_usec = 0;
+		uint32_t asset_loads = 0;
+		uint32_t asset_cache_hits = 0;
+		entity_asset_profile_get(asset_usec, asset_loads, asset_cache_hits);
+		const double to_ms = 1.0 / 1000.0;
+		print_line(vformat("EntityScene load_subset: records=%d collect=%.2fms prepare=%.2fms (read_record=%.2fms install=%.2fms describe=%.2fms world=%.2fms asset_load=%.2fms loads=%d cache_hits=%d) can_commit=%.2fms commit=%.2fms total=%.2fms",
+				unloaded.size(),
+				double(collected - started) * to_ms,
+				double(prepared_at - collected) * to_ms,
+				double(profile.read_record) * to_ms,
+				double(profile.install) * to_ms,
+				double(profile.describe) * to_ms,
+				double(profile.world) * to_ms,
+				double(asset_usec) * to_ms,
+				asset_loads,
+				asset_cache_hits,
+				double(checked - prepared_at) * to_ms,
+				double(committed - checked) * to_ms,
+				double(committed - started) * to_ms));
 	}
 	return OK;
 }

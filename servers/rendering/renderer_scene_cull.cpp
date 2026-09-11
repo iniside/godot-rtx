@@ -904,6 +904,7 @@ void RendererSceneCull::_apply_entity_pose(NativeEntity &r_entity, const EntityR
 }
 
 void RendererSceneCull::scene_publish_entities(const EntityRenderPacket &p_packet) {
+	const uint64_t publish_begin = OS::get_singleton()->get_ticks_usec();
 	_collect_retired_entity_assets();
 	Scenario *scenario = scenario_owner.get_or_null(p_packet.scenario);
 	if (!scenario || scenario->native_released || (scenario->world_generation && scenario->world_generation != p_packet.world_generation) || p_packet.sequence <= scenario->publication_sequence) {
@@ -912,6 +913,7 @@ void RendererSceneCull::scene_publish_entities(const EntityRenderPacket &p_packe
 	scenario->world_generation = p_packet.world_generation;
 	scenario->publication_sequence = p_packet.sequence;
 	update_dirty_instances();
+	const uint64_t prepare_end = OS::get_singleton()->get_ticks_usec();
 	releasing_entity_batch = true;
 	if (p_packet.release) {
 		for (KeyValue<EntityId, NativeEntity> &entry : scenario->native_entities) {
@@ -1342,12 +1344,14 @@ void RendererSceneCull::scene_publish_entities(const EntityRenderPacket &p_packe
 		}
 		_apply_entity_pose(entity, update);
 	}
+	const uint64_t updates_end = OS::get_singleton()->get_ticks_usec();
 	for (const EntityRenderPoseUpdate &update : p_packet.poses) {
 		NativeEntity *entity = scenario->native_entities.getptr(update.id);
 		if (entity && entity->handle == update.handle) {
 			_apply_entity_pose(*entity, update);
 		}
 	}
+	const uint64_t poses_end = OS::get_singleton()->get_ticks_usec();
 	HashSet<Instance *> references_to_refresh;
 	for (const EntityRenderUpdate &update : p_packet.updates) {
 		if (NativeEntity *entity = scenario->native_entities.getptr(update.id)) {
@@ -1388,7 +1392,20 @@ void RendererSceneCull::scene_publish_entities(const EntityRenderPacket &p_packe
 	scenario->camera_attributes = selected.is_valid() ? scenario->native_environments[selected][1] : RID();
 	scenario->compositor = selected.is_valid() ? scenario->native_environments[selected][2] : RID();
 	releasing_entity_batch = false;
+	const uint64_t references_end = OS::get_singleton()->get_ticks_usec();
 	update_dirty_instances();
+	const uint64_t dirty_end = OS::get_singleton()->get_ticks_usec();
+	if (OS::get_singleton()->is_use_benchmark_set() && p_packet.updates.size() > 0) {
+		const double to_ms = 1.0 / 1000.0;
+		print_line(vformat("RendererSceneCull scene_publish_entities: updates=%d poses=%d prepare=%.2fms apply=%.2fms pose_apply=%.2fms references=%.2fms dirty=%.2fms",
+				p_packet.updates.size(),
+				p_packet.poses.size(),
+				double(prepare_end - publish_begin) * to_ms,
+				double(updates_end - prepare_end) * to_ms,
+				double(poses_end - updates_end) * to_ms,
+				double(references_end - poses_end) * to_ms,
+				double(dirty_end - references_end) * to_ms));
+	}
 }
 
 void RendererSceneCull::_render_slot_replace_base(RID p_instance, RID p_base) {
