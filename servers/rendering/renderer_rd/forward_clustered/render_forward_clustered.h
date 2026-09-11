@@ -814,6 +814,7 @@ protected:
 		virtual void set_softshadow_projector_pairing(bool p_softshadow, bool p_projector) override;
 
 		void age_out_motion(uint64_t p_frame);
+		float get_fade_alpha(const AABB &p_relative_aabb) const;
 	};
 
 	// These are not used in the Forward+ path, it has different light clustering tech.

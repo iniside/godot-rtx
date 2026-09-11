@@ -1661,19 +1661,7 @@ void RenderForwardClustered::_prepare_render_list_chunk(uint32_t p_batch, Render
 		if (inst->non_uniform_scale) {
 			flags |= INSTANCE_DATA_FLAGS_NON_UNIFORM_SCALE;
 		}
-		float fade_alpha = 1.0;
-
-		if (inst->fade_near || inst->fade_far) {
-			float fade_dist = relative_aabb.get_center().length();
-			// Use `smoothstep()` to make opacity changes more gradual and less noticeable to the player.
-			if (inst->fade_far && fade_dist > inst->fade_far_begin) {
-				fade_alpha = Math::smoothstep(0.0f, 1.0f, 1.0f - (fade_dist - inst->fade_far_begin) / (inst->fade_far_end - inst->fade_far_begin));
-			} else if (inst->fade_near && fade_dist < inst->fade_near_end) {
-				fade_alpha = Math::smoothstep(0.0f, 1.0f, (fade_dist - inst->fade_near_begin) / (inst->fade_near_end - inst->fade_near_begin));
-			}
-		}
-
-		fade_alpha *= inst->force_alpha * inst->parent_fade_alpha;
+		const float fade_alpha = inst->get_fade_alpha(relative_aabb);
 
 		flags = (flags & ~INSTANCE_DATA_FLAGS_FADE_MASK) | (uint32_t(fade_alpha * 255.0) << INSTANCE_DATA_FLAGS_FADE_SHIFT);
 
@@ -2800,6 +2788,9 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		if (primary_surface_validation_generation != micro_geometry_generation || primary_surface_validation_rt_generation != micro_geometry_rt_generation) {
 			for (auto *element = micro_geometry_surface_list.first(); element; element = element->next()) {
 				const auto *surface = element->self();
+				if (!RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage()->is_ready(RID::from_uint64(surface->micro_geometry_task.asset), true)) {
+					return;
+				}
 				ERR_FAIL_COND_MSG(!surface->micro_geometry_rt_ready || !surface->micro_geometry_rt_element.in_list() || (surface->rtxdi_material_flags & GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_UNSUPPORTED), "Primary visibility T is ineligible: microgeometry material or CLAS is not ready for primary visibility.");
 			}
 			primary_surface_validation_generation = micro_geometry_generation;
@@ -2814,12 +2805,17 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 				if (_primary_surface_editor_helper(instance->scene_data->layer_mask)) {
 					continue;
 				}
+				AABB relative_aabb;
+				if (instance->fade_near || instance->fade_far) {
+					relative_aabb = instance->get_camera_relative_transform(p_render_data->scene_data->cam_origin).xform(instance->scene_data->aabb);
+				}
+				const bool instance_faded = uint32_t(instance->get_fade_alpha(relative_aabb) * 255.0) != 255;
 				for (auto *surface = instance->surface_caches; surface; surface = surface->next) {
 					const auto *shader = surface->shader;
 					if (shader && shader->uses_alpha_pass()) {
 						continue;
 					}
-					ERR_FAIL_COND_MSG(!shader || instance->rt_procedural || shader->uses_vertex || shader->uses_position || shader->writes_modelview_or_projection || shader->uses_z_clip_scale || shader->uses_point_size || shader->writes_depth || (surface->rtxdi_material_flags & GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_UNSUPPORTED), "Primary visibility T is ineligible: scene geometry or material requires unsupported raster behavior.");
+					ERR_FAIL_COND_MSG(!shader || instance_faded || instance->rt_procedural || shader->uses_vertex || shader->uses_position || shader->writes_modelview_or_projection || shader->uses_z_clip_scale || shader->uses_point_size || shader->writes_depth || (surface->rtxdi_material_flags & GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_UNSUPPORTED), "Primary visibility T is ineligible: scene geometry or material requires unsupported raster behavior.");
 				}
 			}
 		}
@@ -5743,6 +5739,19 @@ void RenderForwardClustered::GeometryInstanceForwardClustered::reset_motion_vect
 	prev_transform = transform;
 	memcpy(prev_origin, origin, sizeof(origin));
 	transform_status = TransformStatus::TELEPORTED;
+}
+
+float RenderForwardClustered::GeometryInstanceForwardClustered::get_fade_alpha(const AABB &p_relative_aabb) const {
+	float fade_alpha = 1.0;
+	if (fade_near || fade_far) {
+		const float fade_dist = p_relative_aabb.get_center().length();
+		if (fade_far && fade_dist > fade_far_begin) {
+			fade_alpha = Math::smoothstep(0.0f, 1.0f, 1.0f - (fade_dist - fade_far_begin) / (fade_far_end - fade_far_begin));
+		} else if (fade_near && fade_dist < fade_near_end) {
+			fade_alpha = Math::smoothstep(0.0f, 1.0f, (fade_dist - fade_near_begin) / (fade_near_end - fade_near_begin));
+		}
+	}
+	return fade_alpha * (force_alpha * parent_fade_alpha);
 }
 
 void RenderForwardClustered::GeometryInstanceForwardClustered::age_out_motion(uint64_t p_frame) {
