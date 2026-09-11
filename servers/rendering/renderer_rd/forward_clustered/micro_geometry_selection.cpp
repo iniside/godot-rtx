@@ -587,7 +587,7 @@ bool MicroGeometrySelection::freeze(Pass *p_pass) {
 	return true;
 }
 
-void MicroGeometrySelection::build_depth_pyramid(DepthPyramid &r_pyramid, RID p_depth, const Size2i &p_size) {
+void MicroGeometrySelection::build_depth_pyramid(DepthPyramid &r_pyramid, RID p_depth, RID p_classification, const Size2i &p_size) {
 	RENDER_TIMESTAMP("Microgeometry HZB");
 	Size2i size(Math::nearest_power_of_2_templated(p_size.x), Math::nearest_power_of_2_templated(p_size.y));
 	if (r_pyramid.texture.is_valid() && r_pyramid.size != size) {
@@ -613,7 +613,7 @@ void MicroGeometrySelection::build_depth_pyramid(DepthPyramid &r_pyramid, RID p_
 	for (uint32_t level = 0; level < r_pyramid.levels.size(); level++) {
 		uint32_t push[4] = { uint32_t(level == 0 ? p_size.x : MAX(1, size.x >> (level - 1))), uint32_t(level == 0 ? p_size.y : MAX(1, size.y >> (level - 1))), level == 0 ? 1u : 0u, 0 };
 		RID source = level == 0 ? p_depth : r_pyramid.levels[level - 1];
-		RID uniform = UniformSetCacheRD::get_singleton()->get_cache(hzb_shader.version_get_shader(hzb_version, 0), 0, RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 0, source), RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 1, r_pyramid.levels[level]));
+		RID uniform = UniformSetCacheRD::get_singleton()->get_cache(hzb_shader.version_get_shader(hzb_version, 0), 0, RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 0, source), RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 1, r_pyramid.levels[level]), RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 2, p_classification));
 		RD::ComputeListID list = RD::get_singleton()->compute_list_begin();
 		RD::get_singleton()->compute_list_bind_compute_pipeline(list, hzb_pipeline);
 		RD::get_singleton()->compute_list_bind_uniform_set(list, uniform, 0);

@@ -136,6 +136,7 @@ public:
 		uint64_t rtxdi_surface_last_engine_frame = 0;
 		bool rtxdi_surface_initialized = false;
 		bool rtxdi_surface_history_valid = false;
+		bool micro_geometry_history_valid = false;
 		bool rtxdi_surface_depth_valid[2] = {};
 		Size2i rtxdi_surface_size;
 		RID rtxdi_surface_camera;
@@ -229,12 +230,16 @@ public:
 		RID get_depth_fb(DepthFrameBufferType p_type = DEPTH_FB);
 		RID get_specular_only_fb();
 		RID get_velocity_only_fb();
-		RID prepare_rtxdi_surface(const RenderSceneDataRD *p_scene_data, bool p_invalid_deformation);
+		RID prepare_rtxdi_surface(const RenderSceneDataRD *p_scene_data, bool p_invalid_deformation, bool p_invalid_micro_geometry_history);
 		void commit_rtxdi_surface();
-		void invalidate_raytracing_history() { rtxdi_surface_initialized = false; }
+		void invalidate_raytracing_history() {
+			rtxdi_surface_initialized = false;
+			micro_geometry_history_valid = false;
+		}
 		RID get_rtxdi_surface_texture(uint32_t p_attachment, bool p_previous = false) const;
 		RID get_rtxdi_surface_depth(bool p_previous = false) const;
 		bool is_rtxdi_surface_history_valid() const { return rtxdi_surface_history_valid; }
+		bool is_micro_geometry_history_valid() const { return micro_geometry_history_valid; }
 		uint64_t get_rtxdi_surface_frame_index() const { return rtxdi_surface_frame_index; }
 		const Transform3D &get_rtxdi_surface_camera_transform() const { return rtxdi_surface_camera_transform; }
 		const Projection &get_rtxdi_surface_camera_projection() const { return rtxdi_surface_camera_projection; }

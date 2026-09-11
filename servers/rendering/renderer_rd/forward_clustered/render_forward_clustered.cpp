@@ -92,17 +92,20 @@ void RenderForwardClustered::RenderBufferDataForwardClustered::_ensure_rtxdi_sur
 	}
 }
 
-RID RenderForwardClustered::RenderBufferDataForwardClustered::prepare_rtxdi_surface(const RenderSceneDataRD *p_scene_data, bool p_invalid_deformation) {
+RID RenderForwardClustered::RenderBufferDataForwardClustered::prepare_rtxdi_surface(const RenderSceneDataRD *p_scene_data, bool p_invalid_deformation, bool p_invalid_micro_geometry_history) {
+	micro_geometry_history_valid = false;
 	ERR_FAIL_NULL_V(render_buffers, RID());
 	ERR_FAIL_NULL_V(p_scene_data, RID());
 	_ensure_rtxdi_surface();
 
 	const uint64_t engine_frame = RSG::rasterizer->get_frame_number();
 	const Size2i surface_size = render_buffers->get_internal_size();
-	rtxdi_surface_history_valid = rtxdi_surface_initialized && rtxdi_surface_depth_valid[rtxdi_surface_set] && rtxdi_surface_size == surface_size && engine_frame == rtxdi_surface_last_engine_frame + 1 && !p_invalid_deformation;
-	if (rtxdi_surface_history_valid) {
-		rtxdi_surface_history_valid = p_scene_data->camera.is_valid() && p_scene_data->camera == p_scene_data->prev_camera && rtxdi_surface_camera == p_scene_data->prev_camera && rtxdi_surface_camera_transform.is_equal_approx(p_scene_data->prev_cam_transform) && rtxdi_surface_camera_projection.is_same(p_scene_data->prev_cam_projection) && rtxdi_surface_camera_jitter.is_equal_approx(p_scene_data->prev_taa_jitter) && rtxdi_surface_camera_orthogonal == p_scene_data->prev_cam_orthogonal && p_scene_data->cam_orthogonal == p_scene_data->prev_cam_orthogonal && p_scene_data->cam_projection.is_same(p_scene_data->prev_cam_projection);
+	bool history_continuous = rtxdi_surface_initialized && rtxdi_surface_depth_valid[rtxdi_surface_set] && rtxdi_surface_size == surface_size && engine_frame == rtxdi_surface_last_engine_frame + 1;
+	if (history_continuous) {
+		history_continuous = p_scene_data->camera.is_valid() && p_scene_data->camera == p_scene_data->prev_camera && rtxdi_surface_camera == p_scene_data->prev_camera && rtxdi_surface_camera_transform.is_equal_approx(p_scene_data->prev_cam_transform) && rtxdi_surface_camera_projection.is_same(p_scene_data->prev_cam_projection) && rtxdi_surface_camera_jitter.is_equal_approx(p_scene_data->prev_taa_jitter) && rtxdi_surface_camera_orthogonal == p_scene_data->prev_cam_orthogonal && p_scene_data->cam_orthogonal == p_scene_data->prev_cam_orthogonal && p_scene_data->cam_projection.is_same(p_scene_data->prev_cam_projection);
 	}
+	rtxdi_surface_history_valid = history_continuous && !p_invalid_deformation;
+	micro_geometry_history_valid = history_continuous && !p_invalid_micro_geometry_history;
 	if (RSG::utilities->capturing_timestamps && (rtxdi_surface_frame_index < 4 || engine_frame % 120 == 0)) {
 		String rejected;
 		auto reject = [&](bool p_rejected, const char *p_reason) {
@@ -127,7 +130,7 @@ RID RenderForwardClustered::RenderBufferDataForwardClustered::prepare_rtxdi_surf
 		reject(rtxdi_surface_camera_orthogonal != p_scene_data->prev_cam_orthogonal, "previous_orthogonal_mismatch");
 		reject(p_scene_data->cam_orthogonal != p_scene_data->prev_cam_orthogonal, "orthogonal_changed");
 		reject(!p_scene_data->cam_projection.is_same(p_scene_data->prev_cam_projection), "projection_changed");
-		print_line(vformat("Microgeometry history: frame=%d last_rendered_frame=%d surface_frame=%d camera=%d previous_camera=%d stored_camera=%d size=%s previous_size=%s valid=%s rejected=%s", engine_frame, rtxdi_surface_last_engine_frame, rtxdi_surface_frame_index, p_scene_data->camera.get_id(), p_scene_data->prev_camera.get_id(), rtxdi_surface_camera.get_id(), surface_size, rtxdi_surface_size, rtxdi_surface_history_valid, rejected.is_empty() ? String("none") : rejected));
+		print_line(vformat("Microgeometry history: frame=%d last_rendered_frame=%d surface_frame=%d camera=%d previous_camera=%d stored_camera=%d size=%s previous_size=%s valid=%s hzb_valid=%s hzb_geometry_invalid=%s rejected=%s", engine_frame, rtxdi_surface_last_engine_frame, rtxdi_surface_frame_index, p_scene_data->camera.get_id(), p_scene_data->prev_camera.get_id(), rtxdi_surface_camera.get_id(), surface_size, rtxdi_surface_size, rtxdi_surface_history_valid, micro_geometry_history_valid, p_invalid_micro_geometry_history, rejected.is_empty() ? String("none") : rejected));
 	}
 	rtxdi_surface_set ^= 1;
 	rtxdi_surface_depth_valid[rtxdi_surface_set] = false;
@@ -263,6 +266,8 @@ void RenderForwardClustered::RenderBufferDataForwardClustered::micro_geometry_st
 			const uint32_t offset = 4 + phase * 12;
 			print_line(vformat("Microgeometry camera occlusion: frame=%d phase=%s input_clusters=%d frustum_rejected=%d hzb_disabled=%d task_ineligible=%d projection_unsafe=%d outside_viewport=%d hzb_sampled=%d zero_depth=%d hzb_rejected=%d residency_rejected=%d emitted_clusters=%d emitted_triangles=%d", p_data->micro_geometry_stats_submitted_frame, phase == 0 ? "initial" : "recovery", statistic(offset), statistic(offset + 1), statistic(offset + 2), statistic(offset + 3), statistic(offset + 4), statistic(offset + 5), statistic(offset + 6), statistic(offset + 7), statistic(offset + 8), statistic(offset + 9), statistic(offset + 10), statistic(offset + 11)));
 			print_line(vformat("Microgeometry camera depth footprint: frame=%d phase=%s zero_depth_padding_overlap=%d zero_depth_interior=%d", p_data->micro_geometry_stats_submitted_frame, phase == 0 ? "initial" : "recovery", statistic(37 + phase), statistic(offset + 7) - statistic(37 + phase)));
+			const uint32_t query_offset = 68 + phase * 8;
+			print_line(vformat("Microgeometry camera HZB query: frame=%d phase=%s refined_tests=%d refined_rejected=%d inside_zero_failures=%d inside_nonzero_failures=%d budget_exhaustions=%d texture_fetches=%d peak_fetches=%d boundary_descents=%d", p_data->micro_geometry_stats_submitted_frame, phase == 0 ? "initial" : "recovery", statistic(query_offset), statistic(query_offset + 1), statistic(query_offset + 2), statistic(query_offset + 3), statistic(query_offset + 4), statistic(query_offset + 5), statistic(query_offset + 6), statistic(query_offset + 7)));
 		}
 	}
 }
@@ -310,6 +315,7 @@ void RenderForwardClustered::RenderBufferDataForwardClustered::free_data() {
 	rtxdi_surface_last_engine_frame = 0;
 	rtxdi_surface_initialized = false;
 	rtxdi_surface_history_valid = false;
+	micro_geometry_history_valid = false;
 	rtxdi_surface_depth_valid[0] = false;
 	rtxdi_surface_depth_valid[1] = false;
 	rtxdi_surface_size = Size2i();
@@ -829,13 +835,13 @@ void RenderForwardClustered::_select_micro_geometry(MicroGeometryRasterPass *p_p
 		print_line(vformat("Microgeometry camera selection: frame=%d owner=%d error=%f output_height=%f near_plane=%f hzb_size=%dx%d tasks=%d units=%d", RSG::rasterizer->get_frame_number(), p_pass->gpu->capacity_feedback->owner, p_pass->gpu->data.error, p_pass->gpu->data.output_height, p_pass->gpu->data.near_plane, p_pass->gpu->data.hzb_width, p_pass->gpu->data.hzb_height, p_pass->gpu->data.task_count, p_pass->gpu->data.unit_count));
 	}
 	RID depth;
-	if ((p_pass->gpu->data.flags & 2) != 0 && p_pass->render_buffers && p_pass->render_buffers->is_rtxdi_surface_history_valid() && p_pass->render_buffers->micro_geometry_depth.texture.is_valid()) {
+	if ((p_pass->gpu->data.flags & 2) != 0 && p_pass->render_buffers && p_pass->render_buffers->is_micro_geometry_history_valid() && p_pass->render_buffers->micro_geometry_depth.texture.is_valid()) {
 		p_pass->gpu->data.flags |= 4;
 		p_pass->gpu->data.hzb_mips = p_pass->render_buffers->micro_geometry_depth.levels.size();
 		depth = p_pass->render_buffers->micro_geometry_depth.texture;
 	}
 	if (RSG::utilities->capturing_timestamps && RSG::rasterizer->get_frame_number() % 120 == 0) {
-		print_line(vformat("Microgeometry HZB: frame=%d pass=%s owner=%d camera_eligible=%s history_valid=%s pyramid_valid=%s enabled=%s frozen=%s", RSG::rasterizer->get_frame_number(), p_pass->render_buffers ? "camera" : "shadow", p_pass->gpu->capacity_feedback->owner, p_pass->render_buffers && (p_pass->gpu->data.flags & 2) != 0, p_pass->render_buffers && p_pass->render_buffers->is_rtxdi_surface_history_valid(), p_pass->render_buffers && p_pass->render_buffers->micro_geometry_depth.texture.is_valid(), (p_pass->gpu->data.flags & 4) != 0, p_pass->gpu->frozen));
+		print_line(vformat("Microgeometry HZB: frame=%d pass=%s owner=%d camera_eligible=%s history_valid=%s pyramid_valid=%s enabled=%s frozen=%s", RSG::rasterizer->get_frame_number(), p_pass->render_buffers ? "camera" : "shadow", p_pass->gpu->capacity_feedback->owner, p_pass->render_buffers && (p_pass->gpu->data.flags & 2) != 0, p_pass->render_buffers && p_pass->render_buffers->is_micro_geometry_history_valid(), p_pass->render_buffers && p_pass->render_buffers->micro_geometry_depth.texture.is_valid(), (p_pass->gpu->data.flags & 4) != 0, p_pass->gpu->frozen));
 	}
 	micro_geometry->select(p_pass->gpu, depth);
 	p_pass->dispatched = true;
@@ -1259,9 +1265,10 @@ void RenderForwardClustered::_render_list_with_draw_list(RenderListParameters *p
 	if (pass && !pass->gpu->frozen && pass->render_buffers && p_params->view_count == 1) {
 		auto &pyramid = pass->render_buffers->micro_geometry_depth;
 		RID depth = pass->render_buffers->get_rtxdi_surface_depth();
+		RID classification = pass->render_buffers->get_rtxdi_surface_texture(RenderBufferDataForwardClustered::RTXDI_SURFACE_CLASSIFICATION);
 		const Size2i size(pass->gpu->data.hzb_width, pass->gpu->data.hzb_height);
 		pass->render_buffers->commit_rtxdi_surface();
-		micro_geometry->build_depth_pyramid(pyramid, depth, size);
+		micro_geometry->build_depth_pyramid(pyramid, depth, classification, size);
 		if ((pass->gpu->data.flags & 4) != 0) {
 			pass->gpu->data.hzb_mips = pyramid.levels.size();
 			micro_geometry->recover(pass->gpu, pyramid.texture);
@@ -1274,7 +1281,7 @@ void RenderForwardClustered::_render_list_with_draw_list(RenderListParameters *p
 			RD::get_singleton()->draw_list_end();
 			RENDER_TIMESTAMP("Microgeometry Camera Recovery Draw Complete");
 			pass->render_buffers->commit_rtxdi_surface();
-			micro_geometry->build_depth_pyramid(pyramid, depth, size);
+			micro_geometry->build_depth_pyramid(pyramid, depth, classification, size);
 		}
 	}
 	if (pass) {
@@ -2759,6 +2766,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	}
 	_update_dirty_geometry_instances();
 	bool invalid_deformation = false;
+	bool invalid_micro_geometry_history = false;
 	const bool profile_deformation = RSG::utilities->capturing_timestamps && engine_frame % 120 == 0;
 	const char *deformation_reason = "none";
 	uint32_t deformation_instance = UINT32_MAX;
@@ -2767,29 +2775,33 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	const SceneShaderForwardClustered::ShaderData *deformation_shader = nullptr;
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
 	auto prepare_deformation_validity = [&](uint32_t) {
-		for (uint32_t i = 0; i < p_render_data->instances->size() && !invalid_deformation; i++) {
+		for (uint32_t i = 0; i < p_render_data->instances->size() && !invalid_micro_geometry_history; i++) {
 			GeometryInstanceForwardClustered *instance = static_cast<GeometryInstanceForwardClustered *>((*p_render_data->instances)[i]);
-			invalid_deformation = instance->transform_status == GeometryInstanceForwardClustered::TransformStatus::TELEPORTED || instance->rt_procedural != nullptr;
-			if (profile_deformation && invalid_deformation) {
+			const bool had_invalid_deformation = invalid_deformation;
+			invalid_micro_geometry_history = instance->transform_status == GeometryInstanceForwardClustered::TransformStatus::TELEPORTED || instance->rt_procedural != nullptr;
+			if (profile_deformation && !invalid_deformation && invalid_micro_geometry_history) {
 				deformation_reason = instance->transform_status == GeometryInstanceForwardClustered::TransformStatus::TELEPORTED ? "teleported" : "procedural";
 			}
-			for (GeometryInstanceSurfaceDataCache *surface = instance->surface_caches; surface && !invalid_deformation; surface = surface->next) {
-				invalid_deformation = bool(surface->rtxdi_material_flags & GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_DEFORMED);
-				if (profile_deformation && invalid_deformation) {
+			invalid_deformation |= invalid_micro_geometry_history;
+			for (GeometryInstanceSurfaceDataCache *surface = instance->surface_caches; surface && !invalid_micro_geometry_history; surface = surface->next) {
+				const bool material_deformed = bool(surface->rtxdi_material_flags & GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_DEFORMED);
+				if (profile_deformation && !invalid_deformation && material_deformed) {
 					deformation_reason = "material_deformed";
 					deformation_surface = surface->surface_index;
 					deformation_material_flags = surface->rtxdi_material_flags;
 					deformation_shader = surface->shader;
 				}
-				if (!invalid_deformation && instance->scene_data->mesh_instance.is_valid() && mesh_storage->mesh_instance_get_last_change(instance->scene_data->mesh_instance, surface->surface_index) == engine_frame) {
-					invalid_deformation = mesh_storage->mesh_instance_get_prev_vertex_buffer(instance->scene_data->mesh_instance, surface->surface_index) == mesh_storage->mesh_instance_get_vertex_buffer(instance->scene_data->mesh_instance, surface->surface_index);
-					if (profile_deformation && invalid_deformation) {
+				invalid_deformation |= material_deformed;
+				if (instance->scene_data->mesh_instance.is_valid() && mesh_storage->mesh_instance_get_last_change(instance->scene_data->mesh_instance, surface->surface_index) == engine_frame) {
+					invalid_micro_geometry_history = mesh_storage->mesh_instance_get_prev_vertex_buffer(instance->scene_data->mesh_instance, surface->surface_index) == mesh_storage->mesh_instance_get_vertex_buffer(instance->scene_data->mesh_instance, surface->surface_index);
+					if (profile_deformation && !invalid_deformation && invalid_micro_geometry_history) {
 						deformation_reason = "previous_vertex_buffer_alias";
 						deformation_surface = surface->surface_index;
 					}
+					invalid_deformation |= invalid_micro_geometry_history;
 				}
 			}
-			if (profile_deformation && invalid_deformation) {
+			if (profile_deformation && !had_invalid_deformation && invalid_deformation) {
 				deformation_instance = instance->persistent_instance;
 			}
 		}
@@ -2916,7 +2928,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		}
 		print_line(vformat("Microgeometry deformation: frame=%d camera=%d invalid=%s subtype=%s persistent_instance=%d surface=%d%s", engine_frame, p_render_data->scene_data->camera.get_id(), invalid_deformation, deformation_reason, deformation_instance, deformation_surface, shader_details));
 	}
-	color_framebuffer = rb_data->prepare_rtxdi_surface(p_render_data->scene_data, invalid_deformation);
+	color_framebuffer = rb_data->prepare_rtxdi_surface(p_render_data->scene_data, invalid_deformation, invalid_micro_geometry_history);
 	_render_shadows(p_render_data);
 	light_preparation.begin_lights();
 

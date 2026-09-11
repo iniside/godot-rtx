@@ -3,6 +3,8 @@
 
 [[vk::binding(0, 0)]] Texture2D<float> source_depth;
 [[vk::binding(1, 0)]] [[vk::image_format("r32f")]] RWTexture2D<float> result_depth;
+[[vk::binding(2, 0)]] Texture2D<uint2> source_classification;
+static const uint RTXDI_MATERIAL_DEFORMED = 64u;
 struct Parameters {
 	uint2 source_size;
 	uint copy_depth;
@@ -21,7 +23,9 @@ void main(uint3 id : SV_DispatchThreadID) {
 	float depth = 0;
 	if (parameters.copy_depth != 0) {
 		if (all(id.xy < parameters.source_size)) {
-			depth = source_depth.Load(int3(id.xy, 0));
+			if ((source_classification.Load(int3(id.xy, 0)).x & RTXDI_MATERIAL_DEFORMED) == 0) {
+				depth = source_depth.Load(int3(id.xy, 0));
+			}
 		}
 	} else {
 		uint2 base = id.xy * 2;
