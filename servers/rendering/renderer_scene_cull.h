@@ -788,6 +788,7 @@ public:
 				bool valid = false;
 				uint64_t frame = 0;
 				Basis basis;
+				Basis camera_basis;
 				double origin[3] = {};
 				Vector3 minimum;
 				Vector3 maximum;
@@ -1247,6 +1248,7 @@ public:
 			uint32_t caster_mask;
 			struct Cascade {
 				Frustum frustum;
+				Basis camera_basis;
 				bool refresh = true;
 				bool full_coverage = false;
 				uint64_t caster_generation = 0;
