@@ -117,6 +117,10 @@ struct PushConstant {
 [[vk::binding(19, 0)]] RWStructuredBuffer<uint2> candidate;
 [[vk::binding(20, 0)]] RWStructuredBuffer<uint2> committed;
 
+void add_statistic(uint p_index, uint p_value = 1) {
+	if ((parameters.flags & 128) != 0) { InterlockedAdd(statistics[p_index], p_value); }
+}
+
 uint unit_for_work(uint p_index, bool p_queue) {
 	uint begin = 0, end = parameters.unit_count;
 	while (begin + 1 < end) {
@@ -257,12 +261,15 @@ bool frustum_visible(SelectionTask p_task, MicroGeometryInstance p_instance, uin
 }
 
 bool occluded(SelectionTask p_task, MicroGeometryInstance p_instance, uint p_multimesh, MicroGeometryCluster p_cluster, bool p_previous) {
-	if ((parameters.flags & 4) == 0 || parameters.hzb_mips == 0 || (p_task.flags & 18) != 0) { return false; }
+	uint statistic_offset = p_previous ? 4 : 16;
+	if ((parameters.flags & 4) == 0 || parameters.hzb_mips == 0) { add_statistic(statistic_offset + 2); return false; }
+	if ((p_task.flags & 18) != 0) { add_statistic(statistic_offset + 3); return false; }
 	float3 center;
 	float radius, nearest;
 	float2 low, high;
 	view_bounds(p_task, p_instance, p_multimesh, p_cluster.center, p_cluster.radius, p_previous, center, radius);
-	if (!projected_bounds(center, radius, p_previous, low, high, nearest) || any(low < 0) || any(high > 1)) { return false; }
+	if (!projected_bounds(center, radius, p_previous, low, high, nearest)) { add_statistic(statistic_offset + 4); return false; }
+	if (any(low < 0) || any(high > 1)) { add_statistic(statistic_offset + 5); return false; }
 	float2 pixel_low = low * float2(parameters.hzb_width, parameters.hzb_height);
 	float2 pixel_high = high * float2(parameters.hzb_width, parameters.hzb_height);
 	uint level = min(uint(ceil(log2(max(1.0, max(pixel_high.x - pixel_low.x, pixel_high.y - pixel_low.y))))), parameters.hzb_mips - 1);
@@ -276,6 +283,8 @@ bool occluded(SelectionTask p_task, MicroGeometryInstance p_instance, uint p_mul
 	for (uint y = start.y; y <= finish.y; y++) {
 		for (uint x = start.x; x <= finish.x; x++) { depth = min(depth, hzb.Load(int3(x, y, level))); }
 	}
+	add_statistic(statistic_offset + 6);
+	if (depth == 0) { add_statistic(statistic_offset + 7); }
 	return max(nearest, 0.0) + 0.00001 < depth;
 }
 
@@ -319,6 +328,10 @@ void main(uint3 id : SV_DispatchThreadID) {
 	}
 	if (push.mode == 0) {
 		if (index >= parameters.task_count) { return; }
+		if (index == 0 && (parameters.flags & 128) != 0) {
+			statistics[2] = 1;
+			statistics[3] = parameters.flags;
+		}
 		SelectionTask task = tasks[index];
 		MicroGeometryInstance instance = instances[uint(task.instance) - 1];
 		MicroGeometryInstanceSurface surface = surfaces[uint(task.surface) - 1];
@@ -387,7 +400,12 @@ void main(uint3 id : SV_DispatchThreadID) {
 		if (push.mode == 9) {
 			if ((unit_states[index].status & 7) == 0) {
 				unit_states[index].committed_count = unit_states[index].candidate_count;
+			} else {
+				add_statistic(30);
 			}
+			add_statistic(28, unit_states[index].candidate_count);
+			add_statistic(29, unit_states[index].committed_count);
+			add_statistic(31);
 			return;
 		}
 		MicroGeometryInstance instance = instances[uint(task.instance) - 1];
@@ -532,8 +550,11 @@ void main(uint3 id : SV_DispatchThreadID) {
 	uint2 cut = recovery ? rejected[index] : committed[index];
 	uint cluster_id = cut.x;
 	MicroGeometryCluster cluster = ((MicroGeometryCluster*)asset.clusters)[cluster_id];
-	if ((parameters.flags & 32) == 0 && !frustum_visible(task, instance, source_multimesh, cluster.center, cluster.radius)) { return; }
+	uint statistic_offset = recovery ? 16 : 4;
+	add_statistic(statistic_offset);
+	if ((parameters.flags & 32) == 0 && !frustum_visible(task, instance, source_multimesh, cluster.center, cluster.radius)) { add_statistic(statistic_offset + 1); return; }
 	if (occluded(task, instance, source_multimesh, cluster, !recovery)) {
+		add_statistic(statistic_offset + 8);
 		if (!recovery) {
 			uint rejected_index;
 			InterlockedAdd(unit_states[unit_index].rejected_count, 1, rejected_index);
@@ -542,7 +563,7 @@ void main(uint3 id : SV_DispatchThreadID) {
 		return;
 	}
 	MicroGeometryPage page = ((MicroGeometryPage*)asset.pages)[cluster.page];
-	if ((page.ready & 1) == 0 || page.generation != cut.y) { return; }
+	if ((page.ready & 1) == 0 || page.generation != cut.y) { add_statistic(statistic_offset + 9); return; }
 	uint destination;
 	InterlockedAdd(counts[task.bin], 1, destination);
 	uint selected_offset = bins[task.bin].offset + destination + (recovery ? initial_counts[task.bin] : 0);
@@ -562,6 +583,8 @@ void main(uint3 id : SV_DispatchThreadID) {
 	selected[selected_offset] = record;
 	InterlockedAdd(statistics[0], 1);
 	InterlockedAdd(statistics[1], cluster.triangle_count);
+	add_statistic(statistic_offset + 10);
+	add_statistic(statistic_offset + 11, cluster.triangle_count);
 	DrawCommand command;
 	command.index_count = cluster.triangle_count * 3;
 	command.instance_count = 1;

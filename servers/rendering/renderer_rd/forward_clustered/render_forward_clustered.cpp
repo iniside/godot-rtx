@@ -239,7 +239,7 @@ bool RenderForwardClustered::RenderBufferDataForwardClustered::ensure_mfx_tempor
 }
 #endif
 
-void RenderForwardClustered::RenderBufferDataForwardClustered::micro_geometry_stats_received(const Vector<uint8_t> &p_bytes, Ref<RenderBufferDataForwardClustered> p_data, uint64_t p_epoch) {
+void RenderForwardClustered::RenderBufferDataForwardClustered::micro_geometry_stats_received(const Vector<uint8_t> &p_bytes, Ref<RenderBufferDataForwardClustered> p_data, uint64_t p_epoch, bool p_profiled) {
 	if (p_data->micro_geometry_stats_epoch != p_epoch) {
 		return;
 	}
@@ -248,6 +248,14 @@ void RenderForwardClustered::RenderBufferDataForwardClustered::micro_geometry_st
 		p_data->micro_geometry_stats_frame = p_data->micro_geometry_stats_submitted_frame;
 		p_data->micro_geometry_clusters = decode_uint32(p_bytes.ptr());
 		p_data->micro_geometry_triangles = decode_uint32(p_bytes.ptr() + 4);
+	}
+	if (p_profiled && p_bytes.size() >= MicroGeometrySelection::STATISTICS_BYTES && decode_uint32(p_bytes.ptr() + 8) != 0) {
+		auto statistic = [&](uint32_t p_index) { return decode_uint32(p_bytes.ptr() + p_index * 4); };
+		print_line(vformat("Microgeometry camera cut: frame=%d flags=%d candidate_clusters=%d committed_clusters=%d retained_units=%d valid_units=%d", p_data->micro_geometry_stats_submitted_frame, statistic(3), statistic(28), statistic(29), statistic(30), statistic(31)));
+		for (uint32_t phase = 0; phase < 2; phase++) {
+			const uint32_t offset = 4 + phase * 12;
+			print_line(vformat("Microgeometry camera occlusion: frame=%d phase=%s input_clusters=%d frustum_rejected=%d hzb_disabled=%d task_ineligible=%d projection_unsafe=%d outside_viewport=%d hzb_sampled=%d zero_depth=%d hzb_rejected=%d residency_rejected=%d emitted_clusters=%d emitted_triangles=%d", p_data->micro_geometry_stats_submitted_frame, phase == 0 ? "initial" : "recovery", statistic(offset), statistic(offset + 1), statistic(offset + 2), statistic(offset + 3), statistic(offset + 4), statistic(offset + 5), statistic(offset + 6), statistic(offset + 7), statistic(offset + 8), statistic(offset + 9), statistic(offset + 10), statistic(offset + 11)));
+		}
 	}
 }
 
@@ -806,6 +814,11 @@ void RenderForwardClustered::_select_micro_geometry(MicroGeometryRasterPass *p_p
 		p_pass->dispatched = true;
 		return;
 	}
+	p_pass->gpu->data.flags &= ~128u;
+	if (p_pass->render_buffers && RSG::utilities->capturing_timestamps && RSG::rasterizer->get_frame_number() % 120 == 0) {
+		p_pass->gpu->data.flags |= 128;
+		print_line(vformat("Microgeometry camera selection: frame=%d owner=%d error=%f output_height=%f near_plane=%f hzb_size=%dx%d tasks=%d units=%d", RSG::rasterizer->get_frame_number(), p_pass->gpu->capacity_feedback->owner, p_pass->gpu->data.error, p_pass->gpu->data.output_height, p_pass->gpu->data.near_plane, p_pass->gpu->data.hzb_width, p_pass->gpu->data.hzb_height, p_pass->gpu->data.task_count, p_pass->gpu->data.unit_count));
+	}
 	RID depth;
 	if ((p_pass->gpu->data.flags & 2) != 0 && p_pass->render_buffers && p_pass->render_buffers->is_rtxdi_surface_history_valid() && p_pass->render_buffers->micro_geometry_depth.texture.is_valid()) {
 		p_pass->gpu->data.flags |= 4;
@@ -1268,7 +1281,7 @@ void RenderForwardClustered::_render_list_with_draw_list(RenderListParameters *p
 			Ref<RenderBufferDataForwardClustered> data(pass->render_buffers);
 			data->micro_geometry_stats_submitted_frame = RSG::rasterizer->get_frame_number();
 			data->micro_geometry_stats_pending = true;
-			if (RD::get_singleton()->buffer_get_data_async(pass->gpu->statistics, callable_mp_static(&RenderBufferDataForwardClustered::micro_geometry_stats_received).bind(data, data->micro_geometry_stats_epoch)) != OK) {
+			if (RD::get_singleton()->buffer_get_data_async(pass->gpu->statistics, callable_mp_static(&RenderBufferDataForwardClustered::micro_geometry_stats_received).bind(data, data->micro_geometry_stats_epoch, !pass->gpu->frozen && (pass->gpu->data.flags & 128) != 0)) != OK) {
 				data->micro_geometry_stats_pending = false;
 			}
 			RENDER_TIMESTAMP("Microgeometry Raster Statistics Readback Complete");

@@ -377,7 +377,7 @@ MicroGeometrySelection::Pass *MicroGeometrySelection::create(const Vector<Task> 
 		ERR_FAIL_V_MSG(nullptr, "Microgeometry sparse selection task admission failed.");
 	}
 	pass->data.unit_count = units.size();
-	pass->fixed_memory_bytes = MAX(uint64_t(16), uint64_t(p_tasks.size()) * sizeof(Task)) + MAX(uint64_t(16), uint64_t(units.size()) * 32) + MAX(uint64_t(16), uint64_t(p_tasks.size()) * 4) + 2 * MAX(uint64_t(16), uint64_t(p_bin_count) * 4) + 16 + MAX(uint64_t(16), uint64_t(p_tasks.size()) * p_native_stride) + sizeof(Parameters) + sizeof(MicroGeometryRasterParameters) + MAX(uint64_t(16), uint64_t(sizeof(RendererRD::MicroGeometryStorage::FeedbackHeader)));
+	pass->fixed_memory_bytes = MAX(uint64_t(16), uint64_t(p_tasks.size()) * sizeof(Task)) + MAX(uint64_t(16), uint64_t(units.size()) * 32) + MAX(uint64_t(16), uint64_t(p_tasks.size()) * 4) + 2 * MAX(uint64_t(16), uint64_t(p_bin_count) * 4) + STATISTICS_BYTES + MAX(uint64_t(16), uint64_t(p_tasks.size()) * p_native_stride) + sizeof(Parameters) + sizeof(MicroGeometryRasterParameters) + MAX(uint64_t(16), uint64_t(sizeof(RendererRD::MicroGeometryStorage::FeedbackHeader)));
 	if (!_resize(pass, units)) {
 		memdelete(pass);
 		return nullptr;
@@ -387,7 +387,7 @@ MicroGeometrySelection::Pass *MicroGeometrySelection::create(const Vector<Task> 
 	pass->validity = _buffer(*pass, uint64_t(p_tasks.size()) * 4);
 	pass->counts = _buffer(*pass, uint64_t(p_bin_count) * 4, nullptr, RD::STORAGE_BUFFER_USAGE_DISPATCH_INDIRECT);
 	pass->initial_counts = _buffer(*pass, uint64_t(p_bin_count) * 4);
-	pass->statistics = _buffer(*pass, 16);
+	pass->statistics = _buffer(*pass, STATISTICS_BYTES);
 	pass->native_instances = _buffer(*pass, uint64_t(p_tasks.size()) * p_native_stride);
 	pass->parameters = _buffer(*pass, sizeof(Parameters));
 	pass->raster_parameters = RD::get_singleton()->uniform_buffer_create(sizeof(MicroGeometryRasterParameters));
@@ -497,7 +497,7 @@ void MicroGeometrySelection::select(Pass *p_pass, RID p_hzb) {
 		rd->buffer_clear(p_pass->requests, 0, sizeof(RendererRD::MicroGeometryStorage::FeedbackHeader));
 	}
 	p_pass->recovered = false;
-	rd->buffer_clear(p_pass->statistics, 0, 16);
+	rd->buffer_clear(p_pass->statistics, 0, STATISTICS_BYTES);
 	rd->draw_command_begin_label("Microgeometry Sparse Selection");
 	rd->buffer_clear(p_pass->counts, 0, MAX(16u, p_pass->data.bin_count * 4));
 	rd->buffer_clear(p_pass->initial_counts, 0, MAX(16u, p_pass->data.bin_count * 4));
