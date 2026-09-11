@@ -398,6 +398,7 @@ public:
 		ShadowCasterLogEntry shadow_caster_log[SHADOW_CASTER_LOG_CAPACITY];
 		uint32_t shadow_caster_log_first = 0;
 		uint32_t shadow_caster_log_size = 0;
+		real_t shadow_caster_max_height = 0.0;
 
 		void shadow_caster_dirty(const AABB &p_box);
 		void shadow_caster_dirty_all();

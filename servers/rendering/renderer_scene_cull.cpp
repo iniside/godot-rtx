@@ -420,6 +420,7 @@ void RendererSceneCull::_instance_unpair(Instance *p_A, Instance *p_B) {
 
 void RendererSceneCull::Scenario::shadow_caster_dirty(const AABB &p_box) {
 	const uint64_t generation = ++shadow_caster_generation;
+	shadow_caster_max_height = MAX(shadow_caster_max_height, p_box.size.y);
 	if (shadow_caster_log_size == SHADOW_CASTER_LOG_CAPACITY) {
 		// The dropped entry is no longer scannable, so cascades older than it must refresh.
 		shadow_caster_overflow_generation = MAX(shadow_caster_overflow_generation, shadow_caster_log[shadow_caster_log_first].generation);
@@ -2753,8 +2754,8 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 				cached.max_age = MAX(cached.max_age, age);
 				const real_t texel = (cached.maximum.x - cached.minimum.x) / MAX(texture_size, real_t(1));
 				const real_t margin = MAX(cached.maximum.x - cached.minimum.x, cached.maximum.y - cached.minimum.y) * 2.0 / MAX(texture_size, real_t(1));
-				const real_t depth_range = MAX(cached.maximum.z - cached.minimum.z, texel);
-				const real_t sun_angle_max = MIN(Math::deg_to_rad(shadow_sun_max_angle_degrees), shadow_sun_texel_error * texel / depth_range);
+				const real_t caster_height = MAX(p_instance->scenario != nullptr ? p_instance->scenario->shadow_caster_max_height : real_t(0), texel);
+				const real_t sun_angle_max = MIN(Math::deg_to_rad(shadow_sun_max_angle_degrees), shadow_sun_texel_error * texel / caster_height);
 				if (cached.basis.get_column(2).dot(light_transform.basis.get_column(2)) < Math::cos(sun_angle_max)) {
 					cached.force |= 1 << InstanceLightData::DirectionalShadowCache::SUN;
 				}
