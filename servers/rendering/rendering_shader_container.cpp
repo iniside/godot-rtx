@@ -260,6 +260,7 @@ Error RenderingShaderContainer::reflect_spirv(const String &p_shader_name, Span<
 	bool pipeline_type_detected = false;
 	for (uint32_t i = 0; i < spirv_size; i++) {
 		RDC::ShaderStage stage = p_spirv[i].shader_stage;
+		ERR_FAIL_INDEX_V(stage, RDC::SHADER_STAGE_MAX, FAILED);
 		RDC::ShaderStage stage_flag = (RDC::ShaderStage)(1 << stage);
 		r_refl[i].shader_stage = stage;
 		r_refl[i]._spirv_data = p_spirv[i].spirv;
@@ -267,6 +268,7 @@ Error RenderingShaderContainer::reflect_spirv(const String &p_shader_name, Span<
 		RDC::PipelineType pipeline_type = {};
 		switch (stage) {
 			case RDC::SHADER_STAGE_VERTEX:
+			case RDC::SHADER_STAGE_MESH:
 			case RDC::SHADER_STAGE_FRAGMENT:
 			case RDC::SHADER_STAGE_TESSELATION_CONTROL:
 			case RDC::SHADER_STAGE_TESSELATION_EVALUATION:
@@ -313,6 +315,9 @@ Error RenderingShaderContainer::reflect_spirv(const String &p_shader_name, Span<
 					"Stage " + String(RDC::SHADER_STAGE_NAMES[stage]) + " submitted more than once.");
 		}
 		reflection.stages_bits.set_flag(stage_flag);
+		ERR_FAIL_COND_V_MSG(reflection.stages_bits.has_flag(RDC::SHADER_STAGE_MESH_BIT) &&
+				(reflection.stages_bits.has_flag(RDC::SHADER_STAGE_VERTEX_BIT) || reflection.stages_bits.has_flag(RDC::SHADER_STAGE_TESSELATION_CONTROL_BIT) || reflection.stages_bits.has_flag(RDC::SHADER_STAGE_TESSELATION_EVALUATION_BIT)),
+				FAILED, "Mesh shaders cannot be combined with vertex or tessellation stages.");
 
 		// We make all raytracing stages visible to make our lives easier when creating raytracing pipelines.
 		// This makes no practical difference in current graphics drivers, since Vulkan is the outlier.

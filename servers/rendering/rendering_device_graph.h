@@ -86,6 +86,7 @@ public:
 			TYPE_DRAW,
 			TYPE_DRAW_INDEXED,
 			TYPE_DRAW_INDIRECT,
+			TYPE_DRAW_MESH_TASKS_INDIRECT,
 			TYPE_DRAW_INDEXED_INDIRECT,
 			TYPE_EXECUTE_COMMANDS,
 			TYPE_NEXT_SUBPASS,
@@ -732,6 +733,11 @@ private:
 		uint32_t stride = 0;
 	};
 
+	struct DrawListDrawMeshTasksIndirectInstruction : DrawListInstruction {
+		RDD::BufferID buffer;
+		uint32_t offset = 0;
+	};
+
 	struct DrawListDrawIndexedIndirectInstruction : DrawListInstruction {
 		RDD::BufferID buffer;
 		RDD::BufferID count_buffer;
@@ -1068,6 +1074,7 @@ private:
 	void _encode_draw_list_draw(DrawInstructionList &r_list, uint32_t p_vertex_count, uint32_t p_instance_count);
 	void _encode_draw_list_draw_indexed(DrawInstructionList &r_list, uint32_t p_index_count, uint32_t p_instance_count, uint32_t p_first_index);
 	void _encode_draw_list_draw_indirect(DrawInstructionList &r_list, RDD::BufferID p_buffer, uint32_t p_offset, uint32_t p_draw_count, uint32_t p_stride, RDD::BufferID p_count_buffer = RDD::BufferID(), uint32_t p_count_offset = 0);
+	void _encode_draw_list_draw_mesh_tasks_indirect(DrawInstructionList &r_list, RDD::BufferID p_buffer, uint32_t p_offset);
 	void _encode_draw_list_draw_indexed_indirect(DrawInstructionList &r_list, RDD::BufferID p_buffer, uint32_t p_offset, uint32_t p_draw_count, uint32_t p_stride, RDD::BufferID p_count_buffer = RDD::BufferID(), uint32_t p_count_offset = 0);
 	void _encode_draw_list_execute_commands(DrawInstructionList &r_list, RDD::CommandBufferID p_command_buffer);
 	void _encode_draw_list_next_subpass(DrawInstructionList &r_list, RDD::CommandBufferType p_command_buffer_type);
@@ -1149,6 +1156,7 @@ public:
 	void add_draw_list_draw(uint32_t p_vertex_count, uint32_t p_instance_count);
 	void add_draw_list_draw_indexed(uint32_t p_index_count, uint32_t p_instance_count, uint32_t p_first_index);
 	void add_draw_list_draw_indirect(RDD::BufferID p_buffer, uint32_t p_offset, uint32_t p_draw_count, uint32_t p_stride, RDD::BufferID p_count_buffer = RDD::BufferID(), uint32_t p_count_offset = 0);
+	void add_draw_list_draw_mesh_tasks_indirect(RDD::BufferID p_buffer, uint32_t p_offset);
 	void add_draw_list_draw_indexed_indirect(RDD::BufferID p_buffer, uint32_t p_offset, uint32_t p_draw_count, uint32_t p_stride, RDD::BufferID p_count_buffer = RDD::BufferID(), uint32_t p_count_offset = 0);
 	void add_draw_list_execute_commands(RDD::CommandBufferID p_command_buffer);
 	void add_draw_list_next_subpass(RDD::CommandBufferType p_command_buffer_type);

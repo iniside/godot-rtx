@@ -42,7 +42,7 @@ class RenderingShaderContainer : public RefCounted {
 
 public:
 	static const uint32_t CONTAINER_MAGIC_NUMBER = 0x43535247;
-	static const uint32_t CONTAINER_VERSION = 4; // Bumped for unbounded uniform support + texture type/format reflection
+	static const uint32_t CONTAINER_VERSION = 5;
 
 protected:
 	using RDC = RenderingDeviceCommons;
@@ -135,6 +135,12 @@ protected:
 			0, // SHADER_STAGE_TESSELATION_CONTROL
 			1, // SHADER_STAGE_TESSELATION_EVALUATION
 			0, // SHADER_STAGE_COMPUTE
+			0,
+			0,
+			0,
+			0,
+			0,
+			0,
 		};
 
 		BitField<RDC::ShaderStage> stages = {};

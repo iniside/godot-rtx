@@ -330,6 +330,7 @@ public:
 		PIPELINE_STAGE_ALL_GRAPHICS_BIT = (1 << 15),
 		PIPELINE_STAGE_ALL_COMMANDS_BIT = (1 << 16),
 		PIPELINE_STAGE_CLEAR_STORAGE_BIT = (1 << 17),
+		PIPELINE_STAGE_MESH_SHADER_BIT = (1 << 20),
 		PIPELINE_STAGE_RAY_TRACING_SHADER_BIT = (1 << 21),
 		PIPELINE_STAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT = (1 << 22),
 		PIPELINE_STAGE_FRAGMENT_DENSITY_PROCESS_BIT = (1 << 23),
@@ -694,6 +695,9 @@ public:
 
 	// Drawing.
 	virtual uint32_t draw_indirect_count_get_max() const { return 0; }
+	virtual bool mesh_shader_is_supported() const { return false; }
+	virtual MeshShaderLimits mesh_shader_get_limits() const { return {}; }
+	virtual void command_render_draw_mesh_tasks_indirect(CommandBufferID p_cmd_buffer, BufferID p_buffer, uint64_t p_offset) { ERR_FAIL_MSG("Mesh shaders are not supported by this rendering driver."); }
 	virtual void command_render_draw(CommandBufferID p_cmd_buffer, uint32_t p_vertex_count, uint32_t p_instance_count, uint32_t p_base_vertex, uint32_t p_first_instance) = 0;
 	virtual void command_render_draw_indexed(CommandBufferID p_cmd_buffer, uint32_t p_index_count, uint32_t p_instance_count, uint32_t p_first_index, int32_t p_vertex_offset, uint32_t p_first_instance) = 0;
 	virtual void command_render_draw_indexed_indirect(CommandBufferID p_cmd_buffer, BufferID p_indirect_buffer, uint64_t p_offset, uint32_t p_draw_count, uint32_t p_stride) = 0;

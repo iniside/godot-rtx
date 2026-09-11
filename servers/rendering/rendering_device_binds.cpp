@@ -54,6 +54,7 @@ Error RDShaderFile::parse_versions_from_text(const String &p_text, const String 
 		"closest_hit",
 		"miss",
 		"intersection",
+		"mesh",
 	};
 	String stage_code[RD::SHADER_STAGE_MAX];
 	int stages_found = 0;

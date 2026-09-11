@@ -321,6 +321,7 @@ MetalDeviceProfile::MinimumRequirements RenderingShaderContainerMetal::inspect_s
 }
 
 bool RenderingShaderContainerMetal::_set_code_from_spirv(const ReflectShader &p_shader) {
+	ERR_FAIL_COND_V_MSG(p_shader.stages_bits.has_flag(RDC::SHADER_STAGE_MESH_BIT), false, "Mesh shaders are not supported by the Metal rendering driver.");
 	using namespace spirv_cross;
 	using spirv_cross::CompilerMSL;
 	using spirv_cross::Resource;

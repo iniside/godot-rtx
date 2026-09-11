@@ -901,6 +901,7 @@ void RenderingShaderContainerD3D12::_set_from_shader_reflection_post(const Refle
 }
 
 bool RenderingShaderContainerD3D12::_set_code_from_spirv(const ReflectShader &p_shader) {
+	ERR_FAIL_COND_V_MSG(p_shader.stages_bits.has_flag(RDC::SHADER_STAGE_MESH_BIT), false, "Mesh shaders are not supported by the D3D12 rendering driver.");
 #if NIR_ENABLED
 	const LocalVector<ReflectShaderStage> &p_spirv = p_shader.shader_stages;
 	reflection_data_d3d12.nir_runtime_data_root_param_idx = UINT32_MAX;

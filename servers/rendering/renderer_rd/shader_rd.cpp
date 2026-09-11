@@ -404,7 +404,9 @@ Vector<String> ShaderRD::_build_variant_stage_sources(uint32_t p_variant, Compil
 			// Vertex stage.
 			StringBuilder builder;
 			_build_variant_code(builder, p_variant, p_data.version, stage_templates[STAGE_TYPE_VERTEX]);
-			stage_sources.write[RD::SHADER_STAGE_VERTEX] = builder.as_string();
+			RD::ShaderStage rasterization_stage = variant_defines[p_variant].rasterization_stage;
+			ERR_FAIL_COND_V(rasterization_stage != RD::SHADER_STAGE_VERTEX && rasterization_stage != RD::SHADER_STAGE_MESH, Vector<String>());
+			stage_sources.write[rasterization_stage] = builder.as_string();
 		}
 
 		{
@@ -468,7 +470,7 @@ RenderingServerTypes::ShaderNativeSourceCode ShaderRD::version_get_native_source
 			_build_variant_code(builder, i, version, stage_templates[STAGE_TYPE_VERTEX]);
 
 			RenderingServerTypes::ShaderNativeSourceCode::Version::Stage stage;
-			stage.name = "vertex";
+			stage.name = variant_defines[i].rasterization_stage == RD::SHADER_STAGE_MESH ? "mesh" : "vertex";
 			stage.code = builder.as_string();
 
 			source_code.versions.write[i].stages.push_back(stage);
@@ -1043,6 +1045,8 @@ void ShaderRD::_initialize_cache() {
 		for (uint32_t i = 0; i < E.value.size(); i++) {
 			hash_build.append("[variant_defines:" + itos(E.value[i]) + "]");
 			hash_build.append(variant_defines[E.value[i]].text.get_data());
+			hash_build.append("[rasterization_stage]");
+			hash_build.append(itos(variant_defines[E.value[i]].rasterization_stage));
 		}
 
 		for (const uint64_t dyn_buffer : dynamic_buffers) {

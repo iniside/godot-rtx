@@ -2807,7 +2807,10 @@
 		<constant name="SHADER_STAGE_INTERSECTION" value="9" enum="ShaderStage">
 			Intersection shader stage. The intersection shader for triangles is built-in. This can be used to compute ray intersections with primitives that are not triangles.
 		</constant>
-		<constant name="SHADER_STAGE_MAX" value="10" enum="ShaderStage">
+		<constant name="SHADER_STAGE_MESH" value="10" enum="ShaderStage">
+			Mesh shader stage. Requires mesh shader support from the rendering device.
+		</constant>
+		<constant name="SHADER_STAGE_MAX" value="11" enum="ShaderStage">
 			Represents the size of the [enum ShaderStage] enum.
 		</constant>
 		<constant name="SHADER_STAGE_VERTEX_BIT" value="1" enum="ShaderStage">
@@ -2839,6 +2842,9 @@
 		</constant>
 		<constant name="SHADER_STAGE_INTERSECTION_BIT" value="512" enum="ShaderStage">
 			Intersection shader stage bit (see also [constant SHADER_STAGE_INTERSECTION]).
+		</constant>
+		<constant name="SHADER_STAGE_MESH_BIT" value="1024" enum="ShaderStage">
+			Mesh shader stage bit (see also [constant SHADER_STAGE_MESH]).
 		</constant>
 		<constant name="SHADER_LANGUAGE_GLSL" value="0" enum="ShaderLanguage">
 			Khronos' GLSL shading language (used natively by OpenGL and Vulkan). This is the language used for core Godot shaders.

@@ -1019,6 +1019,11 @@ void RenderingDeviceGraph::_run_draw_list_command(RDD::CommandBufferID p_command
 				}
 				instruction_data_cursor += sizeof(DrawListDrawIndirectInstruction);
 			} break;
+			case DrawListInstruction::TYPE_DRAW_MESH_TASKS_INDIRECT: {
+				const DrawListDrawMeshTasksIndirectInstruction *draw_instruction = reinterpret_cast<const DrawListDrawMeshTasksIndirectInstruction *>(instruction);
+				driver->command_render_draw_mesh_tasks_indirect(p_command_buffer, draw_instruction->buffer, draw_instruction->offset);
+				instruction_data_cursor += sizeof(DrawListDrawMeshTasksIndirectInstruction);
+			} break;
 			case DrawListInstruction::TYPE_DRAW_INDEXED_INDIRECT: {
 				const DrawListDrawIndexedIndirectInstruction *draw_indexed_indirect_instruction = reinterpret_cast<const DrawListDrawIndexedIndirectInstruction *>(instruction);
 				if (draw_indexed_indirect_instruction->count_buffer) {
@@ -1607,6 +1612,11 @@ void RenderingDeviceGraph::_print_draw_list(const uint8_t *p_instruction_data, u
 				const DrawListDrawIndirectInstruction *draw_indirect_instruction = reinterpret_cast<const DrawListDrawIndirectInstruction *>(instruction);
 				print_line("\tDRAW INDIRECT BUFFER ID", itos(draw_indirect_instruction->buffer.id), "OFFSET", draw_indirect_instruction->offset, "DRAW COUNT", draw_indirect_instruction->draw_count, "STRIDE", draw_indirect_instruction->stride);
 				instruction_data_cursor += sizeof(DrawListDrawIndirectInstruction);
+			} break;
+			case DrawListInstruction::TYPE_DRAW_MESH_TASKS_INDIRECT: {
+				const DrawListDrawMeshTasksIndirectInstruction *draw_instruction = reinterpret_cast<const DrawListDrawMeshTasksIndirectInstruction *>(instruction);
+				print_line("\tDRAW MESH TASKS INDIRECT BUFFER ID", itos(draw_instruction->buffer.id), "OFFSET", draw_instruction->offset);
+				instruction_data_cursor += sizeof(DrawListDrawMeshTasksIndirectInstruction);
 			} break;
 			case DrawListInstruction::TYPE_DRAW_INDEXED_INDIRECT: {
 				const DrawListDrawIndexedIndirectInstruction *draw_indexed_indirect_instruction = reinterpret_cast<const DrawListDrawIndexedIndirectInstruction *>(instruction);
@@ -2228,6 +2238,16 @@ void RenderingDeviceGraph::add_draw_list_draw_indirect(RDD::BufferID p_buffer, u
 	draw_instruction_list.stages.set_flag(RDD::PIPELINE_STAGE_DRAW_INDIRECT_BIT);
 }
 
+void RenderingDeviceGraph::add_draw_list_draw_mesh_tasks_indirect(RDD::BufferID p_buffer, uint32_t p_offset) {
+	PreparedDraw draw;
+	draw.type = DrawListInstruction::TYPE_DRAW_MESH_TASKS_INDIRECT;
+	draw.state = draw_instruction_list.prepared_state;
+	draw.indirect_buffer = p_buffer;
+	draw.indirect_offset = p_offset;
+	draw_instruction_list.prepared_draws.push_back(draw);
+	draw_instruction_list.stages.set_flag(RDD::PIPELINE_STAGE_DRAW_INDIRECT_BIT);
+}
+
 void RenderingDeviceGraph::add_draw_list_draw_indexed_indirect(RDD::BufferID p_buffer, uint32_t p_offset, uint32_t p_draw_count, uint32_t p_stride, RDD::BufferID p_count_buffer, uint32_t p_count_offset) {
 	PreparedDraw draw;
 	draw.type = DrawListInstruction::TYPE_DRAW_INDEXED_INDIRECT;
@@ -2636,6 +2656,14 @@ void RenderingDeviceGraph::_encode_draw_list_draw_indirect(DrawInstructionList &
 	instruction->offset = p_offset;
 	instruction->draw_count = p_draw_count;
 	instruction->stride = p_stride;
+	r_list.stages.set_flag(RDD::PIPELINE_STAGE_DRAW_INDIRECT_BIT);
+}
+
+void RenderingDeviceGraph::_encode_draw_list_draw_mesh_tasks_indirect(DrawInstructionList &r_list, RDD::BufferID p_buffer, uint32_t p_offset) {
+	DrawListDrawMeshTasksIndirectInstruction *instruction = reinterpret_cast<DrawListDrawMeshTasksIndirectInstruction *>(_allocate_draw_list_instruction(r_list, sizeof(DrawListDrawMeshTasksIndirectInstruction)));
+	instruction->type = DrawListInstruction::TYPE_DRAW_MESH_TASKS_INDIRECT;
+	instruction->buffer = p_buffer;
+	instruction->offset = p_offset;
 	r_list.stages.set_flag(RDD::PIPELINE_STAGE_DRAW_INDIRECT_BIT);
 }
 
@@ -3128,6 +3156,9 @@ void RenderingDeviceGraph::_prepare_draw_list(DrawInstructionList &p_list) {
 			} break;
 			case DrawListInstruction::TYPE_DRAW_INDIRECT: {
 				_encode_draw_list_draw_indirect(p_list, draw.indirect_buffer, draw.indirect_offset, draw.count, draw.indirect_stride, draw.count_buffer, draw.count_offset);
+			} break;
+			case DrawListInstruction::TYPE_DRAW_MESH_TASKS_INDIRECT: {
+				_encode_draw_list_draw_mesh_tasks_indirect(p_list, draw.indirect_buffer, draw.indirect_offset);
 			} break;
 			case DrawListInstruction::TYPE_DRAW_INDEXED_INDIRECT: {
 				_encode_draw_list_draw_indexed_indirect(p_list, draw.indirect_buffer, draw.indirect_offset, draw.count, draw.indirect_stride, draw.count_buffer, draw.count_offset);

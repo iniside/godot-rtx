@@ -597,6 +597,7 @@ public:
 		SHADER_STAGE_CLOSEST_HIT,
 		SHADER_STAGE_MISS,
 		SHADER_STAGE_INTERSECTION,
+		SHADER_STAGE_MESH,
 		SHADER_STAGE_MAX,
 		SHADER_STAGE_VERTEX_BIT = (1 << SHADER_STAGE_VERTEX),
 		SHADER_STAGE_FRAGMENT_BIT = (1 << SHADER_STAGE_FRAGMENT),
@@ -608,6 +609,21 @@ public:
 		SHADER_STAGE_CLOSEST_HIT_BIT = (1 << SHADER_STAGE_CLOSEST_HIT),
 		SHADER_STAGE_MISS_BIT = (1 << SHADER_STAGE_MISS),
 		SHADER_STAGE_INTERSECTION_BIT = (1 << SHADER_STAGE_INTERSECTION),
+		SHADER_STAGE_MESH_BIT = (1 << SHADER_STAGE_MESH),
+	};
+
+	struct MeshShaderLimits {
+		uint32_t max_workgroup_count[3] = {};
+		uint32_t max_workgroup_total_count = 0;
+		uint32_t max_workgroup_size[3] = {};
+		uint32_t max_workgroup_invocations = 0;
+		uint32_t max_output_vertices = 0;
+		uint32_t max_output_primitives = 0;
+		uint32_t max_output_components = 0;
+		uint32_t max_output_memory_size = 0;
+		uint32_t max_shared_memory_size = 0;
+		uint32_t output_per_vertex_granularity = 0;
+		uint32_t output_per_primitive_granularity = 0;
 	};
 
 	enum ShaderLanguage {

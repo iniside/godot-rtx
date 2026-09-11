@@ -45,11 +45,13 @@ public:
 		int group = 0;
 		CharString text;
 		bool default_enabled = true;
+		RD::ShaderStage rasterization_stage = RD::SHADER_STAGE_VERTEX;
 		VariantDefine() {}
-		VariantDefine(int p_group, const String &p_text, bool p_default_enabled) {
+		VariantDefine(int p_group, const String &p_text, bool p_default_enabled, RD::ShaderStage p_rasterization_stage = RD::SHADER_STAGE_VERTEX) {
 			group = p_group;
 			default_enabled = p_default_enabled;
 			text = p_text.utf8();
+			rasterization_stage = p_rasterization_stage;
 		}
 	};
 

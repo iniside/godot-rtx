@@ -406,6 +406,9 @@ uint32_t RenderingDeviceDriverVulkan::SubgroupCapabilities::supported_stages_fla
 	if (supported_stages & VK_SHADER_STAGE_VERTEX_BIT) {
 		flags += SHADER_STAGE_VERTEX_BIT;
 	}
+	if (supported_stages & VK_SHADER_STAGE_MESH_BIT_EXT) {
+		flags += SHADER_STAGE_MESH_BIT;
+	}
 	if (supported_stages & VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT) {
 		flags += SHADER_STAGE_TESSELATION_CONTROL_BIT;
 	}
@@ -593,6 +596,7 @@ Error RenderingDeviceDriverVulkan::_initialize_device_extensions() {
 	_register_requested_device_extension(VK_KHR_RAY_QUERY_EXTENSION_NAME, false);
 	_register_requested_device_extension(VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME, false);
 	_register_requested_device_extension(VK_NV_CLUSTER_ACCELERATION_STRUCTURE_EXTENSION_NAME, false);
+	_register_requested_device_extension(VK_EXT_MESH_SHADER_EXTENSION_NAME, false);
 	if (Engine::get_singleton()->is_raytracing_validation_enabled()) {
 		_register_requested_device_extension(VK_NV_RAY_TRACING_VALIDATION_EXTENSION_NAME, false);
 	}
@@ -937,6 +941,7 @@ Error RenderingDeviceDriverVulkan::_check_device_capabilities() {
 		VkPhysicalDeviceSynchronization2FeaturesKHR sync_2_features = {};
 		VkPhysicalDeviceRayTracingValidationFeaturesNV raytracing_validation_features = {};
 		VkPhysicalDeviceClusterAccelerationStructureFeaturesNV cluster_acceleration_structure_features = {};
+		VkPhysicalDeviceMeshShaderFeaturesEXT mesh_shader_features = {};
 
 		const bool use_1_2_features = physical_device_properties.apiVersion >= VK_API_VERSION_1_2;
 		if (use_1_2_features) {
@@ -1046,9 +1051,16 @@ Error RenderingDeviceDriverVulkan::_check_device_capabilities() {
 		}
 
 		VkPhysicalDeviceFeatures2 device_features_2 = {};
+		if (enabled_device_extension_names.has(VK_EXT_MESH_SHADER_EXTENSION_NAME)) {
+			mesh_shader_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+			mesh_shader_features.pNext = next_features;
+			next_features = &mesh_shader_features;
+		}
+
 		device_features_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 		device_features_2.pNext = next_features;
 		functions.GetPhysicalDeviceFeatures2(physical_device, &device_features_2);
+		mesh_shader_support = mesh_shader_features.meshShader;
 
 		if (use_1_2_features) {
 #ifdef MACOS_ENABLED
@@ -1160,6 +1172,7 @@ Error RenderingDeviceDriverVulkan::_check_device_capabilities() {
 		VkPhysicalDeviceAccelerationStructurePropertiesKHR acceleration_structure_properties = {};
 		VkPhysicalDeviceRayTracingPipelinePropertiesKHR raytracing_properties = {};
 		VkPhysicalDeviceClusterAccelerationStructurePropertiesNV cluster_acceleration_structure_properties = {};
+		VkPhysicalDeviceMeshShaderPropertiesEXT mesh_shader_properties = {};
 		VkPhysicalDeviceProperties2 physical_device_properties_2 = {};
 
 		const bool use_1_1_properties = physical_device_properties.apiVersion >= VK_API_VERSION_1_1;
@@ -1219,8 +1232,29 @@ Error RenderingDeviceDriverVulkan::_check_device_capabilities() {
 		}
 
 		physical_device_properties_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+		if (mesh_shader_support) {
+			mesh_shader_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT;
+			mesh_shader_properties.pNext = next_properties;
+			next_properties = &mesh_shader_properties;
+		}
+
 		physical_device_properties_2.pNext = next_properties;
 		functions.GetPhysicalDeviceProperties2(physical_device, &physical_device_properties_2);
+		if (mesh_shader_support) {
+			for (uint32_t i = 0; i < 3; i++) {
+				mesh_shader_limits.max_workgroup_count[i] = mesh_shader_properties.maxMeshWorkGroupCount[i];
+				mesh_shader_limits.max_workgroup_size[i] = mesh_shader_properties.maxMeshWorkGroupSize[i];
+			}
+			mesh_shader_limits.max_workgroup_total_count = mesh_shader_properties.maxMeshWorkGroupTotalCount;
+			mesh_shader_limits.max_workgroup_invocations = mesh_shader_properties.maxMeshWorkGroupInvocations;
+			mesh_shader_limits.max_output_vertices = mesh_shader_properties.maxMeshOutputVertices;
+			mesh_shader_limits.max_output_primitives = mesh_shader_properties.maxMeshOutputPrimitives;
+			mesh_shader_limits.max_output_components = mesh_shader_properties.maxMeshOutputComponents;
+			mesh_shader_limits.max_output_memory_size = MIN(mesh_shader_properties.maxMeshOutputMemorySize, mesh_shader_properties.maxMeshPayloadAndOutputMemorySize);
+			mesh_shader_limits.max_shared_memory_size = MIN(mesh_shader_properties.maxMeshSharedMemorySize, mesh_shader_properties.maxMeshPayloadAndSharedMemorySize);
+			mesh_shader_limits.output_per_vertex_granularity = mesh_shader_properties.meshOutputPerVertexGranularity;
+			mesh_shader_limits.output_per_primitive_granularity = mesh_shader_properties.meshOutputPerPrimitiveGranularity;
+		}
 
 		subgroup_capabilities.size = subgroup_properties.subgroupSize;
 		subgroup_capabilities.min_size = subgroup_properties.subgroupSize;
@@ -1534,6 +1568,13 @@ Error RenderingDeviceDriverVulkan::_initialize_device(const LocalVector<VkDevice
 	}
 
 	VkPhysicalDeviceClusterAccelerationStructureFeaturesNV cluster_acceleration_structure_features = {};
+	VkPhysicalDeviceMeshShaderFeaturesEXT mesh_shader_features = {};
+	if (mesh_shader_support) {
+		mesh_shader_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+		mesh_shader_features.pNext = create_info_next;
+		mesh_shader_features.meshShader = VK_TRUE;
+		create_info_next = &mesh_shader_features;
+	}
 	if (cluster_acceleration_structure_capabilities.cluster_acceleration_structure_support) {
 		cluster_acceleration_structure_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_ACCELERATION_STRUCTURE_FEATURES_NV;
 		cluster_acceleration_structure_features.pNext = create_info_next;
@@ -3008,6 +3049,7 @@ static_assert(ENUM_MEMBERS_EQUAL(RDD::PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELIN
 static_assert(ENUM_MEMBERS_EQUAL(RDD::PIPELINE_STAGE_DRAW_INDIRECT_BIT, VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT));
 static_assert(ENUM_MEMBERS_EQUAL(RDD::PIPELINE_STAGE_VERTEX_INPUT_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT));
 static_assert(ENUM_MEMBERS_EQUAL(RDD::PIPELINE_STAGE_VERTEX_SHADER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT));
+static_assert(ENUM_MEMBERS_EQUAL(RDD::PIPELINE_STAGE_MESH_SHADER_BIT, VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT));
 static_assert(ENUM_MEMBERS_EQUAL(RDD::PIPELINE_STAGE_TESSELLATION_CONTROL_SHADER_BIT, VK_PIPELINE_STAGE_TESSELLATION_CONTROL_SHADER_BIT));
 static_assert(ENUM_MEMBERS_EQUAL(RDD::PIPELINE_STAGE_TESSELLATION_EVALUATION_SHADER_BIT, VK_PIPELINE_STAGE_TESSELLATION_EVALUATION_SHADER_BIT));
 static_assert(ENUM_MEMBERS_EQUAL(RDD::PIPELINE_STAGE_GEOMETRY_SHADER_BIT, VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT));
@@ -3047,6 +3089,7 @@ static_assert(ENUM_MEMBERS_EQUAL(RDD::BARRIER_ACCESS_ACCELERATION_STRUCTURE_WRIT
 
 static VkPipelineStageFlags _remove_pipeline_stage_shader_bits(VkPipelineStageFlags p_flags) {
 	p_flags &= ~(VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+			VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT |
 			VK_PIPELINE_STAGE_TESSELLATION_CONTROL_SHADER_BIT |
 			VK_PIPELINE_STAGE_TESSELLATION_EVALUATION_SHADER_BIT |
 			VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT |
@@ -4415,10 +4458,12 @@ static VkShaderStageFlagBits RD_STAGE_TO_VK_SHADER_STAGE_BITS[RDD::SHADER_STAGE_
 	VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
 	VK_SHADER_STAGE_MISS_BIT_KHR,
 	VK_SHADER_STAGE_INTERSECTION_BIT_KHR,
+	VK_SHADER_STAGE_MESH_BIT_EXT,
 };
 
 RDD::ShaderID RenderingDeviceDriverVulkan::shader_create_from_container(const Ref<RenderingShaderContainer> &p_shader_container, const Vector<ImmutableSampler> &p_immutable_samplers) {
 	ShaderReflection shader_refl = p_shader_container->get_shader_reflection();
+	ERR_FAIL_COND_V_MSG(shader_refl.stages_bits.has_flag(SHADER_STAGE_MESH_BIT) && !mesh_shader_is_supported(), ShaderID(), "Mesh shaders are not supported by this Vulkan device.");
 	ShaderInfo shader_info;
 	shader_info.name = p_shader_container->shader_name.get_data();
 
@@ -4530,7 +4575,7 @@ RDD::ShaderID RenderingDeviceDriverVulkan::shader_create_from_container(const Re
 		}
 	}
 
-	const bool use_respv = (RESPV_ENABLED == 1) && !shader_container_format.get_debug_info_enabled() && !has_raytracing_stages;
+	const bool use_respv = (RESPV_ENABLED == 1) && !shader_container_format.get_debug_info_enabled() && !has_raytracing_stages && !shader_refl.stages_bits.has_flag(SHADER_STAGE_MESH_BIT);
 	const bool store_respv = use_respv && !shader_refl.specialization_constants.is_empty();
 	const int64_t stage_count = shader_refl.stages_vector.size();
 	shader_info.vk_stages_create_info.reserve(stage_count);
@@ -6003,6 +6048,21 @@ uint32_t RenderingDeviceDriverVulkan::draw_indirect_count_get_max() const {
 	return draw_indirect_count_support ? (physical_device_features.multiDrawIndirect ? physical_device_properties.limits.maxDrawIndirectCount : 1) : 0;
 }
 
+bool RenderingDeviceDriverVulkan::mesh_shader_is_supported() const {
+	return mesh_shader_support && mesh_shader_limits.max_workgroup_total_count > 0 && vkCmdDrawMeshTasksIndirectEXT != nullptr;
+}
+
+RDD::MeshShaderLimits RenderingDeviceDriverVulkan::mesh_shader_get_limits() const {
+	return mesh_shader_is_supported() ? mesh_shader_limits : MeshShaderLimits();
+}
+
+void RenderingDeviceDriverVulkan::command_render_draw_mesh_tasks_indirect(CommandBufferID p_cmd_buffer, BufferID p_buffer, uint64_t p_offset) {
+	ERR_FAIL_COND(!mesh_shader_is_supported());
+	const CommandBufferInfo *command_buffer = (const CommandBufferInfo *)p_cmd_buffer.id;
+	const BufferInfo *buffer = (const BufferInfo *)p_buffer.id;
+	vkCmdDrawMeshTasksIndirectEXT(command_buffer->vk_command_buffer, buffer->vk_buffer, p_offset, 1, sizeof(VkDrawMeshTasksIndirectCommandEXT));
+}
+
 void RenderingDeviceDriverVulkan::command_render_draw_indexed_indirect_count(CommandBufferID p_cmd_buffer, BufferID p_indirect_buffer, uint64_t p_offset, BufferID p_count_buffer, uint64_t p_count_buffer_offset, uint32_t p_max_draw_count, uint32_t p_stride) {
 	const CommandBufferInfo *command_buffer = (const CommandBufferInfo *)p_cmd_buffer.id;
 	const BufferInfo *indirect_buf_info = (const BufferInfo *)p_indirect_buffer.id;
@@ -6147,6 +6207,11 @@ RDD::PipelineID RenderingDeviceDriverVulkan::render_pipeline_create(
 		RenderPassID p_render_pass,
 		uint32_t p_render_subpass,
 		VectorView<PipelineSpecializationConstant> p_specialization_constants) {
+	const ShaderInfo *shader_info = (const ShaderInfo *)p_shader.id;
+	bool mesh_shader = false;
+	for (const VkPipelineShaderStageCreateInfo &stage : shader_info->vk_stages_create_info) {
+		mesh_shader |= stage.stage == VK_SHADER_STAGE_MESH_BIT_EXT;
+	}
 	// Vertex.
 	const VkPipelineVertexInputStateCreateInfo *vertex_input_state_create_info = nullptr;
 	if (p_vertex_format.id) {
@@ -6351,8 +6416,6 @@ RDD::PipelineID RenderingDeviceDriverVulkan::render_pipeline_create(
 
 	// Finally, pipeline create info.
 
-	const ShaderInfo *shader_info = (const ShaderInfo *)p_shader.id;
-
 	VkGraphicsPipelineCreateInfo pipeline_create_info = {};
 
 	pipeline_create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -6468,9 +6531,9 @@ RDD::PipelineID RenderingDeviceDriverVulkan::render_pipeline_create(
 
 	const RenderPassInfo *render_pass = (const RenderPassInfo *)(p_render_pass.id);
 	pipeline_create_info.pStages = vk_pipeline_stages;
-	pipeline_create_info.pVertexInputState = vertex_input_state_create_info;
-	pipeline_create_info.pInputAssemblyState = &input_assembly_create_info;
-	pipeline_create_info.pTessellationState = &tessellation_create_info;
+	pipeline_create_info.pVertexInputState = mesh_shader ? nullptr : vertex_input_state_create_info;
+	pipeline_create_info.pInputAssemblyState = mesh_shader ? nullptr : &input_assembly_create_info;
+	pipeline_create_info.pTessellationState = mesh_shader ? nullptr : &tessellation_create_info;
 	pipeline_create_info.pViewportState = &viewport_state_create_info;
 	pipeline_create_info.pRasterizationState = &rasterization_state_create_info;
 	pipeline_create_info.pMultisampleState = &multisample_state_create_info;

@@ -180,7 +180,7 @@ Vector<uint8_t> compile_slang_shader(RenderingDeviceCommons::ShaderStage p_stage
 	if (!compilation_succeeded(module ? SLANG_OK : SLANG_FAIL, diagnostics, r_error)) {
 		return {};
 	}
-	const SlangStage stages[] = { SLANG_STAGE_VERTEX, SLANG_STAGE_FRAGMENT, SLANG_STAGE_HULL, SLANG_STAGE_DOMAIN, SLANG_STAGE_COMPUTE, SLANG_STAGE_RAY_GENERATION, SLANG_STAGE_ANY_HIT, SLANG_STAGE_CLOSEST_HIT, SLANG_STAGE_MISS, SLANG_STAGE_INTERSECTION };
+	const SlangStage stages[] = { SLANG_STAGE_VERTEX, SLANG_STAGE_FRAGMENT, SLANG_STAGE_HULL, SLANG_STAGE_DOMAIN, SLANG_STAGE_COMPUTE, SLANG_STAGE_RAY_GENERATION, SLANG_STAGE_ANY_HIT, SLANG_STAGE_CLOSEST_HIT, SLANG_STAGE_MISS, SLANG_STAGE_INTERSECTION, SLANG_STAGE_MESH };
 	Slang::ComPtr<slang::IEntryPoint> entry;
 	CharString entry_name = p_request.entry_points[p_stage].utf8();
 	diagnostics.setNull();
@@ -206,14 +206,16 @@ Vector<uint8_t> compile_slang_shader(RenderingDeviceCommons::ShaderStage p_stage
 	Vector<uint8_t> result;
 	result.resize(code->getBufferSize());
 	memcpy(result.ptrw(), code->getBufferPointer(), result.size());
-	if (p_stage == RenderingDeviceCommons::SHADER_STAGE_VERTEX && p_request.invariant_position) {
+	if ((p_stage == RenderingDeviceCommons::SHADER_STAGE_VERTEX || p_stage == RenderingDeviceCommons::SHADER_STAGE_MESH) && p_request.invariant_position) {
 		const uint32_t *words = reinterpret_cast<const uint32_t *>(result.ptr());
 		size_t word_count = result.size() / sizeof(uint32_t);
 		size_t position_offset = 0;
 		uint32_t position_id = 0;
+		uint32_t position_member = 0;
+		bool member_decoration = false;
 		if (result.size() % sizeof(uint32_t) != 0 || word_count < 5 || words[0] != SpvMagicNumber) {
 			if (r_error) {
-				*r_error = "Invalid Slang vertex SPIR-V header.";
+				*r_error = "Invalid Slang pre-raster SPIR-V header.";
 			}
 			return {};
 		}
@@ -222,33 +224,46 @@ Vector<uint8_t> compile_slang_shader(RenderingDeviceCommons::ShaderStage p_stage
 			uint32_t opcode = words[offset] & 0xffffu;
 			if (count == 0 || count > word_count - offset) {
 				if (r_error) {
-					*r_error = "Invalid Slang vertex SPIR-V instruction length.";
+					*r_error = "Invalid Slang pre-raster SPIR-V instruction length.";
 				}
 				return {};
 			}
 			if (opcode == SpvOpDecorate && count == 4 && words[offset + 2] == SpvDecorationBuiltIn && words[offset + 3] == SpvBuiltInPosition) {
 				position_offset = offset;
 				position_id = words[offset + 1];
+				member_decoration = false;
+			} else if (opcode == SpvOpMemberDecorate && count == 5 && words[offset + 3] == SpvDecorationBuiltIn && words[offset + 4] == SpvBuiltInPosition) {
+				position_offset = offset;
+				position_id = words[offset + 1];
+				position_member = words[offset + 2];
+				member_decoration = true;
 			}
 			offset += count;
 		}
 		if (position_id == 0) {
 			if (r_error) {
-				*r_error = "Slang vertex output has no direct BuiltIn Position decoration for the required invariant contract.";
+				*r_error = "Slang pre-raster output has no BuiltIn Position decoration for the required invariant contract.";
 			}
 			return {};
 		}
 		for (size_t offset = 5; offset < word_count; offset += words[offset] >> 16) {
-			if (words[offset] == ((3u << 16) | SpvOpDecorate) && words[offset + 1] == position_id && words[offset + 2] == SpvDecorationInvariant) {
+			if (!member_decoration && words[offset] == ((3u << 16) | SpvOpDecorate) && words[offset + 1] == position_id && words[offset + 2] == SpvDecorationInvariant) {
+				return result;
+			}
+			if (member_decoration && words[offset] == ((4u << 16) | SpvOpMemberDecorate) && words[offset + 1] == position_id && words[offset + 2] == position_member && words[offset + 3] == SpvDecorationInvariant) {
 				return result;
 			}
 		}
-		result.resize(result.size() + 3 * sizeof(uint32_t));
+		uint32_t decoration_size = member_decoration ? 4 : 3;
+		result.resize(result.size() + decoration_size * sizeof(uint32_t));
 		uint32_t *output = reinterpret_cast<uint32_t *>(result.ptrw());
-		memmove(output + position_offset + 3, output + position_offset, (word_count - position_offset) * sizeof(uint32_t));
-		output[position_offset] = (3u << 16) | SpvOpDecorate;
+		memmove(output + position_offset + decoration_size, output + position_offset, (word_count - position_offset) * sizeof(uint32_t));
+		output[position_offset] = (decoration_size << 16) | (member_decoration ? SpvOpMemberDecorate : SpvOpDecorate);
 		output[position_offset + 1] = position_id;
-		output[position_offset + 2] = SpvDecorationInvariant;
+		if (member_decoration) {
+			output[position_offset + 2] = position_member;
+		}
+		output[position_offset + decoration_size - 1] = SpvDecorationInvariant;
 	}
 	return result;
 }

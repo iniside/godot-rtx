@@ -4651,6 +4651,7 @@ RID RenderingDevice::shader_create_from_bytecode_with_samplers(const Vector<uint
 
 	bool parsed_container = shader_container->from_bytes(p_shader_binary);
 	ERR_FAIL_COND_V_MSG(!parsed_container, RID(), "Failed to parse shader container from binary.");
+	ERR_FAIL_COND_V_MSG(shader_container->get_shader_reflection().stages_bits.has_flag(SHADER_STAGE_MESH_BIT) && !mesh_shader_is_supported(), RID(), "Mesh shaders are not supported by this rendering device.");
 
 	Vector<RDD::ImmutableSampler> driver_immutable_samplers;
 	for (const PipelineImmutableSampler &source_sampler : p_immutable_samplers) {
@@ -4715,6 +4716,9 @@ RID RenderingDevice::shader_create_from_bytecode_with_samplers(const Vector<uint
 		switch (stage) {
 			case SHADER_STAGE_VERTEX:
 				shader->stage_bits.set_flag(RDD::PIPELINE_STAGE_VERTEX_SHADER_BIT);
+				break;
+			case SHADER_STAGE_MESH:
+				shader->stage_bits.set_flag(RDD::PIPELINE_STAGE_MESH_SHADER_BIT);
 				break;
 			case SHADER_STAGE_FRAGMENT:
 				shader->stage_bits.set_flag(RDD::PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
@@ -5360,8 +5364,10 @@ RID RenderingDevice::render_pipeline_create(RID p_shader, FramebufferFormatID p_
 	ERR_FAIL_COND_V_MSG(shader->pipeline_type != PIPELINE_TYPE_RASTERIZATION, RID(),
 			"Only render shaders can be used in render pipelines");
 
-	// Validate pre-raster shader. One of stages must be vertex shader or mesh shader (not implemented yet).
-	ERR_FAIL_COND_V_MSG(!shader->stage_bits.has_flag(RDD::PIPELINE_STAGE_VERTEX_SHADER_BIT), RID(), "Pre-raster shader (vertex shader) is not provided for pipeline creation.");
+	bool mesh_shader = shader->stage_bits.has_flag(RDD::PIPELINE_STAGE_MESH_SHADER_BIT);
+	ERR_FAIL_COND_V_MSG(!mesh_shader && !shader->stage_bits.has_flag(RDD::PIPELINE_STAGE_VERTEX_SHADER_BIT), RID(), "A vertex or mesh shader is required for pipeline creation.");
+	ERR_FAIL_COND_V_MSG(mesh_shader && !mesh_shader_is_supported(), RID(), "Mesh shaders are not supported by this rendering device.");
+	ERR_FAIL_COND_V_MSG(mesh_shader && p_vertex_format != INVALID_ID, RID(), "Mesh shader pipelines do not use a vertex format.");
 
 	FramebufferFormat fb_format;
 	{
@@ -6720,7 +6726,20 @@ void RenderingDevice::draw_list_draw_indirect_count(DrawListID p_list, bool p_us
 	_draw_list_draw_indirect(p_list, p_use_indices, p_buffer, p_offset, p_max_draw_count, p_stride, p_count_buffer, p_count_offset);
 }
 
-void RenderingDevice::_draw_list_draw_indirect(DrawListID p_list, bool p_use_indices, RID p_buffer, uint32_t p_offset, uint32_t p_draw_count, uint32_t p_stride, RID p_count_buffer, uint32_t p_count_offset) {
+bool RenderingDevice::mesh_shader_is_supported() const {
+	return driver->mesh_shader_is_supported();
+}
+
+RenderingDevice::MeshShaderLimits RenderingDevice::mesh_shader_get_limits() const {
+	return driver->mesh_shader_get_limits();
+}
+
+void RenderingDevice::draw_list_draw_mesh_tasks_indirect(DrawListID p_list, RID p_buffer, uint32_t p_offset) {
+	ERR_FAIL_COND_MSG(!mesh_shader_is_supported(), "Mesh shaders are not supported by this rendering device.");
+	_draw_list_draw_indirect(p_list, false, p_buffer, p_offset, 1, 12, RID(), 0, true);
+}
+
+void RenderingDevice::_draw_list_draw_indirect(DrawListID p_list, bool p_use_indices, RID p_buffer, uint32_t p_offset, uint32_t p_draw_count, uint32_t p_stride, RID p_count_buffer, uint32_t p_count_offset, bool p_mesh_tasks) {
 	ERR_RENDER_THREAD_GUARD();
 
 	ERR_FAIL_COND(!draw_list.active);
@@ -6729,6 +6748,13 @@ void RenderingDevice::_draw_list_draw_indirect(DrawListID p_list, bool p_use_ind
 	ERR_FAIL_NULL(buffer);
 
 	ERR_FAIL_COND_MSG(!buffer->usage.has_flag(RDD::BUFFER_USAGE_INDIRECT_BIT), "Buffer provided was not created to do indirect dispatch.");
+
+	if (p_mesh_tasks) {
+		ERR_FAIL_COND((p_offset % 4) != 0 || uint64_t(p_offset) + 12 > buffer->size);
+		const Shader *shader = shader_owner.get_or_null(draw_list.state.pipeline_shader);
+		ERR_FAIL_NULL(shader);
+		ERR_FAIL_COND_MSG(!shader->stages_bits.has_flag(SHADER_STAGE_MESH_BIT), "Mesh task drawing requires a mesh shader pipeline.");
+	}
 
 	Buffer *count_buffer = nullptr;
 	if (p_count_buffer.is_valid()) {
@@ -6815,7 +6841,9 @@ void RenderingDevice::_draw_list_draw_indirect(DrawListID p_list, bool p_use_ind
 		}
 	}
 
-	if (p_use_indices) {
+	if (p_mesh_tasks) {
+		draw_graph.add_draw_list_draw_mesh_tasks_indirect(buffer->driver_id, p_offset);
+	} else if (p_use_indices) {
 #ifdef DEBUG_ENABLED
 		ERR_FAIL_COND_MSG(!draw_list.validation.index_array_count,
 				"Draw command requested indices, but no index buffer was set.");
@@ -10452,6 +10480,7 @@ void RenderingDevice::_bind_methods() {
 	BIND_ENUM_CONSTANT(SHADER_STAGE_CLOSEST_HIT);
 	BIND_ENUM_CONSTANT(SHADER_STAGE_MISS);
 	BIND_ENUM_CONSTANT(SHADER_STAGE_INTERSECTION);
+	BIND_ENUM_CONSTANT(SHADER_STAGE_MESH);
 	BIND_ENUM_CONSTANT(SHADER_STAGE_MAX);
 	BIND_ENUM_CONSTANT(SHADER_STAGE_VERTEX_BIT);
 	BIND_ENUM_CONSTANT(SHADER_STAGE_FRAGMENT_BIT);
@@ -10463,6 +10492,7 @@ void RenderingDevice::_bind_methods() {
 	BIND_ENUM_CONSTANT(SHADER_STAGE_CLOSEST_HIT_BIT);
 	BIND_ENUM_CONSTANT(SHADER_STAGE_MISS_BIT);
 	BIND_ENUM_CONSTANT(SHADER_STAGE_INTERSECTION_BIT);
+	BIND_ENUM_CONSTANT(SHADER_STAGE_MESH_BIT);
 
 	BIND_ENUM_CONSTANT(SHADER_LANGUAGE_GLSL);
 	BIND_ENUM_CONSTANT(SHADER_LANGUAGE_HLSL);
