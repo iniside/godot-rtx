@@ -80,7 +80,6 @@ groupshared uint64_t micro_geometry_payload;
 groupshared uint micro_geometry_vertex_count;
 groupshared uint micro_geometry_triangle_count;
 groupshared uint micro_geometry_invalid;
-groupshared float4 micro_geometry_raster_vertices[128];
 static float3 micro_geometry_normal;
 static float3 micro_geometry_tangent;
 static float3 micro_geometry_binormal;
@@ -1054,56 +1053,13 @@ VertexOutput evaluate_vertex(VertexInput stage_input) {
 }
 
 #ifdef MICRO_GEOMETRY_RASTER
-struct MicroGeometryPrimitiveOutput {
-	bool culled : SV_CullPrimitive;
-};
-
-uint micro_geometry_triangle_rejection(uint3 p_triangle) {
-	if ((micro_geometry_cull & 4) == 0 || micro_geometry_parameters.selected_cluster_color != 0) {
-		return 0;
-	}
-	float3 a = micro_geometry_raster_vertices[p_triangle.x].xyz;
-	float3 b = micro_geometry_raster_vertices[p_triangle.y].xyz;
-	float3 c = micro_geometry_raster_vertices[p_triangle.z].xyz;
-	if (a.z == 0.0 || b.z == 0.0 || c.z == 0.0) {
-		return 3;
-	}
-	float2 ab = b.xy - a.xy;
-	float2 ac = c.xy - a.xy;
-	float area = ab.x * ac.y - ab.y * ac.x;
-	float2 viewport = scene_data_block.data.viewport_size;
-	float epsilon = 1.0 / 16.0 + max(viewport.x, viewport.y) * (16.0 * 1.192092896e-7);
-	float area_error = 2.0 * epsilon * (abs(ab.x) + abs(ab.y) + abs(ac.x) + abs(ac.y)) + 8.0 * epsilon * epsilon;
-#ifdef UBERSHADER
-	uint cull_mode = uc_cull_mode();
-#else
-	uint cull_mode = micro_geometry_cull & 3;
-#endif
-	bool uncertain_facing = abs(area) <= area_error;
-	if (!uncertain_facing && cull_mode != 0) {
-		bool front_facing = (micro_geometry_cull & 16) != 0 ? area > 0.0 : area < 0.0;
-		if ((cull_mode == 1 && front_facing) || (cull_mode == 2 && !front_facing)) {
-			return 1;
-		}
-	}
-	if ((micro_geometry_cull & 8) != 0) {
-		float2 pixel_min = min(a.xy, min(b.xy, c.xy)) - epsilon;
-		float2 pixel_max = max(a.xy, max(b.xy, c.xy)) + epsilon;
-		if (any(ceil(pixel_min - 0.5) > floor(pixel_max - 0.5))) {
-			return 2;
-		}
-	}
-	return uncertain_facing ? 3 : 0;
-}
-
 [shader("mesh")]
 [numthreads(128, 1, 1)]
 [outputtopology("triangle")]
 void main(uint3 group_id : SV_GroupID, uint lane : SV_GroupIndex,
-		out vertices VertexOutput output_vertices[128], out indices uint3 output_triangles[128],
-		out primitives MicroGeometryPrimitiveOutput output_primitives[128]) {
+		out vertices VertexOutput output_vertices[128], out indices uint3 output_triangles[128]) {
 	static_assert(sizeof(VertexOutput) <= MICRO_GEOMETRY_OUTPUT_STRIDE_LIMIT, "Microgeometry material exceeds mesh output component or memory limits.");
-	static_assert(sizeof(MicroGeometrySelectedCluster) + sizeof(MicroGeometryInstance) + sizeof(MicroGeometrySurface) + 32 + 128 * sizeof(float4) <= MICRO_GEOMETRY_SHARED_MEMORY_LIMIT, "Microgeometry context exceeds mesh shared memory limit.");
+	static_assert(sizeof(MicroGeometrySelectedCluster) + sizeof(MicroGeometryInstance) + sizeof(MicroGeometrySurface) + 32 <= MICRO_GEOMETRY_SHARED_MEMORY_LIMIT, "Microgeometry context exceeds mesh shared memory limit.");
 	uint cluster_index = group_id.x + group_id.y * micro_geometry_parameters.dispatch_width;
 	uint bin = draw_call.micro_geometry_bin;
 	uint selected_index = draw_call.instance_index + cluster_index;
@@ -1147,43 +1103,20 @@ void main(uint3 group_id : SV_GroupID, uint lane : SV_GroupIndex,
 		InterlockedAdd(micro_geometry_raster_statistics[86], uint(valid_cluster));
 		InterlockedAdd(micro_geometry_raster_statistics[87], uint(!valid_cluster && cluster_index < micro_geometry_counts[bin]));
 	}
-	if (valid_cluster && lane < micro_geometry_vertex_count) {
+	if (!valid_cluster) {
+		return;
+	}
+	if (lane < micro_geometry_vertex_count) {
 		micro_geometry_pull_vertex(lane);
 		VertexInput input = (VertexInput)0;
 		input.vertex_index = source_vertex;
 		input.instance_index = selected_index;
-		VertexOutput vertex_output = evaluate_vertex(input);
-		output_vertices[lane] = vertex_output;
-		float4 clip = vertex_output.position;
-		float margin = max(abs(clip.w), 1.0) * (16.0 * 1.192092896e-7);
-		bool safe = all(isfinite(clip)) && clip.w > margin && all(abs(clip.xy) < clip.w - margin) && clip.z > margin && clip.z < clip.w - margin;
-		float2 viewport = scene_data_block.data.viewport_size;
-		safe = safe && all(isfinite(viewport)) && all(viewport > 0.0);
-		micro_geometry_raster_vertices[lane] = safe ? float4((clip.xy / clip.w * 0.5 + 0.5) * viewport, 1.0, 0.0) : float4(0.0);
+		output_vertices[lane] = evaluate_vertex(input);
 	}
-	GroupMemoryBarrierWithGroupSync();
-	bool valid_triangle = valid_cluster && lane < micro_geometry_triangle_count;
-	uint rejection = valid_triangle ? micro_geometry_triangle_rejection(triangle) : 0;
-	bool emitted = valid_triangle && rejection != 1 && rejection != 2;
-	if (valid_triangle) {
+	if (lane < micro_geometry_triangle_count) {
 		output_triangles[lane] = triangle;
-		MicroGeometryPrimitiveOutput primitive_output;
-		primitive_output.culled = !emitted;
-		output_primitives[lane] = primitive_output;
 	}
-	if (sample_statistics) {
-		uint emitted_count = WaveActiveCountBits(emitted);
-		uint facing_rejected = WaveActiveCountBits(valid_triangle && rejection == 1);
-		uint footprint_rejected = WaveActiveCountBits(valid_triangle && rejection == 2);
-		uint uncertain = WaveActiveCountBits(valid_triangle && rejection == 3);
-		if (WaveIsFirstLane()) {
-			InterlockedAdd(micro_geometry_raster_statistics[91], emitted_count);
-			InterlockedAdd(micro_geometry_raster_statistics[92], facing_rejected);
-			InterlockedAdd(micro_geometry_raster_statistics[93], footprint_rejected);
-			InterlockedAdd(micro_geometry_raster_statistics[94], uncertain);
-		}
-	}
-	if (sample_statistics && valid_cluster && lane == 0) {
+	if (sample_statistics && lane == 0) {
 		InterlockedAdd(micro_geometry_raster_statistics[88], micro_geometry_vertex_count);
 #ifdef MOTION_VECTORS
 		InterlockedAdd(micro_geometry_raster_statistics[89], micro_geometry_vertex_count * 2);
@@ -1191,6 +1124,7 @@ void main(uint3 group_id : SV_GroupID, uint lane : SV_GroupIndex,
 		InterlockedAdd(micro_geometry_raster_statistics[89], micro_geometry_vertex_count);
 #endif
 		InterlockedAdd(micro_geometry_raster_statistics[90], micro_geometry_triangle_count);
+		InterlockedAdd(micro_geometry_raster_statistics[91], micro_geometry_triangle_count);
 	}
 }
 #else

@@ -213,7 +213,6 @@ struct InstanceData {
 [[vk::binding(5, 4)]] StructuredBuffer<uint> micro_geometry_counts;
 [[vk::binding(6, 4)]] StructuredBuffer<uint> micro_geometry_initial_counts;
 [[vk::binding(7, 4)]] RWStructuredBuffer<uint> micro_geometry_raster_statistics;
-[[vk::constant_id(3)]] const uint micro_geometry_cull = 0;
 #else
 [[vk::binding(2, 1)]] StructuredBuffer<InstanceData> instances;
 #endif
