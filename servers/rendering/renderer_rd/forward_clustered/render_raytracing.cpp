@@ -2082,6 +2082,8 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 	auto &parameters = build->selection->data;
 	parameters.flags = 1 | 2 | 16 | 32;
 	parameters.cull_plane_count = 0;
+	parameters.epoch_counter = 0;
+	parameters.schedule_all = 1;
 	parameters.scenario = owner->micro_geometry_scenario.get_id();
 	parameters.layer_mask = p_render_data->scene_data->camera_visible_layers;
 	parameters.error = p_state->settings.geometry_error;
@@ -2121,63 +2123,6 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 		geometry_buffer_dependencies.insert(buffer);
 	}
 	return true;
-}
-
-void RenderRaytracing::_schedule_micro_geometry_rings(RTViewportState *p_state, RTMicroGeometryBuild *p_build, bool p_force_all) {
-	auto *selection = p_build->selection;
-	p_build->epoch_counter++;
-	const uint32_t unit_count = uint32_t(selection->unit_data.size());
-	if (unit_count == 0) {
-		p_build->unit_deferred.clear();
-		p_build->unit_scheduled_rings.clear();
-		return;
-	}
-	bool force_all = p_force_all;
-	if (p_build->unit_scheduled_rings.size() != unit_count) {
-		p_build->unit_scheduled_rings.clear();
-		p_build->unit_scheduled_rings.resize_initialized(unit_count);
-		force_all = true;
-	}
-	p_build->unit_deferred.resize_initialized(unit_count);
-	LocalVector<uint8_t> task_rings;
-	task_rings.resize_initialized(uint32_t(p_build->selection_tasks.size()));
-	for (uint32_t task_index = 0; task_index < task_rings.size(); task_index++) {
-		const uint64_t handle = p_build->selection_tasks[task_index].instance;
-		const uint32_t instance_index = uint32_t(handle) - 1;
-		uint8_t ring = uint8_t(RTMicroGeometryBuild::RING_COUNT - 1);
-		if (handle != 0 && instance_index < persistent_instances.size()) {
-			const RTPersistentInstanceData &data = persistent_instances[instance_index].data;
-			double squared = 0;
-			for (uint32_t axis = 0; axis < 3; axis++) {
-				double center = 0;
-				double extent = 0;
-				for (uint32_t element = 0; element < 3; element++) {
-					const double basis = data.transform[axis * 4 + element];
-					center += basis * (double(data.aabb_position[element]) + double(data.aabb_size[element]) * 0.5);
-					extent += Math::abs(basis) * double(data.aabb_size[element]) * 0.5;
-				}
-				center += double(data.transform[axis * 4 + 3]) + double(data.origin_low[axis]) - p_state->camera_origin[axis];
-				const double delta = MAX(0.0, Math::abs(center) - extent);
-				squared += delta * delta;
-			}
-			if (squared < RTMicroGeometryBuild::RING_NEAR_DISTANCE * RTMicroGeometryBuild::RING_NEAR_DISTANCE) {
-				ring = 0;
-			} else if (squared < RTMicroGeometryBuild::RING_MID_DISTANCE * RTMicroGeometryBuild::RING_MID_DISTANCE) {
-				ring = 1;
-			}
-		}
-		task_rings[task_index] = ring;
-	}
-	for (uint32_t index = 0; index < unit_count; index++) {
-		const uint32_t task_index = selection->unit_data[index].task;
-		const uint8_t ring = task_index < task_rings.size() ? task_rings[task_index] : 0;
-		const bool scheduled = force_all || ring < p_build->unit_scheduled_rings[index] || (p_build->epoch_counter & ((uint64_t(1) << ring) - 1)) == 0;
-		if (scheduled) {
-			p_build->unit_scheduled_rings[index] = ring;
-		}
-		p_build->unit_deferred[index] = scheduled ? 0 : 1;
-	}
-	micro_selection->update_unit_schedule(selection, p_build->unit_deferred);
 }
 
 bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
@@ -2305,7 +2250,10 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 			build->bootstrap = !build->has_committed_cut;
 			build->producing_signature = build->input_signature;
 			storage->lease_resident_pages(build->lease);
-			_schedule_micro_geometry_rings(p_state, build, build->bootstrap || build->selection_retry || build->conservative_updates);
+			build->epoch_counter++;
+			const bool schedule_all = build->bootstrap || build->selection_retry || build->conservative_updates || build->epoch_counter == 1 || build->segment_units != build->selection->units || uint32_t(build->cuts.size()) != build->epoch_pool_capacity;
+			build->selection->data.epoch_counter = uint32_t(build->epoch_counter);
+			build->selection->data.schedule_all = schedule_all ? 1 : 0;
 			if (!build->bootstrap) {
 				const uint64_t selection_bytes = build->selection->memory_bytes;
 				micro_selection->select(build->selection, RID());
@@ -2328,12 +2276,7 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 			}
 			uint32_t pool_count = build->cuts.size();
 			const bool reallocate = layout_changed || pool_count != build->epoch_pool_capacity;
-			bool segments_changed = false;
-			for (uint32_t index = 0; index < uint32_t(segments.size()); index++) {
-				const uint32_t pad = !reallocate && index < build->unit_deferred.size() ? build->unit_deferred[index] : 0u;
-				segments_changed = segments_changed || segments[index].pad != pad;
-				segments.write[index].pad = pad;
-			}
+			DEV_ASSERT(!reallocate || schedule_all);
 			uint32_t bucket_count = Math::nearest_power_of_2_templated(MAX(uint32_t(segments.size()) * 2, 16u));
 			uint64_t required = record_work * 16 + uint64_t(segments.size()) * 72 + uint64_t(pool_count) * 56 + uint64_t(bucket_count) * 4;
 			if (record_work > UINT32_MAX / 8 || required > MicroGeometrySelection::MAX_PASS_BYTES) {
@@ -2407,10 +2350,6 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 				build->segment_units = build->selection->units;
 			} else {
 				rd->buffer_update(build->pool, 0, descriptors.size() * sizeof(RTMicroGeometryCutDescriptor), descriptors.ptr());
-				if (segments_changed) {
-					rd->buffer_update(build->segments, 0, uint64_t(segments.size()) * sizeof(RTMicroGeometrySegment), segments.ptr());
-					build->segment_data = segments;
-				}
 			}
 			build->candidate_users.resize_initialized(pool_count);
 			build->cut_generation++;

@@ -81,6 +81,8 @@ public:
 		uint64_t lightmaps[8] = {};
 		uint32_t lightmap_sh = 0;
 		uint32_t cull_plane_count = 0;
+		uint32_t epoch_counter = 0;
+		uint32_t schedule_all = 1;
 		float cull_planes[96] = {};
 	};
 	struct Unit {
@@ -218,7 +220,6 @@ public:
 	Pass *create(const Vector<Task> &p_tasks, uint32_t p_bin_count, const Parameters &p_parameters, uint32_t p_levels, uint32_t p_native_stride, RID p_instances, RID p_surfaces, const Vector<RID> &p_dependencies);
 	bool needs_retry(Pass *p_pass) const;
 	void select(Pass *p_pass, RID p_hzb);
-	void update_unit_schedule(Pass *p_pass, const LocalVector<uint8_t> &p_deferred);
 	void recover(Pass *p_pass, RID p_hzb);
 	void update_frozen(Pass *p_pass);
 	bool freeze(Pass *p_pass);
@@ -260,6 +261,6 @@ private:
 
 static_assert(sizeof(MicroGeometrySelection::Task) == 64);
 static_assert(sizeof(MicroGeometrySelection::Unit) == 32);
-static_assert(sizeof(MicroGeometrySelection::Parameters) == 808);
+static_assert(sizeof(MicroGeometrySelection::Parameters) == 816);
 
 } //namespace RendererSceneRenderImplementation

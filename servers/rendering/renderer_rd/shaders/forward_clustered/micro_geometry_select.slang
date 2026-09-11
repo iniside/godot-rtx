@@ -63,6 +63,8 @@ struct SelectionParameters {
 	uint64_t lightmaps[8];
 	uint lightmap_sh;
 	uint cull_plane_count;
+	uint epoch_counter;
+	uint schedule_all;
 	float cull_planes[96];
 };
 struct RasterInstance {
@@ -132,8 +134,13 @@ uint unit_for_work(uint p_index, bool p_queue) {
 	return p_queue ? queue_order[begin] : record_order[begin];
 }
 
+static const uint STATUS_DEFERRED = 16;
+static const float RING_NEAR_DISTANCE = 25.0;
+static const float RING_MID_DISTANCE = 75.0;
+
 bool unit_deferred(uint p_unit_index) {
-	return (units[p_unit_index].pad & 1) != 0 && (unit_states[p_unit_index].status & 8) == 0;
+	uint status = unit_states[p_unit_index].status;
+	return (status & STATUS_DEFERRED) != 0 && (status & 8) == 0;
 }
 
 uint find_group(SelectionUnit p_unit, uint p_group) {
@@ -463,9 +470,27 @@ void main(uint3 id : SV_DispatchThreadID) {
 	if (push.mode == 1) {
 		if (index >= parameters.unit_count) { return; }
 		uint previous_count = unit_states[index].committed_count;
+		uint previous_ring = unit_states[index].padding[1];
+		SelectionUnit unit = units[index];
+		SelectionTask task = tasks[unit.task];
+		uint source_multimesh;
+		uint ring = 0;
+		if (validity[unit.task] != 0 && resolve_multimesh(task, unit.ordinal, source_multimesh)) {
+			MicroGeometryInstance instance = instances[uint(task.instance) - 1];
+			float center[3];
+			for (uint axis = 0; axis < 3; axis++) { center[axis] = instance.aabb_position[axis] + instance.aabb_size[axis] * 0.5; }
+			float radius = length(float3(instance.aabb_size[0], instance.aabb_size[1], instance.aabb_size[2])) * 0.5;
+			float3 view_center;
+			float view_radius;
+			view_bounds(task, instance, source_multimesh, center, radius, false, view_center, view_radius);
+			float distance = length(view_center) - view_radius;
+			ring = distance < RING_NEAR_DISTANCE ? 0 : (distance < RING_MID_DISTANCE ? 1 : 2);
+		}
+		bool scheduled = parameters.schedule_all != 0 || previous_count == 0 || ring < previous_ring || (parameters.epoch_counter & ((1u << ring) - 1u)) == 0u;
 		SelectionState state = {};
 		state.committed_count = previous_count;
-		state.status = previous_count == 0 ? 8 : 0;
+		state.status = (previous_count == 0 ? 8u : 0u) | (scheduled ? 0u : STATUS_DEFERRED);
+		state.padding[1] = scheduled ? ring : previous_ring;
 		unit_states[index] = state;
 		return;
 	}

@@ -726,20 +726,6 @@ void MicroGeometrySelection::select(Pass *p_pass, RID p_hzb) {
 	RENDER_TIMESTAMP(rt ? "Microgeometry RT Selection Complete" : "Microgeometry Raster Selection Complete");
 }
 
-void MicroGeometrySelection::update_unit_schedule(Pass *p_pass, const LocalVector<uint8_t> &p_deferred) {
-	ERR_FAIL_NULL(p_pass);
-	ERR_FAIL_COND(uint32_t(p_deferred.size()) != uint32_t(p_pass->unit_data.size()));
-	bool changed = false;
-	for (uint32_t index = 0; index < uint32_t(p_pass->unit_data.size()); index++) {
-		const uint32_t pad = p_deferred[index] != 0 ? 1u : 0u;
-		changed = changed || p_pass->unit_data[index].pad != pad;
-		p_pass->unit_data.write[index].pad = pad;
-	}
-	if (changed && p_pass->units.is_valid()) {
-		RD::get_singleton()->buffer_update(p_pass->units, 0, uint64_t(p_pass->unit_data.size()) * sizeof(Unit), p_pass->unit_data.ptr());
-	}
-}
-
 void MicroGeometrySelection::recover(Pass *p_pass, RID p_hzb) {
 	ERR_FAIL_NULL(p_pass);
 	RENDER_TIMESTAMP("Microgeometry Raster Recovery Select");

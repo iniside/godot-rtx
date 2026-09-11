@@ -148,7 +148,9 @@ uint mix_integer(uint x) {
 	return x ^ (x >> 16);
 }
 bool segment_deferred(Segment p_segment) {
-	return (p_segment.pad & 1) != 0 && (source_states[p_segment.unit * 2].w & 8) == 0;
+	if (parameters.bootstrap != 0) { return false; }
+	uint status = source_states[p_segment.unit * 2].w;
+	return (status & 16) != 0 && (status & 8) == 0;
 }
 bool resolve(Segment segment, out MicroGeometryInstance instance, out MicroGeometryAsset asset, out uint source_ordinal) {
 	MicroRTTask task = tasks[segment.task];
