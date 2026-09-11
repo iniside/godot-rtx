@@ -41,7 +41,10 @@ Own `servers/rendering/rendering_device_commons.{h,cpp}`,
 `renderer_rd/shader_rd.{h,cpp}`, Vulkan `rendering_device_driver_vulkan.{h,cpp}`,
 `modules/slang/shader_compile.cpp`, `modules/glslang/register_types.cpp`,
 D3D12/Metal `rendering_shader_container_*.cpp`, and
-`doc/classes/RenderingDevice.xml`.
+`doc/classes/RenderingDevice.xml`. Stage property/serialization consumers also
+require `rendering_device_binds.{h,cpp}`, `doc/classes/RDShaderSource.xml` and
+`doc/classes/RDShaderSPIRV.xml`; close their stage-sized string/property tables
+in this same step while preserving existing values and properties.
 
 Append MESH shader stage and bit without renumbering shipped enums; close stage
 maps, stage names, reflection, shader-container versions/cache keys, binding/XML

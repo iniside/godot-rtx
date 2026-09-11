@@ -105,3 +105,23 @@ unfocused sleep100000, VSync mode1 and continuous updatefalse. Origin stays visi
 Scene SHA256 remains
 `F276E9A2B9A18B8DE4AE672BF339D7D7925D589E29131EA99A1F61B939A8B19A`.
 The ordinary editor executable remains the final measured source, not a probe.
+
+## Next optimization candidates — source inspection, 2026-09-11
+
+At unchanged renderer source `19f97459f7`, `micro_geometry_select.slang:711`
+emits one indexed indirect command per surviving cluster, with every triangle
+included. `scene_forward_clustered.slang:842` executes the ordinary vertex
+shader; `micro_geometry_pull_vertex` at line82 maps a triangle corner to the
+cluster-local vertex. It repeats handle/material/page/generation/layout checks,
+including the ten-attribute loop, on this vertex path. This is not a mesh-shader
+raster path. The selected67.36M triangles represent202.07M triangle corners;
+this is an input-work estimate, not a measured vertex-invocation counter.
+
+Highest-priority candidates are amortizing safe shared checks per cluster and
+processing unique meshlet vertices once, preferably in a batched mesh-shader
+path. That path can also reject back-facing or provably sample-empty primitives
+before emission; merely having area below one pixel is insufficient for safe
+rejection. Current HZB rejects whole clusters and does not establish per-triangle
+visibility. These are source-backed opportunities, not measured speedups or a
+completed implementation plan. No new code, build or launch was performed for
+this follow-up inspection.

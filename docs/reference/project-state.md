@@ -17,6 +17,23 @@ Movement/reveal/resize and visual quality were not evaluated. See
 [current results and limits](../research/2026-09-11-0615-microgeometry-hzb-repair-status.md)
 and [repair plan](../plans/2026-09-11-0604-microgeometry-hzb-repair-plan.md).
 
+Microgeometry mesh raster implemented (2026-09-11, source `e5f74b83ee`,
+`778721ab5e`, `2bd770c26d`, `6e916a19c8`): batched mesh dispatch replaces
+corner-indexed drawing, with shared validation and unique meshlet vertices.
+Two missing-mesh defects are corrected: vertex/mesh descriptor visibility and
+legal INVALID_ID primitive identities in simplified clusters. Final ordinary
+Vulkan captures exit 0 without ERROR lines. At unchanged native scene, camera,
+1 px and 2689x1602, whole GPU measures 21.1695 -> 19.1815 ms, shadow raster
+3.4178 -> 1.0920 ms, camera raster 11.4683 -> 11.2305 ms, unprofiled FPS 46 -> 54.
+Final camera selection/HZB counters exactly match the baseline: 67.36M triangles,
+140481 HZB rejections, zero recovery emission. Unique cluster vertices total
+49.83M versus 202.07M triangle corners. Camera raster remains the main cost;
+primitive culling is still subsequent work, and no 9 ms budget is achieved.
+Streaming settles; scene hash is unchanged and editor settings are restored.
+Motion/reveal/resize/freeze and final visual quality were not independently
+evaluated. [Plan](../plans/2026-09-11-0656-microgeometry-mesh-raster-plan.md).
+See [current implementation and measurements](../research/2026-09-11-0702-microgeometry-mesh-raster-status.md).
+
 Previous native stress repair (source `ab4e61b17a`) removes false 512 MiB
 replacement admission failure and replaces loose Frobenius transform scaling
 with a tighter conservative bound while retaining 1 px and RT/shadow tolerances.
