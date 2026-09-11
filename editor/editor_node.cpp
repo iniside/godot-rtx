@@ -4913,7 +4913,8 @@ Error EditorNode::load_scene(const String &p_scene, bool p_ignore_broken_deps, b
 	ERR_FAIL_COND_V_MSG(path.get_extension().to_lower() != "escn", ERR_UNAVAILABLE, "Node-based scene authoring is unavailable. Open a native EntityScene .escn document: " + path);
 	ERR_FAIL_COND_V_MSG(p_set_inherited, ERR_UNAVAILABLE, "Native scene inheritance authoring is not available yet.");
 	Error error = OK;
-	const String benchmark_file = path.get_file();
+	static uint32_t benchmark_load_count = 0;
+	const String benchmark_file = vformat("%s (Load %d)", path.get_file(), ++benchmark_load_count);
 	OS::get_singleton()->benchmark_begin_measure("Scene Load", benchmark_file + ": Resource Load");
 	Ref<EntityScene> document = ResourceLoader::load(path, "EntityScene", ResourceFormatLoader::CACHE_MODE_IGNORE, &error);
 	OS::get_singleton()->benchmark_end_measure("Scene Load", benchmark_file + ": Resource Load");
