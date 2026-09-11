@@ -1,6 +1,17 @@
 # Project State
 
-Editor camera motion tool (2026-09-11, `2eb86b14fc`):
+Editor camera movement profiling (2026-09-11, `244dc27176`): selection admission
+limit is now 2 GiB; the page pool remains 1 GiB. Double build passes. Unprofiled
+movement averages 12.98 FPS; the completed route restores the camera exactly.
+A later restored-camera update exceeds even 2 GiB. Full profiling locates
+43-48 ms CPU dependency-union work, excessive RT selection (10.4M clusters),
+and expensive traversal/sorting. Camera signatures unnecessarily invalidate
+instance/TLAS work; offscreen LOD uses problematic view-space depth. Working
+allocation accounting grows beyond the admission cap; paging is not proven.
+Original editor settings are restored. See [detailed measurements and source
+findings](../research/2026-09-11-1123-camera-motion-cost-status.md).
+
+Historical editor camera motion tool measurement (2026-09-11, `2eb86b14fc`):
 `misc/scripts/editor_camera_motion.py` drives the first native editor viewport
 through a bounded project-cache JSON command, using the existing camera
 controller and restoring the original camera on finish/cancel. Double build
