@@ -1803,7 +1803,6 @@ bool RenderRaytracing::_micro_feedback(RTMicroGeometryBuild *p_build, uint32_t p
 		_micro_cut_feedback(Vector<uint8_t>(), uint64_t(p_build));
 		return false;
 	}
-	p_build->epoch_submission = RD::get_singleton()->get_pending_submission_serial();
 	if (RD::get_singleton()->buffer_get_data_async(p_build->feedback, callable_mp_static(&RenderRaytracing::_micro_cut_feedback).bind(uint64_t(p_build)), 0, p_bytes) != OK) {
 		_micro_cut_feedback(Vector<uint8_t>(), uint64_t(p_build));
 		return false;

@@ -566,7 +566,6 @@ struct RTMicroGeometryBuild {
 	uint64_t memory_bytes = 0;
 	uint64_t as_memory_bytes = 0;
 	uint64_t retirement = 0;
-	uint64_t epoch_submission = 0;
 	uint64_t cut_generation = 0;
 	uint64_t completed_builds = 0;
 	uint64_t reported_page_builds = 0;
