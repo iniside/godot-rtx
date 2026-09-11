@@ -342,6 +342,10 @@ RID RenderSceneBuffersRD::create_texture_from_format(const StringName &p_context
 	named_texture.format = p_texture_format;
 	named_texture.is_unique = p_unique;
 	named_texture.texture = RD::get_singleton()->texture_create(p_texture_format, p_view);
+	if (named_texture.texture.is_null()) {
+		named_textures.erase(key);
+		ERR_FAIL_V_MSG(RID(), "Failed to allocate render buffer texture.");
+	}
 
 	Array arr = { p_context, p_texture_name };
 	RD::get_singleton()->set_resource_name(named_texture.texture, String("RenderBuffer {0}/{1}").format(arr));
