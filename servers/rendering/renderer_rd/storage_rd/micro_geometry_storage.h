@@ -44,7 +44,7 @@ class MicroGeometryStorage {
 public:
 	static constexpr uint32_t INVALID_SLOT = UINT32_MAX;
 	static constexpr uint32_t PAGE_SIZE = MicroGeometryData::MAX_PAGE_SIZE;
-	static constexpr uint32_t DEFAULT_PAGE_COUNT = 4096;
+	static constexpr uint32_t DEFAULT_PAGE_COUNT = 16384;
 	static constexpr uint32_t MAX_IO_TASKS = 16;
 
 	struct GPURequest {
