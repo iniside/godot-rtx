@@ -108,16 +108,6 @@ protected:
 		RENDER_LIST_MAX
 	};
 
-#ifdef DEBUG_ENABLED
-	enum PrimaryVisibilityMode {
-		PRIMARY_VISIBILITY_RASTER,
-		PRIMARY_VISIBILITY_TRACE,
-		PRIMARY_VISIBILITY_RASTER_TRACE,
-		PRIMARY_VISIBILITY_TRACE_RASTER,
-		PRIMARY_VISIBILITY_INVALID,
-	};
-	PrimaryVisibilityMode primary_visibility_mode = PRIMARY_VISIBILITY_RASTER;
-#endif
 	bool primary_surface_trace = false;
 	uint64_t primary_surface_validation_generation = UINT64_MAX;
 	uint64_t primary_surface_validation_rt_generation = UINT64_MAX;

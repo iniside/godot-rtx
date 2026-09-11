@@ -2663,13 +2663,6 @@ bool RenderForwardClustered::_primary_surface_editor_helper(uint32_t p_layer_mas
 }
 
 void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Color &p_default_bg_color) {
-#ifdef DEBUG_ENABLED
-	if (primary_visibility_mode != PRIMARY_VISIBILITY_RASTER && primary_visibility_mode != PRIMARY_VISIBILITY_TRACE) {
-		ERR_PRINT_ONCE("GODOT_PRIMARY_VISIBILITY supports R and T; hybrid modes are not implemented.");
-		return;
-	}
-	primary_surface_trace = primary_visibility_mode == PRIMARY_VISIBILITY_TRACE;
-#endif
 	micro_geometry_scenario = p_render_data->scenario;
 	micro_geometry_visible_layers = p_render_data->scene_data->camera_visible_layers;
 	while (micro_geometry_passes.size() > micro_geometry_pass_cursor) {
@@ -2706,7 +2699,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	}
 	const RendererEnvironmentStorage::RaytracingSettings &rt_settings = raytracing->_get_viewport_state(p_render_data)->settings;
 	const bool path_traced = rt_settings.raytracing_rendering_mode == RSE::RAYTRACING_RENDERING_MODE_PATH_TRACED;
-	ERR_FAIL_COND_MSG(primary_surface_trace && path_traced, "Primary visibility T requires RTXDI/DDGI lighting mode.");
+	primary_surface_trace = rt_settings.raytracing_rendering_mode == RSE::RAYTRACING_RENDERING_MODE_HYBRID;
 	const bool raw_path_traced = path_traced && rt_settings.raytracing_denoiser == RSE::RAYTRACING_DENOISER_NONE;
 	ERR_FAIL_COND_MSG(raw_path_traced && (rb->get_internal_size() != rb->get_target_size() || RSE::scaling_3d_mode_type(rb->get_scaling_3d_mode()) == RSE::VIEWPORT_SCALING_3D_TYPE_TEMPORAL || rb->get_use_taa() || rb->get_frame_generation()), "Raw path-traced reference requires native resolution, no temporal upscaler, TAA or frame generation.");
 	if (rt_settings.raytracing_denoiser == RSE::RAYTRACING_DENOISER_DLSS_RR) {
@@ -2791,7 +2784,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 				if (!RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage()->is_ready(RID::from_uint64(surface->micro_geometry_task.asset), true)) {
 					return;
 				}
-				ERR_FAIL_COND_MSG(!surface->micro_geometry_rt_ready || !surface->micro_geometry_rt_element.in_list() || (surface->rtxdi_material_flags & GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_UNSUPPORTED), "Primary visibility T is ineligible: microgeometry material or CLAS is not ready for primary visibility.");
+				ERR_FAIL_COND_MSG(!surface->micro_geometry_rt_ready || !surface->micro_geometry_rt_element.in_list() || (surface->rtxdi_material_flags & GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_UNSUPPORTED), "Primary visibility tracing is ineligible: microgeometry material or CLAS is not ready for primary visibility.");
 			}
 			primary_surface_validation_generation = micro_geometry_generation;
 			primary_surface_validation_rt_generation = micro_geometry_rt_generation;
@@ -2815,7 +2808,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 					if (shader && shader->uses_alpha_pass()) {
 						continue;
 					}
-					ERR_FAIL_COND_MSG(!shader || instance_faded || instance->rt_procedural || shader->uses_vertex || shader->uses_position || shader->writes_modelview_or_projection || shader->uses_z_clip_scale || shader->uses_point_size || shader->writes_depth || (surface->rtxdi_material_flags & GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_UNSUPPORTED), "Primary visibility T is ineligible: scene geometry or material requires unsupported raster behavior.");
+					ERR_FAIL_COND_MSG(!shader || instance_faded || instance->rt_procedural || shader->uses_vertex || shader->uses_position || shader->writes_modelview_or_projection || shader->uses_z_clip_scale || shader->uses_point_size || shader->writes_depth || (surface->rtxdi_material_flags & GeometryInstanceSurfaceDataCache::RTXDI_MATERIAL_UNSUPPORTED), "Primary visibility tracing is ineligible: scene geometry or material requires unsupported raster behavior.");
 				}
 			}
 		}
@@ -3011,18 +3004,6 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		clear_color.a = p_render_data->transparent_bg ? 0.0f : 1.0f;
 		RD::get_singleton()->draw_list_begin(color_only_framebuffer, RD::DRAW_CLEAR_COLOR_0, Vector<Color>({ clear_color }));
 		RD::get_singleton()->draw_list_end();
-	}
-	if (!path_traced && !primary_surface_trace) {
-		RENDER_TIMESTAMP("RTXDI Surface");
-		RD::get_singleton()->draw_command_begin_label("RTXDI Surface");
-		Vector<Color> surface_clear;
-		for (uint32_t i = 0; i < 6; i++) {
-			surface_clear.push_back(Color(0, 0, 0, 0));
-		}
-		RenderListParameters render_list_params(render_list[RENDER_LIST_OPAQUE].elements.ptr(), render_list[RENDER_LIST_OPAQUE].element_info.ptr(), render_list[RENDER_LIST_OPAQUE].elements.size(), reverse_cull, PASS_MODE_RTXDI_SURFACE, true, p_render_data->directional_light_soft_shadows, rp_uniform_set, get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_WIREFRAME, Vector2(), p_render_data->scene_data->lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, 1, 0, base_specialization);
-		render_list_params.micro_geometry = render_list[RENDER_LIST_OPAQUE].last_micro_pass;
-		_render_list_with_draw_list(&render_list_params, color_framebuffer, RD::DRAW_CLEAR_ALL, surface_clear, 0.0f, 0u, p_render_data->render_region);
-		RD::get_singleton()->draw_command_end_label();
 	}
 	RenderRTXDISurfaceResources surface;
 	surface.samplers = samplers;
@@ -5991,18 +5972,6 @@ void RenderForwardClustered::_update_shader_quality_settings() {
 
 RenderForwardClustered::RenderForwardClustered() {
 	singleton = this;
-#ifdef DEBUG_ENABLED
-	const String visibility_mode = OS::get_singleton()->get_environment("GODOT_PRIMARY_VISIBILITY");
-	if (visibility_mode == "T") {
-		primary_visibility_mode = PRIMARY_VISIBILITY_TRACE;
-	} else if (visibility_mode == "H-R") {
-		primary_visibility_mode = PRIMARY_VISIBILITY_RASTER_TRACE;
-	} else if (visibility_mode == "H-T") {
-		primary_visibility_mode = PRIMARY_VISIBILITY_TRACE_RASTER;
-	} else if (!visibility_mode.is_empty() && visibility_mode != "R") {
-		primary_visibility_mode = PRIMARY_VISIBILITY_INVALID;
-	}
-#endif
 
 	/* SCENE SHADER */
 
