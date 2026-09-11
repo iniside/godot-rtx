@@ -7,6 +7,13 @@ succeeded on retry; the brief plan review passes at `3724291fba`.
 
 ## Context and decision
 
+Owner steering, 2026-09-11: defer path tracing and the primary-RT/hybrid
+experiments for now. Prioritize the existing stress scene's whole-GPU cost,
+targeting 8 ms if feasible at unchanged quality/camera. Step 2 is active;
+Steps 3-4 and further full-PT validation are deferred. Step 5 measurement
+discipline applies to raster optimization now, without requiring those deferred
+candidates. Step 1 source and its allocation fix are already landed.
+
 The owner requires Mega Geometry as the geometry foundation and allows NVIDIA
 extensions. Compare optimized raster visibility, primary visibility through
 RT/CLAS, and hybrid execution in either order. Choose from measured total frame
