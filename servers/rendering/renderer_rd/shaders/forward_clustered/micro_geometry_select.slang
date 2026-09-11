@@ -272,33 +272,110 @@ bool frustum_visible(SelectionTask p_task, MicroGeometryInstance p_instance, uin
 
 bool occluded(SelectionTask p_task, MicroGeometryInstance p_instance, uint p_multimesh, MicroGeometryCluster p_cluster, bool p_previous) {
 	uint statistic_offset = p_previous ? 4 : 16;
-	if ((parameters.flags & 4) == 0 || parameters.hzb_mips == 0) { add_statistic(statistic_offset + 2); return false; }
+	if ((parameters.flags & 4) == 0 || parameters.hzb_mips == 0 || parameters.hzb_width == 0 || parameters.hzb_height == 0) { add_statistic(statistic_offset + 2); return false; }
 	if ((p_task.flags & 18) != 0) { add_statistic(statistic_offset + 3); return false; }
 	float3 center;
 	float radius, nearest;
 	float2 low, high;
 	view_bounds(p_task, p_instance, p_multimesh, p_cluster.center, p_cluster.radius, p_previous, center, radius);
-	if (!projected_bounds(center, radius, p_previous, low, high, nearest)) { add_statistic(statistic_offset + 4); return false; }
-	if (any(low < 0) || any(high > 1)) { add_statistic(statistic_offset + 5); return false; }
+	if (!projected_bounds(center, radius, p_previous, low, high, nearest) || !all(isfinite(low)) || !all(isfinite(high)) || !isfinite(nearest)) { add_statistic(statistic_offset + 4); return false; }
+	if (p_previous && (any(low < 0) || any(high > 1))) { add_statistic(statistic_offset + 5); return false; }
+	low = max(low, float2(0));
+	high = min(high, float2(1));
+	if (any(low >= high)) { add_statistic(statistic_offset + 4); return false; }
 	float2 pixel_low = low * float2(parameters.hzb_width, parameters.hzb_height);
 	float2 pixel_high = high * float2(parameters.hzb_width, parameters.hzb_height);
-	uint level = min(uint(ceil(log2(max(1.0, max(pixel_high.x - pixel_low.x, pixel_high.y - pixel_low.y))))), parameters.hzb_mips - 1);
-	uint2 start = uint2(pixel_low) >> level;
-	uint2 finish = uint2(ceil(pixel_high)) >> level;
+	uint2 rectangle_low = uint2(floor(pixel_low));
+	uint2 rectangle_end = uint2(ceil(pixel_high));
+	if (any(rectangle_low >= rectangle_end)) { add_statistic(statistic_offset + 4); return false; }
+	uint2 rectangle_high = rectangle_end - 1;
+	uint2 extent = rectangle_end - rectangle_low;
+	uint root_level = min(uint(ceil(log2(float(max(extent.x, extent.y))))), parameters.hzb_mips - 1);
+	uint2 start = rectangle_low >> root_level;
+	uint2 finish = rectangle_high >> root_level;
 	uint width, height, levels;
-	hzb.GetDimensions(level, width, height, levels);
-	start = min(start, uint2(width, height) - 1);
-	finish = min(finish, uint2(width, height) - 1);
-	float depth = 1;
-	for (uint y = start.y; y <= finish.y; y++) {
-		for (uint x = start.x; x <= finish.x; x++) { depth = min(depth, hzb.Load(int3(x, y, level))); }
+	hzb.GetDimensions(root_level, width, height, levels);
+	if (any(finish >= uint2(width, height)) || any(finish - start > 1)) { add_statistic(statistic_offset + 4); return false; }
+	uint query_offset = p_previous ? 68 : 76;
+	uint2 node = start;
+	uint level = root_level;
+	uint fetches = 0;
+	uint boundary_descents = 0;
+	bool advance = false;
+	bool complete = false;
+	bool hidden = false;
+	bool zero_depth = false;
+	bool zero_padding = false;
+	uint cancellation_index = (p_previous ? parameters.previous_projection[15] : parameters.projection[15]) == 0.0 ? 10 : 14;
+	float cancellation_term = abs(p_previous ? parameters.previous_projection[cancellation_index] : parameters.projection[cancellation_index]);
+	float threshold = max(nearest, 0.0) + 32.0 * 1.1920929e-7 * (abs(nearest) + 2.0 * cancellation_term);
+	for (uint step = 0; step < 128; step++) {
+		if (advance) {
+			if (level == root_level) {
+				if (node.x < finish.x) {
+					node.x++;
+				} else if (node.y < finish.y) {
+					node = uint2(start.x, node.y + 1);
+				} else {
+					complete = true;
+					hidden = true;
+					break;
+				}
+			} else {
+				uint2 parent = node >> 1;
+				uint2 sibling_start = max(parent << 1, rectangle_low >> level);
+				uint2 sibling_finish = min((parent << 1) + 1, rectangle_high >> level);
+				if (node.x < sibling_finish.x) {
+					node.x++;
+				} else if (node.y < sibling_finish.y) {
+					node = uint2(sibling_start.x, node.y + 1);
+				} else {
+					node = parent;
+					level++;
+					continue;
+				}
+			}
+			advance = false;
+			continue;
+		}
+		if (fetches == 32) { break; }
+		float depth = hzb.Load(int3(node, level));
+		fetches++;
+		uint2 node_low = node << level;
+		uint2 node_end = (node + 1) << level;
+		if (depth == 0) {
+			zero_depth = true;
+			zero_padding = zero_padding || any(node_end > uint2(parameters.hzb_width, parameters.hzb_height));
+		}
+		if (threshold < depth) {
+			advance = true;
+		} else if (all(node_low >= rectangle_low) && all(node_end <= rectangle_end)) {
+			add_statistic(query_offset + (depth == 0 ? 2 : 3));
+			complete = true;
+			break;
+		} else if (level == 0) {
+			complete = true;
+			break;
+		} else {
+			level--;
+			node = max(node << 1, rectangle_low >> level);
+			boundary_descents++;
+		}
 	}
 	add_statistic(statistic_offset + 6);
-	if (depth == 0) {
+	if (zero_depth) {
 		add_statistic(statistic_offset + 7);
-		if ((parameters.flags & 128) != 0 && any(((finish + 1) << level) > uint2(parameters.hzb_width, parameters.hzb_height))) { add_statistic(p_previous ? 37 : 38); }
+		if (zero_padding) { add_statistic(p_previous ? 37 : 38); }
 	}
-	return max(nearest, 0.0) + 0.00001 < depth;
+	if (boundary_descents != 0) {
+		add_statistic(query_offset);
+		if (hidden) { add_statistic(query_offset + 1); }
+	}
+	if (!complete) { add_statistic(query_offset + 4); }
+	add_statistic(query_offset + 5, fetches);
+	if ((parameters.flags & 128) != 0) { InterlockedMax(statistics[query_offset + 6], fetches); }
+	add_statistic(query_offset + 7, boundary_descents);
+	return hidden;
 }
 
 void request_group(uint64_t p_asset, uint p_group) {
