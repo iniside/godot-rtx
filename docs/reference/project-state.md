@@ -1,5 +1,16 @@
 # Project State
 
+Editor camera motion tool (2026-09-11, `2eb86b14fc`):
+`misc/scripts/editor_camera_motion.py` drives the first native editor viewport
+through a bounded project-cache JSON command, using the existing camera
+controller and restoring the original camera on finish/cancel. Double build
+and brief source review pass. Native translation/rotation exercise completes:
+100.3FPS stationary,45.2 translating,40.8 rotating,24.8-26.9 combined; aggregate
+moving34.4FPS. Viewport CPU medians rise5.4 ->11.6-16.8ms and GPU p95 rises
+10.7 ->34.5-38.9ms. Camera restoration is exact and scene hash unchanged.
+No renderer stdout was captured, so absence of admission errors is not claimed.
+See [tool usage and results](../research/2026-09-11-1041-editor-camera-motion-status.md).
+
 Primary build decision (owner, 2026-09-11): `precision=double` is the main and
 target configuration. Default builds, launches and measurements use
 `bin/godot.windows.editor.double.x86_64.exe`; single-precision results below
