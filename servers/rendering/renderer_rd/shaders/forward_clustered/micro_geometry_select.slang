@@ -572,7 +572,7 @@ void main(uint3 id : SV_DispatchThreadID) {
 			float3 center;
 			float scale;
 			view_bounds(task, instance, source_multimesh, group.center, 1, false, center, scale);
-			float depth = (parameters.flags & 32) != 0 ? abs(center.z) : -center.z;
+			float depth = (parameters.flags & 32) != 0 ? length(center) : -center.z;
 			float distance = parameters.projection[15] != 0 ? 1 : max(0.00001, depth - group.radius * scale);
 			float error = group.error * scale * abs(parameters.projection[5]) * parameters.output_height * 0.5 / distance;
 			if ((parameters.flags & 128) != 0 && group.parent_count != 0 && parameters.projection[15] == 0) {

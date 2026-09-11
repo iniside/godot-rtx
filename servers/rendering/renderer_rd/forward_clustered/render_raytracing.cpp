@@ -2049,10 +2049,6 @@ bool RenderRaytracing::_prepare_micro_geometry(RTViewportState *p_state, const R
 	parameters.layer_mask = p_render_data->scene_data->camera_visible_layers;
 	parameters.error = p_state->settings.geometry_error;
 	parameters.offscreen_multiplier = p_state->settings.geometry_offscreen_multiplier;
-	if (owner->primary_surface_trace) {
-		parameters.error = MIN(parameters.error, MicroGeometrySelection::Parameters().error);
-		parameters.offscreen_multiplier = 1.0f;
-	}
 	parameters.output_height = p_render_data->render_buffers->get_target_size().y;
 	parameters.near_plane = p_render_data->scene_data->cam_projection.get_z_near();
 	Projection correction;
@@ -2539,7 +2535,7 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 			ERR_PRINT("Unable to publish a complete shared RT microgeometry cut.");
 		}
 	}
-	uint64_t transform_signature = _rt_scene_hash(&p_state->rt_origin, sizeof(p_state->rt_origin), build->input_signature);
+	uint64_t transform_signature = _rt_scene_hash(&p_state->rt_origin, sizeof(p_state->rt_origin), persistent_scene_generation);
 	auto prepare_signature = [&](uint32_t) {
 		for (uint32_t index = 0; index < blass.size(); index++) {
 			transform_signature = _rt_scene_hash(&blas_transforms[index], sizeof(Transform3D), transform_signature);
