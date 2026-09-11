@@ -16,7 +16,7 @@ struct MicroGeometryCluster {
 	uint payload_offset;
 	uint vertex_count;
 	uint triangle_count;
-	uint pad;
+	uint first_primitive;
 	float center[3];
 	float radius;
 	float error;
@@ -40,8 +40,14 @@ struct MicroGeometrySurface {
 	uint source_surface;
 	uint vertex_stride;
 	uint attribute_offsets[10];
+	uint attribute_formats[10];
 	uint source_vertex_count;
 	uint source_triangle_count;
+	float frame_center[3];
+	float frame_scale;
+	uint uv_mode[2];
+	float uv_min[4];
+	float uv_scale[4];
 };
 
 struct MicroGeometryNode {

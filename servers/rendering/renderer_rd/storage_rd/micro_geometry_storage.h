@@ -46,6 +46,7 @@ public:
 	static constexpr uint32_t PAGE_SIZE = MicroGeometryData::MAX_PAGE_SIZE;
 	static constexpr uint32_t DEFAULT_PAGE_COUNT = 16384;
 	static constexpr uint32_t MAX_IO_TASKS = 16;
+	static constexpr uint32_t STAGING_SIZE = MAX_IO_TASKS * PAGE_SIZE;
 
 	struct GPURequest {
 		uint64_t asset = 0;
@@ -72,7 +73,7 @@ public:
 		uint32_t payload_offset;
 		uint32_t vertex_count;
 		uint32_t triangle_count;
-		uint32_t pad;
+		uint32_t first_primitive;
 		float center[3];
 		float radius;
 		float error;
@@ -94,8 +95,14 @@ public:
 		uint32_t source_surface;
 		uint32_t vertex_stride;
 		uint32_t attribute_offsets[10];
+		uint32_t attribute_formats[10];
 		uint32_t source_vertex_count;
 		uint32_t source_triangle_count;
+		float frame_center[3];
+		float frame_scale;
+		uint32_t uv_mode[2];
+		float uv_min[4];
+		float uv_scale[4];
 	};
 	struct GPUNode {
 		uint32_t group;
@@ -150,6 +157,7 @@ public:
 		uint64_t clas_page_builds = 0;
 		uint64_t resident_clas = 0;
 		uint64_t raster_selection_bytes = 0;
+		uint64_t transcode_faults = 0;
 	};
 
 private:
@@ -218,6 +226,13 @@ private:
 		uint64_t opacity_indices = 0;
 	};
 	static_assert(sizeof(TriangleInfo) == 64);
+	struct ClusterTranscodeInfo {
+		uint32_t vertices = 0;
+		uint32_t indices = 0;
+		uint32_t vertex_ids = 0;
+		uint32_t disk_offset = 0;
+	};
+	static_assert(sizeof(ClusterTranscodeInfo) == 16);
 	struct ReadTask {
 		Ref<MicroGeometryData> source;
 		RID asset;
@@ -225,6 +240,7 @@ private:
 		WorkerThreadPool::TaskID task = WorkerThreadPool::INVALID_TASK_ID;
 		Vector<uint8_t> decoded;
 		LocalVector<TriangleInfo> triangle_infos;
+		LocalVector<ClusterTranscodeInfo> transcode_infos;
 		RD::ClusterBuildInput build_input;
 		uint32_t max_vertices_per_cluster = 0;
 		uint32_t max_triangles_per_cluster = 0;
@@ -255,6 +271,11 @@ private:
 	LocalVector<ReadTask *> tasks;
 	LocalVector<RetiredMetadata> retired_metadata;
 	RID pool;
+	RID staging;
+	RID transcode_faults;
+	LocalVector<uint64_t> staging_submissions;
+	bool transcode_faults_dirty = false;
+	bool transcode_faults_pending = false;
 	uint32_t page_count = DEFAULT_PAGE_COUNT;
 	uint64_t clock = 0;
 	uint64_t last_update_submission = 0;
@@ -269,8 +290,11 @@ private:
 	void _publish(Asset &r_asset);
 	void _unpublish_page(Asset &r_asset, uint32_t p_page);
 	uint32_t _allocate_slot();
+	uint32_t _allocate_staging_slot();
+	static void _faults_dispatch(const Vector<uint8_t> &p_bytes, uint64_t p_storage);
+	void _faults_received(const Vector<uint8_t> &p_bytes);
 	void _free_asset_buffers(Asset &r_asset);
-	bool _build_page_clas(Asset &r_asset, uint32_t p_page, ReadTask &r_task);
+	bool _build_page_clas(Asset &r_asset, uint32_t p_page, uint32_t p_staging_slot, ReadTask &r_task);
 
 public:
 	RID feedback_create(uint32_t p_capacity = 4096);
@@ -310,7 +334,7 @@ public:
 static_assert(sizeof(MicroGeometryStorage::GPUPage) == 16);
 static_assert(sizeof(MicroGeometryStorage::GPUCluster) == 64);
 static_assert(sizeof(MicroGeometryStorage::GPUGroup) == 48);
-static_assert(sizeof(MicroGeometryStorage::GPUSurface) == 64);
+static_assert(sizeof(MicroGeometryStorage::GPUSurface) == 160);
 static_assert(sizeof(MicroGeometryStorage::GPUNode) == 48);
 static_assert(sizeof(MicroGeometryStorage::GPUAsset) == 120);
 
