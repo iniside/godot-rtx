@@ -187,6 +187,7 @@ public:
 		uint64_t requested_bytes = 0;
 		uint64_t replacement_peak_bytes = 0;
 		uint64_t profile_frame = UINT64_MAX;
+		uint64_t last_used_frame = 0;
 		uint32_t resize_attempts = 0;
 		const char *allocation_status = "not_attempted";
 		Parameters data;

@@ -348,6 +348,7 @@ protected:
 		uint32_t levels = 0;
 		RSE::ViewportDebugDraw debug_mode = RSE::VIEWPORT_DEBUG_DRAW_DISABLED;
 	} micro_geometry_batches[PASS_MODE_MAX];
+	static constexpr uint64_t MICRO_GEOMETRY_PASS_RETENTION_FRAMES = 64;
 	LocalVector<MicroGeometrySelection::Pass *> micro_geometry_passes;
 	uint64_t micro_geometry_pass_frame = UINT64_MAX;
 	uint32_t micro_geometry_pass_cursor = 0;

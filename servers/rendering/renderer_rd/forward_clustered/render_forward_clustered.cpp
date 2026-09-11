@@ -818,6 +818,7 @@ RenderForwardClustered::MicroGeometryRasterPass *RenderForwardClustered::_prepar
 		parameters.unit_count = gpu->data.unit_count;
 		gpu->data = parameters;
 	}
+	(*retained)->last_used_frame = RSG::rasterizer->get_frame_number();
 	auto *pass = memnew(MicroGeometryRasterPass);
 	pass->gpu = *retained;
 	pass->owns_gpu = false;
@@ -2665,14 +2666,19 @@ bool RenderForwardClustered::_primary_surface_editor_helper(uint32_t p_layer_mas
 void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Color &p_default_bg_color) {
 	micro_geometry_scenario = p_render_data->scenario;
 	micro_geometry_visible_layers = p_render_data->scene_data->camera_visible_layers;
-	while (micro_geometry_passes.size() > micro_geometry_pass_cursor) {
-		if (micro_geometry_passes[micro_geometry_passes.size() - 1]) {
-			memdelete(micro_geometry_passes[micro_geometry_passes.size() - 1]);
+	const uint64_t micro_geometry_frame = RSG::rasterizer->get_frame_number();
+	for (uint32_t index = micro_geometry_passes.size(); index > 0; index--) {
+		MicroGeometrySelection::Pass *pass = micro_geometry_passes[index - 1];
+		if (pass && micro_geometry_frame - pass->last_used_frame <= MICRO_GEOMETRY_PASS_RETENTION_FRAMES) {
+			continue;
 		}
-		micro_geometry_passes.resize(micro_geometry_passes.size() - 1);
+		if (pass) {
+			memdelete(pass);
+		}
+		micro_geometry_passes.remove_at(index - 1);
 	}
 	micro_geometry_pass_cursor = 0;
-	micro_geometry_pass_frame = RSG::rasterizer->get_frame_number();
+	micro_geometry_pass_frame = micro_geometry_frame;
 	for (auto &batch : micro_geometry_batches) {
 		if (batch.generation != micro_geometry_generation) {
 			batch.sources.clear();
