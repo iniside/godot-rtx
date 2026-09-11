@@ -69,8 +69,11 @@ add bounded, profiler-enabled reporting through existing logging:
 - existing raster clusters/triangles, selected RT cuts, pages and CLAS counts.
 
 Split the ambiguous Raster Initial Draw marker into camera and shadow labels,
-and distinguish conventional drawing from microgeometry drawing where both
-share the interval. Preserve meaningful parent/child timing semantics.
+and report conventional element/draw counts alongside microgeometry counts
+where both share a draw list. RD forbids inserting timestamps after draws in an
+active draw list: do not split draw lists just for profiling, since that changes
+the measured workload. Label shared intervals as combined and preserve meaningful
+parent/child timing semantics.
 Counters must not create recurring per-instance CPU traversal. Attach any
 asynchronous callbacks to existing refcounted owners/epochs and preserve teardown.
 
@@ -152,3 +155,29 @@ step and commit owned changes. One brief final source review covers the final
 diff and relevant resource/history risks. No proof auditor or repeated review
 packages. Update the canonical status with measured outcomes and remaining
 limitations. Preserve all unrelated working files and the owner's editor state.
+
+## Measured continuation — bound scale without changing tolerance
+
+The owner resumed diagnosis and authorized additional counters, then identified
+excess detail on stationary distant meshes. Imported assets contain18/19 DAG
+levels and actual coarse geometry; live selection publishes fresh non-leaf cuts.
+The1px camera emits approximately171million triangles; a temporary camera-only
+4px sensitivity run emits23.6million and reduces camera raster26ms to3.9ms.
+The override is removed; it is not the repair.
+
+The existing `view_bounds` shader multiplies radius/error by the Frobenius norm,
+which gives sqrt(3) for an identity transform. The bounded continuation replaces
+that scale estimate in `micro_geometry_select.slang` with the square root of the
+smaller of trace(A^T A) and maximum absolute row sum(A^T A). Both upper-bound
+the largest eigenvalue; orthogonal columns make the latter exact for ordinary
+rotation/scale, while affine shear remains conservative. Apply the same helper
+to instance and MultiMesh transforms, preserving composition by multiplying
+bounds. No error threshold, DAG/import data, pass topology, CPU traversal,
+public API, shader layout or resource lifetime changes are involved.
+
+Delegate this numeric repair as one existing-shader step; build the ordinary
+editor and measure at restored1px, first with the same origin-hidden diagnostic
+view and then the original visible-origin state. Report triangle/culling counts,
+camera/shadow GPU costs and unprofiled FPS separately from the4px sensitivity
+probe. Retain sampled diagnostics, remove temporary quality changes, restore
+editor measurement fields, and record any remaining performance limitation.
