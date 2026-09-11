@@ -180,6 +180,16 @@ float3 transform_point(float transform[12], float3 p_point) {
 	return float3(dot(float3(transform[0], transform[1], transform[2]), p_point) + transform[3], dot(float3(transform[4], transform[5], transform[6]), p_point) + transform[7], dot(float3(transform[8], transform[9], transform[10]), p_point) + transform[11]);
 }
 
+float transform_scale_bound(float3 p_row0, float3 p_row1, float3 p_row2) {
+	float3 column0 = float3(p_row0.x, p_row1.x, p_row2.x);
+	float3 column1 = float3(p_row0.y, p_row1.y, p_row2.y);
+	float3 column2 = float3(p_row0.z, p_row1.z, p_row2.z);
+	float3 diagonal = float3(dot(column0, column0), dot(column1, column1), dot(column2, column2));
+	float3 off_diagonal = abs(float3(dot(column0, column1), dot(column0, column2), dot(column1, column2)));
+	float3 row_sums = diagonal + float3(off_diagonal.x + off_diagonal.y, off_diagonal.x + off_diagonal.z, off_diagonal.y + off_diagonal.z);
+	return sqrt(min(diagonal.x + diagonal.y + diagonal.z, max(row_sums.x, max(row_sums.y, row_sums.z)))) * 1.000001;
+}
+
 void view_bounds(SelectionTask p_task, MicroGeometryInstance p_instance, uint p_multimesh, float p_center[3], float p_radius, bool p_previous_camera, out float3 r_center, out float r_radius) {
 	float3 local = float3(p_center[0], p_center[1], p_center[2]);
 	float scale = 1;
@@ -190,7 +200,7 @@ void view_bounds(SelectionTask p_task, MicroGeometryInstance p_instance, uint p_
 		rows[1] = float3(data[4], data[5], data[6]);
 		rows[2] = (p_instance.flags & (1 << 13)) != 0 ? float3(0, 0, 1) : float3(data[8], data[9], data[10]);
 		local = float3(dot(rows[0], local) + data[3], dot(rows[1], local) + data[7], dot(rows[2], local) + ((p_instance.flags & (1 << 13)) != 0 ? 0 : data[11]));
-		scale = sqrt(dot(rows[0], rows[0]) + dot(rows[1], rows[1]) + dot(rows[2], rows[2]));
+		scale = transform_scale_bound(rows[0], rows[1], rows[2]);
 	}
 	float3 world;
 	if ((p_task.flags & 1) != 0) {
@@ -203,7 +213,7 @@ void view_bounds(SelectionTask p_task, MicroGeometryInstance p_instance, uint p_
 		float3 row1 = float3(p_instance.transform[4], p_instance.transform[5], p_instance.transform[6]);
 		float3 row2 = float3(p_instance.transform[8], p_instance.transform[9], p_instance.transform[10]);
 		world = float3(dot(row0, local), dot(row1, local), dot(row2, local));
-		scale *= sqrt(dot(row0, row0) + dot(row1, row1) + dot(row2, row2));
+		scale *= transform_scale_bound(row0, row1, row2);
 		for (uint axis = 0; axis < 3; axis++) {
 			world[axis] += (p_instance.transform[axis * 4 + 3] - (p_previous_camera ? parameters.previous_camera[axis] : parameters.camera[axis])) + (p_instance.origin_low[axis] - (p_previous_camera ? parameters.previous_camera_low[axis] : parameters.camera_low[axis]));
 		}
@@ -284,7 +294,10 @@ bool occluded(SelectionTask p_task, MicroGeometryInstance p_instance, uint p_mul
 		for (uint x = start.x; x <= finish.x; x++) { depth = min(depth, hzb.Load(int3(x, y, level))); }
 	}
 	add_statistic(statistic_offset + 6);
-	if (depth == 0) { add_statistic(statistic_offset + 7); }
+	if (depth == 0) {
+		add_statistic(statistic_offset + 7);
+		if ((parameters.flags & 128) != 0 && any(((finish + 1) << level) > uint2(parameters.hzb_width, parameters.hzb_height))) { add_statistic(p_previous ? 37 : 38); }
+	}
 	return max(nearest, 0.0) + 0.00001 < depth;
 }
 
@@ -406,6 +419,7 @@ void main(uint3 id : SV_DispatchThreadID) {
 			add_statistic(28, unit_states[index].candidate_count);
 			add_statistic(29, unit_states[index].committed_count);
 			add_statistic(31);
+			if ((parameters.flags & 128) != 0 && surfaces[uint(task.surface) - 1].force_finest != 0) { add_statistic(35); }
 			return;
 		}
 		MicroGeometryInstance instance = instances[uint(task.instance) - 1];
@@ -415,6 +429,19 @@ void main(uint3 id : SV_DispatchThreadID) {
 			float center[3];
 			for (uint axis = 0; axis < 3; axis++) { center[axis] = instance.aabb_position[axis] + instance.aabb_size[axis] * 0.5; }
 			float radius = length(float3(instance.aabb_size[0], instance.aabb_size[1], instance.aabb_size[2])) * 0.5;
+			if ((parameters.flags & 128) != 0) {
+				float3 view_center;
+				float view_radius;
+				view_bounds(task, instance, source_multimesh, center, radius, false, view_center, view_radius);
+				bool perspective = parameters.projection[15] == 0;
+				float distance = -view_center.z - view_radius;
+				float diameter = view_radius * abs(parameters.projection[5]) * parameters.output_height / (perspective ? max(0.00001, distance) : 1);
+				uint bucket = diameter <= 16 ? 0 : diameter <= 32 ? 1 : diameter <= 64 ? 2 : diameter <= 128 ? 3 : diameter <= 256 ? 4 : 5;
+				unit_states[index].padding[0] = bucket;
+				add_statistic(40 + bucket * 4);
+				if (perspective && distance <= parameters.near_plane) { add_statistic(64); }
+				if (perspective && distance <= 0.00001) { add_statistic(65); }
+			}
 			if (!frustum_visible(task, instance, source_multimesh, center, radius)) {
 				unit_states[index].committed_count = 0;
 				return;
@@ -482,6 +509,10 @@ void main(uint3 id : SV_DispatchThreadID) {
 			float depth = (parameters.flags & 32) != 0 ? abs(center.z) : -center.z;
 			float distance = parameters.projection[15] != 0 ? 1 : max(0.00001, depth - group.radius * scale);
 			float error = group.error * scale * abs(parameters.projection[5]) * parameters.output_height * 0.5 / distance;
+			if ((parameters.flags & 128) != 0 && group.parent_count != 0 && parameters.projection[15] == 0) {
+				if (depth - group.radius * scale <= parameters.near_plane) { add_statistic(66); }
+				if (depth - group.radius * scale <= 0.00001) { add_statistic(67); }
+			}
 			float target_error = parameters.error;
 			float instance_center[3];
 			for (uint axis = 0; axis < 3; axis++) { instance_center[axis] = instance.aabb_position[axis] + instance.aabb_size[axis] * 0.5; }
@@ -499,6 +530,10 @@ void main(uint3 id : SV_DispatchThreadID) {
 				parents_ready = parents_ready && ((((uint*)asset.group_states)[parent_id] & ready_mask) == ready_mask);
 			}
 			bool active = wanted && ready && parents_active;
+			if (wanted && !ready) { add_statistic(32); }
+			if (wanted && ready && !parents_active) { add_statistic(33); }
+			if (active && group.parent_count != 0) { add_statistic(34); }
+			if (!wanted) { add_statistic(39); }
 			sparse_states[slot].y = active ? 1 : 0;
 			bool request = wanted && !ready && parents_ready;
 			if (finest) {
@@ -585,6 +620,16 @@ void main(uint3 id : SV_DispatchThreadID) {
 	InterlockedAdd(statistics[1], cluster.triangle_count);
 	add_statistic(statistic_offset + 10);
 	add_statistic(statistic_offset + 11, cluster.triangle_count);
+	if ((parameters.flags & 128) != 0) {
+		uint bucket = unit_states[unit_index].padding[0];
+		add_statistic(41 + bucket * 4);
+		add_statistic(42 + bucket * 4, cluster.triangle_count);
+		if (cluster.refined_group == 0xffffffff) { add_statistic(43 + bucket * 4); }
+	}
+	if ((parameters.flags & 128) != 0 && cluster.refined_group != 0xffffffff) {
+		uint child_slot = find_group(unit, cluster.refined_group);
+		if (child_slot == 0xffffffff || sparse_states[child_slot].y == 0) { add_statistic(36); }
+	}
 	DrawCommand command;
 	command.index_count = cluster.triangle_count * 3;
 	command.instance_count = 1;

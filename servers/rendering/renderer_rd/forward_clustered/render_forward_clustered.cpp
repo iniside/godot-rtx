@@ -252,9 +252,17 @@ void RenderForwardClustered::RenderBufferDataForwardClustered::micro_geometry_st
 	if (p_profiled && p_bytes.size() >= MicroGeometrySelection::STATISTICS_BYTES && decode_uint32(p_bytes.ptr() + 8) != 0) {
 		auto statistic = [&](uint32_t p_index) { return decode_uint32(p_bytes.ptr() + p_index * 4); };
 		print_line(vformat("Microgeometry camera cut: frame=%d flags=%d candidate_clusters=%d committed_clusters=%d retained_units=%d valid_units=%d", p_data->micro_geometry_stats_submitted_frame, statistic(3), statistic(28), statistic(29), statistic(30), statistic(31)));
+		print_line(vformat("Microgeometry camera refinement: frame=%d wanted_not_ready_groups=%d wanted_ready_parents_inactive_groups=%d accepted_refinement_groups=%d threshold_stopped_groups=%d force_finest_units=%d emitted_coarse_inactive_child_clusters=%d", p_data->micro_geometry_stats_submitted_frame, statistic(32), statistic(33), statistic(34), statistic(39), statistic(35), statistic(36)));
+		print_line(vformat("Microgeometry camera projected bounds: frame=%d instance_near_plane_units=%d instance_epsilon_clamped_units=%d refinement_near_plane_groups=%d refinement_epsilon_clamped_groups=%d", p_data->micro_geometry_stats_submitted_frame, statistic(64), statistic(65), statistic(66), statistic(67)));
+		const char *diameter_buckets[] = { "0-16", "16-32", "32-64", "64-128", "128-256", "256+" };
+		for (uint32_t bucket = 0; bucket < 6; bucket++) {
+			const uint32_t offset = 40 + bucket * 4;
+			print_line(vformat("Microgeometry camera size bucket: frame=%d conservative_diameter_px=%s valid_units=%d emitted_clusters=%d emitted_triangles=%d emitted_leaf_clusters=%d", p_data->micro_geometry_stats_submitted_frame, diameter_buckets[bucket], statistic(offset), statistic(offset + 1), statistic(offset + 2), statistic(offset + 3)));
+		}
 		for (uint32_t phase = 0; phase < 2; phase++) {
 			const uint32_t offset = 4 + phase * 12;
 			print_line(vformat("Microgeometry camera occlusion: frame=%d phase=%s input_clusters=%d frustum_rejected=%d hzb_disabled=%d task_ineligible=%d projection_unsafe=%d outside_viewport=%d hzb_sampled=%d zero_depth=%d hzb_rejected=%d residency_rejected=%d emitted_clusters=%d emitted_triangles=%d", p_data->micro_geometry_stats_submitted_frame, phase == 0 ? "initial" : "recovery", statistic(offset), statistic(offset + 1), statistic(offset + 2), statistic(offset + 3), statistic(offset + 4), statistic(offset + 5), statistic(offset + 6), statistic(offset + 7), statistic(offset + 8), statistic(offset + 9), statistic(offset + 10), statistic(offset + 11)));
+			print_line(vformat("Microgeometry camera depth footprint: frame=%d phase=%s zero_depth_padding_overlap=%d zero_depth_interior=%d", p_data->micro_geometry_stats_submitted_frame, phase == 0 ? "initial" : "recovery", statistic(37 + phase), statistic(offset + 7) - statistic(37 + phase)));
 		}
 	}
 }
