@@ -1,6 +1,16 @@
 #ifndef MICRO_GEOMETRY_INC_SLANG
 #define MICRO_GEOMETRY_INC_SLANG
 
+#include "../oct_inc.slang"
+
+static const uint MICRO_GEOMETRY_FORMAT_POSITION_SNORM16 = 1;
+static const uint MICRO_GEOMETRY_FORMAT_NORMAL_OCTAHEDRAL8 = 2;
+static const uint MICRO_GEOMETRY_FORMAT_COLOR_UNORM8 = 3;
+static const uint MICRO_GEOMETRY_FORMAT_UV_UNORM16 = 4;
+static const uint MICRO_GEOMETRY_FORMAT_UV_HALF = 5;
+static const uint MICRO_GEOMETRY_FORMAT_CUSTOM = 6;
+static const uint MICRO_GEOMETRY_OFFSET_NONE = 0xffffffff;
+
 struct MicroGeometryPage {
 	uint slot;
 	uint generation;
@@ -171,20 +181,113 @@ uint micro_geometry_load_word(uint64_t p_address) {
 	return micro_geometry_load_byte(p_address) | (micro_geometry_load_byte(p_address + 1) << 8) | (micro_geometry_load_byte(p_address + 2) << 16) | (micro_geometry_load_byte(p_address + 3) << 24);
 }
 
-float4 micro_geometry_attribute(uint64_t p_vertex, MicroGeometrySurface p_surface, uint p_attribute, uint p_components, float4 p_default) {
+uint micro_geometry_attribute_size(MicroGeometrySurface p_surface, uint p_attribute) {
+	uint format = p_surface.attribute_formats[p_attribute];
+	if (format == MICRO_GEOMETRY_FORMAT_POSITION_SNORM16) {
+		return 6;
+	}
+	if (format == MICRO_GEOMETRY_FORMAT_NORMAL_OCTAHEDRAL8) {
+		return 2;
+	}
+	if (format == MICRO_GEOMETRY_FORMAT_COLOR_UNORM8 || format == MICRO_GEOMETRY_FORMAT_UV_UNORM16 || format == MICRO_GEOMETRY_FORMAT_UV_HALF) {
+		return 4;
+	}
+	if (format == MICRO_GEOMETRY_FORMAT_CUSTOM) {
+		uint custom = uint(p_surface.format >> (13 + (p_attribute - 6) * 3)) & 7;
+		return custom < 3 ? 4 : (custom == 3 ? 8 : (custom - 3) * 4);
+	}
+	return 0;
+}
+
+uint micro_geometry_index_offset(uint p_vertex_count, uint p_vertex_stride) {
+	return (p_vertex_count * p_vertex_stride + 3) & ~3u;
+}
+
+uint micro_geometry_vertex_id_offset(uint p_vertex_count, uint p_triangle_count, uint p_vertex_stride) {
+	return (micro_geometry_index_offset(p_vertex_count, p_vertex_stride) + p_triangle_count * 3 + 3) & ~3u;
+}
+
+bool micro_geometry_surface_valid(MicroGeometrySurface p_surface, uint p_payload_offset, uint p_vertex_count, uint p_triangle_count) {
+	if (p_surface.vertex_stride == 0 || (p_surface.vertex_stride & 3) != 0 || (p_payload_offset & 3) != 0) {
+		return false;
+	}
+	if (uint64_t(p_payload_offset) + micro_geometry_vertex_id_offset(p_vertex_count, p_triangle_count, p_surface.vertex_stride) + uint64_t(p_vertex_count) * 4 > 65536) {
+		return false;
+	}
+	if (p_surface.attribute_offsets[0] == MICRO_GEOMETRY_OFFSET_NONE || p_surface.attribute_formats[0] != MICRO_GEOMETRY_FORMAT_POSITION_SNORM16) {
+		return false;
+	}
+	for (uint attribute = 0; attribute < 10; attribute++) {
+		uint offset = p_surface.attribute_offsets[attribute];
+		if (offset != MICRO_GEOMETRY_OFFSET_NONE && uint64_t(offset) + micro_geometry_attribute_size(p_surface, attribute) > p_surface.vertex_stride) {
+			return false;
+		}
+	}
+	return true;
+}
+
+float3 micro_geometry_decode_position(uint64_t p_address) {
+	uint low = micro_geometry_load_word(p_address);
+	uint high = micro_geometry_load_word(p_address + 4);
+	int3 packed = int3(int(low << 16) >> 16, int(low) >> 16, int(high << 16) >> 16);
+	return max(float3(packed) / 32767.0, float3(-1.0));
+}
+
+float3 micro_geometry_decode_normal(uint64_t p_address) {
+	float2 encoded = float2(micro_geometry_load_byte(p_address), micro_geometry_load_byte(p_address + 1)) / 127.5 - 1.0;
+	return oct_to_vec3(encoded);
+}
+
+float2 micro_geometry_decode_uv(uint64_t p_address, MicroGeometrySurface p_surface, uint p_channel, uint p_format) {
+	uint packed = micro_geometry_load_word(p_address);
+	if (p_format == MICRO_GEOMETRY_FORMAT_UV_HALF) {
+		return float2(f16tof32(packed & 65535), f16tof32(packed >> 16));
+	}
+	uint slot = p_channel * 2;
+	float2 minimum = float2(p_surface.uv_min[slot], p_surface.uv_min[slot + 1]);
+	float2 scale = float2(p_surface.uv_scale[slot], p_surface.uv_scale[slot + 1]);
+	return minimum + float2(packed & 65535, packed >> 16) * scale / 65535.0;
+}
+
+float3 micro_geometry_frame_position(MicroGeometrySurface p_surface, float3 p_position) {
+	return float3(p_surface.frame_center[0], p_surface.frame_center[1], p_surface.frame_center[2]) + p_position * p_surface.frame_scale;
+}
+
+float4x4 micro_geometry_frame_matrix(MicroGeometrySurface p_surface) {
+	float scale = p_surface.frame_scale;
+	return float4x4(
+			float4(scale, 0.0, 0.0, p_surface.frame_center[0]),
+			float4(0.0, scale, 0.0, p_surface.frame_center[1]),
+			float4(0.0, 0.0, scale, p_surface.frame_center[2]),
+			float4(0.0, 0.0, 0.0, 1.0));
+}
+
+float4 micro_geometry_attribute(uint64_t p_vertex, MicroGeometrySurface p_surface, uint p_attribute, float4 p_default) {
 	uint offset = p_surface.attribute_offsets[p_attribute];
-	if (offset == 0xffffffff) {
+	if (offset == MICRO_GEOMETRY_OFFSET_NONE) {
 		return p_default;
 	}
-	for (uint component = 0; component < p_components; component++) {
-		p_default[component] = asfloat(micro_geometry_load_word(p_vertex + offset + component * 4));
+	uint64_t address = p_vertex + offset;
+	uint format = p_surface.attribute_formats[p_attribute];
+	if (format == MICRO_GEOMETRY_FORMAT_POSITION_SNORM16) {
+		return float4(micro_geometry_decode_position(address), p_default.w);
+	}
+	if (format == MICRO_GEOMETRY_FORMAT_NORMAL_OCTAHEDRAL8) {
+		return float4(micro_geometry_decode_normal(address), p_default.w);
+	}
+	if (format == MICRO_GEOMETRY_FORMAT_COLOR_UNORM8) {
+		uint packed = micro_geometry_load_word(address);
+		return float4(packed & 255, (packed >> 8) & 255, (packed >> 16) & 255, packed >> 24) / 255.0;
+	}
+	if (format == MICRO_GEOMETRY_FORMAT_UV_UNORM16 || format == MICRO_GEOMETRY_FORMAT_UV_HALF) {
+		return float4(micro_geometry_decode_uv(address, p_surface, p_attribute - 4, format), p_default.zw);
 	}
 	return p_default;
 }
 
 float4 micro_geometry_custom(uint64_t p_vertex, MicroGeometrySurface p_surface, uint p_channel) {
 	uint offset = p_surface.attribute_offsets[6 + p_channel];
-	if (offset == 0xffffffff) {
+	if (offset == MICRO_GEOMETRY_OFFSET_NONE) {
 		return float4(0.0);
 	}
 	uint format = uint(p_surface.format >> (13 + p_channel * 3)) & 7;

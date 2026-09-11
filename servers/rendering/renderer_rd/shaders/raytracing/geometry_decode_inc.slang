@@ -78,23 +78,11 @@ bool geometry_select_triangle(inout GeometryData geometry, int cluster_id, uint 
 	if ((page.ready & 1u) == 0u || page.slot == OFFSET_NONE) {
 		return false;
 	}
-	uint64_t index_offset = uint64_t(cluster.vertex_count) * surface.vertex_stride;
-	uint64_t vertex_ids_offset = index_offset + uint64_t(cluster.triangle_count) * 7u;
-	if (surface.vertex_stride == 0u || uint64_t(cluster.payload_offset) + vertex_ids_offset + uint64_t(cluster.vertex_count) * 4u > 65536u || surface.attribute_offsets[0] == OFFSET_NONE) {
+	if (!micro_geometry_surface_valid(surface, cluster.payload_offset, cluster.vertex_count, cluster.triangle_count)) {
 		return false;
 	}
-	for (uint attribute = 0u; attribute < 10u; attribute++) {
-		uint offset = surface.attribute_offsets[attribute];
-		uint components = attribute < 2u ? 3u : (attribute < 4u ? 4u : 2u);
-		uint bytes = components * 4u;
-		if (attribute >= 6u) {
-			uint format = uint(surface.format >> (13u + (attribute - 6u) * 3u)) & 7u;
-			bytes = format < 3u ? 4u : (format == 3u ? 8u : (format - 3u) * 4u);
-		}
-		if (offset != OFFSET_NONE && uint64_t(offset) + bytes > surface.vertex_stride) {
-			return false;
-		}
-	}
+	uint index_offset = micro_geometry_index_offset(cluster.vertex_count, surface.vertex_stride);
+	uint vertex_ids_offset = micro_geometry_vertex_id_offset(cluster.vertex_count, cluster.triangle_count, surface.vertex_stride);
 	uint64_t payload = geometry.micro_page_pool + uint64_t(page.slot) * 65536u + cluster.payload_offset;
 	geometry.vertex_address = payload;
 	geometry.attribute_address = payload;
@@ -115,7 +103,17 @@ bool geometry_resolve_primitive(GeometryData geometry, int cluster_id, uint prim
 	if (!geometry_select_triangle(geometry, cluster_id, primitive_id, local_primitive)) {
 		return false;
 	}
-	primitive = (geometry.flags & FLAG_CLUSTERED) != 0u ? micro_geometry_load_word(geometry.index_address + uint64_t(geometry.primitive_count) * 3u + uint64_t(local_primitive) * 4u) : local_primitive;
+	if ((geometry.flags & FLAG_CLUSTERED) == 0u) {
+		primitive = local_primitive;
+		return true;
+	}
+	MicroGeometryAsset asset = *((MicroGeometryAsset*)geometry.micro_asset_address);
+	uint cluster = cluster_id < 0 ? ((uint2*)geometry.micro_primitive_lookup)[primitive_id].x : uint(cluster_id);
+	uint first_primitive = ((MicroGeometryCluster*)asset.clusters)[cluster].first_primitive;
+	if (first_primitive == OFFSET_NONE) {
+		return false;
+	}
+	primitive = first_primitive + local_primitive;
 	return true;
 }
 
@@ -179,7 +177,7 @@ float3 geometry_fetch_position(GeometryData geometry, uint vertex) {
 		return float3(0.0);
 	}
 	if ((geometry.flags & FLAG_CLUSTERED) != 0u) {
-		return micro_geometry_attribute(geometry.vertex_address + uint64_t(vertex) * geometry.position_stride, geometry_micro_surface(geometry), 0u, 3u, float4(0.0)).xyz;
+		return micro_geometry_attribute(geometry.vertex_address + uint64_t(vertex) * geometry.position_stride, geometry_micro_surface(geometry), 0u, float4(0.0)).xyz;
 	}
 	if ((geometry.flags & FLAG_COMPRESSED) != 0u) {
 		uint* source = (uint*)(geometry.vertex_address + uint64_t(vertex) * 8u);
@@ -197,7 +195,7 @@ float3 geometry_fetch_position(GeometryData geometry, uint vertex) {
 
 float2 _geometry_fetch_vertex_uv(GeometryData geometry, uint vertex) {
 	if ((geometry.flags & FLAG_CLUSTERED) != 0u) {
-		return micro_geometry_attribute(geometry.attribute_address + uint64_t(vertex) * geometry.attribute_stride, geometry_micro_surface(geometry), 4u, 2u, float4(0.0)).xy;
+		return micro_geometry_attribute(geometry.attribute_address + uint64_t(vertex) * geometry.attribute_stride, geometry_micro_surface(geometry), 4u, float4(0.0)).xy;
 	}
 	bool compressed = (geometry.flags & FLAG_COMPRESSED) != 0u;
 	uint size = compressed ? 4u : 8u;
@@ -268,7 +266,7 @@ float4 geometry_fetch_color(GeometryData geometry, uint3 indices, float3 bary) {
 	if ((geometry.flags & FLAG_CLUSTERED) != 0u) {
 		float4 color = float4(0.0);
 		for (uint i = 0u; i < 3u; i++) {
-			color += micro_geometry_attribute(geometry.attribute_address + uint64_t(indices[i]) * geometry.attribute_stride, geometry_micro_surface(geometry), 3u, 4u, float4(1.0)) * bary[i];
+			color += micro_geometry_attribute(geometry.attribute_address + uint64_t(indices[i]) * geometry.attribute_stride, geometry_micro_surface(geometry), 3u, float4(1.0)) * bary[i];
 		}
 		return color * geometry_instance_color(geometry, indices.x);
 	}
@@ -292,7 +290,7 @@ float2 geometry_fetch_uv2(GeometryData geometry, uint3 indices, float3 bary) {
 	if ((geometry.flags & FLAG_CLUSTERED) != 0u) {
 		float2 uv = float2(0.0);
 		for (uint i = 0u; i < 3u; i++) {
-			uv += micro_geometry_attribute(geometry.attribute_address + uint64_t(indices[i]) * geometry.attribute_stride, geometry_micro_surface(geometry), 5u, 2u, float4(0.0)).xy * bary[i];
+			uv += micro_geometry_attribute(geometry.attribute_address + uint64_t(indices[i]) * geometry.attribute_stride, geometry_micro_surface(geometry), 5u, float4(0.0)).xy * bary[i];
 		}
 		return uv;
 	}
@@ -332,23 +330,31 @@ float4 geometry_fetch_custom(GeometryData geometry, uint vertex, uint channel) {
 	return value;
 }
 
-void geometry_fetch_tbn(GeometryData geometry, uint vertex, out float3 normal, out float3 tangent, out float3 binormal) {
+void geometry_fetch_tbn(GeometryData geometry, GeometryTriangle triangle, uint vertex, out float3 normal, out float3 tangent, out float3 binormal) {
 	normal = float3(0.0, 0.0, 1.0);
 	tangent = float3(1.0, 0.0, 0.0);
 	binormal = float3(0.0, 1.0, 0.0);
 	if ((geometry.flags & FLAG_CLUSTERED) != 0u) {
 		MicroGeometrySurface surface = geometry_micro_surface(geometry);
-		uint64_t address = geometry.vertex_address + uint64_t(vertex) * geometry.position_stride;
-		normal = micro_geometry_attribute(address, surface, 1u, 3u, float4(normal, 0.0)).xyz;
-		if (surface.attribute_offsets[2] != OFFSET_NONE) {
-			float4 tangent_value = micro_geometry_attribute(address, surface, 2u, 4u, float4(tangent, 1.0));
-			tangent = tangent_value.xyz;
-			binormal = normalize(cross(normal, tangent)) * tangent_value.w;
-		} else {
-			float3 axis = abs(normal.z) < 0.999 ? float3(0.0, 0.0, 1.0) : float3(0.0, 1.0, 0.0);
-			tangent = normalize(cross(axis, normal));
-			binormal = cross(normal, tangent);
+		normal = micro_geometry_attribute(geometry.vertex_address + uint64_t(vertex) * geometry.position_stride, surface, 1u, float4(normal, 0.0)).xyz;
+		float2 delta1 = triangle.uv1 - triangle.uv0;
+		float2 delta2 = triangle.uv2 - triangle.uv0;
+		float determinant = delta1.x * delta2.y - delta2.x * delta1.y;
+		if (surface.attribute_offsets[4] != OFFSET_NONE && abs(determinant) > 1e-12) {
+			float3 edge1 = triangle.p1 - triangle.p0;
+			float3 edge2 = triangle.p2 - triangle.p0;
+			float3 triangle_tangent = (edge1 * delta2.y - edge2 * delta1.y) / determinant;
+			float3 triangle_binormal = (edge2 * delta1.x - edge1 * delta2.x) / determinant;
+			float3 orthogonal = triangle_tangent - normal * dot(normal, triangle_tangent);
+			if (dot(orthogonal, orthogonal) > 1e-16) {
+				tangent = normalize(orthogonal);
+				binormal = normalize(cross(normal, tangent) * (dot(cross(normal, triangle_tangent), triangle_binormal) < 0.0 ? -1.0 : 1.0));
+				return;
+			}
 		}
+		float3 axis = abs(normal.z) < 0.999 ? float3(0.0, 0.0, 1.0) : float3(0.0, 1.0, 0.0);
+		tangent = normalize(cross(axis, normal));
+		binormal = cross(normal, tangent);
 		return;
 	}
 	if (geometry.normal_byte_offset == OFFSET_NONE || geometry.vertex_address == 0 || vertex >= geometry.vertex_count) {
@@ -398,7 +404,7 @@ bool geometry_decode_triangle(inout GeometryHitInput hit, out GeometryTriangle t
 	}
 	GeometryData geometry = hit.geometry;
 	if (geometry.vertex_address == 0 ||
-			((geometry.flags & FLAG_COMPRESSED) == 0u && (geometry.position_stride < 12u || (geometry.position_stride & 3u) != 0u))) {
+			((geometry.flags & (FLAG_COMPRESSED | FLAG_CLUSTERED)) == 0u && (geometry.position_stride < 12u || (geometry.position_stride & 3u) != 0u))) {
 		return false;
 	}
 	if (!geometry_triangle_indices(geometry, primitive, triangle.indices)) {

@@ -83,6 +83,14 @@ groupshared uint micro_geometry_invalid;
 static float3 micro_geometry_normal;
 static float3 micro_geometry_tangent;
 static float3 micro_geometry_binormal;
+#if defined(NORMAL_USED) || defined(TANGENT_USED)
+#define MICRO_GEOMETRY_TANGENT_SHARED_BYTES (128 * (16 + 8 + 4))
+groupshared float3 micro_geometry_shared_position[128];
+groupshared float2 micro_geometry_shared_uv[128];
+groupshared uint micro_geometry_shared_index[128];
+#else
+#define MICRO_GEOMETRY_TANGENT_SHARED_BYTES 0
+#endif
 
 bool micro_geometry_prepare_cluster(uint p_selected) {
 	uint count, stride;
@@ -123,24 +131,7 @@ bool micro_geometry_prepare_cluster(uint p_selected) {
 	if (surface.source_surface != surface_record.source_surface || (page.ready & 1) == 0 || page.slot == 0xffffffff || page.generation != micro_geometry_selection.page_generation || micro_geometry_parameters.page_pool == 0) {
 		return false;
 	}
-	uint64_t index_offset = uint64_t(cluster.vertex_count) * surface.vertex_stride;
-	uint64_t vertex_ids_offset = index_offset + uint64_t(cluster.triangle_count) * 7;
-	if (surface.vertex_stride == 0 || uint64_t(cluster.payload_offset) + vertex_ids_offset + uint64_t(cluster.vertex_count) * 4 > 65536) {
-		return false;
-	}
-	for (uint attribute = 0; attribute < 10; attribute++) {
-		uint offset = surface.attribute_offsets[attribute];
-		uint components = attribute < 2 ? 3 : (attribute < 4 ? 4 : 2);
-		uint bytes = components * 4;
-		if (attribute >= 6) {
-			uint format = uint(surface.format >> (13 + (attribute - 6) * 3)) & 7;
-			bytes = format < 3 ? 4 : (format == 3 ? 8 : (format - 3) * 4);
-		}
-		if (offset != 0xffffffff && uint64_t(offset) + bytes > surface.vertex_stride) {
-			return false;
-		}
-	}
-	if (surface.attribute_offsets[0] == 0xffffffff) {
+	if (!micro_geometry_surface_valid(surface, cluster.payload_offset, cluster.vertex_count, cluster.triangle_count)) {
 		return false;
 	}
 	uint64_t payload = micro_geometry_parameters.page_pool + uint64_t(page.slot) * 65536 + cluster.payload_offset;
@@ -158,7 +149,7 @@ void micro_geometry_pull_vertex(uint p_local_vertex) {
 	MicroGeometrySurface surface = micro_geometry_surface;
 	instance_index_builtin = micro_geometry_selection.multimesh_instance;
 	uint64_t vertex = micro_geometry_payload + uint64_t(p_local_vertex) * surface.vertex_stride;
-	vertex_angle_attrib = micro_geometry_attribute(vertex, surface, 0, 3, float4(0.0));
+	vertex_angle_attrib = float4(micro_geometry_frame_position(surface, micro_geometry_attribute(vertex, surface, 0, float4(0.0)).xyz), 0.0);
 #if defined(NORMAL_USED) || defined(TANGENT_USED)
 	axis_tangent_attrib = float4(0.0);
 #endif
@@ -168,18 +159,15 @@ void micro_geometry_pull_vertex(uint p_local_vertex) {
 	previous_normal_attrib = float4(0.0);
 #endif
 #endif
-	micro_geometry_normal = micro_geometry_attribute(vertex, surface, 1, 3, float4(0.0, 0.0, 1.0, 0.0)).xyz;
-	float4 tangent = micro_geometry_attribute(vertex, surface, 2, 4, float4(1.0, 0.0, 0.0, 1.0));
-	micro_geometry_tangent = tangent.xyz;
-	micro_geometry_binormal = normalize(cross(micro_geometry_normal, micro_geometry_tangent) * tangent.w);
+	micro_geometry_normal = micro_geometry_attribute(vertex, surface, 1, float4(0.0, 0.0, 1.0, 0.0)).xyz;
 #ifdef COLOR_USED
-	color_attrib = micro_geometry_attribute(vertex, surface, 3, 4, float4(1.0));
+	color_attrib = micro_geometry_attribute(vertex, surface, 3, float4(1.0));
 #endif
 #ifdef UV_USED
-	uv_attrib = micro_geometry_attribute(vertex, surface, 4, 2, float4(0.0)).xy;
+	uv_attrib = micro_geometry_attribute(vertex, surface, 4, float4(0.0)).xy;
 #endif
 #if defined(UV2_USED) || defined(USE_LIGHTMAP) || defined(MODE_RENDER_MATERIAL)
-	uv2_attrib = micro_geometry_attribute(vertex, surface, 5, 2, float4(0.0)).xy;
+	uv2_attrib = micro_geometry_attribute(vertex, surface, 5, float4(0.0)).xy;
 #endif
 #ifdef CUSTOM0_USED
 	custom0_attrib = micro_geometry_custom(vertex, surface, 0);
@@ -194,6 +182,46 @@ void micro_geometry_pull_vertex(uint p_local_vertex) {
 	custom3_attrib = micro_geometry_custom(vertex, surface, 3);
 #endif
 }
+
+#if defined(NORMAL_USED) || defined(TANGENT_USED)
+float2 micro_geometry_pull_uv(uint p_local_vertex) {
+	return micro_geometry_attribute(micro_geometry_payload + uint64_t(p_local_vertex) * micro_geometry_surface.vertex_stride, micro_geometry_surface, 4, float4(0.0)).xy;
+}
+
+void micro_geometry_resolve_tangent(uint p_local_vertex) {
+	float3 normal = micro_geometry_normal;
+	float3 tangent_sum = float3(0.0);
+	float3 binormal_sum = float3(0.0);
+	if (micro_geometry_surface.attribute_offsets[4] != MICRO_GEOMETRY_OFFSET_NONE) {
+		for (uint index = 0; index < micro_geometry_triangle_count; index++) {
+			uint packed = micro_geometry_shared_index[index];
+			uint3 corners = uint3(packed & 255, (packed >> 8) & 255, (packed >> 16) & 255);
+			if (!any(corners == p_local_vertex)) {
+				continue;
+			}
+			float3 edge1 = micro_geometry_shared_position[corners.y] - micro_geometry_shared_position[corners.x];
+			float3 edge2 = micro_geometry_shared_position[corners.z] - micro_geometry_shared_position[corners.x];
+			float2 delta1 = micro_geometry_shared_uv[corners.y] - micro_geometry_shared_uv[corners.x];
+			float2 delta2 = micro_geometry_shared_uv[corners.z] - micro_geometry_shared_uv[corners.x];
+			float determinant = delta1.x * delta2.y - delta2.x * delta1.y;
+			if (abs(determinant) < 1e-12) {
+				continue;
+			}
+			tangent_sum += (edge1 * delta2.y - edge2 * delta1.y) / determinant;
+			binormal_sum += (edge2 * delta1.x - edge1 * delta2.x) / determinant;
+		}
+	}
+	float3 orthogonal = tangent_sum - normal * dot(normal, tangent_sum);
+	if (dot(orthogonal, orthogonal) > 1e-16) {
+		micro_geometry_tangent = normalize(orthogonal);
+		micro_geometry_binormal = normalize(cross(normal, micro_geometry_tangent) * (dot(cross(normal, tangent_sum), binormal_sum) < 0.0 ? -1.0 : 1.0));
+	} else {
+		float3 axis = abs(normal.z) < 0.999 ? float3(0.0, 0.0, 1.0) : float3(0.0, 1.0, 0.0);
+		micro_geometry_tangent = normalize(cross(axis, normal));
+		micro_geometry_binormal = cross(normal, micro_geometry_tangent);
+	}
+}
+#endif
 #endif
 
 void axis_angle_to_tbn(float3 axis, float angle, out float3 tangent, out float3 binormal, out float3 normal) {
@@ -1059,7 +1087,7 @@ VertexOutput evaluate_vertex(VertexInput stage_input) {
 void main(uint3 group_id : SV_GroupID, uint lane : SV_GroupIndex,
 		out vertices VertexOutput output_vertices[128], out indices uint3 output_triangles[128]) {
 	static_assert(sizeof(VertexOutput) <= MICRO_GEOMETRY_OUTPUT_STRIDE_LIMIT, "Microgeometry material exceeds mesh output component or memory limits.");
-	static_assert(sizeof(MicroGeometrySelectedCluster) + sizeof(MicroGeometryInstance) + sizeof(MicroGeometrySurface) + 32 <= MICRO_GEOMETRY_SHARED_MEMORY_LIMIT, "Microgeometry context exceeds mesh shared memory limit.");
+	static_assert(sizeof(MicroGeometrySelectedCluster) + sizeof(MicroGeometryInstance) + sizeof(MicroGeometrySurface) + 32 + MICRO_GEOMETRY_TANGENT_SHARED_BYTES <= MICRO_GEOMETRY_SHARED_MEMORY_LIMIT, "Microgeometry context exceeds mesh shared memory limit.");
 	uint cluster_index = group_id.x + group_id.y * micro_geometry_parameters.dispatch_width;
 	uint bin = draw_call.micro_geometry_bin;
 	uint selected_index = draw_call.instance_index + cluster_index;
@@ -1078,9 +1106,8 @@ void main(uint3 group_id : SV_GroupID, uint lane : SV_GroupIndex,
 	uint source_vertex = 0;
 	uint3 triangle = uint3(0);
 	if (micro_geometry_invalid == 0) {
-		uint64_t index_address = micro_geometry_payload + uint64_t(micro_geometry_vertex_count) * micro_geometry_surface.vertex_stride;
-		uint64_t triangle_ids_address = index_address + micro_geometry_triangle_count * 3;
-		uint64_t vertex_ids_address = triangle_ids_address + micro_geometry_triangle_count * 4;
+		uint64_t index_address = micro_geometry_payload + micro_geometry_index_offset(micro_geometry_vertex_count, micro_geometry_surface.vertex_stride);
+		uint64_t vertex_ids_address = micro_geometry_payload + micro_geometry_vertex_id_offset(micro_geometry_vertex_count, micro_geometry_triangle_count, micro_geometry_surface.vertex_stride);
 		bool valid = true;
 		if (lane < micro_geometry_vertex_count) {
 			source_vertex = micro_geometry_load_word(vertex_ids_address + lane * 4);
@@ -1108,6 +1135,22 @@ void main(uint3 group_id : SV_GroupID, uint lane : SV_GroupIndex,
 	}
 	if (lane < micro_geometry_vertex_count) {
 		micro_geometry_pull_vertex(lane);
+#if defined(NORMAL_USED) || defined(TANGENT_USED)
+		micro_geometry_shared_position[lane] = vertex_angle_attrib.xyz;
+		micro_geometry_shared_uv[lane] = micro_geometry_pull_uv(lane);
+#endif
+	}
+#if defined(NORMAL_USED) || defined(TANGENT_USED)
+	if (lane < micro_geometry_triangle_count) {
+		micro_geometry_shared_index[lane] = triangle.x | (triangle.y << 8) | (triangle.z << 16);
+	}
+	GroupMemoryBarrierWithGroupSync();
+	if (lane < micro_geometry_vertex_count) {
+		micro_geometry_resolve_tangent(lane);
+	}
+	GroupMemoryBarrierWithGroupSync();
+#endif
+	if (lane < micro_geometry_vertex_count) {
 		VertexInput input = (VertexInput)0;
 		input.vertex_index = source_vertex;
 		input.instance_index = selected_index;

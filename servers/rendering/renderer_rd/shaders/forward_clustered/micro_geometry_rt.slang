@@ -497,10 +497,11 @@ void main(uint3 group_id : SV_GroupID, uint lane : SV_GroupIndex) {
 			}
 			motion_indices[geometry] = int(task.motion_base + source_ordinal);
 			output.custom_index_mask = geometry | ((task.instance_mask & 255) << 24);
+			float4x4 frame = micro_geometry_frame_matrix(source);
 			float4x4 multimesh = micro_rt_multimesh_transform(instance, source_ordinal, false);
-			micro_rt_transform(instance, multimesh, false, output.transform);
+			micro_rt_transform(instance, mul(multimesh, frame), false, output.transform);
 			MicroRTMotion previous;
-			micro_rt_transform(instance, micro_rt_multimesh_transform(instance, source_ordinal, true), true, previous.previous_transform);
+			micro_rt_transform(instance, mul(micro_rt_multimesh_transform(instance, source_ordinal, true), frame), true, previous.previous_transform);
 			motion[task.motion_base + source_ordinal] = previous;
 			uint flags = task.instance_flags;
 			if (determinant((float3x3)multimesh) < 0) { flags ^= 2; }

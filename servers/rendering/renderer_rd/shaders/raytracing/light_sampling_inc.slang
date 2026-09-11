@@ -32,7 +32,7 @@ float4x4 light_decode_light_transform(RTLightData light) {
 			if (light._pad0.x != 0u) {
 				geometry.multimesh_offset = geometry.micro_multimesh_previous_offset;
 			}
-			transform = mul(transform, geometry_multimesh_transform(geometry, 0u));
+			transform = mul(mul(transform, geometry_multimesh_transform(geometry, 0u)), micro_geometry_frame_matrix(geometry_micro_surface(geometry)));
 		}
 	}
 	return transform;

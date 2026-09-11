@@ -344,7 +344,7 @@ void rt_initialize_vertex(GeometryHitInput hit, GeometryTriangle triangle, uint 
 	VERTEX_INDEX = geometry_source_vertex_index(hit.geometry, local_vertex);
 	geometry_fetch_bones(hit.geometry, local_vertex, bone_attrib, weight_attrib);
 	vertex = geometry_fetch_position(hit.geometry, local_vertex);
-	geometry_fetch_tbn(hit.geometry, local_vertex, normal_highp, tangent, binormal);
+	geometry_fetch_tbn(hit.geometry, triangle, local_vertex, normal_highp, tangent, binormal);
 	float3 single_bary = float3(index == 0u ? 1.0 : 0.0, index == 1u ? 1.0 : 0.0, index == 2u ? 1.0 : 0.0);
 	uv_interp = geometry_fetch_uv(hit.geometry, triangle.indices, single_bary);
 	uv2_interp = geometry_fetch_uv2(hit.geometry, triangle.indices, single_bary);
@@ -365,7 +365,7 @@ void rt_initialize_vertex(GeometryHitInput hit, GeometryTriangle triangle, uint 
 		}
 		VERTEX_INDEX %= source_geometry.vertex_count;
 		vertex = geometry_fetch_position(source_geometry, VERTEX_INDEX);
-		geometry_fetch_tbn(source_geometry, VERTEX_INDEX, normal_highp, tangent, binormal);
+		geometry_fetch_tbn(source_geometry, triangle, VERTEX_INDEX, normal_highp, tangent, binormal);
 	}
 	roughness_highp = 1.0;
 	point_size = 1.0;
