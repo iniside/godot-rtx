@@ -28,7 +28,7 @@ struct MicroGeometrySelectedCluster {
 struct MicroGeometryRasterParameters {
 	uint64_t page_pool = 0;
 	uint32_t selected_cluster_color = 0;
-	uint32_t pad = 0;
+	uint32_t dispatch_width = 1;
 };
 
 static_assert(sizeof(MicroGeometrySelectedCluster) == 64);
@@ -164,7 +164,7 @@ public:
 		RID validity;
 		RID counts;
 		RID initial_counts;
-		RID commands;
+		RID dispatch_arguments;
 		RID selected;
 		RID native_instances;
 		RID raster_parameters;
@@ -202,7 +202,7 @@ public:
 		~DepthPyramid();
 	};
 	static constexpr uint64_t MAX_PASS_BYTES = 512 * 1024 * 1024;
-	static constexpr uint32_t STATISTICS_BYTES = 336;
+	static constexpr uint32_t STATISTICS_BYTES = 340;
 	Pass *create(const Vector<Task> &p_tasks, uint32_t p_bin_count, const Parameters &p_parameters, uint32_t p_levels, uint32_t p_native_stride, RID p_instances, RID p_surfaces, const Vector<RID> &p_dependencies);
 	bool needs_retry(Pass *p_pass) const;
 	void select(Pass *p_pass, RID p_hzb);

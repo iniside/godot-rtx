@@ -81,12 +81,10 @@ struct RasterInstance {
 	float model_precision[4];
 	float previous_model_precision[4];
 };
-struct DrawCommand {
-	uint index_count;
-	uint instance_count;
-	uint first_index;
-	int vertex_offset;
-	uint first_instance;
+struct MeshDispatchArguments {
+	uint x;
+	uint y;
+	uint z;
 };
 struct PushConstant {
 	uint mode;
@@ -105,7 +103,7 @@ struct PushConstant {
 [[vk::binding(8, 0)]] RWStructuredBuffer<uint> counts;
 [[vk::binding(9, 0)]] RWStructuredBuffer<uint> initial_counts;
 [[vk::binding(10, 0)]] RWStructuredBuffer<SelectionState> unit_states;
-[[vk::binding(11, 0)]] RWStructuredBuffer<DrawCommand> commands;
+[[vk::binding(11, 0)]] RWStructuredBuffer<MeshDispatchArguments> dispatch_arguments;
 [[vk::binding(12, 0)]] RWStructuredBuffer<MicroGeometrySelectedCluster> selected;
 [[vk::binding(13, 0)]] RWStructuredBuffer<RasterInstance> raster_instances;
 [[vk::binding(14, 0)]] RWByteAddressBuffer requests;
@@ -398,22 +396,13 @@ void main(uint3 id : SV_DispatchThreadID) {
 		return;
 	}
 	if (push.mode == 13) {
-		uint bin_index = 0;
-		for (uint bin = 1; bin < parameters.bin_count; bin++) {
-			if (bins[bin].offset <= index) { bin_index = bin; }
-		}
-		SelectionBin bin = bins[bin_index];
-		if (index < bin.offset || index - bin.offset >= min(counts[bin_index], bin.capacity)) { return; }
-		MicroGeometrySelectedCluster record = selected[index];
-		MicroGeometryAsset asset = *((MicroGeometryAsset*)record.asset_address);
-		MicroGeometryCluster cluster = ((MicroGeometryCluster*)asset.clusters)[record.cluster];
-		DrawCommand command;
-		command.index_count = cluster.triangle_count * 3;
-		command.instance_count = 1;
-		command.first_index = 0;
-		command.vertex_offset = 0;
-		command.first_instance = index;
-		commands[index] = command;
+		if (index >= parameters.bin_count) { return; }
+		uint count = min(counts[index], bins[index].capacity);
+		MeshDispatchArguments arguments;
+		arguments.x = min(count, push.level);
+		arguments.y = (count + push.level - 1) / push.level;
+		arguments.z = 1;
+		dispatch_arguments[index] = arguments;
 		return;
 	}
 	if (push.mode == 0) {
@@ -697,6 +686,7 @@ void main(uint3 id : SV_DispatchThreadID) {
 	InterlockedAdd(statistics[1], cluster.triangle_count);
 	add_statistic(statistic_offset + 10);
 	add_statistic(statistic_offset + 11, cluster.triangle_count);
+	add_statistic(84, cluster.vertex_count);
 	if ((parameters.flags & 128) != 0) {
 		uint bucket = unit_states[unit_index].padding[0];
 		add_statistic(41 + bucket * 4);
@@ -707,11 +697,5 @@ void main(uint3 id : SV_DispatchThreadID) {
 		uint child_slot = find_group(unit, cluster.refined_group);
 		if (child_slot == 0xffffffff || sparse_states[child_slot].y == 0) { add_statistic(36); }
 	}
-	DrawCommand command;
-	command.index_count = cluster.triangle_count * 3;
-	command.instance_count = 1;
-	command.first_index = 0;
-	command.vertex_offset = 0;
-	command.first_instance = selected_offset;
-	commands[bins[task.bin].offset + destination] = command;
+
 }

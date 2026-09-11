@@ -29,8 +29,13 @@
 struct DrawCall {
 	uint instance_index;
 	uint uv_offset;
+#ifdef MICRO_GEOMETRY_RASTER
+	uint micro_geometry_bin;
+	uint micro_geometry_recovery;
+#else
 	uint multimesh_motion_vectors_current_offset;
 	uint multimesh_motion_vectors_previous_offset;
+#endif
 #ifdef UBERSHADER
 	uint sc_packed_0;
 	uint sc_packed_1;
@@ -205,6 +210,8 @@ struct InstanceData {
 [[vk::binding(2, 4)]] StructuredBuffer<MicroGeometryInstanceSurface> micro_geometry_surfaces;
 [[vk::binding(3, 4)]] ConstantBuffer<MicroGeometryRasterParameters> micro_geometry_parameters;
 [[vk::binding(4, 4)]] StructuredBuffer<InstanceData> instances;
+[[vk::binding(5, 4)]] StructuredBuffer<uint> micro_geometry_counts;
+[[vk::binding(6, 4)]] StructuredBuffer<uint> micro_geometry_initial_counts;
 #else
 [[vk::binding(2, 1)]] StructuredBuffer<InstanceData> instances;
 #endif

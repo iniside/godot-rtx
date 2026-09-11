@@ -675,6 +675,7 @@ void SceneShaderForwardClustered::ShaderData::_clear_vertex_input_mask_cache() {
 }
 
 RID SceneShaderForwardClustered::ShaderData::get_shader_variant(PipelineVersion p_pipeline_version, bool p_ubershader, bool p_micro_geometry) const {
+	ERR_FAIL_COND_V_MSG(p_micro_geometry && !SceneShaderForwardClustered::singleton->micro_geometry_mesh_supported, RID(), "Microgeometry mesh raster is unsupported on this device.");
 	return _get_shader_variant(_get_shader_version(p_pipeline_version, p_ubershader, p_micro_geometry));
 }
 
@@ -793,23 +794,36 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 
 	emulate_point_size = !RD::get_singleton()->has_feature(RD::SUPPORTS_POINT_SIZE);
 
+	const RD::MeshShaderLimits mesh_limits = RD::get_singleton()->mesh_shader_get_limits();
+	micro_geometry_mesh_supported = RD::get_singleton()->mesh_shader_is_supported() && mesh_limits.max_workgroup_size[0] >= 128 && mesh_limits.max_workgroup_size[1] >= 1 && mesh_limits.max_workgroup_size[2] >= 1 && mesh_limits.max_workgroup_invocations >= 128 && mesh_limits.max_output_vertices >= 128 && mesh_limits.max_output_primitives >= 128 && mesh_limits.max_workgroup_count[0] != 0 && mesh_limits.max_workgroup_count[1] != 0 && mesh_limits.max_workgroup_count[2] != 0 && mesh_limits.max_workgroup_total_count != 0 && mesh_limits.output_per_vertex_granularity != 0 && mesh_limits.max_output_memory_size != 0 && mesh_limits.max_output_components != 0 && mesh_limits.max_shared_memory_size >= 1024;
+	if (!micro_geometry_mesh_supported) {
+		WARN_PRINT("Microgeometry raster is unsupported: mesh shaders with 128 vertices, primitives and invocations are required.");
+	} else {
+		print_verbose(vformat("Microgeometry mesh shader limits: groups=%dx%dx%d total=%d local=%dx%dx%d invocations=%d vertices=%d primitives=%d components=%d output_bytes=%d shared_bytes=%d vertex_granularity=%d primitive_granularity=%d", mesh_limits.max_workgroup_count[0], mesh_limits.max_workgroup_count[1], mesh_limits.max_workgroup_count[2], mesh_limits.max_workgroup_total_count, mesh_limits.max_workgroup_size[0], mesh_limits.max_workgroup_size[1], mesh_limits.max_workgroup_size[2], mesh_limits.max_workgroup_invocations, mesh_limits.max_output_vertices, mesh_limits.max_output_primitives, mesh_limits.max_output_components, mesh_limits.max_output_memory_size, mesh_limits.max_shared_memory_size, mesh_limits.output_per_vertex_granularity, mesh_limits.output_per_primitive_granularity));
+	}
+
 	{
 		Vector<ShaderRD::VariantDefine> shader_versions;
-		for (uint32_t variant = 0; variant < 4; variant++) {
+		for (uint32_t variant = 0; variant < (micro_geometry_mesh_supported ? 4u : 2u); variant++) {
+			RD::ShaderStage raster_stage = (variant & 2) ? RD::SHADER_STAGE_MESH : RD::SHADER_STAGE_VERTEX;
 			String base_define = (variant & 1) ? "\n#define UBERSHADER\n" : "";
 			if (variant & 2) {
 				base_define += "\n#define MICRO_GEOMETRY_RASTER\n";
+				const uint32_t padded_vertices = ((128u + mesh_limits.output_per_vertex_granularity - 1) / mesh_limits.output_per_vertex_granularity) * mesh_limits.output_per_vertex_granularity;
+				const uint32_t output_stride = MIN(mesh_limits.max_output_components * 4, mesh_limits.max_output_memory_size / padded_vertices);
+				base_define += "#define MICRO_GEOMETRY_OUTPUT_STRIDE_LIMIT " + uitos(output_stride) + "\n";
+				base_define += "#define MICRO_GEOMETRY_SHARED_MEMORY_LIMIT " + uitos(mesh_limits.max_shared_memory_size) + "\n";
 			}
-			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_BASE, base_define + "\n#define MODE_RENDER_DEPTH\n", true)); // SHADER_VERSION_DEPTH_PASS
-			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_BASE, base_define + "\n#define MODE_RENDER_DEPTH\n#define MODE_DUAL_PARABOLOID\n", true)); // SHADER_VERSION_DEPTH_PASS_DP
-			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_BASE, base_define + "\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_NORMAL_ROUGHNESS\n", true)); // SHADER_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS
-			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_ADVANCED, base_define + "\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_NORMAL_ROUGHNESS\n#define MODE_RENDER_VOXEL_GI\n", false)); // SHADER_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_AND_VOXEL_GI
-			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_MULTIVIEW, base_define + "\n#define USE_MULTIVIEW\n#define MODE_RENDER_DEPTH\n", false)); // SHADER_VERSION_DEPTH_PASS_MULTIVIEW
-			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_MULTIVIEW, base_define + "\n#define USE_MULTIVIEW\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_NORMAL_ROUGHNESS\n", false)); // SHADER_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_MULTIVIEW
-			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_ADVANCED_MULTIVIEW, base_define + "\n#define USE_MULTIVIEW\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_NORMAL_ROUGHNESS\n#define MODE_RENDER_VOXEL_GI\n", false)); // SHADER_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_AND_VOXEL_GI_MULTIVIEW
-			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_ADVANCED, base_define + "\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_MATERIAL\n", false)); // SHADER_VERSION_DEPTH_PASS_WITH_MATERIAL
-			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_ADVANCED, base_define + "\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_SDF\n", false)); // SHADER_VERSION_DEPTH_PASS_WITH_SDF
-			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_BASE, base_define + "\n#define MODE_RTXDI_SURFACE\n#define MOTION_VECTORS\n#define NORMAL_USED\n", true)); // SHADER_VERSION_RTXDI_SURFACE
+			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_BASE, base_define + "\n#define MODE_RENDER_DEPTH\n", true, raster_stage)); // SHADER_VERSION_DEPTH_PASS
+			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_BASE, base_define + "\n#define MODE_RENDER_DEPTH\n#define MODE_DUAL_PARABOLOID\n", true, raster_stage)); // SHADER_VERSION_DEPTH_PASS_DP
+			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_BASE, base_define + "\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_NORMAL_ROUGHNESS\n", true, raster_stage)); // SHADER_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS
+			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_ADVANCED, base_define + "\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_NORMAL_ROUGHNESS\n#define MODE_RENDER_VOXEL_GI\n", false, raster_stage)); // SHADER_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_AND_VOXEL_GI
+			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_MULTIVIEW, base_define + "\n#define USE_MULTIVIEW\n#define MODE_RENDER_DEPTH\n", false, raster_stage)); // SHADER_VERSION_DEPTH_PASS_MULTIVIEW
+			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_MULTIVIEW, base_define + "\n#define USE_MULTIVIEW\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_NORMAL_ROUGHNESS\n", false, raster_stage)); // SHADER_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_MULTIVIEW
+			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_ADVANCED_MULTIVIEW, base_define + "\n#define USE_MULTIVIEW\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_NORMAL_ROUGHNESS\n#define MODE_RENDER_VOXEL_GI\n", false, raster_stage)); // SHADER_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_AND_VOXEL_GI_MULTIVIEW
+			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_ADVANCED, base_define + "\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_MATERIAL\n", false, raster_stage)); // SHADER_VERSION_DEPTH_PASS_WITH_MATERIAL
+			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_ADVANCED, base_define + "\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_SDF\n", false, raster_stage)); // SHADER_VERSION_DEPTH_PASS_WITH_SDF
+			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_BASE, base_define + "\n#define MODE_RTXDI_SURFACE\n#define MOTION_VECTORS\n#define NORMAL_USED\n", true, raster_stage)); // SHADER_VERSION_RTXDI_SURFACE
 		}
 
 		Vector<uint64_t> dynamic_buffers;

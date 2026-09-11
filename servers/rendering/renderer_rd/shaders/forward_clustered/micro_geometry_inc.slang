@@ -150,7 +150,7 @@ struct MicroGeometrySelectedCluster {
 struct MicroGeometryRasterParameters {
 	uint64_t page_pool;
 	uint selected_cluster_color;
-	uint pad;
+	uint dispatch_width;
 };
 
 uint micro_geometry_load_byte(uint64_t p_address) {

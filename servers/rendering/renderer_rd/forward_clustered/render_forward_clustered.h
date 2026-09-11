@@ -114,8 +114,6 @@ protected:
 	RenderRTXDI *rtxdi = nullptr;
 	RendererRD::NRDEffect *nrd_effect = nullptr;
 	MicroGeometrySelection *micro_geometry = nullptr;
-	RID micro_geometry_index_buffer;
-	RID micro_geometry_index_array;
 	Size2i micro_geometry_pass_size;
 
 public:
@@ -464,8 +462,14 @@ protected:
 		struct PushConstant {
 			uint32_t base_index; //
 			uint32_t uv_offset; //packed
-			uint32_t multimesh_motion_vectors_current_offset;
-			uint32_t multimesh_motion_vectors_previous_offset;
+			union {
+				uint32_t multimesh_motion_vectors_current_offset;
+				uint32_t micro_geometry_bin;
+			};
+			union {
+				uint32_t multimesh_motion_vectors_previous_offset;
+				uint32_t micro_geometry_recovery;
+			};
 			PushConstantUbershader ubershader;
 		};
 

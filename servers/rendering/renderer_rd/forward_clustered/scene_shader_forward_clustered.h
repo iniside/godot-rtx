@@ -448,6 +448,7 @@ public:
 	SceneShaderForwardClustered();
 	~SceneShaderForwardClustered();
 
+	bool micro_geometry_mesh_supported = false;
 	void init(const String p_defines);
 	void set_default_specialization(const ShaderSpecialization &p_specialization);
 	void enable_multiview_shader_group();
