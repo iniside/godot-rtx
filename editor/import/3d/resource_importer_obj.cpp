@@ -633,7 +633,7 @@ String ResourceImporterOBJ::get_resource_type() const {
 }
 
 int ResourceImporterOBJ::get_format_version() const {
-	return 3;
+	return 4;
 }
 
 int ResourceImporterOBJ::get_preset_count() const {
@@ -653,6 +653,7 @@ void ResourceImporterOBJ::get_import_options(const String &p_path, List<ImportOp
 	r_options->push_back(ImportOption(PropertyInfo(Variant::VECTOR3, "scale_mesh"), Vector3(1, 1, 1)));
 	r_options->push_back(ImportOption(PropertyInfo(Variant::VECTOR3, "offset_mesh"), Vector3(0, 0, 0)));
 	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "force_disable_mesh_compression"), false));
+	r_options->push_back(ImportOption(PropertyInfo(Variant::FLOAT, "meshes/micro_geometry_position_step", PROPERTY_HINT_RANGE, "0.0000153,1,0.0000153"), 0.000625));
 }
 
 bool ResourceImporterOBJ::get_option_visibility(const String &p_path, const String &p_option, const HashMap<StringName, Variant> &p_options) const {
@@ -699,7 +700,7 @@ Error ResourceImporterOBJ::import(ResourceUID::ID p_source_id, const String &p_s
 	String save_path = p_save_path + ".mesh";
 
 	Ref<ArrayMesh> mesh = meshes.front()->get()->get_mesh();
-	err = import_micro_geometry(mesh, p_save_path, r_gen_files);
+	err = import_micro_geometry(mesh, p_save_path, p_options["meshes/micro_geometry_position_step"], r_gen_files);
 	ERR_FAIL_COND_V(err != OK, err);
 	err = ResourceSaver::save(mesh, save_path);
 

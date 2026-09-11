@@ -118,9 +118,9 @@ public:
 
 	void optimize_indices();
 
-	using MicroGeometryBuilder = Error (*)(const ImporterMesh &, Ref<MicroGeometryData> &, String &);
+	using MicroGeometryBuilder = Error (*)(const ImporterMesh &, float, Ref<MicroGeometryData> &, Vector<MicroGeometryData::Permutation> &, String &);
 	static inline MicroGeometryBuilder micro_geometry_builder = nullptr;
-	Error generate_micro_geometry(String &r_error);
+	Error generate_micro_geometry(float p_position_step, Vector<MicroGeometryData::Permutation> &r_permutations, String &r_error);
 	Ref<MicroGeometry> get_micro_geometry() const { return micro_geometry; }
 
 	void generate_lods(float p_normal_merge_angle, Array p_skin_pose_transform_array);

@@ -37,11 +37,33 @@
 
 class MicroGeometryData : public RefCounted {
 public:
-	static constexpr uint32_t FORMAT_VERSION = 2;
-	static constexpr uint32_t BUILD_VERSION = 2;
+	static constexpr uint32_t FORMAT_VERSION = 3;
+	static constexpr uint32_t BUILD_VERSION = 3;
 	static constexpr uint32_t INVALID_ID = UINT32_MAX;
 	static constexpr uint32_t MAX_PAGE_SIZE = 65536;
-	static constexpr const char *BUILDER_COMMIT = "0870c3881655df9b7d22faa35c825393534416bc";
+	static constexpr uint32_t MAX_CLUSTER_VERTICES = 128;
+	static constexpr uint32_t MAX_CLUSTER_TRIANGLES = 128;
+	// Disk cluster header: grid minimum 3xi32, position bits 3xu8, vertex id bits, vertex/triangle counts, topology bytes u16, first primitive u32, then CLUSTER_UV_HEADER_SIZE per present UV component.
+	static constexpr uint32_t CLUSTER_HEADER_SIZE = 24;
+	static constexpr uint32_t CLUSTER_UV_HEADER_SIZE = 10;
+	static constexpr uint32_t VERTEX_REFERENCE_ESCAPE = 31;
+	static constexpr uint32_t UV_SPLIT_FLAG = 0x80;
+	static constexpr const char *BUILDER_COMMIT = "3608e8b74fe387325ae48c821ba4091a42c26d5c";
+
+	enum AttributeFormat : uint32_t {
+		ATTRIBUTE_NONE = 0,
+		ATTRIBUTE_POSITION_SNORM16 = 1,
+		ATTRIBUTE_NORMAL_OCTAHEDRAL8 = 2,
+		ATTRIBUTE_COLOR_UNORM8 = 3,
+		ATTRIBUTE_UV_UNORM16 = 4,
+		ATTRIBUTE_UV_HALF = 5,
+		ATTRIBUTE_CUSTOM = 6,
+	};
+	enum UVMode : uint32_t {
+		UV_MODE_NONE = 0,
+		UV_MODE_UNORM16 = 1,
+		UV_MODE_HALF = 2,
+	};
 
 	struct Bounds {
 		float center[3] = {};
@@ -53,8 +75,14 @@ public:
 		uint64_t format = 0;
 		uint32_t vertex_stride = 0;
 		uint32_t attribute_offsets[10] = {};
+		uint32_t attribute_formats[10] = {};
 		uint32_t source_vertex_count = 0;
 		uint32_t source_triangle_count = 0;
+		float frame_center[3] = {};
+		float frame_scale = 0;
+		uint32_t uv_mode[2] = {};
+		float uv_min[4] = {};
+		float uv_scale[4] = {};
 	};
 	struct Cluster {
 		uint32_t surface = 0;
@@ -62,9 +90,22 @@ public:
 		uint32_t refined_group = INVALID_ID;
 		uint32_t page = 0;
 		uint32_t payload_offset = 0;
+		uint32_t disk_offset = 0;
 		uint32_t vertex_count = 0;
 		uint32_t triangle_count = 0;
+		uint32_t first_primitive = INVALID_ID;
 		Bounds bounds;
+	};
+	struct ClusterLayout {
+		uint32_t vertices = 0;
+		uint32_t indices = 0;
+		uint32_t vertex_ids = 0;
+		uint32_t end = 0;
+	};
+	struct Permutation {
+		uint32_t surface = 0;
+		Vector<uint32_t> triangles;
+		Vector<uint32_t> vertices;
 	};
 	struct Group {
 		uint32_t first_cluster = 0;
@@ -90,6 +131,9 @@ public:
 	};
 	struct Build {
 		uint32_t coarse_cluster_count = 0;
+		float frame_center[3] = {};
+		float frame_scale = 1;
+		float position_step = 0;
 		Vector<Surface> surfaces;
 		Vector<Cluster> clusters;
 		Vector<Group> groups;
@@ -112,7 +156,13 @@ private:
 	Error validate() const;
 
 public:
+	static uint32_t custom_attribute_size(uint64_t p_format, uint32_t p_index);
+	static ClusterLayout compute_cluster_layout(uint32_t p_payload_offset, uint32_t p_vertex_count, uint32_t p_triangle_count, uint32_t p_vertex_stride);
+	static uint32_t cluster_header_size(const Surface &p_surface);
+	static uint32_t cluster_disk_size(const Surface &p_surface, uint32_t p_vertex_count, const uint8_t p_position_bits[3], const uint8_t p_uv_bits[4], uint32_t p_vertex_id_bits, uint32_t p_topology_bytes);
+
 	const Build &get_metadata() const { return metadata; }
+	ClusterLayout get_cluster_layout(uint32_t p_cluster) const;
 	String get_source_path() const { return source_path; }
 	String get_content_id() const;
 	Error read_encoded_page(uint32_t p_page, Vector<uint8_t> &r_data) const;

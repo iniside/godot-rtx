@@ -288,7 +288,7 @@ String ResourceImporterScene::get_resource_type() const {
 }
 
 int ResourceImporterScene::get_format_version() const {
-	return 3;
+	return 4;
 }
 
 bool ResourceImporterScene::get_option_visibility(const String &p_path, const String &p_option, const HashMap<StringName, Variant> &p_options) const {
@@ -2625,6 +2625,7 @@ void ResourceImporterScene::get_import_options(const String &p_path, List<Import
 	r_options->push_back(ImportOption(PropertyInfo(Variant::INT, "meshes/light_baking", PROPERTY_HINT_ENUM, "Disabled,Static,Static Lightmaps,Dynamic", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_UPDATE_ALL_IF_MODIFIED), 1));
 	r_options->push_back(ImportOption(PropertyInfo(Variant::FLOAT, "meshes/lightmap_texel_size", PROPERTY_HINT_RANGE, "0.001,100,0.001"), 0.2));
 	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "meshes/force_disable_compression"), false));
+	r_options->push_back(ImportOption(PropertyInfo(Variant::FLOAT, "meshes/micro_geometry_position_step", PROPERTY_HINT_RANGE, "0.0000153,1,0.0000153"), 0.000625));
 	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "skins/use_named_skins"), true));
 	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "animation/import"), true));
 	r_options->push_back(ImportOption(PropertyInfo(Variant::FLOAT, "animation/fps", PROPERTY_HINT_RANGE, "1,120,1"), 30));
@@ -3404,7 +3405,7 @@ Error ResourceImporterScene::import(ResourceUID::ID p_source_id, const String &p
 		post_importer_plugins.write[i]->post_process(scene, p_options);
 	}
 
-	err = import_scene_micro_geometry(scene, p_save_path, r_gen_files, external_mesh_paths);
+	err = import_scene_micro_geometry(scene, p_save_path, p_options["meshes/micro_geometry_position_step"], r_gen_files, external_mesh_paths);
 	if (err != OK) {
 		memdelete(scene);
 		return err;

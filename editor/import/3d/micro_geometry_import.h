@@ -33,5 +33,5 @@
 #include "scene/main/node.h"
 #include "scene/resources/mesh.h"
 
-Error import_micro_geometry(const Ref<ArrayMesh> &p_mesh, const String &p_save_path, List<String> *r_gen_files);
-Error import_scene_micro_geometry(Node *p_scene, const String &p_save_path, List<String> *r_gen_files, const HashMap<Ref<ArrayMesh>, String> &p_external_mesh_paths);
+Error import_micro_geometry(const Ref<ArrayMesh> &p_mesh, const String &p_save_path, float p_position_step, List<String> *r_gen_files);
+Error import_scene_micro_geometry(Node *p_scene, const String &p_save_path, float p_position_step, List<String> *r_gen_files, const HashMap<Ref<ArrayMesh>, String> &p_external_mesh_paths);

@@ -32,4 +32,4 @@
 
 #include "scene/resources/3d/importer_mesh.h"
 
-Error build_micro_geometry(const ImporterMesh &p_mesh, Ref<MicroGeometryData> &r_data, String &r_error);
+Error build_micro_geometry(const ImporterMesh &p_mesh, float p_position_step, Ref<MicroGeometryData> &r_data, Vector<MicroGeometryData::Permutation> &r_permutations, String &r_error);

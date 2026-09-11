@@ -562,7 +562,7 @@ void ImporterMesh::optimize_indices() {
 	}
 }
 
-Error ImporterMesh::generate_micro_geometry(String &r_error) {
+Error ImporterMesh::generate_micro_geometry(float p_position_step, Vector<MicroGeometryData::Permutation> &r_permutations, String &r_error) {
 	if (surfaces.is_empty() || !blend_shapes.is_empty()) {
 		return OK;
 	}
@@ -576,7 +576,7 @@ Error ImporterMesh::generate_micro_geometry(String &r_error) {
 		return ERR_UNAVAILABLE;
 	}
 	Ref<MicroGeometryData> data;
-	Error err = micro_geometry_builder(*this, data, r_error);
+	Error err = micro_geometry_builder(*this, p_position_step, data, r_permutations, r_error);
 	if (err != OK) {
 		return err;
 	}
