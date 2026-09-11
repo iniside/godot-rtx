@@ -201,7 +201,7 @@ public:
 		Size2i size;
 		~DepthPyramid();
 	};
-	static constexpr uint64_t MAX_PASS_BYTES = 512 * 1024 * 1024;
+	static constexpr uint64_t MAX_PASS_BYTES = 1024 * 1024 * 1024;
 	static constexpr uint32_t STATISTICS_BYTES = 380;
 	Pass *create(const Vector<Task> &p_tasks, uint32_t p_bin_count, const Parameters &p_parameters, uint32_t p_levels, uint32_t p_native_stride, RID p_instances, RID p_surfaces, const Vector<RID> &p_dependencies);
 	bool needs_retry(Pass *p_pass) const;
