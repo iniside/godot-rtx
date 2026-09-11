@@ -270,6 +270,7 @@ void RenderForwardClustered::RenderBufferDataForwardClustered::free_data() {
 	micro_geometry_triangles = 0;
 	micro_geometry_stats_frame = 0;
 	micro_geometry_stats_submitted_frame = 0;
+	micro_geometry_stats_profile_frame = 0;
 	if (micro_geometry_depth.texture.is_valid()) {
 		RD::get_singleton()->free_rid(micro_geometry_depth.texture);
 		micro_geometry_depth.texture = RID();
@@ -815,7 +816,7 @@ void RenderForwardClustered::_select_micro_geometry(MicroGeometryRasterPass *p_p
 		return;
 	}
 	p_pass->gpu->data.flags &= ~128u;
-	if (p_pass->render_buffers && RSG::utilities->capturing_timestamps && RSG::rasterizer->get_frame_number() % 120 == 0) {
+	if (p_pass->render_buffers && RSG::utilities->capturing_timestamps && !p_pass->render_buffers->micro_geometry_stats_pending && !p_pass->gpu->freeze_requested && RSG::rasterizer->get_frame_number() >= p_pass->render_buffers->micro_geometry_stats_profile_frame + 120) {
 		p_pass->gpu->data.flags |= 128;
 		print_line(vformat("Microgeometry camera selection: frame=%d owner=%d error=%f output_height=%f near_plane=%f hzb_size=%dx%d tasks=%d units=%d", RSG::rasterizer->get_frame_number(), p_pass->gpu->capacity_feedback->owner, p_pass->gpu->data.error, p_pass->gpu->data.output_height, p_pass->gpu->data.near_plane, p_pass->gpu->data.hzb_width, p_pass->gpu->data.hzb_height, p_pass->gpu->data.task_count, p_pass->gpu->data.unit_count));
 	}
@@ -1281,8 +1282,11 @@ void RenderForwardClustered::_render_list_with_draw_list(RenderListParameters *p
 			Ref<RenderBufferDataForwardClustered> data(pass->render_buffers);
 			data->micro_geometry_stats_submitted_frame = RSG::rasterizer->get_frame_number();
 			data->micro_geometry_stats_pending = true;
-			if (RD::get_singleton()->buffer_get_data_async(pass->gpu->statistics, callable_mp_static(&RenderBufferDataForwardClustered::micro_geometry_stats_received).bind(data, data->micro_geometry_stats_epoch, !pass->gpu->frozen && (pass->gpu->data.flags & 128) != 0)) != OK) {
+			const bool profiled = !pass->gpu->frozen && (pass->gpu->data.flags & 128) != 0;
+			if (RD::get_singleton()->buffer_get_data_async(pass->gpu->statistics, callable_mp_static(&RenderBufferDataForwardClustered::micro_geometry_stats_received).bind(data, data->micro_geometry_stats_epoch, profiled)) != OK) {
 				data->micro_geometry_stats_pending = false;
+			} else if (profiled) {
+				data->micro_geometry_stats_profile_frame = data->micro_geometry_stats_submitted_frame;
 			}
 			RENDER_TIMESTAMP("Microgeometry Raster Statistics Readback Complete");
 		}
