@@ -475,7 +475,6 @@ bool RendererSceneCull::Scenario::shadow_casters_intersect(uint64_t p_generation
 				separated = true;
 			}
 		}
-		// The cascade culls casters up to the light with an open far plane, so only the near side of z bounds them.
 		if (box_maximum.z < p_minimum.z - p_margin) {
 			separated = true;
 		}
