@@ -2767,10 +2767,15 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 		{
 			//camera viewport stuff
 
-			for (int j = 0; j < 8; j++) {
-				center += endpoints[j];
+			// Far cached cascades stay centered on the camera origin so a yaw cannot move the cached box.
+			const bool camera_centered = cascade.full_coverage && i >= 2;
+
+			if (!camera_centered) {
+				for (int j = 0; j < 8; j++) {
+					center += endpoints[j];
+				}
+				center /= 8.0;
 			}
-			center /= 8.0;
 
 			//center=x_vec*(x_max-x_min)*0.5 + y_vec*(y_max-y_min)*0.5 + z_vec*(z_max-z_min)*0.5;
 
