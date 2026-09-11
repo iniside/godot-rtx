@@ -2981,7 +2981,6 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	_render_shadows(p_render_data);
 	light_preparation.begin_lights();
 
-	const uint64_t camera_history_epoch = raytracing->_get_viewport_state(p_render_data)->camera_history_epoch;
 	RenderListPreparation *camera_preparation = _begin_render_list(RENDER_LIST_OPAQUE, p_render_data, PASS_MODE_RTXDI_SURFACE);
 	RENDER_TIMESTAMP("Primary Visibility Acceleration Structures");
 	RTViewportState *rt_state = raytracing->build_tlas(p_render_data);
@@ -2991,7 +2990,6 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	int *render_info = p_render_data->render_info ? p_render_data->render_info->info[RSE::VIEWPORT_RENDER_INFO_TYPE_VISIBLE] : nullptr;
 	_fill_instance_data(RENDER_LIST_OPAQUE, render_info);
 	ERR_FAIL_NULL(rt_state);
-	const bool geometry_history_changed = camera_history_epoch != rt_state->camera_history_epoch;
 	ERR_FAIL_COND_MSG(!raytracing->_prepare_ddgi(rt_state, rb->is_ddgi_debug_freeze_anchor()), "Camera-following DDGI state preparation failed.");
 	_pre_opaque_render(p_render_data, light_preparation);
 	SceneShaderForwardClustered::ShaderSpecialization base_specialization = scene_shader.default_specialization;
@@ -3014,7 +3012,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	surface.current_depth = rb_data->get_rtxdi_surface_depth();
 	surface.previous_depth = rb_data->get_rtxdi_surface_depth(true);
 	surface.size = lighting_size;
-	surface.history_valid = rb_data->is_rtxdi_surface_history_valid() && !geometry_history_changed;
+	surface.history_valid = rb_data->is_rtxdi_surface_history_valid();
 	surface.orthogonal = rb_data->is_rtxdi_surface_camera_orthogonal();
 	surface.frame_index = rb_data->get_rtxdi_surface_frame_index();
 	RendererRD::NRDEffect::Frame frame;
