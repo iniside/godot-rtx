@@ -3048,6 +3048,15 @@ static Dictionary camera_motion_statistics(Vector<double> p_values) {
 		p_values.sort();
 		result["median_ms"] = (p_values[(p_values.size() - 1) / 2] + p_values[p_values.size() / 2]) * 0.5;
 		result["p95_ms"] = p_values[int(Math::ceil(p_values.size() * 0.95)) - 1];
+		result["p75_ms"] = p_values[int(Math::ceil(p_values.size() * 0.75)) - 1];
+		result["p90_ms"] = p_values[int(Math::ceil(p_values.size() * 0.90)) - 1];
+		result["p99_ms"] = p_values[int(Math::ceil(p_values.size() * 0.99)) - 1];
+		result["max_ms"] = p_values[p_values.size() - 1];
+		double total = 0;
+		for (double value : p_values) {
+			total += value;
+		}
+		result["mean_ms"] = total / p_values.size();
 	}
 	return result;
 }
