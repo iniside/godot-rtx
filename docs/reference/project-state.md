@@ -1,5 +1,16 @@
 # Project State
 
+Native stress scene editor load time (2026-09-11, `9bff64d7b8`, keys fixed
+in `f743a52341`): `--benchmark` reports session restore, per-load `Scene Load` phases, a `load_subset`
+breakdown with asset load counts, and gated publish/transform/dock timings.
+Warm-cache launch reaches the visible scene in 18.1 s; document load is 9.5 s,
+of which 6.4 s loads the two imported mesh `.scn` files on first reference and
+2.7 s is `write_component` decode for 10004 records. Publication and dock work
+stay under 100 ms. A first launch after any commit recompiles all shader
+variants (about 75 s) because the shader cache key includes the version hash.
+Three runs, no optimization. See
+[measurements and limits](../research/2026-09-11-1205-escn-editor-load-time-status.md).
+
 Editor camera movement profiling (2026-09-11, `244dc27176`): selection admission
 limit is now 2 GiB; the page pool remains 1 GiB. Double build passes. Unprofiled
 movement averages 12.98 FPS; the completed route restores the camera exactly.
