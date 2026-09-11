@@ -1718,13 +1718,20 @@ void RenderRaytracing::_free_micro_cut(RTMicroGeometryBuild *p_build, uint32_t p
 		RD::get_singleton()->free_rid(cut.blas);
 	}
 	if (cut.records.is_valid()) {
+		p_build->cut_dependencies.erase(cut.records);
 		RD::get_singleton()->free_rid(cut.records);
 	}
 	p_build->memory_bytes -= cut.memory_bytes;
 	p_build->as_memory_bytes -= cut.as_bytes;
-	uint32_t generation = cut.descriptor.generation;
+	// Bumping the generation on release invalidates stale unit slot references, so a freed
+	// device address can never be matched into a TLAS instance before the pool is reuploaded.
+	uint32_t generation = cut.descriptor.generation + 1;
+	if (generation == 0) {
+		generation++;
+	}
 	cut = RTMicroGeometryBuild::Cut();
 	cut.descriptor.generation = generation;
+	p_build->free_cut_slots.push_back(p_slot);
 }
 
 void RenderRaytracing::_cancel_micro_epoch(RTMicroGeometryBuild *p_build) {
@@ -1737,8 +1744,15 @@ void RenderRaytracing::_cancel_micro_epoch(RTMicroGeometryBuild *p_build) {
 		for (const auto &pin : representative.pages) {
 			storage->unpin_page(pin);
 		}
-		if (representative.slot != UINT32_MAX && p_build->cuts[representative.slot].users == 0) {
-			p_build->cuts.write[representative.slot].retirement = RD::get_singleton()->get_pending_submission_serial();
+		if (representative.slot != UINT32_MAX) {
+			auto &cut = p_build->cuts.write[representative.slot];
+			if (cut.users == 0 && cut.retirement == 0) {
+				if (cut.is_allocated()) {
+					cut.retirement = RD::get_singleton()->get_pending_submission_serial();
+				} else {
+					p_build->free_cut_slots.push_back(representative.slot);
+				}
+			}
 		}
 	}
 	p_build->representatives.clear();
@@ -1803,10 +1817,8 @@ void RenderRaytracing::_micro_list_dependencies(RTViewportState *p_state, RD::Co
 	for (RID buffer : build->dependencies) {
 		rd->compute_list_add_buffer_dependency(p_list, buffer);
 	}
-	for (const auto &cut : build->cuts) {
-		if (cut.records.is_valid()) {
-			rd->compute_list_add_buffer_dependency(p_list, cut.records);
-		}
+	for (RID records : build->cut_dependencies) {
+		rd->compute_list_add_buffer_dependency(p_list, records);
 	}
 }
 
@@ -2131,11 +2143,21 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 		p_state->micro_geometry_transforms_dirty = true;
 	}
 	if (build->epoch == RTMicroGeometryBuild::IDLE && build->pending_feedback == 0) {
+		bool released = false;
 		for (uint32_t slot = 1; slot < uint32_t(build->cuts.size()); slot++) {
 			const auto &cut = build->cuts[slot];
-			if (cut.users == 0 && cut.retirement != 0 && MAX(cut.retirement, build->epoch_submission) <= rd->get_completed_submission_serial()) {
+			if (cut.users == 0 && cut.retirement != 0 && cut.is_allocated() && cut.retirement <= rd->get_completed_submission_serial()) {
 				_free_micro_cut(build, slot);
+				released = true;
 			}
+		}
+		if (released && build->pool.is_valid()) {
+			Vector<RTMicroGeometryCutDescriptor> descriptors;
+			descriptors.resize(MIN(uint32_t(build->cuts.size()), build->pool_count));
+			for (uint32_t slot = 0; slot < uint32_t(descriptors.size()); slot++) {
+				descriptors.write[slot] = build->cuts[slot].descriptor;
+			}
+			rd->buffer_update(build->pool, 0, uint64_t(descriptors.size()) * sizeof(RTMicroGeometryCutDescriptor), descriptors.ptr());
 		}
 	}
 	if (build->feedback_ready) {
@@ -2403,11 +2425,11 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 		rd->buffer_clear(build->representative_slots, 0, build->segment_data.size() * 8);
 		uint64_t scratch_bytes = 0;
 		for (auto &representative : build->representatives) {
-			uint32_t slot = 1;
-			while (slot < uint32_t(build->cuts.size()) && build->cuts[slot].records.is_valid()) {
-				slot++;
-			}
-			if (slot == uint32_t(build->cuts.size())) {
+			uint32_t slot = build->cuts.size();
+			if (!build->free_cut_slots.is_empty()) {
+				slot = build->free_cut_slots[build->free_cut_slots.size() - 1];
+				build->free_cut_slots.resize(build->free_cut_slots.size() - 1);
+			} else {
 				build->cuts.push_back(RTMicroGeometryBuild::Cut());
 			}
 			auto &cut = build->cuts.write[slot];
@@ -2428,6 +2450,9 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 			}
 			cut.records = rd->storage_buffer_create(uint64_t(representative.count) * 16, Vector<uint8_t>(), 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT | RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT);
 			cut.blas = rd->blas_create_from_clusters(representative.count, representative.count);
+			if (cut.records.is_valid()) {
+				build->cut_dependencies.push_back(cut.records);
+			}
 			valid &= cut.records.is_valid() && cut.blas.is_valid() && !cut.pins.is_empty();
 			cut.descriptor.records = cut.records.is_valid() ? rd->buffer_get_device_address(cut.records) : 0;
 			cut.descriptor.address = cut.blas.is_valid() ? rd->acceleration_structure_get_device_address(cut.blas) : 0;
@@ -2530,7 +2555,11 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 				build->cuts.write[representative.slot].users = representative.users;
 			}
 			for (auto &cut : build->cuts) {
-				cut.retirement = cut.users != 0 ? 0 : rd->get_pending_submission_serial();
+				if (cut.users != 0) {
+					cut.retirement = 0;
+				} else if (cut.retirement == 0 && cut.is_allocated()) {
+					cut.retirement = rd->get_pending_submission_serial();
+				}
 			}
 			build->has_committed_cut = true;
 			build->selected_input_signature = build->bootstrap ? 0 : build->producing_signature;

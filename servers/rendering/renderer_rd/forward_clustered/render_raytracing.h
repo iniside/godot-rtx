@@ -528,6 +528,7 @@ struct RTMicroGeometryBuild {
 		uint64_t as_bytes = 0;
 		uint64_t retirement = 0;
 		uint32_t users = 0;
+		bool is_allocated() const { return records.is_valid() || blas.is_valid() || !pins.is_empty(); }
 	};
 	struct Representative {
 		uint32_t unit = 0;
@@ -597,6 +598,8 @@ struct RTMicroGeometryBuild {
 	Vector<RTMicroGeometryTask> task_data;
 	Vector<RTMicroGeometrySegment> segment_data;
 	Vector<Cut> cuts;
+	Vector<uint32_t> free_cut_slots;
+	Vector<RID> cut_dependencies;
 	Vector<Representative> representatives;
 	HashMap<uint32_t, uint32_t> representative_lookup;
 	Vector<uint32_t> candidate_users;
