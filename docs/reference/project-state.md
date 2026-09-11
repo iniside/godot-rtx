@@ -1,5 +1,22 @@
 # Project State
 
+Directional shadow scheduling (2026-09-11, source `235449ef33`): Forward+
+refreshes cascades on staggered 1/2/4/8-frame periods and selects shadow geometry
+at 1/2/4/8-texel error. Retained maps keep matching transforms; only updated
+atlas regions clear. Cached far cascades populate a guard band and invalidate
+on lost coverage, atlas/layout/parameter changes or large accumulated sun motion.
+On the same native 10000-instance scene, primary T and temporary 1 GiB pool,
+whole GPU falls 7.953 -> 6.461 ms; shadow traversal 1.578 -> 0.642 ms and shadow
+raster 1.340 -> 0.377 ms; unprofiled FPS 62 -> 66. Counters confirm exactly
+120/60/30/15 updates per120 frames, zero forced refreshes when stationary.
+Ordinary build and brief source review pass; native runs exit0 without errors,
+streaming reaches zero pending pages, scene/environment hashes are unchanged,
+and editor settings are restored. Moving-sun/camera appearance and invalidation
+remain runtime-unverified; no computer use, tests or proof audit was performed.
+The 1 GiB pool remains a temporary workaround; constrained-memory streaming is
+not repaired. See [plan](../plans/2026-09-11-0946-shadow-cascade-scheduling-plan.md)
+and [measurements and limits](../research/2026-09-11-0946-shadow-cascade-scheduling-status.md).
+
 Microgeometry HZB repair (2026-09-11, source `fa50c0398f`, `19f97459f7`):
 HZB now runs with visible editor axes. Deformed-material pixels are excluded
 only from its depth copy; original RTXDI temporal validity and other geometry
