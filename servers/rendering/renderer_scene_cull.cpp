@@ -2683,24 +2683,22 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 				if (cached.basis.get_column(2).dot(light_transform.basis.get_column(2)) < Math::cos(Math::deg_to_rad(0.5))) {
 					cached.force |= 1 << InstanceLightData::DirectionalShadowCache::SUN;
 				}
-				if (cascade.full_coverage) {
-					Vector3 offset;
+				Vector3 offset;
+				for (int axis = 0; axis < 3; axis++) {
+					offset[axis] = p_cam_origin[axis] - cached.origin[axis];
+				}
+				const Basis inverse_basis = cached.basis.transposed();
+				const real_t margin = MAX(cached.maximum.x - cached.minimum.x, cached.maximum.y - cached.minimum.y) * 2.0 / MAX(texture_size, real_t(1));
+				for (const Vector3 &endpoint : endpoints) {
+					const Vector3 receiver = inverse_basis.xform(endpoint + offset);
 					for (int axis = 0; axis < 3; axis++) {
-						offset[axis] = p_cam_origin[axis] - cached.origin[axis];
-					}
-					const Basis inverse_basis = cached.basis.transposed();
-					const real_t margin = MAX(cached.maximum.x - cached.minimum.x, cached.maximum.y - cached.minimum.y) * 2.0 / MAX(texture_size, real_t(1));
-					for (const Vector3 &endpoint : endpoints) {
-						const Vector3 receiver = inverse_basis.xform(endpoint + offset);
-						for (int axis = 0; axis < 3; axis++) {
-							if (receiver[axis] < cached.minimum[axis] + margin || receiver[axis] > cached.maximum[axis] - margin) {
-								cached.force |= 1 << InstanceLightData::DirectionalShadowCache::COVERAGE;
-							}
+						if (receiver[axis] < cached.minimum[axis] + margin || receiver[axis] > cached.maximum[axis] - margin) {
+							cached.force |= 1 << InstanceLightData::DirectionalShadowCache::COVERAGE;
 						}
 					}
 				}
 			}
-			const bool casters_unchanged = p_instance->scenario != nullptr && i > 0 && cached.caster_generation == caster_generation;
+			const bool casters_unchanged = p_instance->scenario != nullptr && cached.caster_generation == caster_generation;
 			if (cached.valid && cached.force == 0 && (casters_unchanged || (frame % period != phase && age < period))) {
 				cached.reused++;
 				continue;
@@ -2851,6 +2849,12 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 		z_max = z_vec.dot(center) + radius + pancake_size;
 		cascade.coverage_minimum = Vector3(x_min_cam, y_min_cam, z_min_cam);
 		cascade.coverage_maximum = Vector3(x_max_cam, y_max_cam, z_max);
+		if (!cascade.full_coverage) {
+			// Without the guard band the fit leaves less slack than the coverage test margin, so the cached box absorbs it.
+			const real_t pad = MAX(x_max_cam - x_min_cam, y_max_cam - y_min_cam) * 2.0 / MAX(texture_size, real_t(1));
+			cascade.coverage_minimum -= Vector3(pad, pad, pad);
+			cascade.coverage_maximum += Vector3(pad, pad, pad);
+		}
 
 		{
 			Projection ortho_camera;
