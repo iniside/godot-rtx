@@ -83,7 +83,6 @@ struct Parameters {
 	uint record_count;
 	uint mode;
 	uint step;
-	uint width;
 	uint range_begin;
 	uint range_count;
 	uint representative;
@@ -148,14 +147,6 @@ uint mix_integer(uint x) {
 	x = (x ^ (x >> 15)) * 0x846ca68bu;
 	return x ^ (x >> 16);
 }
-uint segment_at(uint index) {
-	uint begin = 0, end = parameters.unit_count;
-	while (begin + 1 < end) {
-		uint middle = (begin + end) / 2;
-		if (segments[middle].offset <= index) { begin = middle; } else { end = middle; }
-	}
-	return begin;
-}
 bool resolve(Segment segment, out MicroGeometryInstance instance, out MicroGeometryAsset asset, out uint source_ordinal) {
 	MicroRTTask task = tasks[segment.task];
 	instance = instances[uint(task.instance) - 1];
@@ -189,10 +180,14 @@ void feedback_record(uint kind, uint id, uint a, uint b, uint c, uint d) {
 	feedback[base + 6] = 0;
 	feedback[base + 7] = 0;
 }
+static const uint SORT_TILE = 1024;
 groupshared uint values[128];
 groupshared uint mismatch[128];
 groupshared uint triangles[128];
 groupshared uint candidate;
+groupshared uint2 sort_values[SORT_TILE];
+
+bool sort_greater(uint2 a, uint2 b) { return a.x > b.x || (a.x == b.x && a.y > b.y); }
 
 [numthreads(128, 1, 1)]
 void main(uint3 group_id : SV_GroupID, uint lane : SV_GroupIndex) {
@@ -255,17 +250,47 @@ void main(uint3 group_id : SV_GroupID, uint lane : SV_GroupIndex) {
 		return;
 	}
 	if (mode == 2 || mode == 11) {
-		if (index >= parameters.record_count) { return; }
-		Segment segment = segments[segment_at(index)];
-		uint relative = index - segment.offset;
-		uint other = relative ^ parameters.step;
-		if (other <= relative || other >= segment.capacity || parameters.width > segment.capacity) { return; }
-		uint2 a = mode == 2 ? records[index] : pages[index];
-		uint2 b = mode == 2 ? records[segment.offset + other] : pages[segment.offset + other];
-		bool greater = a.x > b.x || (a.x == b.x && a.y > b.y);
-		if (greater == ((relative & parameters.width) == 0)) {
-			if (mode == 2) { records[index] = b; records[segment.offset + other] = a; }
-			else { pages[index] = b; pages[segment.offset + other] = a; }
+		if (group >= parameters.unit_count) { return; }
+		Segment segment = segments[group];
+		uint capacity = segment.capacity;
+		if (capacity < 2) { return; }
+		if (capacity <= SORT_TILE) {
+			for (uint local = lane; local < capacity; local += 128) {
+				sort_values[local] = mode == 2 ? records[segment.offset + local] : pages[segment.offset + local];
+			}
+			GroupMemoryBarrierWithGroupSync();
+			for (uint width = 2; width <= capacity; width <<= 1) {
+				for (uint step = width >> 1; step != 0; step >>= 1) {
+					for (uint local = lane; local < capacity; local += 128) {
+						uint other = local ^ step;
+						if (other > local) {
+							uint2 a = sort_values[local], b = sort_values[other];
+							if (sort_greater(a, b) == ((local & width) == 0)) { sort_values[local] = b; sort_values[other] = a; }
+						}
+					}
+					GroupMemoryBarrierWithGroupSync();
+				}
+			}
+			for (uint local = lane; local < capacity; local += 128) {
+				if (mode == 2) { records[segment.offset + local] = sort_values[local]; }
+				else { pages[segment.offset + local] = sort_values[local]; }
+			}
+			return;
+		}
+		for (uint width = 2; width <= capacity; width <<= 1) {
+			for (uint step = width >> 1; step != 0; step >>= 1) {
+				for (uint local = lane; local < capacity; local += 128) {
+					uint other = local ^ step;
+					if (other <= local) { continue; }
+					uint2 a = mode == 2 ? records[segment.offset + local] : pages[segment.offset + local];
+					uint2 b = mode == 2 ? records[segment.offset + other] : pages[segment.offset + other];
+					if (sort_greater(a, b) == ((local & width) == 0)) {
+						if (mode == 2) { records[segment.offset + local] = b; records[segment.offset + other] = a; }
+						else { pages[segment.offset + local] = b; pages[segment.offset + other] = a; }
+					}
+				}
+				AllMemoryBarrierWithGroupSync();
+			}
 		}
 		return;
 	}

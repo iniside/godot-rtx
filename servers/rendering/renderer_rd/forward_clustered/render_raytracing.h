@@ -576,7 +576,6 @@ struct RTMicroGeometryBuild {
 	uint32_t candidate_clusters = 0;
 	uint32_t candidate_triangles = 0;
 	uint32_t record_work = 0;
-	uint32_t max_capacity = 0;
 	uint32_t bucket_count = 0;
 	uint32_t feedback_offset = 0;
 	uint32_t feedback_items = 0;
@@ -734,7 +733,11 @@ class RenderRaytracing {
 	static void _micro_cut_feedback(const Vector<uint8_t> &p_bytes, uint64_t p_build);
 	void _cancel_micro_epoch(RTMicroGeometryBuild *p_build);
 	void _free_micro_cut(RTMicroGeometryBuild *p_build, uint32_t p_slot);
-	bool _micro_dispatch(RTViewportState *p_state, uint32_t p_mode, uint32_t p_count, bool p_groups = false, uint32_t p_step = 0, uint32_t p_width = 0);
+	void _micro_list_dependencies(RTViewportState *p_state, RD::ComputeListID p_list);
+	RD::ComputeListID _micro_list_begin(RTViewportState *p_state, bool p_cut_records = false);
+	void _micro_list_barrier(RTViewportState *p_state, RD::ComputeListID p_list);
+	void _micro_list_dispatch(RTViewportState *p_state, RD::ComputeListID p_list, uint32_t p_mode, uint32_t p_count, bool p_groups = false, uint32_t p_step = 0);
+	bool _micro_dispatch(RTViewportState *p_state, uint32_t p_mode, uint32_t p_count, bool p_groups = false, uint32_t p_step = 0);
 	bool _micro_feedback(RTMicroGeometryBuild *p_build, uint32_t p_bytes);
 	bool _prepare_micro_geometry(RTViewportState *p_state, const RenderDataRD *p_render_data);
 	bool _build_micro_geometry(RTViewportState *p_state);

@@ -1797,18 +1797,52 @@ bool RenderRaytracing::_micro_feedback(RTMicroGeometryBuild *p_build, uint32_t p
 	return true;
 }
 
-bool RenderRaytracing::_micro_dispatch(RTViewportState *p_state, uint32_t p_mode, uint32_t p_count, bool p_groups, uint32_t p_step, uint32_t p_width) {
-	if (p_count == 0) {
-		return true;
+void RenderRaytracing::_micro_list_dependencies(RTViewportState *p_state, RD::ComputeListID p_list) {
+	auto *build = p_state->micro_geometry;
+	RD *rd = RD::get_singleton();
+	for (RID buffer : build->dependencies) {
+		rd->compute_list_add_buffer_dependency(p_list, buffer);
 	}
+	for (const auto &cut : build->cuts) {
+		if (cut.records.is_valid()) {
+			rd->compute_list_add_buffer_dependency(p_list, cut.records);
+		}
+	}
+}
+
+RD::ComputeListID RenderRaytracing::_micro_list_begin(RTViewportState *p_state, bool p_cut_records) {
 	auto *build = p_state->micro_geometry;
 	RD *rd = RD::get_singleton();
 	LocalVector<RD::Uniform> uniforms;
 	uint32_t binding = 0;
-	RID record_buffer = p_mode == 16 ? build->cuts[build->representatives[build->page_representative].slot].records : build->records;
+	RID record_buffer = p_cut_records ? build->cuts[build->representatives[build->page_representative].slot].records : build->records;
 	for (RID buffer : { build->tasks, build->segments, build->selection->committed, build->selection->unit_states, persistent_instance_buffer, build->pool, record_buffer, build->pages, build->states, build->buckets, build->links, build->usage, build->feedback, build->tlas_instances, p_state->motion_transform_buffer, build->geometry_slots, build->representative_slots, persistent_surface_buffer, p_state->geometry_buffer, p_state->material_buffer, p_state->motion_index_buffer, persistent_material_buffer }) {
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, binding++, buffer));
 	}
+	RID uniform = UniformSetCacheRD::get_singleton()->get_cache_vec(micro_rt_shader.version_get_shader(micro_rt_version, 0), 0, uniforms);
+	if (uniform.is_null()) {
+		build->dispatch_failed = true;
+		ERR_FAIL_V_MSG(RD::INVALID_ID, "Unable to bind shared RT cut resources.");
+	}
+	RD::ComputeListID list = rd->compute_list_begin();
+	rd->compute_list_bind_compute_pipeline(list, micro_rt_pipeline);
+	rd->compute_list_bind_uniform_set(list, uniform, 0);
+	_micro_list_dependencies(p_state, list);
+	return list;
+}
+
+void RenderRaytracing::_micro_list_barrier(RTViewportState *p_state, RD::ComputeListID p_list) {
+	// compute_list_add_barrier restarts the list, so the device-address dependencies have to be declared again.
+	RD::get_singleton()->compute_list_add_barrier(p_list);
+	_micro_list_dependencies(p_state, p_list);
+}
+
+void RenderRaytracing::_micro_list_dispatch(RTViewportState *p_state, RD::ComputeListID p_list, uint32_t p_mode, uint32_t p_count, bool p_groups, uint32_t p_step) {
+	if (p_count == 0) {
+		return;
+	}
+	auto *build = p_state->micro_geometry;
+	RD *rd = RD::get_singleton();
 	struct Parameters {
 		float origin[4] = {};
 		float origin_low[4] = {};
@@ -1818,7 +1852,6 @@ bool RenderRaytracing::_micro_dispatch(RTViewportState *p_state, uint32_t p_mode
 		uint32_t record_count;
 		uint32_t mode;
 		uint32_t step;
-		uint32_t width;
 		uint32_t range_begin;
 		uint32_t range_count;
 		uint32_t representative;
@@ -1830,7 +1863,6 @@ bool RenderRaytracing::_micro_dispatch(RTViewportState *p_state, uint32_t p_mode
 	static_assert(sizeof(Parameters) == 96);
 	for (uint32_t axis = 0; axis < 3; axis++) {
 		RendererRD::MaterialStorage::split_double(p_state->rt_origin[axis], &parameters.origin[axis], &parameters.origin_low[axis]);
-
 	}
 	parameters.unit_count = build->segment_data.size();
 	parameters.slot_count = build->pool_count;
@@ -1838,7 +1870,6 @@ bool RenderRaytracing::_micro_dispatch(RTViewportState *p_state, uint32_t p_mode
 	parameters.record_count = build->record_work;
 	parameters.mode = p_mode;
 	parameters.step = p_step;
-	parameters.width = p_width;
 	parameters.range_begin = build->feedback_offset;
 	parameters.range_count = build->feedback_items;
 	parameters.representative = build->page_representative < uint32_t(build->representatives.size()) ? build->representatives[build->page_representative].unit : 0;
@@ -1846,26 +1877,21 @@ bool RenderRaytracing::_micro_dispatch(RTViewportState *p_state, uint32_t p_mode
 	parameters.layer_mask = build->selection->data.layer_mask;
 	parameters.scenario = build->selection->data.scenario;
 	parameters.page_pool = rd->buffer_get_device_address(RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage()->get_pool());
-	RID uniform = UniformSetCacheRD::get_singleton()->get_cache_vec(micro_rt_shader.version_get_shader(micro_rt_version, 0), 0, uniforms);
-	if (uniform.is_null()) {
-		build->dispatch_failed = true;
-		ERR_FAIL_V_MSG(false, "Unable to bind shared RT cut resources.");
-	}
-	RD::ComputeListID list = rd->compute_list_begin();
-	rd->compute_list_bind_compute_pipeline(list, micro_rt_pipeline);
-	rd->compute_list_bind_uniform_set(list, uniform, 0);
-	rd->compute_list_set_push_constant(list, &parameters, sizeof(parameters));
-	for (RID buffer : build->dependencies) {
-		rd->compute_list_add_buffer_dependency(list, buffer);
-	}
-	for (const auto &cut : build->cuts) {
-		if (cut.records.is_valid()) {
-			rd->compute_list_add_buffer_dependency(list, cut.records);
-		}
-	}
+	rd->compute_list_set_push_constant(p_list, &parameters, sizeof(parameters));
 	uint32_t groups = p_groups ? p_count : (p_count + 127) / 128;
-	rd->compute_list_dispatch(list, MIN(groups, 65535u), (groups + 65534u) / 65535u, 1);
-	rd->compute_list_end();
+	rd->compute_list_dispatch(p_list, MIN(groups, 65535u), (groups + 65534u) / 65535u, 1);
+}
+
+bool RenderRaytracing::_micro_dispatch(RTViewportState *p_state, uint32_t p_mode, uint32_t p_count, bool p_groups, uint32_t p_step) {
+	if (p_count == 0) {
+		return true;
+	}
+	RD::ComputeListID list = _micro_list_begin(p_state, p_mode == 16);
+	if (list == RD::INVALID_ID) {
+		return false;
+	}
+	_micro_list_dispatch(p_state, list, p_mode, p_count, p_groups, p_step);
+	RD::get_singleton()->compute_list_end();
 	return true;
 }
 
@@ -2211,17 +2237,14 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 			const bool layout_changed = build->segment_units != build->selection->units;
 			Vector<RTMicroGeometrySegment> segments = build->segment_data;
 			uint64_t record_work = build->record_work;
-			uint32_t max_capacity = build->max_capacity;
 			if (layout_changed) {
 				segments.clear();
 				record_work = 0;
-				max_capacity = 0;
 				for (uint32_t index = 0; index < uint32_t(build->selection->unit_data.size()); index++) {
 					const auto &unit = build->selection->unit_data[index];
 					uint32_t capacity = Math::nearest_power_of_2_templated(MAX(unit.record_capacity, 1u));
 					segments.push_back({ unit.task, unit.ordinal, unit.record_offset, capacity, uint32_t(record_work), build->task_data[unit.task].geometry_base + unit.ordinal, index, 0 });
 					record_work += capacity;
-					max_capacity = MAX(max_capacity, capacity);
 				}
 			}
 			uint32_t pool_count = build->cuts.size();
@@ -2292,7 +2315,6 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 				build->usage = usage;
 				build->representative_slots = mapping;
 				build->record_work = record_work;
-				build->max_capacity = max_capacity;
 				build->bucket_count = bucket_count;
 				build->pool_count = pool_count;
 				build->epoch_pool_capacity = pool_count;
@@ -2302,22 +2324,25 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 			}
 			build->candidate_users.resize_initialized(pool_count);
 			build->cut_generation++;
-			_micro_dispatch(p_state, 0, build->record_work);
-			_micro_dispatch(p_state, 1, segments.size(), true);
-			for (uint32_t width = 2; width <= max_capacity; width <<= 1) {
-				for (uint32_t step = width >> 1; step != 0; step >>= 1) {
-					_micro_dispatch(p_state, 2, build->record_work, false, step, width);
-				}
+			RD::ComputeListID list = _micro_list_begin(p_state);
+			if (list != RD::INVALID_ID) {
+				_micro_list_dispatch(p_state, list, 0, build->record_work);
+				_micro_list_barrier(p_state, list);
+				_micro_list_dispatch(p_state, list, 1, segments.size(), true);
+				_micro_list_barrier(p_state, list);
+				_micro_list_dispatch(p_state, list, 2, segments.size(), true);
+				_micro_list_barrier(p_state, list);
+				_micro_list_dispatch(p_state, list, 3, segments.size(), true);
+				_micro_list_barrier(p_state, list);
+				_micro_list_dispatch(p_state, list, 11, segments.size(), true);
+				_micro_list_barrier(p_state, list);
+				_micro_list_dispatch(p_state, list, 4, bucket_count);
+				_micro_list_barrier(p_state, list);
+				_micro_list_dispatch(p_state, list, 5, pool_count);
+				_micro_list_barrier(p_state, list);
+				_micro_list_dispatch(p_state, list, 6, segments.size(), true, 0);
+				rd->compute_list_end();
 			}
-			_micro_dispatch(p_state, 3, segments.size(), true);
-			for (uint32_t width = 2; width <= max_capacity; width <<= 1) {
-				for (uint32_t step = width >> 1; step != 0; step >>= 1) {
-					_micro_dispatch(p_state, 11, build->record_work, false, step, width);
-				}
-			}
-			_micro_dispatch(p_state, 4, bucket_count);
-			_micro_dispatch(p_state, 5, pool_count);
-			_micro_dispatch(p_state, 6, segments.size(), true, 0);
 			build->epoch = RTMicroGeometryBuild::POOL_MATCH;
 			rd->buffer_clear(build->feedback, 0, 32);
 			_micro_dispatch(p_state, 9, segments.size(), false, 0);
@@ -2331,10 +2356,19 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 			_micro_dispatch(p_state, 9, build->segment_data.size(), false, 0);
 			_micro_feedback(build, 32);
 		} else if (build->epoch == RTMicroGeometryBuild::NEW_MATCH) {
-			for (uint32_t round = 0; round < 8; round++) {
-				_micro_dispatch(p_state, 4, build->bucket_count);
-				_micro_dispatch(p_state, 7, build->segment_data.size());
-				_micro_dispatch(p_state, 8, build->segment_data.size(), true);
+			RD::ComputeListID list = _micro_list_begin(p_state);
+			if (list != RD::INVALID_ID) {
+				for (uint32_t round = 0; round < 8; round++) {
+					if (round != 0) {
+						_micro_list_barrier(p_state, list);
+					}
+					_micro_list_dispatch(p_state, list, 4, build->bucket_count);
+					_micro_list_barrier(p_state, list);
+					_micro_list_dispatch(p_state, list, 7, build->segment_data.size());
+					_micro_list_barrier(p_state, list);
+					_micro_list_dispatch(p_state, list, 8, build->segment_data.size(), true);
+				}
+				rd->compute_list_end();
 			}
 			rd->buffer_clear(build->feedback, 0, 32);
 			_micro_dispatch(p_state, 9, build->segment_data.size(), false, 1);
