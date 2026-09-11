@@ -31,7 +31,7 @@ struct DrawCall {
 	uint uv_offset;
 #ifdef MICRO_GEOMETRY_RASTER
 	uint micro_geometry_bin;
-	uint micro_geometry_recovery;
+	uint micro_geometry_flags;
 #else
 	uint multimesh_motion_vectors_current_offset;
 	uint multimesh_motion_vectors_previous_offset;
@@ -212,6 +212,8 @@ struct InstanceData {
 [[vk::binding(4, 4)]] StructuredBuffer<InstanceData> instances;
 [[vk::binding(5, 4)]] StructuredBuffer<uint> micro_geometry_counts;
 [[vk::binding(6, 4)]] StructuredBuffer<uint> micro_geometry_initial_counts;
+[[vk::binding(7, 4)]] RWStructuredBuffer<uint> micro_geometry_raster_statistics;
+[[vk::constant_id(3)]] const uint micro_geometry_cull = 0;
 #else
 [[vk::binding(2, 1)]] StructuredBuffer<InstanceData> instances;
 #endif

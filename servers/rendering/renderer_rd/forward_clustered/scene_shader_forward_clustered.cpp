@@ -640,6 +640,23 @@ void SceneShaderForwardClustered::ShaderData::_create_pipeline(PipelineKey p_pip
 	sc.type = RD::PIPELINE_SPECIALIZATION_CONSTANT_TYPE_BOOL;
 	specialization_constants.push_back(sc);
 
+	if (p_pipeline_key.micro_geometry) {
+		sc = {};
+		sc.constant_id = 3;
+		sc.type = RD::PIPELINE_SPECIALIZATION_CONSTANT_TYPE_INT;
+		sc.int_value = p_pipeline_key.cull_mode;
+		if (!raster_state.wireframe && p_pipeline_key.version != PIPELINE_VERSION_DEPTH_PASS_DP && p_pipeline_key.version != PIPELINE_VERSION_DEPTH_PASS_WITH_MATERIAL && p_pipeline_key.version != PIPELINE_VERSION_DEPTH_PASS_WITH_SDF) {
+			sc.int_value |= 4;
+			if (multisample_state.sample_count == RD::TEXTURE_SAMPLES_1) {
+				sc.int_value |= 8;
+			}
+		}
+		if (raster_state.front_face == RD::POLYGON_FRONT_FACE_CLOCKWISE) {
+			sc.int_value |= 16;
+		}
+		specialization_constants.push_back(sc);
+	}
+
 	RID shader_rid = get_shader_variant(p_pipeline_key.version, p_pipeline_key.ubershader, p_pipeline_key.micro_geometry);
 	ERR_FAIL_COND(shader_rid.is_null());
 
@@ -795,7 +812,7 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 	emulate_point_size = !RD::get_singleton()->has_feature(RD::SUPPORTS_POINT_SIZE);
 
 	const RD::MeshShaderLimits mesh_limits = RD::get_singleton()->mesh_shader_get_limits();
-	micro_geometry_mesh_supported = RD::get_singleton()->mesh_shader_is_supported() && mesh_limits.max_workgroup_size[0] >= 128 && mesh_limits.max_workgroup_size[1] >= 1 && mesh_limits.max_workgroup_size[2] >= 1 && mesh_limits.max_workgroup_invocations >= 128 && mesh_limits.max_output_vertices >= 128 && mesh_limits.max_output_primitives >= 128 && mesh_limits.max_workgroup_count[0] != 0 && mesh_limits.max_workgroup_count[1] != 0 && mesh_limits.max_workgroup_count[2] != 0 && mesh_limits.max_workgroup_total_count != 0 && mesh_limits.output_per_vertex_granularity != 0 && mesh_limits.max_output_memory_size != 0 && mesh_limits.max_output_components != 0 && mesh_limits.max_shared_memory_size >= 1024;
+	micro_geometry_mesh_supported = RD::get_singleton()->mesh_shader_is_supported() && mesh_limits.max_workgroup_size[0] >= 128 && mesh_limits.max_workgroup_size[1] >= 1 && mesh_limits.max_workgroup_size[2] >= 1 && mesh_limits.max_workgroup_invocations >= 128 && mesh_limits.max_output_vertices >= 128 && mesh_limits.max_output_primitives >= 128 && mesh_limits.max_workgroup_count[0] != 0 && mesh_limits.max_workgroup_count[1] != 0 && mesh_limits.max_workgroup_count[2] != 0 && mesh_limits.max_workgroup_total_count != 0 && mesh_limits.output_per_vertex_granularity != 0 && mesh_limits.max_output_memory_size != 0 && mesh_limits.max_output_components != 0 && mesh_limits.max_shared_memory_size >= 4096;
 	if (!micro_geometry_mesh_supported) {
 		WARN_PRINT("Microgeometry raster is unsupported: mesh shaders with 128 vertices, primitives and invocations are required.");
 	} else {

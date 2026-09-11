@@ -653,7 +653,8 @@ RID MicroGeometrySelection::get_raster_uniform_set(Pass *p_pass, RID p_shader) {
 			RD::Uniform(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 3, p_pass->raster_parameters),
 			RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 4, p_pass->native_instances),
 			RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 5, p_pass->counts),
-			RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 6, p_pass->initial_counts));
+			RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 6, p_pass->initial_counts),
+			RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 7, p_pass->statistics));
 }
 
 void MicroGeometrySelection::add_draw_dependencies(Pass *p_pass, RD::DrawListID p_list) {

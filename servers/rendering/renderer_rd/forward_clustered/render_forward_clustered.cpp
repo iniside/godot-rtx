@@ -274,6 +274,7 @@ void RenderForwardClustered::RenderBufferDataForwardClustered::micro_geometry_st
 	if (p_profiled && p_bytes.size() >= MicroGeometrySelection::STATISTICS_BYTES && decode_uint32(p_bytes.ptr() + 8) != 0) {
 		auto statistic = [&](uint32_t p_index) { return decode_uint32(p_bytes.ptr() + p_index * 4); };
 		print_line(vformat("Microgeometry camera vertex work: frame=%d unique_cluster_vertices=%d triangle_corners=%d", p_data->micro_geometry_stats_submitted_frame, statistic(84), uint64_t(statistic(1)) * 3));
+		print_line(vformat("Microgeometry camera mesh work: frame=%d launched_groups=%d valid_groups=%d invalid_clusters=%d evaluated_unique_vertices=%d vertex_program_evaluations=%d input_triangles=%d emitted_triangles=%d facing_rejected=%d footprint_rejected=%d uncertain_triangles=%d", p_data->micro_geometry_stats_submitted_frame, statistic(85), statistic(86), statistic(87), statistic(88), statistic(89), statistic(90), statistic(91), statistic(92), statistic(93), statistic(94)));
 		print_line(vformat("Microgeometry camera cut: frame=%d flags=%d candidate_clusters=%d committed_clusters=%d retained_units=%d valid_units=%d", p_data->micro_geometry_stats_submitted_frame, statistic(3), statistic(28), statistic(29), statistic(30), statistic(31)));
 		print_line(vformat("Microgeometry camera refinement: frame=%d wanted_not_ready_groups=%d wanted_ready_parents_inactive_groups=%d accepted_refinement_groups=%d threshold_stopped_groups=%d force_finest_units=%d emitted_coarse_inactive_child_clusters=%d", p_data->micro_geometry_stats_submitted_frame, statistic(32), statistic(33), statistic(34), statistic(39), statistic(35), statistic(36)));
 		print_line(vformat("Microgeometry camera projected bounds: frame=%d instance_near_plane_units=%d instance_epsilon_clamped_units=%d refinement_near_plane_groups=%d refinement_epsilon_clamped_groups=%d", p_data->micro_geometry_stats_submitted_frame, statistic(64), statistic(65), statistic(66), statistic(67)));
@@ -920,7 +921,7 @@ void RenderForwardClustered::_render_micro_geometry(RD::DrawListID p_list, RD::F
 		SceneState::PushConstant push = {};
 		push.base_index = range.offset;
 		push.micro_geometry_bin = index;
-		push.micro_geometry_recovery = pass->gpu->recovered;
+		push.micro_geometry_flags = uint32_t(pass->gpu->recovered) | uint32_t(!pass->gpu->frozen && (pass->gpu->data.flags & 128) != 0) << 1;
 		push.uv_offset = uint32_t(Math::make_half_float(p_parameters->uv_offset.y)) << 16 | Math::make_half_float(p_parameters->uv_offset.x);
 		push.ubershader.specialization = specialization;
 		push.ubershader.constants.cull_mode = cull_mode;

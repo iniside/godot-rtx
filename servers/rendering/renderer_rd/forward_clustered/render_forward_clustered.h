@@ -482,7 +482,7 @@ protected:
 			};
 			union {
 				uint32_t multimesh_motion_vectors_previous_offset;
-				uint32_t micro_geometry_recovery;
+				uint32_t micro_geometry_flags;
 			};
 			PushConstantUbershader ubershader;
 		};
