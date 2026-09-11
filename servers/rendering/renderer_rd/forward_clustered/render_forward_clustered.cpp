@@ -74,29 +74,48 @@ StringName RenderForwardClustered::RenderBufferDataForwardClustered::_get_rtxdi_
 	return names[p_set][p_attachment];
 }
 
-void RenderForwardClustered::RenderBufferDataForwardClustered::_ensure_rtxdi_surface() {
-	ERR_FAIL_NULL(render_buffers);
+bool RenderForwardClustered::RenderBufferDataForwardClustered::_ensure_rtxdi_surface() {
+	ERR_FAIL_NULL_V(render_buffers, false);
 	if (render_buffers->has_texture(RB_SCOPE_RTXDI_SURFACE, RB_TEX_RTXDI_BASE_0)) {
-		return;
+		return true;
 	}
 
-	const uint32_t usage = RD::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT | RD::TEXTURE_USAGE_SAMPLING_BIT;
+	const uint32_t usage = RD::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT | RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT;
+	for (RD::DataFormat format : rtxdi_surface_formats) {
+		ERR_FAIL_COND_V_MSG(!RD::get_singleton()->texture_is_format_supported_for_usage(format, usage), false, "The RTXDI renderer requires surface formats supporting color attachment, sampling and storage usage.");
+	}
+	RD::TextureFormat depth_format = render_buffers->get_texture_format(RB_SCOPE_BUFFERS, RB_TEX_DEPTH);
+	depth_format.usage_bits |= RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_CAN_COPY_TO_BIT;
+	ERR_FAIL_COND_V_MSG(!RD::get_singleton()->texture_is_format_supported_for_usage(depth_format.format, depth_format.usage_bits), false, "The RTXDI renderer requires sampleable depth history with transfer-destination support.");
+	bool valid = true;
 	for (uint32_t set = 0; set < 2; set++) {
 		for (uint32_t attachment = 0; attachment < 6; attachment++) {
-			render_buffers->create_texture(RB_SCOPE_RTXDI_SURFACE, _get_rtxdi_surface_texture_name(set, attachment), rtxdi_surface_formats[attachment], usage);
+			valid &= render_buffers->create_texture(RB_SCOPE_RTXDI_SURFACE, _get_rtxdi_surface_texture_name(set, attachment), rtxdi_surface_formats[attachment], usage).is_valid();
 		}
-		RD::TextureFormat depth_format = render_buffers->get_texture_format(RB_SCOPE_BUFFERS, RB_TEX_DEPTH);
-		depth_format.usage_bits |= RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_CAN_COPY_TO_BIT;
-		ERR_FAIL_COND_MSG(!RD::get_singleton()->texture_is_format_supported_for_usage(depth_format.format, depth_format.usage_bits), "The RTXDI renderer requires sampleable depth history with transfer-destination support.");
-		render_buffers->create_texture_from_format(RB_SCOPE_RTXDI_SURFACE, set == 0 ? RB_TEX_RTXDI_DEPTH_0 : RB_TEX_RTXDI_DEPTH_1, depth_format);
+		valid &= render_buffers->create_texture_from_format(RB_SCOPE_RTXDI_SURFACE, set == 0 ? RB_TEX_RTXDI_DEPTH_0 : RB_TEX_RTXDI_DEPTH_1, depth_format).is_valid();
 	}
+	if (!valid) {
+		render_buffers->clear_context(RB_SCOPE_RTXDI_SURFACE);
+		ERR_FAIL_V_MSG(false, "Failed to allocate canonical primary surface resources.");
+	}
+	return true;
+}
+
+RID RenderForwardClustered::RenderBufferDataForwardClustered::get_primary_surface_trace_depth() {
+	ERR_FAIL_NULL_V(render_buffers, RID());
+	if (!render_buffers->has_texture(RB_SCOPE_RTXDI_SURFACE, RB_TEX_RTXDI_TRACE_DEPTH)) {
+		const uint32_t usage = RD::TEXTURE_USAGE_STORAGE_BIT | RD::TEXTURE_USAGE_SAMPLING_BIT;
+		ERR_FAIL_COND_V_MSG(!RD::get_singleton()->texture_is_format_supported_for_usage(RD::DATA_FORMAT_R32_SFLOAT, usage), RID(), "Primary ray depth requires a sampleable R32F storage image.");
+		return render_buffers->create_texture(RB_SCOPE_RTXDI_SURFACE, RB_TEX_RTXDI_TRACE_DEPTH, RD::DATA_FORMAT_R32_SFLOAT, usage);
+	}
+	return render_buffers->get_texture(RB_SCOPE_RTXDI_SURFACE, RB_TEX_RTXDI_TRACE_DEPTH);
 }
 
 RID RenderForwardClustered::RenderBufferDataForwardClustered::prepare_rtxdi_surface(const RenderSceneDataRD *p_scene_data, bool p_invalid_deformation, bool p_invalid_micro_geometry_history) {
 	micro_geometry_history_valid = false;
 	ERR_FAIL_NULL_V(render_buffers, RID());
 	ERR_FAIL_NULL_V(p_scene_data, RID());
-	_ensure_rtxdi_surface();
+	ERR_FAIL_COND_V(!_ensure_rtxdi_surface(), RID());
 
 	const uint64_t engine_frame = RSG::rasterizer->get_frame_number();
 	const Size2i surface_size = render_buffers->get_internal_size();
@@ -1253,10 +1272,9 @@ void RenderForwardClustered::_render_list_with_draw_list(RenderListParameters *p
 	MicroGeometryRasterPass *pass = p_params->micro_geometry;
 	if (pass && !pass->gpu->frozen && pass->render_buffers && p_params->view_count == 1) {
 		auto &pyramid = pass->render_buffers->micro_geometry_depth;
-		RID depth = pass->render_buffers->get_rtxdi_surface_depth();
+		RID depth = pass->render_buffers->get_primary_surface_depth_attachment();
 		RID classification = pass->render_buffers->get_rtxdi_surface_texture(RenderBufferDataForwardClustered::RTXDI_SURFACE_CLASSIFICATION);
 		const Size2i size(pass->gpu->data.hzb_width, pass->gpu->data.hzb_height);
-		pass->render_buffers->commit_rtxdi_surface();
 		micro_geometry->build_depth_pyramid(pyramid, depth, classification, size);
 		if ((pass->gpu->data.flags & 4) != 0) {
 			pass->gpu->data.hzb_mips = pyramid.levels.size();
@@ -1269,7 +1287,6 @@ void RenderForwardClustered::_render_list_with_draw_list(RenderListParameters *p
 			_render_micro_geometry(recovery_list, fb_format, p_params);
 			RD::get_singleton()->draw_list_end();
 			RENDER_TIMESTAMP("Microgeometry Camera Recovery Draw Complete");
-			pass->render_buffers->commit_rtxdi_surface();
 			micro_geometry->build_depth_pyramid(pyramid, depth, classification, size);
 		}
 	}
@@ -2641,6 +2658,12 @@ void RenderForwardClustered::_render_3d_upscaling(const RenderDataRD *p_render_d
 }
 
 void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Color &p_default_bg_color) {
+#ifdef DEBUG_ENABLED
+	if (primary_visibility_mode != PRIMARY_VISIBILITY_RASTER) {
+		ERR_PRINT_ONCE("GODOT_PRIMARY_VISIBILITY currently supports only R; T, H-R and H-T are not implemented.");
+		return;
+	}
+#endif
 	micro_geometry_scenario = p_render_data->scenario;
 	micro_geometry_visible_layers = p_render_data->scene_data->camera_visible_layers;
 	while (micro_geometry_passes.size() > micro_geometry_pass_cursor) {
@@ -2918,12 +2941,15 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		print_line(vformat("Microgeometry deformation: frame=%d camera=%d invalid=%s subtype=%s persistent_instance=%d surface=%d%s", engine_frame, p_render_data->scene_data->camera.get_id(), invalid_deformation, deformation_reason, deformation_instance, deformation_surface, shader_details));
 	}
 	color_framebuffer = rb_data->prepare_rtxdi_surface(p_render_data->scene_data, invalid_deformation, invalid_micro_geometry_history);
+	ERR_FAIL_COND(color_framebuffer.is_null());
 	_render_shadows(p_render_data);
 	light_preparation.begin_lights();
 
 	const uint64_t camera_history_epoch = raytracing->_get_viewport_state(p_render_data)->camera_history_epoch;
 	RenderListPreparation *camera_preparation = _begin_render_list(RENDER_LIST_OPAQUE, p_render_data, PASS_MODE_RTXDI_SURFACE);
+	RENDER_TIMESTAMP("Primary Visibility Acceleration Structures");
 	RTViewportState *rt_state = raytracing->build_tlas(p_render_data);
+	RENDER_TIMESTAMP("Primary Visibility Acceleration Structures Complete");
 	_finish_render_list(camera_preparation);
 	render_list[RENDER_LIST_OPAQUE].sort_by_key();
 	int *render_info = p_render_data->render_info ? p_render_data->render_info->info[RSE::VIEWPORT_RENDER_INFO_TYPE_VISIBLE] : nullptr;
@@ -2955,7 +2981,6 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		_render_list_with_draw_list(&render_list_params, color_framebuffer, RD::DRAW_CLEAR_ALL, surface_clear, 0.0f, 0u, p_render_data->render_region);
 		RD::get_singleton()->draw_command_end_label();
 	}
-	rb_data->commit_rtxdi_surface();
 	RenderRTXDISurfaceResources surface;
 	surface.samplers = samplers;
 	for (uint32_t attachment = 0; attachment < 6; attachment++) {
@@ -3018,17 +3043,17 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 			background.b /= exposure;
 		}
 		RENDER_TIMESTAMP("Path Tracing");
-		ERR_FAIL_COND_MSG(!raytracing->pathtracing->render(*raytracing, *rt_state, frame.scene_data, frame.radiance, screen_size, is_using_radiance_octmap_array(), draw_sky, background), "Native camera path tracing failed.");
-		for (uint32_t attachment = 0; attachment < 6; attachment++) {
-			frame.surface[attachment] = rt_state->pathtracing->get_surface(attachment);
-		}
-		frame.depth = rt_state->pathtracing->get_depth();
+		ERR_FAIL_COND_MSG(!raytracing->pathtracing->render(*raytracing, *rt_state, frame.scene_data, frame.radiance, { surface.current, 6 }, rb_data->get_primary_surface_trace_depth(), screen_size, is_using_radiance_octmap_array(), draw_sky, background), "Native camera path tracing failed.");
 		frame.noisy_diffuse = rt_state->pathtracing->get_diffuse();
 		frame.noisy_specular = rt_state->pathtracing->get_specular();
 		frame.camera_radiance = rt_state->pathtracing->get_radiance();
 		frame.history_valid &= rt_state->pathtracing->history_valid;
-		copy_effects->copy_r32f_to_depth_fb(frame.depth, rb_data->get_depth_fb(), Rect2i(Point2i(), screen_size));
+		RENDER_TIMESTAMP("Primary Surface Depth Resolve");
+		copy_effects->copy_r32f_to_depth_fb(rb_data->get_primary_surface_trace_depth(), rb_data->get_depth_fb(), Rect2i(Point2i(), screen_size));
 	}
+	RENDER_TIMESTAMP("Primary Surface History Commit");
+	rb_data->commit_rtxdi_surface();
+	RENDER_TIMESTAMP("Primary Surface History Commit Complete");
 	RENDER_TIMESTAMP("Camera Guides");
 	ERR_FAIL_COND_MSG(!nrd_effect->prepare(rb_data->nrd_context, frame), "Camera guide preparation failed.");
 	RENDER_TIMESTAMP("Process Pre Opaque Compositor Effects");
@@ -3110,7 +3135,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 			raytracing->pathtracing = memnew(RenderPathtracing);
 		}
 		RENDER_TIMESTAMP("Microgeometry RT Debug");
-		ERR_FAIL_COND_MSG(!raytracing->pathtracing->render(*raytracing, *rt_state, frame.scene_data, frame.radiance, screen_size, is_using_radiance_octmap_array(), false, Color(), true), "Microgeometry RT debug rays failed.");
+		ERR_FAIL_COND_MSG(!raytracing->pathtracing->render(*raytracing, *rt_state, frame.scene_data, frame.radiance, { surface.current, 6 }, rb_data->get_primary_surface_trace_depth(), screen_size, is_using_radiance_octmap_array(), false, Color(), true), "Microgeometry RT debug rays failed.");
 	}
 	if (p_render_data->render_info) {
 		auto statistics = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage()->get_statistics();
@@ -5898,6 +5923,18 @@ void RenderForwardClustered::_update_shader_quality_settings() {
 
 RenderForwardClustered::RenderForwardClustered() {
 	singleton = this;
+#ifdef DEBUG_ENABLED
+	const String visibility_mode = OS::get_singleton()->get_environment("GODOT_PRIMARY_VISIBILITY");
+	if (visibility_mode == "T") {
+		primary_visibility_mode = PRIMARY_VISIBILITY_TRACE;
+	} else if (visibility_mode == "H-R") {
+		primary_visibility_mode = PRIMARY_VISIBILITY_RASTER_TRACE;
+	} else if (visibility_mode == "H-T") {
+		primary_visibility_mode = PRIMARY_VISIBILITY_TRACE_RASTER;
+	} else if (!visibility_mode.is_empty() && visibility_mode != "R") {
+		primary_visibility_mode = PRIMARY_VISIBILITY_INVALID;
+	}
+#endif
 
 	/* SCENE SHADER */
 

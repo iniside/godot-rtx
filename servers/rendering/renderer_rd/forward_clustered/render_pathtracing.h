@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/templates/span.h"
 #include "servers/rendering/renderer_rd/shaders/raytracing/pathtracing.slang.gen.h"
 
 namespace RendererSceneRenderImplementation {
@@ -41,7 +42,7 @@ class RenderPathtracing {
 public:
 	struct Context {
 		Size2i size;
-		RID images[11];
+		RID images[4];
 		RID frame_buffer;
 		RID pipeline;
 		RID sbt;
@@ -55,13 +56,11 @@ public:
 		RID get_radiance() const { return images[1]; }
 		RID get_diffuse() const { return images[2]; }
 		RID get_specular() const { return images[3]; }
-		RID get_surface(uint32_t p_index) const { return images[4 + p_index]; }
-		RID get_depth() const { return images[10]; }
 	};
 
 	RenderPathtracing();
 	~RenderPathtracing();
-	bool render(RenderRaytracing &p_raytracing, RTViewportState &p_state, RID p_scene_data, RID p_sky, const Size2i &p_size, bool p_sky_array, bool p_draw_sky, const Color &p_background, bool p_micro_geometry_debug = false);
+	bool render(RenderRaytracing &p_raytracing, RTViewportState &p_state, RID p_scene_data, RID p_sky, Span<const RID> p_surfaces, RID p_depth, const Size2i &p_size, bool p_sky_array, bool p_draw_sky, const Color &p_background, bool p_micro_geometry_debug = false);
 
 private:
 	PathtracingShaderRD shader;

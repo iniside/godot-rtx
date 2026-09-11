@@ -31,7 +31,7 @@ void main() {
 		uint previous_mask = pt.settings.w;
 		for (uint bounce = 0u; bounce < max(pt.settings.y, 1u); bounce++) {
 			RTHitPayload hit = pt_trace(ray, pt.settings.w, 0u, width, spread);
-			if (bounce == 0u && sample == 0u) { pt_write_primary(pixel, hit, ray); }
+			if (bounce == 0u && sample == 0u && pt.settings.y != 0u) { pt_write_primary(pixel, hit, ray); }
 			if (pt.settings.y == 0u) {
 				radiance = hit.hit != 0u ? float3(0.12) : float3(0.0);
 				if (hit.hit != 0u && hit.cluster_id >= 0) {

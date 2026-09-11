@@ -68,6 +68,7 @@
 #define RB_TEX_RTXDI_GEOMETRY_1 SNAME("geometry_1")
 #define RB_TEX_RTXDI_CLASSIFICATION_1 SNAME("classification_1")
 #define RB_TEX_RTXDI_DEPTH_1 SNAME("depth_1")
+#define RB_TEX_RTXDI_TRACE_DEPTH SNAME("trace_depth")
 
 #define RB_TEX_SPECULAR SNAME("specular")
 #define RB_TEX_SPECULAR_MSAA SNAME("specular_msaa")
@@ -106,6 +107,17 @@ protected:
 		RENDER_LIST_SECONDARY, //used for shadows and other objects
 		RENDER_LIST_MAX
 	};
+
+#ifdef DEBUG_ENABLED
+	enum PrimaryVisibilityMode {
+		PRIMARY_VISIBILITY_RASTER,
+		PRIMARY_VISIBILITY_TRACE,
+		PRIMARY_VISIBILITY_RASTER_TRACE,
+		PRIMARY_VISIBILITY_TRACE_RASTER,
+		PRIMARY_VISIBILITY_INVALID,
+	};
+	PrimaryVisibilityMode primary_visibility_mode = PRIMARY_VISIBILITY_RASTER;
+#endif
 
 	/* Scene Shader */
 
@@ -148,7 +160,7 @@ public:
 		bool rtxdi_surface_previous_camera_orthogonal = false;
 
 		StringName _get_rtxdi_surface_texture_name(uint32_t p_set, uint32_t p_attachment) const;
-		void _ensure_rtxdi_surface();
+		bool _ensure_rtxdi_surface();
 
 	public:
 		ClusterBuilderRD *cluster_builder = nullptr;
@@ -230,6 +242,8 @@ public:
 		RID get_velocity_only_fb();
 		RID prepare_rtxdi_surface(const RenderSceneDataRD *p_scene_data, bool p_invalid_deformation, bool p_invalid_micro_geometry_history);
 		void commit_rtxdi_surface();
+		RID get_primary_surface_trace_depth();
+		RID get_primary_surface_depth_attachment() const { return render_buffers->get_depth_texture(); }
 		void invalidate_raytracing_history() {
 			rtxdi_surface_initialized = false;
 			micro_geometry_history_valid = false;

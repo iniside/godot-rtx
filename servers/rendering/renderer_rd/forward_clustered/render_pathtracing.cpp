@@ -72,21 +72,14 @@ RenderPathtracing::Context *RenderPathtracing::_create_context(const Size2i &p_s
 	Context *context = memnew(Context);
 	context->size = p_size;
 	RD *rd = RD::get_singleton();
-	const RD::DataFormat formats[11] = {
+	const RD::DataFormat formats[4] = {
 		RD::DATA_FORMAT_R32G32B32A32_SFLOAT,
 		RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
 		RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
 		RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
-		RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
-		RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
-		RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
-		RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
-		RD::DATA_FORMAT_R32_UINT,
-		RD::DATA_FORMAT_R32G32_UINT,
-		RD::DATA_FORMAT_R32_SFLOAT,
 	};
 	bool valid = true;
-	for (uint32_t i = 0; i < 11; i++) {
+	for (uint32_t i = 0; i < 4; i++) {
 		RD::TextureFormat format;
 		format.width = p_size.x;
 		format.height = p_size.y;
@@ -104,7 +97,11 @@ RenderPathtracing::Context *RenderPathtracing::_create_context(const Size2i &p_s
 	return context;
 }
 
-bool RenderPathtracing::render(RenderRaytracing &p_raytracing, RTViewportState &p_state, RID p_scene_data, RID p_sky, const Size2i &p_size, bool p_sky_array, bool p_draw_sky, const Color &p_background, bool p_micro_geometry_debug) {
+bool RenderPathtracing::render(RenderRaytracing &p_raytracing, RTViewportState &p_state, RID p_scene_data, RID p_sky, Span<const RID> p_surfaces, RID p_depth, const Size2i &p_size, bool p_sky_array, bool p_draw_sky, const Color &p_background, bool p_micro_geometry_debug) {
+	ERR_FAIL_COND_V(p_surfaces.size() != 6 || p_depth.is_null(), false);
+	for (RID surface : p_surfaces) {
+		ERR_FAIL_COND_V(surface.is_null(), false);
+	}
 	RD *rd = RD::get_singleton();
 	if (p_state.pathtracing && p_state.pathtracing->size != p_size) {
 		memdelete(p_state.pathtracing);
@@ -162,9 +159,13 @@ bool RenderPathtracing::render(RenderRaytracing &p_raytracing, RTViewportState &
 	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 1, { lights.light_buffer }));
 	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 2, { lights.parameters_buffer }));
 	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 3, { p_sky }));
-	for (uint32_t i = 0; i < 11; i++) {
+	for (uint32_t i = 0; i < 4; i++) {
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 4 + i, { context.images[i] }));
 	}
+	for (uint32_t i = 0; i < 6; i++) {
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 8 + i, { p_surfaces[i] }));
+	}
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 14, { p_depth }));
 	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 15, { p_state.motion_index_buffer }));
 	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 16, { p_state.motion_transform_buffer }));
 	RID output_set = UniformSetCacheRD::get_singleton()->get_cache_vec(shader_rid, 2, uniforms);
