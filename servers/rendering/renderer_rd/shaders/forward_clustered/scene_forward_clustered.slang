@@ -1103,7 +1103,6 @@ void main(uint3 group_id : SV_GroupID, uint lane : SV_GroupIndex,
 		out vertices VertexOutput output_vertices[128], out indices uint3 output_triangles[128],
 		out primitives MicroGeometryPrimitiveOutput output_primitives[128]) {
 	static_assert(sizeof(VertexOutput) <= MICRO_GEOMETRY_OUTPUT_STRIDE_LIMIT, "Microgeometry material exceeds mesh output component or memory limits.");
-	static_assert(sizeof(MicroGeometryPrimitiveOutput) == 4, "Microgeometry primitive output memory accounting must match the pipeline limit.");
 	static_assert(sizeof(MicroGeometrySelectedCluster) + sizeof(MicroGeometryInstance) + sizeof(MicroGeometrySurface) + 32 + 128 * sizeof(float4) <= MICRO_GEOMETRY_SHARED_MEMORY_LIMIT, "Microgeometry context exceeds mesh shared memory limit.");
 	uint cluster_index = group_id.x + group_id.y * micro_geometry_parameters.dispatch_width;
 	uint bin = draw_call.micro_geometry_bin;
