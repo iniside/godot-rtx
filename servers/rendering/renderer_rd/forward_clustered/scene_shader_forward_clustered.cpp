@@ -812,7 +812,8 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 	emulate_point_size = !RD::get_singleton()->has_feature(RD::SUPPORTS_POINT_SIZE);
 
 	const RD::MeshShaderLimits mesh_limits = RD::get_singleton()->mesh_shader_get_limits();
-	micro_geometry_mesh_supported = RD::get_singleton()->mesh_shader_is_supported() && mesh_limits.max_workgroup_size[0] >= 128 && mesh_limits.max_workgroup_size[1] >= 1 && mesh_limits.max_workgroup_size[2] >= 1 && mesh_limits.max_workgroup_invocations >= 128 && mesh_limits.max_output_vertices >= 128 && mesh_limits.max_output_primitives >= 128 && mesh_limits.max_workgroup_count[0] != 0 && mesh_limits.max_workgroup_count[1] != 0 && mesh_limits.max_workgroup_count[2] != 0 && mesh_limits.max_workgroup_total_count != 0 && mesh_limits.output_per_vertex_granularity != 0 && mesh_limits.max_output_memory_size != 0 && mesh_limits.max_output_components != 0 && mesh_limits.max_shared_memory_size >= 4096;
+	const uint32_t primitive_output_bytes = mesh_limits.output_per_primitive_granularity == 0 ? 0 : ((128u + mesh_limits.output_per_primitive_granularity - 1) / mesh_limits.output_per_primitive_granularity) * mesh_limits.output_per_primitive_granularity * 4;
+	micro_geometry_mesh_supported = RD::get_singleton()->mesh_shader_is_supported() && mesh_limits.max_workgroup_size[0] >= 128 && mesh_limits.max_workgroup_size[1] >= 1 && mesh_limits.max_workgroup_size[2] >= 1 && mesh_limits.max_workgroup_invocations >= 128 && mesh_limits.max_output_vertices >= 128 && mesh_limits.max_output_primitives >= 128 && mesh_limits.max_workgroup_count[0] != 0 && mesh_limits.max_workgroup_count[1] != 0 && mesh_limits.max_workgroup_count[2] != 0 && mesh_limits.max_workgroup_total_count != 0 && mesh_limits.output_per_vertex_granularity != 0 && primitive_output_bytes != 0 && mesh_limits.max_output_memory_size > primitive_output_bytes && mesh_limits.max_output_components > 1 && mesh_limits.max_shared_memory_size >= 4096;
 	if (!micro_geometry_mesh_supported) {
 		WARN_PRINT("Microgeometry raster is unsupported: mesh shaders with 128 vertices, primitives and invocations are required.");
 	} else {
@@ -827,7 +828,7 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 			if (variant & 2) {
 				base_define += "\n#define MICRO_GEOMETRY_RASTER\n";
 				const uint32_t padded_vertices = ((128u + mesh_limits.output_per_vertex_granularity - 1) / mesh_limits.output_per_vertex_granularity) * mesh_limits.output_per_vertex_granularity;
-				const uint32_t output_stride = MIN(mesh_limits.max_output_components * 4, mesh_limits.max_output_memory_size / padded_vertices);
+				const uint32_t output_stride = MIN((mesh_limits.max_output_components - 1) * 4, (mesh_limits.max_output_memory_size - primitive_output_bytes) / padded_vertices);
 				base_define += "#define MICRO_GEOMETRY_OUTPUT_STRIDE_LIMIT " + uitos(output_stride) + "\n";
 				base_define += "#define MICRO_GEOMETRY_SHARED_MEMORY_LIMIT " + uitos(mesh_limits.max_shared_memory_size) + "\n";
 			}

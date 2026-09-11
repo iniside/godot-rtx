@@ -80,7 +80,6 @@ groupshared uint64_t micro_geometry_payload;
 groupshared uint micro_geometry_vertex_count;
 groupshared uint micro_geometry_triangle_count;
 groupshared uint micro_geometry_invalid;
-groupshared uint micro_geometry_emitted_count;
 groupshared float4 micro_geometry_raster_vertices[128];
 static float3 micro_geometry_normal;
 static float3 micro_geometry_tangent;
@@ -1055,6 +1054,10 @@ VertexOutput evaluate_vertex(VertexInput stage_input) {
 }
 
 #ifdef MICRO_GEOMETRY_RASTER
+struct MicroGeometryPrimitiveOutput {
+	bool culled : SV_CullPrimitive;
+};
+
 uint micro_geometry_triangle_rejection(uint3 p_triangle) {
 	if ((micro_geometry_cull & 4) == 0 || micro_geometry_parameters.selected_cluster_color != 0) {
 		return 0;
@@ -1097,8 +1100,10 @@ uint micro_geometry_triangle_rejection(uint3 p_triangle) {
 [numthreads(128, 1, 1)]
 [outputtopology("triangle")]
 void main(uint3 group_id : SV_GroupID, uint lane : SV_GroupIndex,
-		out vertices VertexOutput output_vertices[128], out indices uint3 output_triangles[128]) {
+		out vertices VertexOutput output_vertices[128], out indices uint3 output_triangles[128],
+		out primitives MicroGeometryPrimitiveOutput output_primitives[128]) {
 	static_assert(sizeof(VertexOutput) <= MICRO_GEOMETRY_OUTPUT_STRIDE_LIMIT, "Microgeometry material exceeds mesh output component or memory limits.");
+	static_assert(sizeof(MicroGeometryPrimitiveOutput) == 4, "Microgeometry primitive output memory accounting must match the pipeline limit.");
 	static_assert(sizeof(MicroGeometrySelectedCluster) + sizeof(MicroGeometryInstance) + sizeof(MicroGeometrySurface) + 32 + 128 * sizeof(float4) <= MICRO_GEOMETRY_SHARED_MEMORY_LIMIT, "Microgeometry context exceeds mesh shared memory limit.");
 	uint cluster_index = group_id.x + group_id.y * micro_geometry_parameters.dispatch_width;
 	uint bin = draw_call.micro_geometry_bin;
@@ -1110,7 +1115,6 @@ void main(uint3 group_id : SV_GroupID, uint lane : SV_GroupIndex,
 		micro_geometry_invalid = 1;
 		micro_geometry_vertex_count = 0;
 		micro_geometry_triangle_count = 0;
-		micro_geometry_emitted_count = 0;
 		if (cluster_index < micro_geometry_counts[bin] && micro_geometry_prepare_cluster(selected_index)) {
 			micro_geometry_invalid = uint(micro_geometry_selection.bin != bin);
 		}
@@ -1137,19 +1141,20 @@ void main(uint3 group_id : SV_GroupID, uint lane : SV_GroupIndex,
 	}
 	GroupMemoryBarrierWithGroupSync();
 	bool valid_cluster = micro_geometry_invalid == 0;
+	SetMeshOutputCounts(valid_cluster ? micro_geometry_vertex_count : 0, valid_cluster ? micro_geometry_triangle_count : 0);
 	bool sample_statistics = (draw_call.micro_geometry_flags & 2) != 0;
 	if (sample_statistics && lane == 0) {
 		InterlockedAdd(micro_geometry_raster_statistics[85], 1);
 		InterlockedAdd(micro_geometry_raster_statistics[86], uint(valid_cluster));
 		InterlockedAdd(micro_geometry_raster_statistics[87], uint(!valid_cluster && cluster_index < micro_geometry_counts[bin]));
 	}
-	VertexOutput vertex_output = (VertexOutput)0;
 	if (valid_cluster && lane < micro_geometry_vertex_count) {
 		micro_geometry_pull_vertex(lane);
 		VertexInput input = (VertexInput)0;
 		input.vertex_index = source_vertex;
 		input.instance_index = selected_index;
-		vertex_output = evaluate_vertex(input);
+		VertexOutput vertex_output = evaluate_vertex(input);
+		output_vertices[lane] = vertex_output;
 		float4 clip = vertex_output.position;
 		float margin = max(abs(clip.w), 1.0) * (16.0 * 1.192092896e-7);
 		bool safe = all(isfinite(clip)) && clip.w > margin && all(abs(clip.xy) < clip.w - margin) && clip.z > margin && clip.z < clip.w - margin;
@@ -1161,30 +1166,23 @@ void main(uint3 group_id : SV_GroupID, uint lane : SV_GroupIndex,
 	bool valid_triangle = valid_cluster && lane < micro_geometry_triangle_count;
 	uint rejection = valid_triangle ? micro_geometry_triangle_rejection(triangle) : 0;
 	bool emitted = valid_triangle && rejection != 1 && rejection != 2;
-	uint triangle_output = WavePrefixCountBits(emitted);
-	uint wave_count = WaveActiveCountBits(emitted);
-	uint wave_offset = 0;
-	if (WaveIsFirstLane()) {
-		InterlockedAdd(micro_geometry_emitted_count, wave_count, wave_offset);
+	if (valid_triangle) {
+		output_triangles[lane] = triangle;
+		MicroGeometryPrimitiveOutput primitive_output;
+		primitive_output.culled = !emitted;
+		output_primitives[lane] = primitive_output;
 	}
-	triangle_output += WaveReadLaneFirst(wave_offset);
 	if (sample_statistics) {
+		uint emitted_count = WaveActiveCountBits(emitted);
 		uint facing_rejected = WaveActiveCountBits(valid_triangle && rejection == 1);
 		uint footprint_rejected = WaveActiveCountBits(valid_triangle && rejection == 2);
 		uint uncertain = WaveActiveCountBits(valid_triangle && rejection == 3);
 		if (WaveIsFirstLane()) {
+			InterlockedAdd(micro_geometry_raster_statistics[91], emitted_count);
 			InterlockedAdd(micro_geometry_raster_statistics[92], facing_rejected);
 			InterlockedAdd(micro_geometry_raster_statistics[93], footprint_rejected);
 			InterlockedAdd(micro_geometry_raster_statistics[94], uncertain);
 		}
-	}
-	GroupMemoryBarrierWithGroupSync();
-	SetMeshOutputCounts(valid_cluster ? micro_geometry_vertex_count : 0, micro_geometry_emitted_count);
-	if (valid_cluster && lane < micro_geometry_vertex_count) {
-		output_vertices[lane] = vertex_output;
-	}
-	if (emitted) {
-		output_triangles[triangle_output] = triangle;
 	}
 	if (sample_statistics && valid_cluster && lane == 0) {
 		InterlockedAdd(micro_geometry_raster_statistics[88], micro_geometry_vertex_count);
@@ -1194,7 +1192,6 @@ void main(uint3 group_id : SV_GroupID, uint lane : SV_GroupIndex,
 		InterlockedAdd(micro_geometry_raster_statistics[89], micro_geometry_vertex_count);
 #endif
 		InterlockedAdd(micro_geometry_raster_statistics[90], micro_geometry_triangle_count);
-		InterlockedAdd(micro_geometry_raster_statistics[91], micro_geometry_emitted_count);
 	}
 }
 #else
