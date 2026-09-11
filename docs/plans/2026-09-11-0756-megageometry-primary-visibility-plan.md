@@ -3,7 +3,7 @@
 Approved by the owner on 2026-09-11 ("to zaczynaj"). Source baseline
 `8d15b00863`, rendering source through `6e916a19c8`. Implementation and the
 bounded build/runtime comparison below are authorized. Fresh-context dispatch
-remains blocked by the current session's agent-thread limit.
+succeeded on retry; the brief plan review passes at `3724291fba`.
 
 ## Context and decision
 
@@ -309,10 +309,11 @@ a fallback or silently expanding the task.
 
 ## Primary sources
 
-Review status: independent source research completed. A fresh brief plan-review
-spawn was attempted but rejected by the session's agent-thread limit; no fresh
-review verdict is claimed. Resolve this remaining workflow item before source
-implementation. No new build or runtime measurement was performed for this plan.
+Review status: independent source research completed. Fresh brief plan review
+passes for exact `3724291fba` and cumulative `8d15b00863..3724291fba` after the
+dispatch retry succeeded. This establishes plan coherence only; material parity,
+runtime synchronization and comparative performance still require implementation
+validation. No new build or runtime measurement was performed for this plan.
 
 - https://github.com/nvpro-samples/vk_lod_clusters/tree/22301a0cb682eec543dd851a6502c26ffdf436f5
 - https://github.com/NVIDIA-RTX/RTXMG/blob/9f7644a854776ed896900f011367df420c6fb389/docs/ClusterLOD.md
