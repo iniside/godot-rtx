@@ -114,6 +114,8 @@ struct PushConstant {
 [[vk::binding(18, 0)]] RWStructuredBuffer<uint> frontier;
 [[vk::binding(19, 0)]] RWStructuredBuffer<uint2> candidate;
 [[vk::binding(20, 0)]] RWStructuredBuffer<uint2> committed;
+[[vk::binding(21, 0)]] StructuredBuffer<uint> record_order;
+[[vk::binding(22, 0)]] StructuredBuffer<uint> queue_order;
 
 void add_statistic(uint p_index, uint p_value = 1) {
 	if ((parameters.flags & 128) != 0) { InterlockedAdd(statistics[p_index], p_value); }
@@ -123,11 +125,11 @@ uint unit_for_work(uint p_index, bool p_queue) {
 	uint begin = 0, end = parameters.unit_count;
 	while (begin + 1 < end) {
 		uint middle = (begin + end) / 2;
-		SelectionUnit unit = units[middle];
+		SelectionUnit unit = units[p_queue ? queue_order[middle] : record_order[middle]];
 		uint offset = p_queue ? unit.queue_offset : unit.record_offset;
 		if (offset <= p_index) { begin = middle; } else { end = middle; }
 	}
-	return begin;
+	return p_queue ? queue_order[begin] : record_order[begin];
 }
 
 uint find_group(SelectionUnit p_unit, uint p_group) {
@@ -552,7 +554,7 @@ void main(uint3 id : SV_DispatchThreadID) {
 	bool force_finest = surface.force_finest != 0;
 	bool finest = (parameters.flags & 32) != 0 && force_finest;
 	if (push.mode == 2) {
-		if (relative >= unit_states[unit_index].committed_count) { return; }
+		if (relative >= min(unit_states[unit_index].committed_count, unit.record_capacity)) { return; }
 		uint2 record = committed[index];
 		MicroGeometryCluster cluster = ((MicroGeometryCluster*)asset.clusters)[record.x];
 		MicroGeometryPage page = ((MicroGeometryPage*)asset.pages)[cluster.page];

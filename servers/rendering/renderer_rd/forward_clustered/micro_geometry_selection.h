@@ -155,6 +155,8 @@ public:
 		RID bins;
 		RID parameters;
 		RID units;
+		RID record_order;
+		RID queue_order;
 		RID queue;
 		RID sparse_states;
 		RID unit_states;
@@ -177,6 +179,8 @@ public:
 		Vector<Bin> bin_data;
 		Vector<Task> task_data;
 		Vector<Unit> unit_data;
+		Vector<uint32_t> record_order_data;
+		Vector<uint32_t> queue_order_data;
 		Ref<CapacityFeedback> capacity_feedback;
 		bool admission_failed = false;
 		LocalVector<RID> retired_buffers;
@@ -189,10 +193,15 @@ public:
 		uint64_t profile_frame = UINT64_MAX;
 		uint64_t last_used_frame = 0;
 		uint32_t resize_attempts = 0;
+		uint32_t append_attempts = 0;
 		const char *allocation_status = "not_attempted";
 		Parameters data;
 		uint32_t levels = 0;
 		uint32_t selected_capacity = 0;
+		uint32_t queue_reserved = 0;
+		uint32_t record_reserved = 0;
+		uint32_t queue_holes = 0;
+		uint32_t record_holes = 0;
 		uint64_t memory_bytes = 0;
 		~Pass();
 	};
@@ -204,6 +213,8 @@ public:
 	};
 	static constexpr uint64_t MAX_PASS_BYTES = 2ULL * 1024 * 1024 * 1024;
 	static constexpr uint32_t STATISTICS_BYTES = 380;
+	static constexpr uint32_t RESERVE_PERCENT = 125;
+	static constexpr uint32_t HOLE_PERCENT = 50;
 	Pass *create(const Vector<Task> &p_tasks, uint32_t p_bin_count, const Parameters &p_parameters, uint32_t p_levels, uint32_t p_native_stride, RID p_instances, RID p_surfaces, const Vector<RID> &p_dependencies);
 	bool needs_retry(Pass *p_pass) const;
 	void select(Pass *p_pass, RID p_hzb);
@@ -232,6 +243,10 @@ private:
 	RID hzb_pipeline;
 	Ref<CapacityHistory> capacity_history;
 	RID _buffer(Pass &r_pass, uint64_t p_size, const void *p_data = nullptr, uint32_t p_usage = 0);
+	static uint32_t _build_bins(const Vector<Task> &p_tasks, const Vector<Unit> &p_units, uint32_t p_bin_count, Vector<Bin> &r_bins);
+	static bool _validate_bins(Pass *p_pass, const Vector<Bin> &p_bins);
+	static void _upload_order(Pass *p_pass);
+	bool _grow(Pass *p_pass, const Vector<Unit> &p_units);
 	bool _resize(Pass *p_pass, const Vector<Unit> &p_units);
 	static void _retire_buffers(Pass *p_pass);
 	static void _report_selection(Pass *p_pass);

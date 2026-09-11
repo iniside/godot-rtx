@@ -215,7 +215,184 @@ void MicroGeometrySelection::_report_selection(Pass *p_pass) {
 	p_pass->profile_frame = frame;
 	const CapacityFeedback &feedback = *p_pass->capacity_feedback.ptr();
 	const char *kind = (p_pass->data.flags & 32) ? "rt" : ((p_pass->data.flags & 64) ? "shadow" : "camera");
-	print_line(vformat("Microgeometry selection: frame=%d pass=%s owner=%d tasks=%d units=%d active_bytes=%d fixed_bytes=%d retired_bytes=%d requested_active_bytes=%d replacement_peak_bytes=%d budget_bytes=%d resize_attempts=%d outcome=%s admission_failed=%d history_failed=%d retry=%d feedback_pending=%d feedback_frame=%d queue_overflow_units=%d record_overflow_units=%d", frame, kind, feedback.owner, p_pass->data.task_count, p_pass->data.unit_count, p_pass->memory_bytes - p_pass->retired_bytes, p_pass->fixed_memory_bytes, p_pass->retired_bytes, p_pass->requested_bytes, p_pass->replacement_peak_bytes, MAX_PASS_BYTES, p_pass->resize_attempts, p_pass->allocation_status, int(p_pass->admission_failed), int(feedback.failed), int(feedback.retry), int(feedback.pending), feedback.completed_frame, feedback.queue_overflows, feedback.record_overflows));
+	print_line(vformat("Microgeometry selection: frame=%d pass=%s owner=%d tasks=%d units=%d active_bytes=%d fixed_bytes=%d retired_bytes=%d requested_active_bytes=%d replacement_peak_bytes=%d budget_bytes=%d resize_attempts=%d append_attempts=%d queue_work=%d queue_reserved=%d queue_holes=%d record_work=%d record_reserved=%d record_holes=%d outcome=%s admission_failed=%d history_failed=%d retry=%d feedback_pending=%d feedback_frame=%d queue_overflow_units=%d record_overflow_units=%d", frame, kind, feedback.owner, p_pass->data.task_count, p_pass->data.unit_count, p_pass->memory_bytes - p_pass->retired_bytes, p_pass->fixed_memory_bytes, p_pass->retired_bytes, p_pass->requested_bytes, p_pass->replacement_peak_bytes, MAX_PASS_BYTES, p_pass->resize_attempts, p_pass->append_attempts, p_pass->data.queue_work, p_pass->queue_reserved, p_pass->queue_holes, p_pass->data.record_work, p_pass->record_reserved, p_pass->record_holes, p_pass->allocation_status, int(p_pass->admission_failed), int(feedback.failed), int(feedback.retry), int(feedback.pending), feedback.completed_frame, feedback.queue_overflows, feedback.record_overflows));
+}
+
+uint32_t MicroGeometrySelection::_build_bins(const Vector<Task> &p_tasks, const Vector<Unit> &p_units, uint32_t p_bin_count, Vector<Bin> &r_bins) {
+	r_bins.clear();
+	r_bins.resize(p_bin_count);
+	for (const Unit &unit : p_units) {
+		r_bins.write[p_tasks[unit.task].bin].capacity += unit.record_capacity;
+	}
+	uint32_t offset = 0;
+	for (Bin &bin : r_bins) {
+		bin.offset = offset;
+		offset += bin.capacity;
+	}
+	return offset;
+}
+
+bool MicroGeometrySelection::_validate_bins(Pass *p_pass, const Vector<Bin> &p_bins) {
+	if ((p_pass->data.flags & 32) != 0) {
+		return true;
+	}
+	RD *rd = RD::get_singleton();
+	ERR_FAIL_COND_V_MSG(!rd->mesh_shader_is_supported(), false, "Microgeometry raster requires mesh shader support.");
+	const RD::MeshShaderLimits limits = rd->mesh_shader_get_limits();
+	const uint32_t width = MIN(1024u, limits.max_workgroup_count[0]);
+	ERR_FAIL_COND_V_MSG(width == 0, false, "Microgeometry mesh dispatch width is unsupported.");
+	for (const Bin &bin : p_bins) {
+		const uint64_t height = (uint64_t(bin.capacity) + width - 1) / width;
+		const uint64_t padded = MIN(bin.capacity, width) * height;
+		ERR_FAIL_COND_V_MSG(height > limits.max_workgroup_count[1] || padded > limits.max_workgroup_total_count, false, "Microgeometry bin exceeds mesh shader dispatch limits.");
+	}
+	p_pass->raster_data.dispatch_width = width;
+	return true;
+}
+
+void MicroGeometrySelection::_upload_order(Pass *p_pass) {
+	if (p_pass->record_order_data.is_empty()) {
+		return;
+	}
+	RD *rd = RD::get_singleton();
+	rd->buffer_update(p_pass->record_order, 0, uint32_t(p_pass->record_order_data.size()) * 4, p_pass->record_order_data.ptr());
+	rd->buffer_update(p_pass->queue_order, 0, uint32_t(p_pass->queue_order_data.size()) * 4, p_pass->queue_order_data.ptr());
+}
+
+bool MicroGeometrySelection::_grow(Pass *p_pass, const Vector<Unit> &p_units) {
+	_retire_buffers(p_pass);
+	if (!p_pass->retired_buffers.is_empty()) {
+		p_pass->allocation_status = "waiting_retirement";
+		p_pass->capacity_feedback->retry = true;
+		return false;
+	}
+	struct Move {
+		uint32_t from;
+		uint32_t to;
+		uint32_t count;
+	};
+	Vector<Unit> units = p_units;
+	LocalVector<Move> moves;
+	LocalVector<uint8_t> queue_moved;
+	LocalVector<uint8_t> record_moved;
+	LocalVector<uint32_t> queue_appended;
+	LocalVector<uint32_t> record_appended;
+	queue_moved.resize_initialized(units.size());
+	record_moved.resize_initialized(units.size());
+	uint64_t queue_used = p_pass->data.queue_work;
+	uint64_t record_used = p_pass->data.record_work;
+	uint64_t queue_holes = p_pass->queue_holes;
+	uint64_t record_holes = p_pass->record_holes;
+	for (uint32_t index = 0; index < uint32_t(units.size()); index++) {
+		const Unit &old = p_pass->unit_data[index];
+		Unit &unit = units.write[index];
+		unit.queue_capacity = MAX(unit.queue_capacity, old.queue_capacity);
+		unit.record_capacity = MAX(unit.record_capacity, old.record_capacity);
+		if (unit.queue_capacity > old.queue_capacity) {
+			unit.queue_offset = queue_used;
+			unit.hash_offset = unit.queue_offset * 2;
+			queue_used += unit.queue_capacity;
+			queue_holes += old.queue_capacity;
+			queue_moved[index] = 1;
+			queue_appended.push_back(index);
+		}
+		if (unit.record_capacity > old.record_capacity) {
+			unit.record_offset = record_used;
+			record_used += unit.record_capacity;
+			record_holes += old.record_capacity;
+			record_moved[index] = 1;
+			record_appended.push_back(index);
+			moves.push_back({ old.record_offset, unit.record_offset, old.record_capacity });
+		}
+	}
+	if (queue_appended.is_empty() && record_appended.is_empty()) {
+		return true;
+	}
+	if (queue_used > p_pass->queue_reserved || record_used > p_pass->record_reserved || queue_holes * 100 > queue_used * HOLE_PERCENT || record_holes * 100 > record_used * HOLE_PERCENT) {
+		if (!_resize(p_pass, units)) {
+			return false;
+		}
+		_upload_order(p_pass);
+		return true;
+	}
+	Vector<Bin> bins;
+	const uint32_t selected_capacity = _build_bins(p_pass->task_data, units, p_pass->data.bin_count, bins);
+	if (!_validate_bins(p_pass, bins)) {
+		p_pass->capacity_feedback->retry = true;
+		return false;
+	}
+	auto rebuild_order = [](const Vector<uint32_t> &p_source, const LocalVector<uint8_t> &p_moved, const LocalVector<uint32_t> &p_appended, Vector<uint32_t> &r_order) {
+		r_order.resize(p_source.size());
+		uint32_t cursor = 0;
+		for (uint32_t index = 0; index < uint32_t(p_source.size()); index++) {
+			if (!p_moved[p_source[index]]) {
+				r_order.write[cursor++] = p_source[index];
+			}
+		}
+		for (uint32_t index : p_appended) {
+			r_order.write[cursor++] = index;
+		}
+	};
+	Vector<uint32_t> record_order;
+	Vector<uint32_t> queue_order;
+	rebuild_order(p_pass->record_order_data, record_moved, record_appended, record_order);
+	rebuild_order(p_pass->queue_order_data, queue_moved, queue_appended, queue_order);
+	uint64_t scratch_records = 0;
+	for (const Move &move : moves) {
+		scratch_records += move.count;
+	}
+	Pass staging;
+	RID scratch = scratch_records != 0 ? _buffer(staging, scratch_records * 8) : RID();
+	RID unit_buffer = _buffer(staging, uint64_t(units.size()) * sizeof(Unit), units.ptr());
+	if (unit_buffer.is_null() || (scratch_records != 0 && scratch.is_null())) {
+		p_pass->allocation_status = "allocation_failed";
+		p_pass->capacity_feedback->retry = true;
+		ERR_PRINT("Unable to allocate sparse microgeometry selection append buffers.");
+		return false;
+	}
+	RD *rd = RD::get_singleton();
+	uint64_t cursor = 0;
+	for (const Move &move : moves) {
+		rd->buffer_copy(p_pass->committed, scratch, uint64_t(move.from) * 8, cursor * 8, uint64_t(move.count) * 8);
+		cursor += uint64_t(move.count);
+	}
+	cursor = 0;
+	for (const Move &move : moves) {
+		rd->buffer_copy(scratch, p_pass->committed, cursor * 8, uint64_t(move.to) * 8, uint64_t(move.count) * 8);
+		cursor += uint64_t(move.count);
+	}
+	rd->buffer_update(p_pass->bins, 0, bins.size() * sizeof(Bin), bins.ptr());
+	p_pass->retired_bytes = MAX(uint64_t(16), uint64_t(p_pass->unit_data.size()) * sizeof(Unit)) + (scratch.is_valid() ? MAX(uint64_t(16), scratch_records * 8) : 0);
+	p_pass->retired_submission = rd->get_pending_submission_serial();
+	p_pass->retired_buffers.push_back(p_pass->units);
+	if (scratch.is_valid()) {
+		p_pass->retired_buffers.push_back(scratch);
+	}
+	p_pass->units = unit_buffer;
+	for (RID resource : staging.resources) {
+		p_pass->resources.push_back(resource);
+	}
+	staging.resources.clear();
+	if (p_pass->raster_memory_accounted) {
+		RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage()->add_raster_selection_memory(staging.memory_bytes);
+	}
+	p_pass->memory_bytes += staging.memory_bytes;
+	p_pass->unit_data = units;
+	p_pass->bin_data = bins;
+	p_pass->record_order_data = record_order;
+	p_pass->queue_order_data = queue_order;
+	_upload_order(p_pass);
+	for (uint32_t index = 0; index < uint32_t(units.size()); index++) {
+		p_pass->capacity_feedback->allocated.write[index] = { units[index].queue_capacity, units[index].record_capacity };
+	}
+	p_pass->data.queue_work = queue_used;
+	p_pass->data.record_work = record_used;
+	p_pass->queue_holes = queue_holes;
+	p_pass->record_holes = record_holes;
+	p_pass->selected_capacity = selected_capacity;
+	p_pass->append_attempts++;
+	p_pass->allocation_status = "appended";
+	return true;
 }
 
 bool MicroGeometrySelection::_resize(Pass *p_pass, const Vector<Unit> &p_units) {
@@ -228,9 +405,9 @@ bool MicroGeometrySelection::_resize(Pass *p_pass, const Vector<Unit> &p_units) 
 	p_pass->resize_attempts++;
 	Vector<Unit> units = p_units;
 	Vector<Bin> bins;
-	bins.resize(p_pass->data.bin_count);
 	uint64_t queue_count = 0;
 	uint64_t record_count = 0;
+	uint32_t selected_capacity = 0;
 	auto prepare_selection_offsets = [&](uint32_t) {
 		for (Unit &unit : units) {
 			unit.queue_offset = queue_count;
@@ -238,13 +415,8 @@ bool MicroGeometrySelection::_resize(Pass *p_pass, const Vector<Unit> &p_units) 
 			unit.record_offset = record_count;
 			queue_count += unit.queue_capacity;
 			record_count += unit.record_capacity;
-			bins.write[p_pass->task_data[unit.task].bin].capacity += unit.record_capacity;
 		}
-		uint32_t offset = 0;
-		for (Bin &bin : bins) {
-			bin.offset = offset;
-			offset += bin.capacity;
-		}
+		selected_capacity = _build_bins(p_pass->task_data, units, p_pass->data.bin_count, bins);
 	};
 	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
 	auto job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
@@ -255,39 +427,31 @@ bool MicroGeometrySelection::_resize(Pass *p_pass, const Vector<Unit> &p_units) 
 	pool->wait_for_group_task_completion(job);
 	const bool raster = (p_pass->data.flags & 32) == 0;
 	const uint64_t dispatch_bytes = raster ? MAX(uint64_t(16), uint64_t(bins.size()) * 12) : 16;
-	if (raster) {
-		RD *rd = RD::get_singleton();
-		ERR_FAIL_COND_V_MSG(!rd->mesh_shader_is_supported(), false, "Microgeometry raster requires mesh shader support.");
-		const RD::MeshShaderLimits limits = rd->mesh_shader_get_limits();
-		const uint32_t width = MIN(1024u, limits.max_workgroup_count[0]);
-		ERR_FAIL_COND_V_MSG(width == 0, false, "Microgeometry mesh dispatch width is unsupported.");
-		for (const Bin &bin : bins) {
-			const uint64_t height = (uint64_t(bin.capacity) + width - 1) / width;
-			const uint64_t padded = MIN(bin.capacity, width) * height;
-			ERR_FAIL_COND_V_MSG(height > limits.max_workgroup_count[1] || padded > limits.max_workgroup_total_count, false, "Microgeometry bin exceeds mesh shader dispatch limits.");
-		}
-		p_pass->raster_data.dispatch_width = width;
+	if (!_validate_bins(p_pass, bins)) {
+		return false;
 	}
-	const uint64_t requested_dynamic = MAX(uint64_t(16), uint64_t(units.size()) * sizeof(Unit)) + MAX(uint64_t(16), uint64_t(bins.size()) * sizeof(Bin)) + MAX(uint64_t(16), queue_count * 4) + MAX(uint64_t(16), queue_count * 16) + 3 * MAX(uint64_t(16), record_count * 8) + dispatch_bytes + MAX(uint64_t(16), record_count * sizeof(MicroGeometrySelectedCluster));
+	const uint64_t queue_reserved = queue_count * RESERVE_PERCENT / 100;
+	const uint64_t record_reserved = record_count * RESERVE_PERCENT / 100;
+	const uint64_t requested_dynamic = MAX(uint64_t(16), uint64_t(units.size()) * sizeof(Unit)) + MAX(uint64_t(16), uint64_t(bins.size()) * sizeof(Bin)) + MAX(uint64_t(16), queue_reserved * 4) + MAX(uint64_t(16), queue_reserved * 16) + 3 * MAX(uint64_t(16), record_reserved * 8) + dispatch_bytes + MAX(uint64_t(16), record_reserved * sizeof(MicroGeometrySelectedCluster));
 	p_pass->requested_bytes = requested_dynamic + p_pass->fixed_memory_bytes;
 	p_pass->replacement_peak_bytes = p_pass->requested_bytes + p_pass->dynamic_memory_bytes + p_pass->retired_bytes;
-	if (queue_count > UINT32_MAX / 16 || record_count > UINT32_MAX / sizeof(MicroGeometrySelectedCluster) || p_pass->requested_bytes > MAX_PASS_BYTES) {
+	if (queue_reserved > UINT32_MAX / 16 || record_reserved > UINT32_MAX / sizeof(MicroGeometrySelectedCluster) || p_pass->requested_bytes > MAX_PASS_BYTES) {
 		p_pass->admission_failed = true;
 		p_pass->allocation_status = "admission_rejected";
 		_report_selection(p_pass);
-		ERR_PRINT(vformat("Microgeometry sparse selection admission failed: %d queue slots, %d cut slots, %d active bytes requested (limit %d, replacement peak %d, flags %d, tasks %d).", queue_count, record_count, p_pass->requested_bytes, MAX_PASS_BYTES, p_pass->replacement_peak_bytes, p_pass->data.flags, p_pass->data.task_count));
+		ERR_PRINT(vformat("Microgeometry sparse selection admission failed: %d queue slots, %d cut slots, %d active bytes requested (limit %d, replacement peak %d, flags %d, tasks %d).", queue_reserved, record_reserved, p_pass->requested_bytes, MAX_PASS_BYTES, p_pass->replacement_peak_bytes, p_pass->data.flags, p_pass->data.task_count));
 		return false;
 	}
 	Pass replacement;
 	replacement.units = _buffer(replacement, uint64_t(units.size()) * sizeof(Unit), units.ptr());
 	replacement.bins = _buffer(replacement, MAX(uint64_t(16), uint64_t(bins.size()) * sizeof(Bin)));
-	replacement.queue = _buffer(replacement, queue_count * 4);
-	replacement.sparse_states = _buffer(replacement, queue_count * 16);
-	replacement.candidate = _buffer(replacement, record_count * 8);
-	replacement.committed = _buffer(replacement, record_count * 8);
-	replacement.rejected = _buffer(replacement, record_count * 8);
+	replacement.queue = _buffer(replacement, queue_reserved * 4);
+	replacement.sparse_states = _buffer(replacement, queue_reserved * 16);
+	replacement.candidate = _buffer(replacement, record_reserved * 8);
+	replacement.committed = _buffer(replacement, record_reserved * 8);
+	replacement.rejected = _buffer(replacement, record_reserved * 8);
 	replacement.dispatch_arguments = _buffer(replacement, dispatch_bytes, nullptr, RD::STORAGE_BUFFER_USAGE_DISPATCH_INDIRECT);
-	replacement.selected = _buffer(replacement, record_count * sizeof(MicroGeometrySelectedCluster));
+	replacement.selected = _buffer(replacement, record_reserved * sizeof(MicroGeometrySelectedCluster));
 	for (RID required : { replacement.units, replacement.bins, replacement.queue, replacement.sparse_states, replacement.candidate, replacement.committed, replacement.rejected, replacement.dispatch_arguments, replacement.selected }) {
 		if (required.is_null()) {
 			p_pass->admission_failed = true;
@@ -335,9 +499,19 @@ bool MicroGeometrySelection::_resize(Pass *p_pass, const Vector<Unit> &p_units) 
 		p_pass->capacity_feedback->allocated.push_back({ unit.queue_capacity, unit.record_capacity });
 	}
 	p_pass->bin_data = bins;
+	p_pass->record_order_data.resize(units.size());
+	p_pass->queue_order_data.resize(units.size());
+	for (uint32_t index = 0; index < uint32_t(units.size()); index++) {
+		p_pass->record_order_data.write[index] = index;
+		p_pass->queue_order_data.write[index] = index;
+	}
 	p_pass->data.queue_work = queue_count;
 	p_pass->data.record_work = record_count;
-	p_pass->selected_capacity = record_count;
+	p_pass->queue_reserved = queue_reserved;
+	p_pass->record_reserved = record_reserved;
+	p_pass->queue_holes = 0;
+	p_pass->record_holes = 0;
+	p_pass->selected_capacity = selected_capacity;
 	p_pass->allocation_status = "allocated";
 	return true;
 }
@@ -392,13 +566,15 @@ MicroGeometrySelection::Pass *MicroGeometrySelection::create(const Vector<Task> 
 		ERR_FAIL_V_MSG(nullptr, "Microgeometry sparse selection task admission failed.");
 	}
 	pass->data.unit_count = units.size();
-	pass->fixed_memory_bytes = MAX(uint64_t(16), uint64_t(p_tasks.size()) * sizeof(Task)) + MAX(uint64_t(16), uint64_t(units.size()) * 32) + MAX(uint64_t(16), uint64_t(p_tasks.size()) * 4) + 2 * MAX(uint64_t(16), uint64_t(p_bin_count) * 4) + STATISTICS_BYTES + MAX(uint64_t(16), uint64_t(p_tasks.size()) * p_native_stride) + sizeof(Parameters) + sizeof(MicroGeometryRasterParameters) + MAX(uint64_t(16), uint64_t(sizeof(RendererRD::MicroGeometryStorage::FeedbackHeader)));
+	pass->fixed_memory_bytes = MAX(uint64_t(16), uint64_t(p_tasks.size()) * sizeof(Task)) + MAX(uint64_t(16), uint64_t(units.size()) * 32) + MAX(uint64_t(16), uint64_t(p_tasks.size()) * 4) + 2 * MAX(uint64_t(16), uint64_t(p_bin_count) * 4) + STATISTICS_BYTES + MAX(uint64_t(16), uint64_t(p_tasks.size()) * p_native_stride) + sizeof(Parameters) + sizeof(MicroGeometryRasterParameters) + MAX(uint64_t(16), uint64_t(sizeof(RendererRD::MicroGeometryStorage::FeedbackHeader))) + 2 * MAX(uint64_t(16), uint64_t(units.size()) * 4);
 	if (!_resize(pass, units)) {
 		memdelete(pass);
 		return nullptr;
 	}
 	pass->tasks = _buffer(*pass, uint64_t(p_tasks.size()) * sizeof(Task), p_tasks.ptr());
 	pass->unit_states = _buffer(*pass, uint64_t(units.size()) * 32);
+	pass->record_order = _buffer(*pass, uint64_t(units.size()) * 4);
+	pass->queue_order = _buffer(*pass, uint64_t(units.size()) * 4);
 	pass->validity = _buffer(*pass, uint64_t(p_tasks.size()) * 4);
 	pass->counts = _buffer(*pass, uint64_t(p_bin_count) * 4, nullptr, RD::STORAGE_BUFFER_USAGE_DISPATCH_INDIRECT);
 	pass->initial_counts = _buffer(*pass, uint64_t(p_bin_count) * 4);
@@ -409,13 +585,14 @@ MicroGeometrySelection::Pass *MicroGeometrySelection::create(const Vector<Task> 
 	if (pass->raster_parameters.is_valid()) {
 		pass->resources.push_back(pass->raster_parameters);
 	}
-	for (RID required : { pass->tasks, pass->unit_states, pass->validity, pass->counts, pass->initial_counts, pass->native_instances, pass->parameters, pass->raster_parameters, pass->statistics }) {
+	for (RID required : { pass->tasks, pass->unit_states, pass->record_order, pass->queue_order, pass->validity, pass->counts, pass->initial_counts, pass->native_instances, pass->parameters, pass->raster_parameters, pass->statistics }) {
 		if (required.is_null()) {
 			memdelete(pass);
 			return nullptr;
 		}
 	}
 	RD::get_singleton()->buffer_clear(pass->unit_states, 0, MAX(16u, uint32_t(units.size()) * 32));
+	_upload_order(pass);
 	pass->memory_bytes += sizeof(MicroGeometryRasterParameters);
 	auto *storage = RendererRD::MeshStorage::get_singleton()->get_micro_geometry_storage();
 	pass->feedback = storage->feedback_create();
@@ -452,6 +629,8 @@ RID MicroGeometrySelection::_prepare_dispatch(Pass *p_pass, RID p_hzb) {
 	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 18, p_pass->queue));
 	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 19, p_pass->candidate));
 	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 20, p_pass->committed));
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 21, p_pass->record_order));
+	uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, 22, p_pass->queue_order));
 	return UniformSetCacheRD::get_singleton()->get_cache_vec(shader.version_get_shader(version, 0), 0, uniforms);
 }
 
@@ -497,7 +676,7 @@ void MicroGeometrySelection::select(Pass *p_pass, RID p_hzb) {
 		pool->wait_for_group_task_completion(job);
 		p_pass->capacity_feedback->retry = false;
 		if (resize) {
-			_resize(p_pass, units);
+			_grow(p_pass, units);
 		}
 	}
 	_report_selection(p_pass);
