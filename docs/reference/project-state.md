@@ -26,6 +26,17 @@ The 1 GiB pool remains a temporary workaround; constrained-memory streaming is
 not repaired. See [plan](../plans/2026-09-11-0946-shadow-cascade-scheduling-plan.md)
 and [measurements and limits](../research/2026-09-11-0946-shadow-cascade-scheduling-status.md).
 
+Primary camera visibility (2026-09-11, source `eba40da2e8`): normal RTXDI/DDGI
+rendering now selects Mega Geometry primary rays from the existing HYBRID mode.
+The private environment selector, debug-only gate and obsolete camera raster
+surface submission are removed. No launch variable is needed; full PT remains
+separate. Double build and brief source review pass. Default-settings native launch
+confirms primary rays and zero camera microgeometry raster bins, with7.9065ms
+GPU median. It also reports one512MiB sparse-selection budget failure; successful
+exit and later zero pending pages do not prove requested detail. That issue is
+unresolved and was not hidden by raising a limit. See
+[default-path correction](../research/2026-09-11-1028-primary-visibility-default-fix.md).
+
 Microgeometry HZB repair (2026-09-11, source `fa50c0398f`, `19f97459f7`):
 HZB now runs with visible editor axes. Deformed-material pixels are excluded
 only from its depth copy; original RTXDI temporal validity and other geometry

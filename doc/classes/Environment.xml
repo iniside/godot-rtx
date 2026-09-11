@@ -237,7 +237,7 @@
 			Multiplies [member raytracing_geometry_error] for instances outside the camera frustum, from [code]1.0[/code] to [code]16.0[/code]. Offscreen instances retain terminal ray-tracing coverage. Changing this setting refreshes viewport ray-tracing history without rebuilding the imported microgeometry.
 		</member>
 		<member name="raytracing_rendering_mode" type="int" setter="set_raytracing_rendering_mode" getter="get_raytracing_rendering_mode" enum="Environment.RaytracingRenderingMode" default="0">
-			Selects hybrid raster primary visibility with RTXDI and optional camera-following DDGI, or true camera-ray path tracing for comparison. Both modes share the ray-traced geometry, material and light scene. Path tracing supplies its own primary visibility and guides and does not use DDGI. Mode and denoiser are independent. The renderer requires a supported Vulkan ray-tracing device and one view per viewport.
+			Selects Mega Geometry primary ray visibility with RTXDI and optional camera-following DDGI, or true camera-ray path tracing for comparison. Both modes share the ray-traced geometry, material and light scene. Path tracing supplies its own primary visibility and guides and does not use DDGI. Mode and denoiser are independent. The renderer requires a supported Vulkan ray-tracing device and one view per viewport.
 		</member>
 		<member name="reflected_light_source" type="int" setter="set_reflection_source" getter="get_reflection_source" enum="Environment.ReflectionSource" default="0">
 			The reflected (specular) light source.
@@ -489,7 +489,7 @@
 			NRD denoising for hybrid lighting or a path-traced preview. Can be combined with DLSS Super Resolution.
 		</constant>
 		<constant name="RAYTRACING_RENDERING_MODE_HYBRID" value="0" enum="RaytracingRenderingMode">
-			Raster primary visibility with RTXDI direct lighting and camera-following DDGI when [member ddgi_enabled] is enabled.
+			Mega Geometry primary ray visibility with RTXDI direct lighting and camera-following DDGI when [member ddgi_enabled] is enabled.
 		</constant>
 		<constant name="RAYTRACING_RENDERING_MODE_PATH_TRACED" value="1" enum="RaytracingRenderingMode">
 			True camera-ray path tracing using the shared ray-traced scene, with raw progressive accumulation or NRD/RR previews. Does not use DDGI.
