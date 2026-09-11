@@ -2700,7 +2700,7 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 					}
 				}
 			}
-			const bool casters_unchanged = i > 0 && cached.caster_generation == caster_generation;
+			const bool casters_unchanged = p_instance->scenario != nullptr && i > 0 && cached.caster_generation == caster_generation;
 			if (cached.valid && cached.force == 0 && (casters_unchanged || (frame % period != phase && age < period))) {
 				cached.reused++;
 				continue;
@@ -3322,6 +3322,7 @@ void RendererSceneCull::_visibility_cull(VisibilityCullData &cull_data, uint64_t
 
 		const uint32_t hidden_mask = InstanceData::FLAG_VISIBILITY_DEPENDENCY_HIDDEN | InstanceData::FLAG_VISIBILITY_DEPENDENCY_HIDDEN_CLOSE_RANGE;
 		const bool was_hidden = (result.flags & hidden_mask) != 0;
+		bool hidden_by_parent = false;
 
 		if (idata.parent_array_index >= 0) {
 			uint32_t parent_flags = scenario->instance_data[idata.parent_array_index].flags;
@@ -3330,35 +3331,42 @@ void RendererSceneCull::_visibility_cull(VisibilityCullData &cull_data, uint64_t
 				result.flags |= InstanceData::FLAG_VISIBILITY_DEPENDENCY_HIDDEN;
 				result.flags &= ~InstanceData::FLAG_VISIBILITY_DEPENDENCY_HIDDEN_CLOSE_RANGE;
 				result.flags &= ~InstanceData::FLAG_VISIBILITY_DEPENDENCY_FADE_CHILDREN;
-				continue;
+				hidden_by_parent = true;
 			}
 		}
 
-		int range_check = _visibility_range_check<true>(vd, cull_data.camera_position, cull_data.viewport_mask);
+		if (!hidden_by_parent) {
+			int range_check = _visibility_range_check<true>(vd, cull_data.camera_position, cull_data.viewport_mask);
 
-		if (range_check == -1) {
-			result.flags |= InstanceData::FLAG_VISIBILITY_DEPENDENCY_HIDDEN;
-			result.flags &= ~InstanceData::FLAG_VISIBILITY_DEPENDENCY_HIDDEN_CLOSE_RANGE;
-			result.flags &= ~InstanceData::FLAG_VISIBILITY_DEPENDENCY_FADE_CHILDREN;
-		} else if (range_check == 1) {
-			result.flags &= ~InstanceData::FLAG_VISIBILITY_DEPENDENCY_HIDDEN;
-			result.flags |= InstanceData::FLAG_VISIBILITY_DEPENDENCY_HIDDEN_CLOSE_RANGE;
-			result.flags &= ~InstanceData::FLAG_VISIBILITY_DEPENDENCY_FADE_CHILDREN;
-		} else {
-			result.flags &= ~InstanceData::FLAG_VISIBILITY_DEPENDENCY_HIDDEN;
-			result.flags &= ~InstanceData::FLAG_VISIBILITY_DEPENDENCY_HIDDEN_CLOSE_RANGE;
-			if (range_check == 2) {
-				result.flags |= InstanceData::FLAG_VISIBILITY_DEPENDENCY_FADE_CHILDREN;
-			} else {
+			if (range_check == -1) {
+				result.flags |= InstanceData::FLAG_VISIBILITY_DEPENDENCY_HIDDEN;
+				result.flags &= ~InstanceData::FLAG_VISIBILITY_DEPENDENCY_HIDDEN_CLOSE_RANGE;
 				result.flags &= ~InstanceData::FLAG_VISIBILITY_DEPENDENCY_FADE_CHILDREN;
-			}
+			} else if (range_check == 1) {
+				result.flags &= ~InstanceData::FLAG_VISIBILITY_DEPENDENCY_HIDDEN;
+				result.flags |= InstanceData::FLAG_VISIBILITY_DEPENDENCY_HIDDEN_CLOSE_RANGE;
+				result.flags &= ~InstanceData::FLAG_VISIBILITY_DEPENDENCY_FADE_CHILDREN;
+			} else {
+				result.flags &= ~InstanceData::FLAG_VISIBILITY_DEPENDENCY_HIDDEN;
+				result.flags &= ~InstanceData::FLAG_VISIBILITY_DEPENDENCY_HIDDEN_CLOSE_RANGE;
+				if (range_check == 2) {
+					result.flags |= InstanceData::FLAG_VISIBILITY_DEPENDENCY_FADE_CHILDREN;
+				} else {
+					result.flags &= ~InstanceData::FLAG_VISIBILITY_DEPENDENCY_FADE_CHILDREN;
+				}
 
-			if (was_hidden) {
-				const uint32_t base_type = result.flags & InstanceData::FLAG_BASE_TYPE_MASK;
-				if ((1u << base_type) & RSE::INSTANCE_GEOMETRY_MASK) {
-					result.reset_motion = true;
+				if (was_hidden) {
+					const uint32_t base_type = result.flags & InstanceData::FLAG_BASE_TYPE_MASK;
+					if ((1u << base_type) & RSE::INSTANCE_GEOMETRY_MASK) {
+						result.reset_motion = true;
+					}
 				}
 			}
+		}
+
+		const bool is_hidden = (result.flags & hidden_mask) != 0;
+		if (is_hidden != was_hidden && (result.flags & InstanceData::FLAG_CAST_SHADOWS)) {
+			result.shadow_caster_changed = true;
 		}
 	}
 }
@@ -3889,6 +3897,8 @@ void RendererSceneCull::_render_scene(RID p_camera, const RendererSceneRender::C
 			visibility_cull_data.camera_position[axis] = p_camera_data->main_origin[axis];
 		}
 
+		bool shadow_casters_changed = false;
+
 		for (int i = scenario->instance_visibility.get_bin_count() - 1; i > 0; i--) { // We skip bin 0
 			visibility_cull_data.cull_offset = scenario->instance_visibility.get_bin_start(i);
 			visibility_cull_data.cull_count = scenario->instance_visibility.get_bin_size(i);
@@ -3911,6 +3921,9 @@ void RendererSceneCull::_render_scene(RID p_camera, const RendererSceneRender::C
 					if (result.reset_motion) {
 						idata.instance_geometry->reset_motion_vectors();
 					}
+					if (result.shadow_caster_changed) {
+						shadow_casters_changed = true;
+					}
 				}
 			};
 			WorkerThreadPool::GroupID publish_job = pool->add_native_group_task([](void *p_data, uint32_t p_index) {
@@ -3919,6 +3932,10 @@ void RendererSceneCull::_render_scene(RID p_camera, const RendererSceneRender::C
 			},
 					&publish, 1, 1, true, SNAME("VisibilityCullPublish"));
 			pool->wait_for_group_task_completion(publish_job);
+		}
+
+		if (shadow_casters_changed) {
+			scenario->shadow_caster_generation++;
 		}
 	}
 

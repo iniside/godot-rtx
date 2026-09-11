@@ -575,6 +575,14 @@ public:
 				case Dependency::DEPENDENCY_CHANGED_MATERIAL: {
 					singleton->_instance_queue_update(instance, false, true);
 				} break;
+				case Dependency::DEPENDENCY_CHANGED_MULTIMESH_DATA: {
+					if (instance->scenario && ((1 << instance->base_type) & RSE::INSTANCE_GEOMETRY_MASK)) {
+						const InstanceGeometryData *geom = static_cast<const InstanceGeometryData *>(instance->base_data);
+						if (geom && geom->can_cast_shadows) {
+							instance->scenario->shadow_caster_generation++;
+						}
+					}
+				} break;
 				case Dependency::DEPENDENCY_CHANGED_MESH:
 				case Dependency::DEPENDENCY_CHANGED_PARTICLES:
 				case Dependency::DEPENDENCY_CHANGED_MULTIMESH:
@@ -1284,6 +1292,7 @@ public:
 			InstanceVisibilityData visibility;
 			uint32_t flags = 0;
 			bool reset_motion = false;
+			bool shadow_caster_changed = false;
 		};
 		LocalVector<Result> results;
 		uint32_t job_count = 1;
