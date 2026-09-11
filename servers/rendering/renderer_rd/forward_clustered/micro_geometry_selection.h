@@ -218,6 +218,7 @@ public:
 	Pass *create(const Vector<Task> &p_tasks, uint32_t p_bin_count, const Parameters &p_parameters, uint32_t p_levels, uint32_t p_native_stride, RID p_instances, RID p_surfaces, const Vector<RID> &p_dependencies);
 	bool needs_retry(Pass *p_pass) const;
 	void select(Pass *p_pass, RID p_hzb);
+	void update_unit_schedule(Pass *p_pass, const LocalVector<uint8_t> &p_deferred);
 	void recover(Pass *p_pass, RID p_hzb);
 	void update_frozen(Pass *p_pass);
 	bool freeze(Pass *p_pass);

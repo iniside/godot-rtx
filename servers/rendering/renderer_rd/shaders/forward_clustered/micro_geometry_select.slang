@@ -132,6 +132,10 @@ uint unit_for_work(uint p_index, bool p_queue) {
 	return p_queue ? queue_order[begin] : record_order[begin];
 }
 
+bool unit_deferred(uint p_unit_index) {
+	return (units[p_unit_index].pad & 1) != 0 && (unit_states[p_unit_index].status & 8) == 0;
+}
+
 uint find_group(SelectionUnit p_unit, uint p_group) {
 	uint count = p_unit.queue_capacity * 2;
 	uint first = (p_group * 0x9e3779b9u) % count;
@@ -471,6 +475,7 @@ void main(uint3 id : SV_DispatchThreadID) {
 	}
 	if (push.mode == 3 || push.mode == 9) {
 		if (index >= parameters.unit_count) { return; }
+		if (unit_deferred(index)) { return; }
 		SelectionUnit unit = units[index];
 		SelectionTask task = tasks[unit.task];
 		uint source_multimesh;
@@ -541,6 +546,7 @@ void main(uint3 id : SV_DispatchThreadID) {
 	uint unit_index = unit_for_work(index, queue_work);
 	SelectionUnit unit = units[unit_index];
 	uint relative = index - (queue_work ? unit.queue_offset : unit.record_offset);
+	if (push.mode != 2 && unit_deferred(unit_index)) { return; }
 	if (queue_work) {
 		uint published_count = push.mode == 4 ? unit_states[unit_index].published_frontier_count : min(unit_states[unit_index].queue_count, unit.queue_capacity);
 		if (relative >= published_count) { return; }

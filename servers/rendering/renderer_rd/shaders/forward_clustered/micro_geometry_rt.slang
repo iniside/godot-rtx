@@ -147,6 +147,9 @@ uint mix_integer(uint x) {
 	x = (x ^ (x >> 15)) * 0x846ca68bu;
 	return x ^ (x >> 16);
 }
+bool segment_deferred(Segment p_segment) {
+	return (p_segment.pad & 1) != 0 && (source_states[p_segment.unit * 2].w & 8) == 0;
+}
 bool resolve(Segment segment, out MicroGeometryInstance instance, out MicroGeometryAsset asset, out uint source_ordinal) {
 	MicroRTTask task = tasks[segment.task];
 	instance = instances[uint(task.instance) - 1];
@@ -195,14 +198,26 @@ void main(uint3 group_id : SV_GroupID, uint lane : SV_GroupIndex) {
 	uint index = group * 128u + lane;
 	uint mode = parameters.mode;
 	if (mode == 0) {
-		if (index >= parameters.record_count) { return; }
-		records[index] = uint2(INVALID, INVALID);
-		pages[index] = uint2(INVALID, INVALID);
+		if (group >= parameters.unit_count) { return; }
+		Segment segment = segments[group];
+		if (segment_deferred(segment)) { return; }
+		for (uint local = lane; local < segment.capacity; local += 128) {
+			records[segment.offset + local] = uint2(INVALID, INVALID);
+			pages[segment.offset + local] = uint2(INVALID, INVALID);
+		}
 		return;
 	}
 	if (mode == 1) {
 		if (group >= parameters.unit_count) { return; }
 		Segment segment = segments[group];
+		if (segment_deferred(segment)) {
+			if (lane == 0) {
+				states[group].representative = SLOT | geometry_slots[segment.geometry].x;
+				states[group].cursor = INVALID;
+				states[group].pad = 0;
+			}
+			return;
+		}
 		MicroRTTask task = tasks[segment.task];
 		MicroGeometryInstance instance;
 		MicroGeometryAsset asset;
@@ -252,6 +267,7 @@ void main(uint3 group_id : SV_GroupID, uint lane : SV_GroupIndex) {
 	if (mode == 2 || mode == 11) {
 		if (group >= parameters.unit_count) { return; }
 		Segment segment = segments[group];
+		if (segment_deferred(segment)) { return; }
 		uint capacity = segment.capacity;
 		if (capacity < 2) { return; }
 		if (capacity <= SORT_TILE) {
@@ -297,6 +313,7 @@ void main(uint3 group_id : SV_GroupID, uint lane : SV_GroupIndex) {
 	if (mode == 3) {
 		if (group >= parameters.unit_count) { return; }
 		Segment segment = segments[group];
+		if (segment_deferred(segment)) { return; }
 		MicroRTTask task = tasks[segment.task];
 		MicroGeometryInstance instance;
 		MicroGeometryAsset asset;

@@ -546,8 +546,12 @@ struct RTMicroGeometryBuild {
 		PAGES,
 		PUBLISH,
 	};
+	static constexpr double RING_NEAR_DISTANCE = 25.0;
+	static constexpr double RING_MID_DISTANCE = 75.0;
+	static constexpr uint32_t RING_COUNT = 3;
 	uint64_t signature = 0;
 	uint64_t input_signature = 0;
+	uint64_t epoch_counter = 0;
 	uint64_t admitted_triangles = 0;
 	uint32_t admitted_count = 0;
 	uint32_t tlas_capacity = 0;
@@ -596,6 +600,8 @@ struct RTMicroGeometryBuild {
 	Vector<MicroGeometrySelection::Task> selection_tasks;
 	Vector<RTMicroGeometryTask> task_data;
 	Vector<RTMicroGeometrySegment> segment_data;
+	LocalVector<uint8_t> unit_deferred;
+	LocalVector<uint8_t> unit_scheduled_rings;
 	Vector<Cut> cuts;
 	Vector<uint32_t> free_cut_slots;
 	Vector<RID> cut_dependencies;
@@ -741,6 +747,7 @@ class RenderRaytracing {
 	void _micro_list_dispatch(RTViewportState *p_state, RD::ComputeListID p_list, uint32_t p_mode, uint32_t p_count, bool p_groups = false, uint32_t p_step = 0);
 	bool _micro_dispatch(RTViewportState *p_state, uint32_t p_mode, uint32_t p_count, bool p_groups = false, uint32_t p_step = 0);
 	bool _micro_feedback(RTMicroGeometryBuild *p_build, uint32_t p_bytes);
+	void _schedule_micro_geometry_rings(RTViewportState *p_state, RTMicroGeometryBuild *p_build, bool p_force_all);
 	bool _prepare_micro_geometry(RTViewportState *p_state, const RenderDataRD *p_render_data);
 	bool _build_micro_geometry(RTViewportState *p_state);
 	RendererRD::DDGIEffect *ddgi_effect = nullptr;
