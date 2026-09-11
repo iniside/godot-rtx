@@ -2516,10 +2516,7 @@ bool RenderRaytracing::_build_micro_geometry(RTViewportState *p_state) {
 			}
 			if (build->candidate_changed) {
 				p_state->scene_generation++;
-				p_state->camera_history_epoch++;
 				p_state->pathtracing_history_epoch++;
-				p_state->ddgi_history_epoch++;
-				p_state->light_history_valid = false;
 			}
 			build->representatives.clear();
 			build->representative_lookup.clear();
