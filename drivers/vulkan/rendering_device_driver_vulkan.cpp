@@ -4462,7 +4462,7 @@ static VkShaderStageFlagBits RD_STAGE_TO_VK_SHADER_STAGE_BITS[RDD::SHADER_STAGE_
 };
 
 RDD::ShaderID RenderingDeviceDriverVulkan::shader_create_from_container(const Ref<RenderingShaderContainer> &p_shader_container, const Vector<ImmutableSampler> &p_immutable_samplers) {
-	ShaderReflection shader_refl = p_shader_container->get_shader_reflection();
+	ShaderReflection shader_refl = p_shader_container->get_shader_reflection(mesh_shader_is_supported());
 	ERR_FAIL_COND_V_MSG(shader_refl.stages_bits.has_flag(SHADER_STAGE_MESH_BIT) && !mesh_shader_is_supported(), ShaderID(), "Mesh shaders are not supported by this Vulkan device.");
 	ShaderInfo shader_info;
 	shader_info.name = p_shader_container->shader_name.get_data();

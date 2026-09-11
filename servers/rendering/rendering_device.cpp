@@ -4684,7 +4684,7 @@ RID RenderingDevice::shader_create_from_bytecode_with_samplers(const Vector<uint
 	Shader *shader = shader_owner.get_or_null(id);
 	ERR_FAIL_NULL_V(shader, RID());
 
-	*((ShaderReflection *)shader) = shader_container->get_shader_reflection();
+	*((ShaderReflection *)shader) = shader_container->get_shader_reflection(mesh_shader_is_supported());
 	shader->name.clear();
 	shader->name.append_utf8(shader_container->shader_name);
 	shader->driver_id = shader_id;

@@ -773,10 +773,14 @@ bool RenderingShaderContainer::set_code_from_spirv(const String &p_shader_name, 
 	return _set_code_from_spirv(shader);
 }
 
-RenderingDeviceCommons::ShaderReflection RenderingShaderContainer::get_shader_reflection() const {
+RenderingDeviceCommons::ShaderReflection RenderingShaderContainer::get_shader_reflection(bool p_mesh_shader_supported) const {
 	RDC::ShaderReflection shader_refl;
 	shader_refl.push_constant_size = reflection_data.push_constant_size;
 	shader_refl.push_constant_stages = reflection_data.push_constant_stages_mask;
+	if (p_mesh_shader_supported && (shader_refl.push_constant_stages.has_flag(RDC::SHADER_STAGE_VERTEX_BIT) || shader_refl.push_constant_stages.has_flag(RDC::SHADER_STAGE_MESH_BIT))) {
+		shader_refl.push_constant_stages.set_flag(RDC::SHADER_STAGE_VERTEX_BIT);
+		shader_refl.push_constant_stages.set_flag(RDC::SHADER_STAGE_MESH_BIT);
+	}
 	shader_refl.vertex_input_mask = reflection_data.vertex_input_mask;
 	shader_refl.fragment_output_mask = reflection_data.fragment_output_mask;
 	shader_refl.pipeline_type = reflection_data.pipeline_type;
@@ -804,6 +808,10 @@ RenderingDeviceCommons::ShaderReflection RenderingShaderContainer::get_shader_re
 			uniform.length = binding.length;
 			uniform.binding = binding.binding;
 			uniform.stages = binding.stages;
+			if (p_mesh_shader_supported && (uniform.stages.has_flag(RDC::SHADER_STAGE_VERTEX_BIT) || uniform.stages.has_flag(RDC::SHADER_STAGE_MESH_BIT))) {
+				uniform.stages.set_flag(RDC::SHADER_STAGE_VERTEX_BIT);
+				uniform.stages.set_flag(RDC::SHADER_STAGE_MESH_BIT);
+			}
 			uniform.texture_type = binding.texture_type;
 			uniform.texture_format = binding.texture_format;
 		}

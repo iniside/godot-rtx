@@ -304,7 +304,7 @@ public:
 	Vector<Shader> shaders;
 
 	bool set_code_from_spirv(const String &p_shader_name, Span<RDC::ShaderStageSPIRVData> p_spirv);
-	RDC::ShaderReflection get_shader_reflection() const;
+	RDC::ShaderReflection get_shader_reflection(bool p_mesh_shader_supported = false) const;
 	bool from_bytes(const PackedByteArray &p_bytes);
 	PackedByteArray to_bytes() const;
 	bool compress_code(const uint8_t *p_decompressed_bytes, uint32_t p_decompressed_size, uint8_t *p_compressed_bytes, uint32_t *r_compressed_size, uint32_t *r_compressed_flags) const;
