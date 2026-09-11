@@ -988,9 +988,6 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 	for (uint32_t i = p_from_element; i < p_to_element; i++) {
 		const GeometryInstanceSurfaceDataCache *surf = p_params->elements[i].surface;
 		const RenderElementInfo &element_info = p_params->element_info[i];
-		if (p_pass_mode == PASS_MODE_RTXDI_SURFACE && primary_surface_trace && !_primary_surface_editor_helper(surf->owner->scene_data->layer_mask)) {
-			continue;
-		}
 
 		if (surf->owner->instance_count == 0) {
 			continue;
@@ -1644,6 +1641,9 @@ void RenderForwardClustered::_prepare_render_list_chunk(uint32_t p_batch, Render
 		uint32_t gi_offset = UINT32_MAX;
 		GeometryInstanceForwardClustered *inst = static_cast<GeometryInstanceForwardClustered *>((*p_preparation->instances)[i]);
 		if (rl->last_micro_pass && inst->micro_geometry_raster_only) {
+			continue;
+		}
+		if (p_preparation->pass_mode == PASS_MODE_RTXDI_SURFACE && primary_surface_trace && !_primary_surface_editor_helper(inst->scene_data->layer_mask)) {
 			continue;
 		}
 
