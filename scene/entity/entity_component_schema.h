@@ -81,6 +81,8 @@ void register_entity_component_schemas(EntitySchemaRegistry &r_registry);
 
 Error entity_encode_asset(const Ref<Resource> &p_asset, Variant &r_value);
 Error entity_decode_asset(const Variant &p_value, Ref<Resource> &r_asset);
+void entity_decode_assets_cached_only(bool p_enabled);
+void entity_decode_take_missing_assets(Vector<String> &r_paths);
 void entity_asset_profile_reset();
 void entity_asset_profile_get(uint64_t &r_usec, uint32_t &r_loads, uint32_t &r_cache_hits);
 
@@ -451,6 +453,9 @@ Error entity_decode_struct(const Variant &p_value, T &r_value) {
 			continue;
 		}
 		Error error = field.write(&result, values[field.key]);
+		if (error == ERR_UNAVAILABLE) {
+			return error;
+		}
 		ERR_FAIL_COND_V_MSG(error != OK, error, "Cannot decode entity field " + String(field.name));
 		recognized++;
 	}

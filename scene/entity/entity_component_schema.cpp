@@ -103,6 +103,21 @@ void entity_asset_profile_get(uint64_t &r_usec, uint32_t &r_loads, uint32_t &r_c
 	r_cache_hits = entity_asset_cache_hits.get();
 }
 
+static thread_local bool entity_assets_cached_only = false;
+static thread_local Vector<String> entity_missing_assets;
+
+void entity_decode_assets_cached_only(bool p_enabled) {
+	entity_assets_cached_only = p_enabled;
+	if (p_enabled) {
+		entity_missing_assets.clear();
+	}
+}
+
+void entity_decode_take_missing_assets(Vector<String> &r_paths) {
+	r_paths = entity_missing_assets;
+	entity_missing_assets.clear();
+}
+
 Error entity_decode_asset(const Variant &p_value, Ref<Resource> &r_asset) {
 	if (p_value.get_type() != Variant::STRING) {
 		return ERR_INVALID_DATA;
@@ -120,20 +135,31 @@ Error entity_decode_asset(const Variant &p_value, Ref<Resource> &r_asset) {
 	}
 	Error error = OK;
 	String path = uids->get_id_path(uid);
-	const bool profiling = OS::get_singleton()->is_use_benchmark_set();
-	const bool cached = profiling && ResourceCache::has(path);
-	const uint64_t load_begin = profiling ? OS::get_singleton()->get_ticks_usec() : 0;
-	Ref<Resource> container = ResourceLoader::load(path, "", ResourceFormatLoader::CACHE_MODE_REUSE, &error);
-	if (profiling) {
-		entity_asset_usec.add(OS::get_singleton()->get_ticks_usec() - load_begin);
-		if (cached) {
-			entity_asset_cache_hits.increment();
-		} else {
-			entity_asset_loads.increment();
+	Ref<Resource> container;
+	if (entity_assets_cached_only) {
+		container = ResourceCache::get_ref(path);
+		if (container.is_null()) {
+			if (!entity_missing_assets.has(path)) {
+				entity_missing_assets.push_back(path);
+			}
+			return ERR_UNAVAILABLE;
 		}
-	}
-	if (error != OK || container.is_null()) {
-		return error == OK ? ERR_FILE_CORRUPT : error;
+	} else {
+		const bool profiling = OS::get_singleton()->is_use_benchmark_set();
+		const bool cached = profiling && ResourceCache::has(path);
+		const uint64_t load_begin = profiling ? OS::get_singleton()->get_ticks_usec() : 0;
+		container = ResourceLoader::load(path, "", ResourceFormatLoader::CACHE_MODE_REUSE, &error);
+		if (profiling) {
+			entity_asset_usec.add(OS::get_singleton()->get_ticks_usec() - load_begin);
+			if (cached) {
+				entity_asset_cache_hits.increment();
+			} else {
+				entity_asset_loads.increment();
+			}
+		}
+		if (error != OK || container.is_null()) {
+			return error == OK ? ERR_FILE_CORRUPT : error;
+		}
 	}
 	Ref<Resource> asset = separator < 0 ? container : ResourceCache::get_ref(path + address.substr(separator));
 	if (asset.is_null()) {

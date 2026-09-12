@@ -71,7 +71,10 @@ Error EntitySceneCommands::_restore(const Dictionary &p_records, const Dictionar
 		return error;
 	}
 	document.prefab_instances = p_prefabs.duplicate(true);
-	document._commit(**prepared, ordered, true);
+	error = document._commit(**prepared, ordered, true);
+	if (error != OK) {
+		return error;
+	}
 	document.emit_changed();
 	return OK;
 }
@@ -438,7 +441,10 @@ Error EntitySceneCommands::execute(const String &p_name, const Vector<Command> &
 		return error;
 	}
 	document.prefab_instances = prepared->prefab_instances;
-	document._commit(**prepared, changed, true);
+	error = document._commit(**prepared, changed, true);
+	if (error != OK) {
+		return error;
+	}
 	if (r_transaction) {
 		*r_transaction = item;
 	} else {
@@ -958,7 +964,10 @@ Error EntitySceneCommands::instantiate_prefab(const Ref<EntityScene> &p_prefab, 
 		return error;
 	}
 	document.prefab_instances = prepared->prefab_instances;
-	document._commit(**prepared, changed, true);
+	error = document._commit(**prepared, changed, true);
+	if (error != OK) {
+		return error;
+	}
 	_push(item);
 	document.emit_changed();
 	r_instance = instance_id;
@@ -1019,7 +1028,10 @@ Error EntitySceneCommands::refresh_prefab(EntityId p_instance, const Ref<EntityS
 		return error;
 	}
 	document.prefab_instances = prepared->prefab_instances;
-	document._commit(**prepared, changed, false);
+	error = document._commit(**prepared, changed, false);
+	if (error != OK) {
+		return error;
+	}
 	_push(item);
 	document.emit_changed();
 	return OK;
@@ -1236,11 +1248,17 @@ Error EntitySceneCommands::apply_overrides(EntityId p_instance, const Ref<Entity
 		}
 	}
 	p_prefab->prefab_instances = source_prepared->prefab_instances;
-	p_prefab->_commit(**source_prepared, source_changed, false);
+	error = p_prefab->_commit(**source_prepared, source_changed, false);
+	if (error != OK) {
+		return error;
+	}
 	p_prefab->get_commands().clear();
 	for (int i = 0; i < users.size(); i++) {
 		users[i]->prefab_instances = prepared_users[i]->prefab_instances;
-		users[i]->_commit(**prepared_users[i], changed_users[i], false);
+		error = users[i]->_commit(**prepared_users[i], changed_users[i], false);
+		if (error != OK) {
+			return error;
+		}
 		users[i]->get_commands().clear();
 	}
 	p_prefab->emit_changed();

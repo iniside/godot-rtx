@@ -127,6 +127,7 @@ private:
 
 	struct CellJob {
 		Vector<RecordSource> sources;
+		Vector<String> missing;
 		Vector<EntityId> ancestors;
 		Vector<EntityId> resident;
 		PreparedCell result;
@@ -155,6 +156,7 @@ private:
 	HashMap<CellKey, Vector<EntityId>, CellKeyHasher> resident_cells;
 	LocalVector<CellJob *> cell_jobs;
 	HashMap<CellKey, uint64_t, CellKeyHasher> failed_cells;
+	HashMap<CellKey, LocalVector<Ref<Resource>>, CellKeyHasher> cell_assets;
 	struct PrefabMember {
 		String instance;
 		String source;
@@ -199,7 +201,7 @@ private:
 	static Error _decode_record(const Dictionary &p_record, PreparedEntity &r_prepared, String &r_field, LoadProfile *r_profile);
 	Error _decode_entity(EntityId p_id, const Dictionary &p_record, PreparedEntity &r_prepared, LoadProfile *r_profile);
 	Error _can_commit(const PreparedSet &p_prepared, const Vector<EntityId> &p_ids) const;
-	void _commit(const PreparedSet &p_prepared, const Vector<EntityId> &p_ids, bool p_resident, bool p_dirty = true);
+	Error _commit(const PreparedSet &p_prepared, const Vector<EntityId> &p_ids, bool p_resident, bool p_dirty = true);
 	Error _install(EntityId p_id, const Dictionary &p_record);
 	Error _validate_fields(EntityId p_id, uint64_t p_type, const Dictionary &p_fields, const String &p_prefix = String());
 	static Error _describe_components(const Dictionary &p_record, Section &r_section, Vector<uint64_t> &r_types, String &r_field);
@@ -207,6 +209,8 @@ private:
 	bool _is_cell_in_flight(const CellKey &p_cell) const;
 	Error _snapshot_source(EntityId p_id, const String &p_directory, RecordSource &r_source);
 	Error _dispatch_cell(const CellKey &p_cell);
+	Error _load_cell(const CellKey &p_cell, const Vector<EntityId> &p_required, const Vector<EntityId> &p_ancestors);
+	Error _load_cell_assets(CellJob &p_job);
 	static void _run_cell_job(void *p_job);
 	bool _revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids);
 	Error _commit_cell(CellJob &p_job, Stats &r_stats);

@@ -804,7 +804,7 @@ Error EntityScene::_can_commit(const PreparedSet &p_prepared, const Vector<Entit
 	return OK;
 }
 
-void EntityScene::_commit(const PreparedSet &p_prepared, const Vector<EntityId> &p_ids, bool p_resident, bool p_dirty) {
+Error EntityScene::_commit(const PreparedSet &p_prepared, const Vector<EntityId> &p_ids, bool p_resident, bool p_dirty) {
 	EntityWorld *target = get_world();
 	HashSet<EntityId, EntityIdHasher> residency;
 	Vector<EntityId> active;
@@ -814,7 +814,10 @@ void EntityScene::_commit(const PreparedSet &p_prepared, const Vector<EntityId> 
 		}
 	}
 	Vector<EntityId> required;
-	p_prepared.collect_required(active, required);
+	const Error required_error = p_prepared.collect_required(active, required);
+	if (required_error != OK) {
+		return _fail(active.is_empty() ? EntityId() : active[0], "required", required_error);
+	}
 	for (EntityId id : required) {
 		residency.insert(id);
 	}
@@ -880,6 +883,7 @@ void EntityScene::_commit(const PreparedSet &p_prepared, const Vector<EntityId> 
 		_assign_cell(id);
 	}
 	revision++;
+	return OK;
 }
 
 Error EntityScene::_load_resident(const Vector<EntityId> &p_ids, LoadProfile *r_profile) {
@@ -903,8 +907,11 @@ Error EntityScene::_load_resident(const Vector<EntityId> &p_ids, LoadProfile *r_
 	}
 	const uint64_t commit_begin = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
 	const uint64_t previous_revision = revision;
-	_commit(set, p_ids, true, false);
+	error = _commit(set, p_ids, true, false);
 	revision = previous_revision;
+	if (error != OK) {
+		return error;
+	}
 	if (r_profile) {
 		r_profile->commit = OS::get_singleton()->get_ticks_usec() - commit_begin;
 	}
@@ -1170,22 +1177,12 @@ Error EntityScene::_snapshot_source(EntityId p_id, const String &p_directory, Re
 	if (r_source.deleted) {
 		return OK;
 	}
-	bool prefab_record = false;
-	Dictionary record;
-	Error error = get_commands()._prefab_record(p_id, record, prefab_record);
-	if (error != OK) {
-		return error;
-	}
-	if (prefab_record) {
-		r_source.record = record;
-		return OK;
-	}
 	const Section *section = sections.getptr(p_id);
 	if (!section) {
 		return _fail(p_id, "record", ERR_DOES_NOT_EXIST);
 	}
 	if (!section->record.is_empty()) {
-		r_source.record = section->record;
+		r_source.record = _shallow_record(section->record);
 		return OK;
 	}
 	if (section->path.is_empty() || p_directory.is_empty()) {
@@ -1210,6 +1207,11 @@ Error EntityScene::_dispatch_cell(const CellKey &p_cell) {
 	if (error != OK) {
 		return error;
 	}
+	for (EntityId id : required) {
+		if (prefab_members.has(id) && resolve(id).state != EntityReferenceState::RESIDENT) {
+			return _load_cell(p_cell, required, ancestors);
+		}
+	}
 	CellJob *job = memnew(CellJob);
 	job->result.key = p_cell;
 	job->ancestors = ancestors;
@@ -1233,18 +1235,31 @@ Error EntityScene::_dispatch_cell(const CellKey &p_cell) {
 		job->sources.push_back(source);
 	}
 	if (job->sources.is_empty()) {
-		const Vector<EntityId> pinned = job->ancestors;
 		memdelete(job);
-		error = pin(pinned);
-		if (error != OK) {
-			return error;
-		}
-		resident_cells.insert(p_cell, pinned);
-		residency_serial++;
-		return OK;
+		return _load_cell(p_cell, required, ancestors);
 	}
 	job->task = WorkerThreadPool::get_singleton()->add_native_task(_run_cell_job, job, false, "Entity cell load");
 	cell_jobs.push_back(job);
+	return OK;
+}
+
+Error EntityScene::_load_cell(const CellKey &p_cell, const Vector<EntityId> &p_required, const Vector<EntityId> &p_ancestors) {
+	Vector<EntityId> unloaded;
+	for (EntityId id : p_required) {
+		if (resolve(id).state != EntityReferenceState::RESIDENT) {
+			unloaded.push_back(id);
+		}
+	}
+	Error error = unloaded.is_empty() ? OK : load_subset(unloaded);
+	if (error != OK) {
+		return error;
+	}
+	error = pin(p_ancestors);
+	if (error != OK) {
+		return error;
+	}
+	resident_cells.insert(p_cell, p_ancestors);
+	residency_serial++;
 	return OK;
 }
 
@@ -1253,6 +1268,7 @@ void EntityScene::_run_cell_job(void *p_job) {
 	const uint64_t began = OS::get_singleton()->get_ticks_usec();
 	HashMap<String, Dictionary> clusters;
 	job->result.entities.reserve(job->sources.size());
+	entity_decode_assets_cached_only(true);
 	for (const RecordSource &source : job->sources) {
 		if (job->cancelled.is_set() || ResourceLoader::is_cleaning_tasks()) {
 			job->result.error = ERR_SKIP;
@@ -1298,12 +1314,18 @@ void EntityScene::_run_cell_job(void *p_job) {
 		}
 		job->result.entities.push_back(std::move(prepared));
 		if (error != OK) {
-			job->result.error = error;
-			job->result.failing = source.id;
-			job->result.failing_field = field;
-			break;
+			if (job->result.error == OK) {
+				job->result.error = error;
+				job->result.failing = source.id;
+				job->result.failing_field = field;
+			}
+			if (error != ERR_UNAVAILABLE) {
+				break;
+			}
 		}
 	}
+	entity_decode_assets_cached_only(false);
+	entity_decode_take_missing_assets(job->missing);
 	job->worker_usec = OS::get_singleton()->get_ticks_usec() - began;
 }
 
@@ -1315,6 +1337,12 @@ bool EntityScene::_revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids) {
 		if (resolve(id).state != EntityReferenceState::RESIDENT) {
 			return false;
 		}
+		PreparedEntity live;
+		live.id = id;
+		live.live = true;
+		live.parent = catalog.get_parent(id);
+		live.order = get_order(id);
+		p_job.result.entities.push_back(std::move(live));
 	}
 	HashSet<EntityId, EntityIdHasher> prepared_ids;
 	for (const PreparedEntity &entity : p_job.result.entities) {
@@ -1331,7 +1359,7 @@ bool EntityScene::_revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids) {
 		}
 		entity.parent = record->parent;
 		entity.order = get_order(entity.id);
-		if (resolve(entity.id).state == EntityReferenceState::RESIDENT) {
+		if (entity.live || resolve(entity.id).state == EntityReferenceState::RESIDENT) {
 			entity.live = true;
 			entity.release();
 			continue;
@@ -1341,29 +1369,61 @@ bool EntityScene::_revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids) {
 	return true;
 }
 
+Error EntityScene::_load_cell_assets(CellJob &p_job) {
+	LocalVector<Ref<Resource>> &held = cell_assets[p_job.result.key];
+	for (const String &path : p_job.missing) {
+		Error error = OK;
+		Ref<Resource> asset = ResourceLoader::load(path, "", ResourceFormatLoader::CACHE_MODE_REUSE, &error);
+		if (error != OK || asset.is_null()) {
+			cell_assets.erase(p_job.result.key);
+			return error == OK ? ERR_FILE_CORRUPT : error;
+		}
+		held.push_back(asset);
+	}
+	return OK;
+}
+
 Error EntityScene::_commit_cell(CellJob &p_job, Stats &r_stats) {
 	if (p_job.result.error == ERR_SKIP) {
 		r_stats.jobs_discarded++;
+		cell_assets.erase(p_job.result.key);
+		return OK;
+	}
+	if (p_job.result.error == ERR_UNAVAILABLE) {
+		r_stats.jobs_discarded++;
+		const Error error = p_job.missing.is_empty() ? ERR_FILE_NOT_FOUND : _load_cell_assets(p_job);
+		if (error != OK) {
+			failed_cells.insert(p_job.result.key, revision);
+			return _fail(p_job.result.failing, p_job.result.failing_field, error);
+		}
 		return OK;
 	}
 	if (p_job.result.error != OK) {
 		failed_cells.insert(p_job.result.key, revision);
+		cell_assets.erase(p_job.result.key);
 		return _fail(p_job.result.failing, p_job.result.failing_field, p_job.result.error);
 	}
 	Vector<EntityId> ids;
 	if (!_revalidate_job(p_job, ids)) {
 		r_stats.jobs_discarded++;
+		cell_assets.erase(p_job.result.key);
 		return OK;
 	}
 	const PreparedSet set(p_job.result.entities);
 	Error error = _can_commit(set, ids);
 	if (error != OK) {
 		failed_cells.insert(p_job.result.key, revision);
+		cell_assets.erase(p_job.result.key);
 		return _fail(ids.is_empty() ? EntityId() : ids[0], "cell", error);
 	}
 	const uint64_t previous_revision = revision;
-	_commit(set, ids, true, false);
+	error = _commit(set, ids, true, false);
 	revision = previous_revision;
+	cell_assets.erase(p_job.result.key);
+	if (error != OK) {
+		failed_cells.insert(p_job.result.key, revision);
+		return error;
+	}
 	error = pin(p_job.ancestors);
 	if (error != OK) {
 		return error;
@@ -1396,6 +1456,7 @@ Error EntityScene::commit_ready(int p_max_entities, Stats *r_stats) {
 		pool->wait_for_task_completion(job->task);
 		if (job->cancelled.is_set()) {
 			stats.jobs_discarded++;
+			cell_assets.erase(job->result.key);
 		} else {
 			stats.jobs_completed++;
 			stats.worker_usec += job->worker_usec;
@@ -1426,21 +1487,29 @@ void EntityScene::flush_streaming() {
 	for (CellJob *job : cell_jobs) {
 		job->cancelled.set();
 	}
+	CallQueue *queue = MessageQueue::get_main_singleton();
+	const bool pump = queue && !queue->is_flushing();
 	for (CellJob *job : cell_jobs) {
+		const uint64_t began = OS::get_singleton()->get_ticks_usec();
+		bool reported = false;
 		while (!pool->is_task_completed(job->task)) {
-			// A job inside ResourceLoader waits on queues only this thread drains, so pump instead of blocking.
-			if (MessageQueue::get_singleton()) {
-				MessageQueue::get_singleton()->flush();
-			}
-			if (RenderingServer::get_singleton()) {
-				RenderingServer::get_singleton()->sync();
+			if (pump) {
+				queue->flush();
+				if (RenderingServer::get_singleton()) {
+					RenderingServer::get_singleton()->sync();
+				}
 			}
 			OS::get_singleton()->delay_usec(1000);
+			if (!reported && OS::get_singleton()->get_ticks_usec() - began > 10000000) {
+				reported = true;
+				ERR_PRINT("Entity cell load did not stop after cancellation: " + job->result.key.grid + " " + itos(job->result.key.x) + "_" + itos(job->result.key.y) + "_" + itos(job->result.key.z));
+			}
 		}
 		pool->wait_for_task_completion(job->task);
 		memdelete(job);
 	}
 	cell_jobs.clear();
+	cell_assets.clear();
 }
 
 Error EntityScene::request_cells(const Vector<CellKey> &p_cells, int *r_remaining, Stats *r_stats) {
@@ -1496,6 +1565,7 @@ Error EntityScene::release_cells(const Vector<CellKey> &p_cells) {
 				job->cancelled.set();
 			}
 		}
+		cell_assets.erase(cell);
 		const Vector<EntityId> *pinned = resident_cells.getptr(cell);
 		if (!pinned) {
 			continue;
