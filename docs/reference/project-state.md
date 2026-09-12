@@ -1,5 +1,21 @@
 # Project State
 
+Microgeometry `.mgdata` v3 compression (2026-09-12, `e656e5b415`, `dcab8fd312`,
+`f06247d0a5`, `c7f99ac2a2`): owner-approved Nanite-style split into a dense
+disk format (global grid positions with per-cluster bit widths, octahedral
+normals, generalized strips, zigzag ids, no tangents) transcoded on the GPU at
+page install into a CLAS-readable memory format (snorm16 positions in a
+per-asset frame, 12 B stride, u8 indices). Reimport: Lucy 1156 -> 407 MB,
+Thai 415 -> 141 MB, dragon 296 -> 97 MB; 6.0-6.6 B/tri DAG payload, 6.8-7.3
+with manifest (Nanite 5.6). Double editor on `scene.escn`: zero ERROR lines,
+warm load 8.5 s, 165 FPS, streaming settles in ~1 s; captures show correct
+geometry, shading and shadows without cracks. Selected clusters dropped to
+~173k because owner commit `f0ddf48fa2` applies the scene's 4 px RT error.
+Importer version bumps do not reimport existing projects; v2 products must
+be deleted. Owner confirmed motion visually. Normal-mapped and emissive clustered
+materials and Krok 5 (source arrays in `.res`, Lucy 1.9 GB) are open. See
+[measurements and limits](../research/2026-09-12-0716-mgdata-v3-compression-status.md).
+
 Native stress scene editor load time (2026-09-11, `9bff64d7b8`, keys fixed
 in `f743a52341`): `--benchmark` reports session restore, per-load `Scene Load` phases, a `load_subset`
 breakdown with asset load counts, and gated publish/transform/dock timings.
