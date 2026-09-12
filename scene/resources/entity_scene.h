@@ -108,6 +108,7 @@ private:
 	Error _validate_fields(EntityId p_id, uint64_t p_type, const Dictionary &p_fields, bool p_decode_assets, const String &p_prefix = String());
 	Error _describe(EntityId p_id, const Dictionary &p_record, Section &r_section, bool p_decode_assets = true);
 	Error _fail(EntityId p_id, const String &p_field, Error p_error);
+	void _relocate(const String &p_path);
 
 protected:
 	static void _bind_methods();
@@ -145,5 +146,6 @@ public:
 	Error unload_subset(const Vector<EntityId> &p_ids);
 	Error pin(const Vector<EntityId> &p_ids);
 	void unpin(const Vector<EntityId> &p_ids);
+	Error relocate(const String &p_path);
 	Error create_play_document(Ref<EntityScene> &r_scene);
 };

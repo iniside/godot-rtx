@@ -1567,8 +1567,12 @@ void FileSystemDock::_try_move_item(const FileOrFolder &p_item, const String &p_
 
 	const String old_companion = p_item.is_file && has_companion_directory(old_path) ? EntitySceneIO::companion_directory(old_path) : String();
 	const String new_companion = old_companion.is_empty() ? String() : EntitySceneIO::companion_directory(new_path);
-	if (!old_companion.is_empty() && (new_companion.is_empty() || DirAccess::dir_exists_absolute(new_companion))) {
-		EditorNode::get_singleton()->add_io_error(TTR("Error moving:") + "\n" + old_companion + "\n");
+	if (!old_companion.is_empty() && new_companion.is_empty()) {
+		EditorNode::get_singleton()->add_io_error(TTR("Cannot derive the scene directory of a native scene moved to:") + "\n" + new_path + "\n");
+		return;
+	}
+	if (!new_companion.is_empty() && DirAccess::dir_exists_absolute(new_companion)) {
+		EditorNode::get_singleton()->add_io_error(TTR("A scene directory already exists at:") + "\n" + new_companion + "\n");
 		return;
 	}
 
@@ -1611,8 +1615,10 @@ void FileSystemDock::_try_move_item(const FileOrFolder &p_item, const String &p_
 				EditorData *ed = &EditorNode::get_editor_data();
 				for (int j = 0; j < ed->get_edited_scene_count(); j++) {
 					if (ed->get_scene_path(j) == file_changed_paths[i]) {
-						if (ed->get_scene_document(j).is_valid()) {
+						const Ref<EntityScene> document = ed->get_scene_document(j);
+						if (document.is_valid()) {
 							ed->set_scene_path(j, new_item_path);
+							document->relocate(new_item_path);
 						} else {
 							ed->get_edited_scene_root(j)->set_scene_file_path(new_item_path);
 						}

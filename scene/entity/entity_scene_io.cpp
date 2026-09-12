@@ -961,9 +961,7 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 		}
 		p_scene.sections.insert(id, *section);
 	}
-	p_scene.cluster_path = String();
-	p_scene.cluster_records = Dictionary();
-	p_scene.storage_path = p_path;
+	p_scene._relocate(p_path);
 	p_scene.revision = revision;
 	p_scene.dirty.clear();
 	error = p_scene._rebuild_cells();

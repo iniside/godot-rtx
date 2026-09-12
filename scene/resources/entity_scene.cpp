@@ -829,6 +829,20 @@ void EntityScene::unpin(const Vector<EntityId> &p_ids) {
 	}
 }
 
+void EntityScene::_relocate(const String &p_path) {
+	storage_path = p_path;
+	cluster_path = String();
+	cluster_records = Dictionary();
+	set_path_cache(p_path);
+}
+
+Error EntityScene::relocate(const String &p_path) {
+	ERR_FAIL_COND_V(_owner() != OK, ERR_UNAUTHORIZED);
+	ERR_FAIL_COND_V(p_path.get_extension().to_lower() != "escn" || EntitySceneIO::is_child_path(p_path), ERR_FILE_UNRECOGNIZED);
+	_relocate(p_path);
+	return OK;
+}
+
 Error EntityScene::create_play_document(Ref<EntityScene> &r_scene) {
 	ERR_FAIL_COND_V(_owner() != OK, ERR_UNAUTHORIZED);
 	Ref<EntityScene> result;
