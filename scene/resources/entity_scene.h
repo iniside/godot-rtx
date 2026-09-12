@@ -2,7 +2,9 @@
 
 #include "core/io/resource.h"
 #include "core/math/aabb.h"
+#include "core/object/worker_thread_pool.h"
 #include "core/templates/local_vector.h"
+#include "core/templates/safe_refcount.h"
 #include "scene/entity/entity_world.h"
 
 class EntitySceneCommands;
@@ -93,7 +95,48 @@ public:
 		}
 	};
 
+	struct Stats {
+		int jobs_dispatched = 0;
+		int jobs_completed = 0;
+		int jobs_discarded = 0;
+		int cells_committed = 0;
+		int entities_committed = 0;
+		uint64_t dispatch_usec = 0;
+		uint64_t commit_usec = 0;
+		uint64_t worker_usec = 0;
+	};
+
 private:
+	struct RecordSource {
+		EntityId id;
+		EntityRef parent;
+		int64_t order = 0;
+		bool deleted = false;
+		String path;
+		bool cluster = false;
+		Dictionary record;
+	};
+
+	struct PreparedCell {
+		CellKey key;
+		LocalVector<PreparedEntity> entities;
+		Error error = OK;
+		EntityId failing;
+		String failing_field;
+	};
+
+	struct CellJob {
+		Vector<RecordSource> sources;
+		Vector<EntityId> ancestors;
+		Vector<EntityId> resident;
+		PreparedCell result;
+		WorkerThreadPool::TaskID task = WorkerThreadPool::INVALID_TASK_ID;
+		SafeFlag cancelled;
+		uint64_t worker_usec = 0;
+	};
+
+	static constexpr uint32_t MAX_CELL_JOBS = 4;
+
 	EntityId document_id;
 	EntityCatalog catalog;
 	EntityWorld *world = nullptr;
@@ -110,6 +153,8 @@ private:
 	HashSet<EntityId, EntityIdHasher> globals;
 	HashSet<EntityId, EntityIdHasher> dirty;
 	HashMap<CellKey, Vector<EntityId>, CellKeyHasher> resident_cells;
+	LocalVector<CellJob *> cell_jobs;
+	HashMap<CellKey, uint64_t, CellKeyHasher> failed_cells;
 	struct PrefabMember {
 		String instance;
 		String source;
@@ -151,13 +196,20 @@ private:
 	Error _collect_required(const Vector<EntityId> &p_ids, Vector<EntityId> &r_ids) const;
 	Error _prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_scene, bool p_prefer_stored = false);
 	Error _prepare_entities(const Vector<EntityId> &p_ids, LocalVector<PreparedEntity> &r_entities, LoadProfile *r_profile);
+	static Error _decode_record(const Dictionary &p_record, PreparedEntity &r_prepared, String &r_field, LoadProfile *r_profile);
 	Error _decode_entity(EntityId p_id, const Dictionary &p_record, PreparedEntity &r_prepared, LoadProfile *r_profile);
 	Error _can_commit(const PreparedSet &p_prepared, const Vector<EntityId> &p_ids) const;
 	void _commit(const PreparedSet &p_prepared, const Vector<EntityId> &p_ids, bool p_resident, bool p_dirty = true);
 	Error _install(EntityId p_id, const Dictionary &p_record);
-	Error _validate_fields(EntityId p_id, uint64_t p_type, const Dictionary &p_fields, bool p_decode_assets, const String &p_prefix = String());
-	Error _describe_components(EntityId p_id, const Dictionary &p_record, Section &r_section, Vector<uint64_t> &r_types);
-	Error _describe(EntityId p_id, const Dictionary &p_record, Section &r_section, bool p_decode_assets = true);
+	Error _validate_fields(EntityId p_id, uint64_t p_type, const Dictionary &p_fields, const String &p_prefix = String());
+	static Error _describe_components(const Dictionary &p_record, Section &r_section, Vector<uint64_t> &r_types, String &r_field);
+	Error _describe(EntityId p_id, const Dictionary &p_record, Section &r_section);
+	bool _is_cell_in_flight(const CellKey &p_cell) const;
+	Error _snapshot_source(EntityId p_id, const String &p_directory, RecordSource &r_source);
+	Error _dispatch_cell(const CellKey &p_cell);
+	static void _run_cell_job(void *p_job);
+	bool _revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids);
+	Error _commit_cell(CellJob &p_job, Stats &r_stats);
 	Error _fail(EntityId p_id, const String &p_field, Error p_error);
 	void _relocate(const String &p_path);
 
@@ -181,7 +233,9 @@ public:
 	uint64_t get_residency_serial() const { return residency_serial; }
 	Error load_global();
 	bool is_global_loaded() const { return global_pinned; }
-	Error request_cells(const Vector<CellKey> &p_cells, int p_max_entities, int *r_remaining = nullptr);
+	Error request_cells(const Vector<CellKey> &p_cells, int *r_remaining = nullptr, Stats *r_stats = nullptr);
+	Error commit_ready(int p_max_entities, Stats *r_stats = nullptr);
+	void flush_streaming();
 	Error release_cells(const Vector<CellKey> &p_cells);
 	Vector<CellKey> get_cells() const;
 	Vector<CellKey> get_resident_cells() const;

@@ -2830,6 +2830,9 @@ void Node3DEditor::set_scene_document(const Ref<EntityScene> &p_document, bool p
 		ERR_FAIL_COND(next_world->initialize_services() != OK);
 	}
 	Ref<EntityScene> previous_document = scene_document;
+	if (previous_document.is_valid() && previous_document != p_document) {
+		previous_document->flush_streaming();
+	}
 	scene_document = p_document;
 	document_status->set_text(vformat(TTR("Native scene: %d entities. Select in the Scene dock or click a mesh."), p_document->get_resident_count()));
 	entity_world = next_world;

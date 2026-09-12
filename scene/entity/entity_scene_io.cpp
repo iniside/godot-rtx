@@ -567,6 +567,7 @@ Error EntitySceneIO::load(const String &p_path, Ref<EntityScene> &r_scene) {
 Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUID::ID p_uid) {
 	ERR_FAIL_COND_V(p_scene._owner() != OK, ERR_UNAUTHORIZED);
 	ERR_FAIL_COND_V(p_path.get_extension().to_lower() != "escn", ERR_INVALID_PARAMETER);
+	p_scene.flush_streaming();
 	for (const Variant &key : p_scene.prefab_instances.get_key_list()) {
 		Dictionary instance = p_scene.prefab_instances[key];
 		if (!Array(instance["conflicts"]).is_empty()) {

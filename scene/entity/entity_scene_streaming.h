@@ -7,10 +7,9 @@ public:
 	static constexpr int DEFAULT_BUDGET = 256;
 
 	struct Stats {
-		int cells_requested = 0;
+		EntityScene::Stats load;
 		int cells_released = 0;
 		int cells_remaining = 0;
-		int entities_loaded = 0;
 		int entities_unloaded = 0;
 	};
 

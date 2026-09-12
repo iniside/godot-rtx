@@ -37,19 +37,43 @@ double camera_distance(const AABB &p_aabb, const Vector<Vector3> &p_cameras) {
 	return best;
 }
 
+void report_step(EntityScene &p_scene, const EntitySceneStreaming::Stats &p_stats) {
+	const EntityScene::Stats &load = p_stats.load;
+	if (!OS::get_singleton()->is_use_benchmark_set()) {
+		return;
+	}
+	if (!load.jobs_dispatched && !load.jobs_completed && !load.jobs_discarded && !load.cells_committed && !p_stats.cells_released && !p_stats.entities_unloaded) {
+		return;
+	}
+	const double to_ms = 1.0 / 1000.0;
+	print_line(vformat("EntityScene streaming: jobs_dispatched=%d jobs_completed=%d jobs_discarded=%d cells_committed=%d cells_released=%d cells_remaining=%d entities_committed=%d entities_unloaded=%d dispatch=%.2fms commit=%.2fms worker=%.2fms resident_cells=%d resident_entities=%d",
+			load.jobs_dispatched,
+			load.jobs_completed,
+			load.jobs_discarded,
+			load.cells_committed,
+			p_stats.cells_released,
+			p_stats.cells_remaining,
+			load.entities_committed,
+			p_stats.entities_unloaded,
+			double(load.dispatch_usec) * to_ms,
+			double(load.commit_usec) * to_ms,
+			double(load.worker_usec) * to_ms,
+			p_scene.get_resident_cells().size(),
+			p_scene.get_resident_count()));
+}
+
 } // namespace
 
 Error EntitySceneStreaming::step(EntityScene &p_scene, const Vector<Vector3> &p_cameras, int p_budget, Stats *r_stats) {
 	Stats stats;
-	if (r_stats) {
-		*r_stats = stats;
-	}
-	if (p_cameras.is_empty()) {
-		return OK;
-	}
-	const Vector<EntityScene::CellKey> keys = p_scene.get_cells();
+	Error result = p_scene.commit_ready(p_budget, &stats.load);
+	const Vector<EntityScene::CellKey> keys = result == OK && !p_cameras.is_empty() ? p_scene.get_cells() : Vector<EntityScene::CellKey>();
 	if (keys.is_empty()) {
-		return OK;
+		if (r_stats) {
+			*r_stats = stats;
+		}
+		report_step(p_scene, stats);
+		return result;
 	}
 	HashMap<String, GridBounds> bounds;
 	for (const String &grid : p_scene.get_grid_names()) {
@@ -71,22 +95,14 @@ Error EntitySceneStreaming::step(EntityScene &p_scene, const Vector<Vector3> &p_
 			wanted.push_back({ cell, distance });
 		}
 	}
-	Error result = OK;
-	if (!wanted.is_empty()) {
+	if (result == OK && !wanted.is_empty()) {
 		wanted.sort_custom<CellCandidateSorter>();
 		Vector<EntityScene::CellKey> request;
 		request.reserve(wanted.size());
 		for (const CellCandidate &candidate : wanted) {
 			request.push_back(candidate.cell);
 		}
-		const int resident = p_scene.get_resident_count();
-		result = p_scene.request_cells(request, p_budget, &stats.cells_remaining);
-		stats.entities_loaded = p_scene.get_resident_count() - resident;
-		for (const EntityScene::CellKey &cell : request) {
-			if (p_scene.is_cell_resident(cell)) {
-				stats.cells_requested++;
-			}
-		}
+		result = p_scene.request_cells(request, &stats.cells_remaining, &stats.load);
 	}
 	if (result == OK && !stale.is_empty()) {
 		const int resident = p_scene.get_resident_count();
@@ -101,15 +117,6 @@ Error EntitySceneStreaming::step(EntityScene &p_scene, const Vector<Vector3> &p_
 	if (r_stats) {
 		*r_stats = stats;
 	}
-	if (OS::get_singleton()->is_use_benchmark_set() && (stats.cells_requested || stats.cells_released || stats.entities_loaded || stats.entities_unloaded)) {
-		print_line(vformat("EntityScene streaming: cells_requested=%d cells_released=%d cells_remaining=%d entities_loaded=%d entities_unloaded=%d resident_cells=%d resident_entities=%d",
-				stats.cells_requested,
-				stats.cells_released,
-				stats.cells_remaining,
-				stats.entities_loaded,
-				stats.entities_unloaded,
-				p_scene.get_resident_cells().size(),
-				p_scene.get_resident_count()));
-	}
+	report_step(p_scene, stats);
 	return result;
 }

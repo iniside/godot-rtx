@@ -2,6 +2,7 @@
 
 #include "core/os/memory.h"
 #include "core/os/os.h"
+#include "core/templates/safe_refcount.h"
 
 #include <cstring>
 
@@ -86,20 +87,20 @@ Error entity_encode_asset(const Ref<Resource> &p_asset, Variant &r_value) {
 	return OK;
 }
 
-static uint64_t entity_asset_usec = 0;
-static uint32_t entity_asset_loads = 0;
-static uint32_t entity_asset_cache_hits = 0;
+static SafeNumeric<uint64_t> entity_asset_usec;
+static SafeNumeric<uint32_t> entity_asset_loads;
+static SafeNumeric<uint32_t> entity_asset_cache_hits;
 
 void entity_asset_profile_reset() {
-	entity_asset_usec = 0;
-	entity_asset_loads = 0;
-	entity_asset_cache_hits = 0;
+	entity_asset_usec.set(0);
+	entity_asset_loads.set(0);
+	entity_asset_cache_hits.set(0);
 }
 
 void entity_asset_profile_get(uint64_t &r_usec, uint32_t &r_loads, uint32_t &r_cache_hits) {
-	r_usec = entity_asset_usec;
-	r_loads = entity_asset_loads;
-	r_cache_hits = entity_asset_cache_hits;
+	r_usec = entity_asset_usec.get();
+	r_loads = entity_asset_loads.get();
+	r_cache_hits = entity_asset_cache_hits.get();
 }
 
 Error entity_decode_asset(const Variant &p_value, Ref<Resource> &r_asset) {
@@ -124,11 +125,11 @@ Error entity_decode_asset(const Variant &p_value, Ref<Resource> &r_asset) {
 	const uint64_t load_begin = profiling ? OS::get_singleton()->get_ticks_usec() : 0;
 	Ref<Resource> container = ResourceLoader::load(path, "", ResourceFormatLoader::CACHE_MODE_REUSE, &error);
 	if (profiling) {
-		entity_asset_usec += OS::get_singleton()->get_ticks_usec() - load_begin;
+		entity_asset_usec.add(OS::get_singleton()->get_ticks_usec() - load_begin);
 		if (cached) {
-			entity_asset_cache_hits++;
+			entity_asset_cache_hits.increment();
 		} else {
-			entity_asset_loads++;
+			entity_asset_loads.increment();
 		}
 	}
 	if (error != OK || container.is_null()) {
