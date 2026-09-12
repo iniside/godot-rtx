@@ -1,6 +1,6 @@
 # Loader: redundant work, single-thread cost, asynchronous cell loading
 
-Data: 2026-09-12 UTC (rewizja 3: odkrywanie po koordynatach). Rewizja badań: `f63243af4e`. Autorytety: `AGENTS.md`,
+Data: 2026-09-12 UTC (rewizja 4: przepustowość ładowania komórek). Rewizja badań: `f63243af4e`. Autorytety: `AGENTS.md`,
 `.agents/shared/planning-dispatch.md`, `docs/reference/plan-writing-workflow.md`,
 `.agents/shared/godot-rules.md`, [2026-09-12-1139-world-storage-text-cells-plan.md](2026-09-12-1139-world-storage-text-cells-plan.md).
 
@@ -243,6 +243,41 @@ Generacja 1.28 M plików trwa minuty; generator raportuje postęp per komórka.
 - Domknięcie z round 2 Kroku 3: `cell_assets` sprzątane dla komórek, które
   nie są rezydentne, w toku ani chciane (sweep na końcu `request_cells`).
 
+**D9. Przepustowość ładowania komórek (właściciel: "ładowanie komórek jest za
+wolne", pomiar mapy 16 × 16 z `d6308c0f1c`: otwarcie 7 ms, pierwsza komórka
+po ~10 s, 16 komórek po ~19 s; worker 2.6 s na komórkę 10 k = 0.26 ms na
+rekord w `VariantParser`; 4 zadania w toku; pierwsza tura 4 zadań wyrzucona
+po brakujących assetach i parsowana od nowa; commit 80–130 ms na komórkę
+10 k).**
+- Brak ponownego parsowania: zadanie trzyma sparsowane rekordy; po
+  brakujących assetach wątek właściciela ładuje je raz (jak dziś), a
+  zadanie jest **wznawiane od dekodowania** (worker lub owner, bez odczytu
+  i parse). Assety `global/` i komórki najbliższej kamerze ładowane
+  bezpośrednio po otwarciu (`load_global` zna referencje), więc pierwsza
+  tura nie chybia.
+- Zadania w toku: `MAX_CELL_JOBS` = liczba wątków `WorkerThreadPool`
+  (`get_thread_count()`), nie stała 4; kolejność zleceń nadal po
+  odległości.
+- **Szybki parser rekordów**: dedykowany parser tekstu dla ograniczonej
+  gramatyki plików encji i klastrów (słownik z kluczami String, liczby,
+  bool, String, `Basis(...)`, `Vector2/3(...)`, `Color(...)`, `AABB(...)`,
+  `Rect2(...)`, tablice, zagnieżdżone słowniki, `uid://` jako String),
+  produkujący te same `Dictionary`/`Variant`, z fallbackiem do
+  `VariantParser` na pierwszym nieznanym tokenie (bez zmiany formatu, bez
+  drugiego enkodera; `VariantWriter` pozostaje jedynym pisarzem). Cel:
+  ≥ 5× szybciej niż `VariantParser` na rekordzie encji; parity sprawdzana
+  w Kroku 5 przez porównanie `Variant` z obu parserów na wszystkich
+  rekordach `streaming_test` i jednej komórce mapy.
+- Commit: rozbicie licznika `commit` na katalog/sekcje/flecs/
+  `_component_changed`/`_assign_cell`; usunięcie alokacji per encja, które
+  da się usunąć (rezerwacje map, przenoszenie `PreparedEntity` zamiast
+  kopii, klucze sekcji współdzielone); cel ≤ 40 ms na komórkę 10 k. Komórka
+  pozostaje atomowa.
+- Miary sukcesu na mapie 16 × 16 (runtime i edytor, kamera w środku):
+  pierwsza komórka ≤ 2 s po otwarciu (bez zimnej kompilacji shaderów),
+  16 komórek ≤ 6 s, brak ticku wątku właściciela > 50 ms poza jednorazowym
+  ładowaniem `.mgdata`.
+
 ## Trzy kąty dowodowe
 
 - **API/kontrakty**: codegen i `EntityComponentTraits<T>::fields()` (referencja),
@@ -328,6 +363,19 @@ Generacja 1.28 M plików trwa minuty; generator raportuje postęp per komórka.
   reszta etapów 1–3 traci sens na dużej mapie.
 - how: D8; format plików bez zmian; sceny demo bez regeneracji (układ
   katalogów jest już zgodny).
+- dispatch: `[independent]`.
+
+**Krok 3c → Przepustowość ładowania komórek** `[independent]`, po Kroku 3b
+- what: `scene/resources/entity_scene.h/.cpp` (wznowienie zadania od
+  dekodowania, preload assetów po otwarciu, `MAX_CELL_JOBS` z puli,
+  rozbicie licznika commitu i optymalizacje commitu), nowy
+  `scene/entity/entity_record_parser.h/.cpp` (szybki parser + fallback;
+  `scene/entity/SCsub`), `scene/entity/entity_scene_io.cpp`
+  (`read_variant_file` używa nowego parsera dla rekordów i klastrów),
+  `scene/entity/entity_scene_streaming.cpp` (liczniki).
+- why now: bez tego ładowanie komórek jest ograniczone parserem i sztywnym
+  limitem zadań, a pierwsza tura jest marnowana.
+- how: D9; format i pisarz bez zmian; parity parserów mierzona.
 - dispatch: `[independent]`.
 
 **Krok 4 → Generator mapy stress 16 × 16** `[independent]`, po Kroku 1 (D2), równolegle z Krokiem 2/3 (rozłączne pliki)
