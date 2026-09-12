@@ -113,7 +113,7 @@ Error EntitySceneCommands::_remap_record(Dictionary &r_record, const Dictionary 
 	if (p_remap.has(r_record["parent"])) {
 		r_record["parent"] = p_remap[r_record["parent"]];
 	}
-	Dictionary components = r_record["components"];
+	Dictionary components = Dictionary(r_record["components"]).duplicate(true);
 	for (const Variant &key : components.get_key_list()) {
 		Dictionary fields = components[key];
 		Error error = _remap_fields(String(key).hex_to_int(), fields, p_remap);
@@ -508,7 +508,7 @@ void EntitySceneCommands::clear() {
 }
 
 Error EntitySceneCommands::_override_record(Dictionary &r_record, const Dictionary &p_instance, const String &p_source) {
-	Dictionary components = r_record["components"];
+	Dictionary components = Dictionary(r_record["components"]).duplicate(true);
 	for (const Variant &value : Array(p_instance["overrides"])) {
 		Dictionary override = value;
 		if (override["source"] != p_source) {

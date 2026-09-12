@@ -201,34 +201,181 @@ void EntityScene::_index_prefabs() {
 	}
 }
 
-void EntityScene::_clear_scratch() {
-	if (scratch.is_null()) {
+EntityScene::PreparedEntity &EntityScene::PreparedEntity::operator=(PreparedEntity &&p_other) {
+	if (this == &p_other) {
+		return *this;
+	}
+	release();
+	id = p_other.id;
+	parent = p_other.parent;
+	deleted = p_other.deleted;
+	live = p_other.live;
+	order = p_other.order;
+	name = std::move(p_other.name);
+	components = std::move(p_other.components);
+	values = std::move(p_other.values);
+	return *this;
+}
+
+void EntityScene::PreparedEntity::release() {
+	if (values.is_empty()) {
 		return;
 	}
-	EntityScene &target = **scratch;
-	if (target.world) {
-		Vector<EntityId> ordered;
-		Error error = target._collect_required(target.catalog.get_ids(), ordered);
-		for (int i = ordered.size() - 1; error == OK && i >= 0; i--) {
-			EntityResolution resolution = target.resolve(ordered[i]);
-			if (resolution.state == EntityReferenceState::RESIDENT) {
-				error = target.world->unload_entity(resolution.handle);
+	const EntitySchemaRegistry &schemas = EntitySchemaRegistry::descriptors();
+	for (PreparedComponent &value : values) {
+		if (!value.buffer) {
+			continue;
+		}
+		const EntityComponentSchema *schema = schemas.find(value.schema_id);
+		if (schema) {
+			schema->destruct(value.buffer);
+		}
+		Memory::free_aligned_static(value.buffer);
+		value.buffer = nullptr;
+	}
+	values.clear();
+}
+
+Error EntityScene::PreparedEntity::decode_component(const EntityComponentSchema &p_schema, const Variant &p_value) {
+	ERR_FAIL_NULL_V(p_schema.construct, ERR_INVALID_PARAMETER);
+	void *buffer = Memory::alloc_aligned_static(p_schema.size, p_schema.alignment);
+	ERR_FAIL_NULL_V(buffer, ERR_OUT_OF_MEMORY);
+	p_schema.construct(buffer);
+	Error error = p_schema.decode(buffer, p_value);
+	if (error != OK) {
+		p_schema.destruct(buffer);
+		Memory::free_aligned_static(buffer);
+		return error;
+	}
+	values.push_back({ p_schema.id, buffer });
+	return OK;
+}
+
+EntityScene::PreparedSet::PreparedSet(const LocalVector<PreparedEntity> &p_entities) :
+		entities(&p_entities) {
+	lookup.reserve(p_entities.size());
+	for (uint32_t i = 0; i < p_entities.size(); i++) {
+		lookup.insert(p_entities[i].id, i);
+	}
+}
+
+const EntityScene::PreparedEntity *EntityScene::PreparedSet::find(EntityId p_id) const {
+	if (!entities) {
+		return nullptr;
+	}
+	const uint32_t *index = lookup.getptr(p_id);
+	return index ? &(*entities)[*index] : nullptr;
+}
+
+bool EntityScene::PreparedSet::is_deleted(EntityId p_id) const {
+	if (scene) {
+		return scene->catalog.records[p_id].deleted;
+	}
+	const PreparedEntity *entry = find(p_id);
+	return entry ? entry->deleted : true;
+}
+
+EntityRef EntityScene::PreparedSet::get_parent(EntityId p_id) const {
+	if (scene) {
+		return scene->catalog.get_parent(p_id);
+	}
+	const PreparedEntity *entry = find(p_id);
+	return entry ? entry->parent : EntityRef();
+}
+
+int64_t EntityScene::PreparedSet::get_order(EntityId p_id) const {
+	if (scene) {
+		return scene->get_order(p_id);
+	}
+	const PreparedEntity *entry = find(p_id);
+	return entry ? entry->order : 0;
+}
+
+Error EntityScene::PreparedSet::collect_required(const Vector<EntityId> &p_ids, Vector<EntityId> &r_ids) const {
+	if (scene) {
+		return scene->_collect_required(p_ids, r_ids);
+	}
+	HashSet<EntityId, EntityIdHasher> seen;
+	for (EntityId id : p_ids) {
+		Vector<EntityId> ancestors;
+		HashSet<EntityId, EntityIdHasher> chain;
+		while (id.is_valid() && !seen.has(id)) {
+			const PreparedEntity *entry = find(id);
+			if (!entry) {
+				return ERR_DOES_NOT_EXIST;
+			}
+			if (chain.has(id)) {
+				return ERR_CYCLIC_LINK;
+			}
+			chain.insert(id);
+			ancestors.push_back(id);
+			id = entry->deleted ? EntityId() : entry->parent.id;
+		}
+		for (int i = ancestors.size() - 1; i >= 0; i--) {
+			seen.insert(ancestors[i]);
+			r_ids.push_back(ancestors[i]);
+		}
+	}
+	return OK;
+}
+
+EntityScene::SectionAction EntityScene::PreparedSet::build_section(EntityId p_id, Section &r_section) const {
+	if (scene) {
+		const Section *section = scene->sections.getptr(p_id);
+		if (!section) {
+			return SECTION_ERASE;
+		}
+		r_section = *section;
+		return SECTION_SET;
+	}
+	const PreparedEntity *entry = find(p_id);
+	if (!entry) {
+		return SECTION_ERASE;
+	}
+	if (entry->live) {
+		return SECTION_KEEP;
+	}
+	r_section.name = entry->name;
+	r_section.components = entry->components;
+	return SECTION_SET;
+}
+
+void EntityScene::PreparedSet::write_components(EntityWorld &p_target, EntityHandle p_handle, EntityId p_id) const {
+	if (scene) {
+		EntityHandle from = scene->resolve(p_id).handle;
+		for (const KeyValue<uint64_t, EntityComponentSchema> &entry : p_target.schemas.get_types()) {
+			const EntityComponentSchema &schema = entry.value;
+			if (!schema.is_component) {
+				continue;
+			}
+			const EntityComponentSchema *source = scene->world->schemas.find(schema.id);
+			const void *value = source ? ecs_get_id(scene->world->ecs.c_ptr(), from.entity, source->runtime_id) : nullptr;
+			if (value) {
+				schema.copy_to(p_target.ecs, p_handle.entity, value);
+			} else {
+				p_target.ecs.entity(p_handle.entity).remove(schema.runtime_id);
 			}
 		}
-		if (error != OK || target.world->get_resident_count() != 0) {
-			scratch.unref();
-			return;
-		}
-		target.world->drain_changed();
-		target.world->get_rendering().clear();
+		return;
 	}
-	target.catalog.children.clear();
-	target.catalog.records.clear();
-	target.order.clear();
-	target.sections.clear();
-	target.prefab_instances = Dictionary();
-	target.prefab_members.clear();
-	target.last_error = String();
+	const PreparedEntity *entry = find(p_id);
+	if (!entry || entry->live) {
+		return;
+	}
+	for (const PreparedComponent &value : entry->values) {
+		const EntityComponentSchema *schema = p_target.schemas.find(value.schema_id);
+		if (schema) {
+			schema->copy_to(p_target.ecs, p_handle.entity, value.buffer);
+		}
+	}
+}
+
+Dictionary EntityScene::_shallow_record(const Dictionary &p_record) {
+	Dictionary result;
+	for (const Variant &key : p_record.get_key_list()) {
+		result[key] = p_record[key];
+	}
+	return result;
 }
 
 Error EntityScene::_read_stored(EntityId p_id, Dictionary &r_record) {
@@ -237,7 +384,7 @@ Error EntityScene::_read_stored(EntityId p_id, Dictionary &r_record) {
 		return _fail(p_id, "record", ERR_DOES_NOT_EXIST);
 	}
 	if (!section->record.is_empty()) {
-		r_record = section->record.duplicate(true);
+		r_record = _shallow_record(section->record);
 		return OK;
 	}
 	if (section->path.is_empty() || storage_path.is_empty()) {
@@ -261,7 +408,7 @@ Error EntityScene::_read_stored(EntityId p_id, Dictionary &r_record) {
 		if (value.get_type() != Variant::DICTIONARY) {
 			return _fail(p_id, "cluster", ERR_FILE_CORRUPT);
 		}
-		r_record = Dictionary(value).duplicate(true);
+		r_record = _shallow_record(value);
 		return OK;
 	}
 	Variant parsed;
@@ -415,7 +562,7 @@ Error EntityScene::_describe_components(EntityId p_id, const Dictionary &p_recor
 		return _fail(p_id, "components", ERR_INVALID_DATA);
 	}
 	const Dictionary components = p_record["components"];
-	const EntitySchemaRegistry &schemas = get_world()->schemas;
+	const EntitySchemaRegistry &schemas = EntitySchemaRegistry::descriptors();
 	r_section.components.clear();
 	r_section.name = String();
 	const EntityComponentSchema *name_schema = schemas.find(EntityComponentTraits<EntityName>::id);
@@ -454,16 +601,10 @@ Error EntityScene::_describe(EntityId p_id, const Dictionary &p_record, Section 
 	return OK;
 }
 
-Error EntityScene::_install(EntityId p_id, const Dictionary &p_record, LoadProfile *r_profile) {
+Error EntityScene::_install(EntityId p_id, const Dictionary &p_record) {
 	Section section;
 	Vector<uint64_t> types;
-	uint64_t phase_begin = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
 	Error error = _describe_components(p_id, p_record, section, types);
-	if (r_profile) {
-		const uint64_t now = OS::get_singleton()->get_ticks_usec();
-		r_profile->describe += now - phase_begin;
-		phase_begin = now;
-	}
 	if (error != OK) {
 		return error;
 	}
@@ -482,9 +623,6 @@ Error EntityScene::_install(EntityId p_id, const Dictionary &p_record, LoadProfi
 		}
 	}
 	sections.insert(p_id, section);
-	if (r_profile) {
-		r_profile->world += OS::get_singleton()->get_ticks_usec() - phase_begin;
-	}
 	return OK;
 }
 
@@ -513,7 +651,7 @@ Error EntityScene::_collect_required(const Vector<EntityId> &p_ids, Vector<Entit
 	return OK;
 }
 
-Error EntityScene::_prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_scene, bool p_prefer_stored, LoadProfile *r_profile, bool p_scratch) {
+Error EntityScene::_prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_scene, bool p_prefer_stored) {
 	ERR_FAIL_COND_V(_owner() != OK, ERR_UNAUTHORIZED);
 	Vector<EntityId> required;
 	Error error = _collect_required(p_ids, required);
@@ -521,23 +659,11 @@ Error EntityScene::_prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_s
 		return error;
 	}
 	Ref<EntityScene> prepared;
-	if (p_scratch) {
-		_clear_scratch();
-		if (scratch.is_null()) {
-			scratch.instantiate();
-		}
-		prepared = scratch;
-	} else {
-		prepared.instantiate();
-	}
+	prepared.instantiate();
 	prepared->document_id = document_id;
 	for (EntityId id : required) {
 		Dictionary record;
-		const uint64_t read_begin = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
 		error = _read_record(id, record, nullptr, p_prefer_stored);
-		if (r_profile) {
-			r_profile->read_record += OS::get_singleton()->get_ticks_usec() - read_begin;
-		}
 		if (error != OK) {
 			return error;
 		}
@@ -545,11 +671,7 @@ Error EntityScene::_prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_s
 		prepared->order.insert(id, get_order(id));
 		if (!bool(record["deleted"])) {
 			prepared->catalog._set_parent(id, catalog.get_parent(id));
-			const uint64_t install_begin = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
-			error = prepared->_install(id, record, r_profile);
-			if (r_profile) {
-				r_profile->install += OS::get_singleton()->get_ticks_usec() - install_begin;
-			}
+			error = prepared->_install(id, record);
 			if (error != OK) {
 				last_error = prepared->last_error;
 				return error;
@@ -573,18 +695,94 @@ Error EntityScene::_prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_s
 	return OK;
 }
 
-Error EntityScene::_can_commit(const EntityScene &p_prepared, const Vector<EntityId> &p_ids) const {
+Error EntityScene::_decode_entity(EntityId p_id, const Dictionary &p_record, PreparedEntity &r_prepared, LoadProfile *r_profile) {
+	Section section;
+	Vector<uint64_t> types;
+	uint64_t phase_begin = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
+	Error error = _describe_components(p_id, p_record, section, types);
+	if (r_profile) {
+		const uint64_t now = OS::get_singleton()->get_ticks_usec();
+		r_profile->describe += now - phase_begin;
+		phase_begin = now;
+	}
+	if (error != OK) {
+		return error;
+	}
+	r_prepared.name = section.name;
+	r_prepared.components = section.components;
+	const Dictionary components = p_record["components"];
+	const EntitySchemaRegistry &schemas = EntitySchemaRegistry::descriptors();
+	for (int i = 0; i < types.size(); i++) {
+		const EntityComponentSchema *schema = schemas.find(types[i]);
+		ERR_FAIL_NULL_V(schema, ERR_DOES_NOT_EXIST);
+		error = r_prepared.decode_component(*schema, components[r_prepared.components[i]]);
+		if (error != OK) {
+			error = _fail(p_id, schema->key, error);
+			break;
+		}
+	}
+	if (r_profile) {
+		r_profile->world += OS::get_singleton()->get_ticks_usec() - phase_begin;
+	}
+	return error;
+}
+
+Error EntityScene::_prepare_entities(const Vector<EntityId> &p_ids, LocalVector<PreparedEntity> &r_entities, LoadProfile *r_profile) {
+	ERR_FAIL_COND_V(_owner() != OK, ERR_UNAUTHORIZED);
+	Vector<EntityId> required;
+	Error error = _collect_required(p_ids, required);
+	if (error != OK) {
+		return error;
+	}
+	r_entities.reserve(required.size());
+	for (EntityId id : required) {
+		PreparedEntity prepared;
+		prepared.id = id;
+		prepared.parent = catalog.get_parent(id);
+		prepared.order = get_order(id);
+		prepared.deleted = catalog.records[id].deleted;
+		if (resolve(id).state == EntityReferenceState::RESIDENT) {
+			prepared.live = true;
+			r_entities.push_back(std::move(prepared));
+			continue;
+		}
+		Dictionary record;
+		const uint64_t read_begin = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
+		error = _read_record(id, record, nullptr, false);
+		if (r_profile) {
+			r_profile->read_record += OS::get_singleton()->get_ticks_usec() - read_begin;
+		}
+		if (error != OK) {
+			return error;
+		}
+		prepared.deleted = bool(record["deleted"]);
+		if (!prepared.deleted) {
+			const uint64_t install_begin = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
+			error = _decode_entity(id, record, prepared, r_profile);
+			if (r_profile) {
+				r_profile->install += OS::get_singleton()->get_ticks_usec() - install_begin;
+			}
+			if (error != OK) {
+				return error;
+			}
+		}
+		r_entities.push_back(std::move(prepared));
+	}
+	return OK;
+}
+
+Error EntityScene::_can_commit(const PreparedSet &p_prepared, const Vector<EntityId> &p_ids) const {
 	HashSet<EntityId, EntityIdHasher> affected;
 	for (EntityId id : p_ids) {
 		affected.insert(id);
 	}
 	for (EntityId id : p_ids) {
-		if (p_prepared.catalog.records[id].deleted) {
+		if (p_prepared.is_deleted(id)) {
 			if (pins.has(id)) {
 				return ERR_BUSY;
 			}
 			for (EntityId child : catalog.get_children(id)) {
-				if (!affected.has(child) || (!p_prepared.catalog.records[child].deleted && p_prepared.catalog.get_parent(child).id == id)) {
+				if (!affected.has(child) || (!p_prepared.is_deleted(child) && p_prepared.get_parent(child).id == id)) {
 					return ERR_BUSY;
 				}
 			}
@@ -593,17 +791,17 @@ Error EntityScene::_can_commit(const EntityScene &p_prepared, const Vector<Entit
 	return OK;
 }
 
-void EntityScene::_commit(EntityScene &p_prepared, const Vector<EntityId> &p_ids, bool p_resident, bool p_dirty) {
+void EntityScene::_commit(const PreparedSet &p_prepared, const Vector<EntityId> &p_ids, bool p_resident, bool p_dirty) {
 	EntityWorld *target = get_world();
 	HashSet<EntityId, EntityIdHasher> residency;
 	Vector<EntityId> active;
 	for (EntityId id : p_ids) {
-		if (!p_prepared.catalog.records[id].deleted && (p_resident || resolve(id).state == EntityReferenceState::RESIDENT)) {
+		if (!p_prepared.is_deleted(id) && (p_resident || resolve(id).state == EntityReferenceState::RESIDENT)) {
 			active.push_back(id);
 		}
 	}
 	Vector<EntityId> required;
-	p_prepared._collect_required(active, required);
+	p_prepared.collect_required(active, required);
 	for (EntityId id : required) {
 		residency.insert(id);
 	}
@@ -617,46 +815,34 @@ void EntityScene::_commit(EntityScene &p_prepared, const Vector<EntityId> &p_ids
 		}
 	}
 	for (EntityId id : p_ids) {
-		const EntityCatalog::Record &record = p_prepared.catalog.records[id];
-		catalog.records.insert(id, { record.deleted, {} });
+		const bool deleted = p_prepared.is_deleted(id);
+		catalog.records.insert(id, { deleted, {} });
 		EntityResolution existing = resolve(id);
 		bool resident = existing.state == EntityReferenceState::RESIDENT;
-		if (record.deleted && resident) {
+		if (deleted && resident) {
 			target->transforms.forget(existing.handle.entity);
 			target->residents.erase(id);
 			target->ecs.entity(existing.handle.entity).destruct();
 			resident = false;
 		}
-		if (!record.deleted && residency.has(id)) {
+		if (!deleted && residency.has(id)) {
 			EntityHandle handle = resident ? existing.handle : target->_materialize(id);
-			EntityHandle from = p_prepared.resolve(id).handle;
-			for (const KeyValue<uint64_t, EntityComponentSchema> &entry : target->schemas.get_types()) {
-				const EntityComponentSchema &schema = entry.value;
-				if (!schema.is_component) {
-					continue;
-				}
-				const EntityComponentSchema *source_schema = p_prepared.world->schemas.find(schema.id);
-				const void *value = ecs_get_id(p_prepared.world->ecs.c_ptr(), from.entity, source_schema->runtime_id);
-				if (value) {
-					schema.copy_to(target->ecs, handle.entity, value);
-				} else {
-					target->ecs.entity(handle.entity).remove(schema.runtime_id);
-				}
-			}
+			p_prepared.write_components(*target, handle, id);
 			target->_component_changed(handle);
 		} else {
 			target->_mark_changed(id);
 		}
 		order.insert(id, p_prepared.get_order(id));
-		if (!record.deleted && p_prepared.sections.has(id)) {
-			Section section = p_prepared.sections[id];
+		Section section;
+		const SectionAction action = deleted ? SECTION_ERASE : p_prepared.build_section(id, section);
+		if (action == SECTION_SET) {
 			const Section *previous = sections.getptr(id);
 			if (previous && section.path.is_empty()) {
 				section.path = previous->path;
 				section.cluster = previous->cluster;
 			}
 			sections.insert(id, section);
-		} else {
+		} else if (action == SECTION_ERASE) {
 			sections.erase(id);
 		}
 		if (p_dirty) {
@@ -664,13 +850,13 @@ void EntityScene::_commit(EntityScene &p_prepared, const Vector<EntityId> &p_ids
 		}
 	}
 	for (EntityId id : p_ids) {
-		const EntityCatalog::Record &record = p_prepared.catalog.records[id];
-		catalog.records[id].parent = record.parent;
-		if (!record.deleted) {
-			catalog._set_parent(id, record.parent);
+		const EntityRef parent = p_prepared.get_parent(id);
+		catalog.records[id].parent = parent;
+		if (!p_prepared.is_deleted(id)) {
+			catalog._set_parent(id, parent);
 			EntityResolution existing = resolve(id);
-			if (existing.state == EntityReferenceState::RESIDENT && record.parent.id.is_valid()) {
-				target->ecs.entity(existing.handle.entity).set<flecs::Parent>({ resolve(record.parent.id).handle.entity });
+			if (existing.state == EntityReferenceState::RESIDENT && parent.id.is_valid()) {
+				target->ecs.entity(existing.handle.entity).set<flecs::Parent>({ resolve(parent.id).handle.entity });
 			}
 		}
 	}
@@ -684,31 +870,32 @@ void EntityScene::_commit(EntityScene &p_prepared, const Vector<EntityId> &p_ids
 }
 
 Error EntityScene::_load_resident(const Vector<EntityId> &p_ids, LoadProfile *r_profile) {
-	Ref<EntityScene> prepared;
+	LocalVector<PreparedEntity> prepared;
 	const uint64_t prepare_begin = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
-	Error error = _prepare(p_ids, prepared, false, r_profile, true);
+	Error error = _prepare_entities(p_ids, prepared, r_profile);
 	if (r_profile) {
 		r_profile->prepare = OS::get_singleton()->get_ticks_usec() - prepare_begin;
 	}
-	if (error == OK) {
-		const uint64_t check_begin = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
-		error = _can_commit(**prepared, p_ids);
-		if (r_profile) {
-			r_profile->check = OS::get_singleton()->get_ticks_usec() - check_begin;
-		}
+	if (error != OK) {
+		return error;
 	}
-	if (error == OK) {
-		const uint64_t commit_begin = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
-		const uint64_t previous_revision = revision;
-		_commit(**prepared, p_ids, true, false);
-		revision = previous_revision;
-		if (r_profile) {
-			r_profile->commit = OS::get_singleton()->get_ticks_usec() - commit_begin;
-		}
+	const PreparedSet set(prepared);
+	const uint64_t check_begin = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
+	error = _can_commit(set, p_ids);
+	if (r_profile) {
+		r_profile->check = OS::get_singleton()->get_ticks_usec() - check_begin;
 	}
-	prepared.unref();
-	_clear_scratch();
-	return error;
+	if (error != OK) {
+		return error;
+	}
+	const uint64_t commit_begin = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
+	const uint64_t previous_revision = revision;
+	_commit(set, p_ids, true, false);
+	revision = previous_revision;
+	if (r_profile) {
+		r_profile->commit = OS::get_singleton()->get_ticks_usec() - commit_begin;
+	}
+	return OK;
 }
 
 Error EntityScene::load_subset(const Vector<EntityId> &p_ids) {

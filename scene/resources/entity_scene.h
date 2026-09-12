@@ -2,6 +2,7 @@
 
 #include "core/io/resource.h"
 #include "core/math/aabb.h"
+#include "core/templates/local_vector.h"
 #include "scene/entity/entity_world.h"
 
 class EntitySceneCommands;
@@ -24,6 +25,54 @@ class EntityScene : public Resource {
 	struct Grid {
 		double size = 0.0;
 		double range = 0.0;
+	};
+
+	struct PreparedComponent {
+		uint64_t schema_id = 0;
+		void *buffer = nullptr;
+	};
+
+	struct PreparedEntity {
+		EntityId id;
+		EntityRef parent;
+		bool deleted = false;
+		bool live = false;
+		int64_t order = 0;
+		String name;
+		Array components;
+		LocalVector<PreparedComponent> values;
+
+		PreparedEntity() = default;
+		PreparedEntity(const PreparedEntity &) = delete;
+		PreparedEntity &operator=(const PreparedEntity &) = delete;
+		PreparedEntity(PreparedEntity &&p_other) { *this = std::move(p_other); }
+		PreparedEntity &operator=(PreparedEntity &&p_other);
+		~PreparedEntity() { release(); }
+		Error decode_component(const EntityComponentSchema &p_schema, const Variant &p_value);
+		void release();
+	};
+
+	enum SectionAction {
+		SECTION_SET,
+		SECTION_ERASE,
+		SECTION_KEEP,
+	};
+
+	struct PreparedSet {
+		EntityScene *scene = nullptr;
+		const LocalVector<PreparedEntity> *entities = nullptr;
+		HashMap<EntityId, uint32_t, EntityIdHasher> lookup;
+
+		PreparedSet(EntityScene &p_scene) :
+				scene(&p_scene) {}
+		explicit PreparedSet(const LocalVector<PreparedEntity> &p_entities);
+		const PreparedEntity *find(EntityId p_id) const;
+		bool is_deleted(EntityId p_id) const;
+		EntityRef get_parent(EntityId p_id) const;
+		int64_t get_order(EntityId p_id) const;
+		Error collect_required(const Vector<EntityId> &p_ids, Vector<EntityId> &r_ids) const;
+		SectionAction build_section(EntityId p_id, Section &r_section) const;
+		void write_components(EntityWorld &p_target, EntityHandle p_handle, EntityId p_id) const;
 	};
 
 public:
@@ -66,7 +115,6 @@ private:
 		String source;
 	};
 	HashMap<EntityId, PrefabMember, EntityIdHasher> prefab_members;
-	Ref<EntityScene> scratch;
 	uint64_t residency_serial = 0;
 	bool global_pinned = false;
 	HashMap<EntityId, uint32_t, EntityIdHasher> pins;
@@ -94,17 +142,19 @@ private:
 	void _forget_cell(EntityId p_id);
 	Error _rebuild_cells();
 	void _index_prefabs();
-	void _clear_scratch();
 	Error _load_resident(const Vector<EntityId> &p_ids, LoadProfile *r_profile);
 	Error _cell_entities(const CellKey &p_cell, Vector<EntityId> &r_ids, Vector<EntityId> &r_ancestors) const;
 	Error _read_record(EntityId p_id, Dictionary &r_record, bool *r_stored = nullptr, bool p_prefer_stored = false);
+	static Dictionary _shallow_record(const Dictionary &p_record);
 	Error _read_stored(EntityId p_id, Dictionary &r_record);
 	Error _encode_record(EntityId p_id, Dictionary &r_record);
 	Error _collect_required(const Vector<EntityId> &p_ids, Vector<EntityId> &r_ids) const;
-	Error _prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_scene, bool p_prefer_stored = false, LoadProfile *r_profile = nullptr, bool p_scratch = false);
-	Error _can_commit(const EntityScene &p_prepared, const Vector<EntityId> &p_ids) const;
-	void _commit(EntityScene &p_prepared, const Vector<EntityId> &p_ids, bool p_resident, bool p_dirty = true);
-	Error _install(EntityId p_id, const Dictionary &p_record, LoadProfile *r_profile = nullptr);
+	Error _prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_scene, bool p_prefer_stored = false);
+	Error _prepare_entities(const Vector<EntityId> &p_ids, LocalVector<PreparedEntity> &r_entities, LoadProfile *r_profile);
+	Error _decode_entity(EntityId p_id, const Dictionary &p_record, PreparedEntity &r_prepared, LoadProfile *r_profile);
+	Error _can_commit(const PreparedSet &p_prepared, const Vector<EntityId> &p_ids) const;
+	void _commit(const PreparedSet &p_prepared, const Vector<EntityId> &p_ids, bool p_resident, bool p_dirty = true);
+	Error _install(EntityId p_id, const Dictionary &p_record);
 	Error _validate_fields(EntityId p_id, uint64_t p_type, const Dictionary &p_fields, bool p_decode_assets, const String &p_prefix = String());
 	Error _describe_components(EntityId p_id, const Dictionary &p_record, Section &r_section, Vector<uint64_t> &r_types);
 	Error _describe(EntityId p_id, const Dictionary &p_record, Section &r_section, bool p_decode_assets = true);

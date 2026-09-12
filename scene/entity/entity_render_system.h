@@ -77,7 +77,6 @@ public:
 			dirty[p_id] |= p_mask;
 		}
 	}
-	void clear() { dirty.clear(); }
 	void publish();
 	void release();
 };
