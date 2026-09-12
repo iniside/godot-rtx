@@ -1,6 +1,6 @@
 # Loader: redundant work, single-thread cost, asynchronous cell loading
 
-Data: 2026-09-12 UTC (rewizja 2 po recenzji). Rewizja badań: `f63243af4e`. Autorytety: `AGENTS.md`,
+Data: 2026-09-12 UTC (rewizja 3: odkrywanie po koordynatach). Rewizja badań: `f63243af4e`. Autorytety: `AGENTS.md`,
 `.agents/shared/planning-dispatch.md`, `docs/reference/plan-writing-workflow.md`,
 `.agents/shared/godot-rules.md`, [2026-09-12-1139-world-storage-text-cells-plan.md](2026-09-12-1139-world-storage-text-cells-plan.md).
 
@@ -14,6 +14,14 @@ być kosztem tworzenia encji flecs; słusznie: to koszt warstwy schematu.
 Dodatek właściciela (2026-09-12): na koniec **realna mapa stress**: komórki
 256 m, każda z maksymalnym zagęszczeniem meshy Lucy/Thai (~10 k na komórkę),
 zasięg streamingu 500 m, siatka 16 × 16 komórek.
+
+Korekta właściciela (2026-09-12, po pierwszym otwarciu mapy 16 × 16: 22 GB
+i minuty w `EntitySceneIO::load`): **scena nie listuje ani nie parsuje
+niczego globalnie**. Nazwa katalogu komórki wynika z koordynatów, więc
+scheduler liczy z pozycji kamery i zasięgu dokładne klucze komórek i sprawdza
+istnienie tylko tych katalogów. Otwarcie = plik główny + `global/`.
+Zawartość komórki czyta worker dopiero, gdy komórka wchodzi w zasięg; zwolniona
+komórka jest zapominana. To zastępuje D4 planu world storage.
 
 Wykluczenia: bez zmiany formatu tekstowego (paczkowanie runtime to osobny
 task); bez zmiany semantyki komórek, `dirty`, histerezy i budżetu z planu
@@ -198,6 +206,43 @@ odczyt; obie ścieżki mierzone osobno w licznikach); w zasięgu 500 m ~25
 komórek = ~250 k rezydentnych encji z dwoma współdzielonymi `.mgdata`.
 Generacja 1.28 M plików trwa minuty; generator raportuje postęp per komórka.
 
+**D8. Odkrywanie po koordynatach (zamiana D4 world storage).**
+- `EntitySceneIO::load` czyta plik główny, `global/` i `prefabs/`; nie
+  wchodzi do `cells/`. Katalog dokumentu zawiera tylko encje `global/`,
+  encje komórek rezydentnych lub w toku oraz encje brudne. Znikają:
+  `get_cells()`, mapa wszystkich komórek, `_rebuild_cells` po całym drzewie;
+  zostają `cell_for_position`, `cell_aabb`, `get_grid_*`, mapy komórek
+  ograniczone do komórek znanych.
+- Scheduler: dla każdej kamery i grida iteruje całkowite zakresy indeksów
+  pokrywające kulę o promieniu `range` (i `range + size` dla histerezy),
+  odrzuca komórki, których AABB nie przecina kuli, i dla pozostałych
+  sprawdza `DirAccess::dir_exists` katalogu `cells/<grid>/<x>_<y>_<z>/`;
+  wynik "brak katalogu" jest zapamiętywany do zmiany `revision` lub zapisu
+  (bez sondowania dysku co klatkę). Komórki bez katalogu nie istnieją.
+- Zadanie komórki: worker sam listuje katalog komórki (pliki `<id>.escn` i
+  klastry), parsuje, dekoduje; snapshot z wątku właściciela to klucz,
+  ścieżka katalogu i zbiór id już rezydentnych/brudnych w tej komórce (do
+  pominięcia). Rodzic z rekordu musi być w tej samej komórce albo w
+  `global/`; inaczej błąd ze ścieżką pliku. Commit wstawia rekordy katalogu
+  (nowe wpisy) i materializuje jak dziś.
+- `release_cells` **zapomina** czyste encje zwolnionej komórki (katalog,
+  sekcje, mapy komórek); brudne zostają rezydentne. `unload_subset` bez zmian
+  semantyki dla wywołań ręcznych.
+- Zapis: encja z rodzicem trafia do komórki swojego korzenia (korzeń =
+  najwyższy przodek; korzeń bez transformacji lub globalny → `global/`),
+  więc cała hierarchia jest w jednym katalogu; reguła "przeniesienie
+  potomków" upraszcza się do "hierarchia podąża za korzeniem". Save-As i
+  zmiana ścieżki: kopia katalogu `cells/` starego drzewa (`DirAccess::copy_dir`
+  per komórka nieznana dokumentowi) plus zwykły zapis brudnych; stare drzewo
+  nietknięte.
+- Dok encji pokazuje katalog (czyli rezydentne + globalne) i liczbę
+  komórek rezydentnych; nazw nierezydentnych nie ma w pamięci.
+- `get_dependencies` (skan edytora) zostaje strumieniowy po całym drzewie
+  (`e2a908359b`), bo to jedyna operacja, która z definicji dotyczy całej
+  sceny; `create_play_document` materializuje to, co znane.
+- Domknięcie z round 2 Kroku 3: `cell_assets` sprzątane dla komórek, które
+  nie są rezydentne, w toku ani chciane (sweep na końcu `request_cells`).
+
 ## Trzy kąty dowodowe
 
 - **API/kontrakty**: codegen i `EntityComponentTraits<T>::fields()` (referencja),
@@ -270,6 +315,21 @@ Generacja 1.28 M plików trwa minuty; generator raportuje postęp per komórka.
   brak dostępu do `EntityScene`/`EntityWorld` z wątku.
 - dispatch: `[independent]`.
 
+**Krok 3b → Odkrywanie komórek po koordynatach** `[independent]`, po Kroku 3
+- what: `scene/entity/entity_scene_io.cpp` (`load` bez `cells/`, zapis po
+  korzeniu, Save-As kopiuje nieznane komórki), `scene/resources/entity_scene.h/.cpp`
+  (katalog tylko znanych encji, zadanie listujące katalog komórki, `release_cells`
+  zapomina, `cell_assets` sweep, cache "brak katalogu", usunięcie `get_cells`),
+  `scene/entity/entity_scene_streaming.cpp` (iteracja indeksów w zasięgu),
+  `editor/scene/entity/entity_scene_editor.cpp` (liczba komórek rezydentnych,
+  bez nazw nierezydentnych), `scene/entity/entity_scene_runtime.cpp` tylko
+  jeśli zmieni się wywołanie.
+- why now: bez tego otwarcie mapy jest liniowe w liczbie plików; cała
+  reszta etapów 1–3 traci sens na dużej mapie.
+- how: D8; format plików bez zmian; sceny demo bez regeneracji (układ
+  katalogów jest już zgodny).
+- dispatch: `[independent]`.
+
 **Krok 4 → Generator mapy stress 16 × 16** `[independent]`, po Kroku 1 (D2), równolegle z Krokiem 2/3 (rozłączne pliki)
 - what: `editor/entity_scene_energy_converter.h/.cpp` (nowa funkcja
   `generate_streaming_stress_entity_scene()`), `main/main.cpp` (flaga
@@ -293,8 +353,10 @@ Generacja 1.28 M plików trwa minuty; generator raportuje postęp per komórka.
   scenie: p95/p99 czasu klatki podczas dostreamowywania przed i po Kroku 3
   (cel: brak hitchy powyżej 2× mediany). Zero ERROR, czyste zamknięcie,
   `git status` scen czysty, zapis po edycji (właściciel w UI).
-- Mapa stress 16 × 16 (Krok 4): czas otwarcia (odczyt 256 klastrów,
-  2.56 M rekordów) i RAM katalogu; liczba rezydentnych komórek/encji przy
+- Mapa stress 16 × 16 (Krok 4): czas otwarcia (plik główny + `global/`,
+  oczekiwanie: poniżej sekundy) i RAM po otwarciu; czas do rezydencji
+  komórek w zasięgu (koszt klastra vs pojedynczych plików osobno w
+  licznikach workera); liczba rezydentnych komórek/encji przy
   kamerze w środku (oczekiwanie ~25 komórek, ~250 k encji) i czas do pełnej
   rezydencji zasięgu; przejazd kamery 1 km po osi X narzędziem ruchu
   (p95/p99 klatki, liczniki zleconych/zcommitowanych/zwolnionych komórek,
