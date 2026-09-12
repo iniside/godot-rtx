@@ -1,7 +1,8 @@
 # Microgeometry `.mgdata` v3 compression status
 
 Verified 2026-09-12 UTC. Source: plan `3608e8b74f`, Krok 1 `e656e5b415` +
-`dcab8fd312`, Krok 2 `f06247d0a5`, Krok 3 `c7f99ac2a2`; binary built from
+`dcab8fd312`, Krok 2 `f06247d0a5`, Krok 3 `c7f99ac2a2`, Krok 5 `44017ee3a3`,
+`999ca1c494`, `9ca7fb2bbb`, `a96b11ea1a`, `8ab0d11a32`; binary built from
 the working tree at `dcab8fd312` with the Krok 3 edits (reports
 `custom_build.dcab8fd31`). Windows Vulkan primary double editor, RTX 4090,
 driver 616.64. Owner-approved architecture: disk format transcoded on the
@@ -130,3 +131,62 @@ unverified. `.tscn` scenes (seam_grid, dragon) are not used by this project.
   was cancelled because the capture helper changed window focus, and FPS
   during those runs is not representative for the same reason; no numeric
   motion measurement is claimed.
+
+## Krok 5: mapped surfaces without source arrays (owner approved 2026-09-12)
+
+Commits `44017ee3a3`, `999ca1c494`, `9ca7fb2bbb`, `a96b11ea1a`, `8ab0d11a32`;
+two hostile review rounds each (final PASS). Authority: `ArrayMesh::_micro_geometry_changed`
+calls the new unbound `RS::mesh_surface_clear_source_arrays` for every mapped
+surface (implemented in the RD, dummy and GLES3 storages, so headless import
+and the native converter also drop the data), then maps the mesh. The saved
+surface keeps format, primitive, counts, AABB, `uv_scale`, bone AABBs,
+material and name with empty vertex/index payloads and
+`micro_geometry_mapped = true`. `ArrayMesh::surface_get_arrays` rebuilds
+lossy arrays on the CPU from the leaf clusters (`MicroGeometryData::decode_surface_arrays`);
+`RenderingServer::mesh_surface_get_arrays` fails explicitly. Mapped surfaces
+are excluded from every conventional raster pass and from BLAS building; a
+mapped mesh that is not microgeometry-eligible (streaming window,
+`visibility_range`, `uses_time`, fades, alpha, SDF and depth-material passes,
+devices below the mesh-shader gate) renders in no pass. The exact-buffer
+discard/re-create rail (`_mesh_surface_ensure_gpu_buffers` and friends) is
+removed. Shadow meshes are not generated for fully mapped meshes at import
+and are dropped on load of older resources; this deviates from plan D3
+("shadow mesh regenerowany"). A skinned or blend-shape mesh never drops its
+arrays or shadow mesh.
+
+Correction to the body of `a96b11ea1a`: removing the blanket
+`keep_source_data` pin does not change RAM residency, because the RD storage
+stores `source_data` for every surface unconditionally
+(`mesh_storage.cpp:384`); it only changes which path `mesh_get_surface` takes.
+
+| File | before Krok 5 | after `44017ee3a3`..`9ca7fb2bbb` | after `a96b11ea1a` |
+| --- | ---: | ---: | ---: |
+| `native_assets/microgeometry_stress/lucy.res` | 1907.8 MB | 841.7 MB | 3.7 KB |
+| `native_assets/microgeometry_stress/thai_statuette.res` | 680.0 MB | 300.0 MB | 3.7 KB |
+| `.godot/imported/lucy.glb-*.scn` | 753.7 MB | 348.3 MB | 1.8 KB |
+| `.godot/imported/thai_statuette.glb-*.scn` | 274.2 MB | 126.6 MB | 1.8 KB |
+| `.godot/imported/xyzrgb_dragon.glb-*.scn` | 195.8 MB | 90.4 MB | 1.8 KB |
+
+Whole Lucy asset on disk: 1971 MB (v2) -> 407 MB (`.mgdata` only), 4.8x.
+Reimport of the four assets 363 s, converter 57 s, zero ERROR lines in
+import, conversion and editor runs (cold shader cache, load 8.1-8.6 s,
+asset load 5.1-5.4 s because the three loads per asset now read the 40 MB
+`.mgdata` manifests instead of 813 MB scenes).
+
+Editor process memory on `scene.escn` with the final binary (Windows working
+set / private bytes, sampled by process name; no v2 baseline was recorded):
+
+| t after launch | working set | private |
+| ---: | ---: | ---: |
+| 20 s | 894 MB | 1373 MB |
+| 40 s | 1274 MB | 1794 MB |
+| 60 s | 1554 MB | 2150 MB |
+| 90 s | 1570 MB | 2184 MB |
+
+Known open items from review: tool paths through `surface_get_arrays` decode
+the whole `.mgdata` per call (no cache); `bake_render_uv2` fails cleanly on
+mapped meshes; GLES3/mobile renderers have no path for mapped surfaces
+(Vulkan-only project); `ArrayMesh.duplicate()` of a mapped mesh yields
+data-less surfaces without the mapping (`micro_geometry` is
+`PROPERTY_USAGE_NEVER_DUPLICATE`); the importer shadow-mesh drop duplicates
+the `ArrayMesh` authority (redundant, kept explicit).

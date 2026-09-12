@@ -12,8 +12,13 @@ warm load 8.5 s, 165 FPS, streaming settles in ~1 s; captures show correct
 geometry, shading and shadows without cracks. Selected clusters dropped to
 ~173k because owner commit `f0ddf48fa2` applies the scene's 4 px RT error.
 Importer version bumps do not reimport existing projects; v2 products must
-be deleted. Owner confirmed motion visually. Normal-mapped and emissive clustered
-materials and Krok 5 (source arrays in `.res`, Lucy 1.9 GB) are open. See
+be deleted. Owner confirmed motion visually. Krok 5 (`44017ee3a3`..`8ab0d11a32`):
+mapped surfaces are saved without source arrays and without shadow meshes,
+rebuilt lossily on the CPU only for tools, and excluded from conventional
+raster/BLAS paths (a non-eligible mapped mesh renders in no pass);
+`lucy.res` 1.9 GB -> 3.7 KB, whole Lucy asset 1971 -> 407 MB; editor working
+set ~1.57 GB at 90 s. Normal-mapped and emissive clustered materials remain
+unverified. See
 [measurements and limits](../research/2026-09-12-0716-mgdata-v3-compression-status.md).
 
 Native stress scene editor load time (2026-09-11, `9bff64d7b8`, keys fixed
