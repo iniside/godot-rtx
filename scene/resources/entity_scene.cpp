@@ -113,12 +113,16 @@ String EntityScene::_storage_directory(EntityId p_id, String &r_source) const {
 	if (!member) {
 		return String();
 	}
-	r_source = String("prefabs").path_join(member->instance + ".escn");
 	const Variant value = prefab_instances.get(member->instance, Variant());
 	if (value.get_type() != Variant::DICTIONARY) {
 		return String();
 	}
-	const Variant cell = Dictionary(value).get("cell", Variant());
+	const Dictionary instance = value;
+	if (!instance.has("cell")) {
+		return String();
+	}
+	r_source = String("prefabs").path_join(member->instance + ".escn");
+	const Variant cell = instance["cell"];
 	return cell.get_type() == Variant::STRING ? String(cell) : String();
 }
 
@@ -933,7 +937,7 @@ Error EntityScene::request_cells(const Vector<CellKey> &p_cells, int p_max_entit
 	int remaining = 0;
 	bool exhausted = false;
 	for (const CellKey &cell : p_cells) {
-		if (resident_cells.has(cell) || !cells.has(cell)) {
+		if (resident_cells.has(cell) || !cells.has(cell) || accepted.has(cell)) {
 			continue;
 		}
 		if (exhausted) {
