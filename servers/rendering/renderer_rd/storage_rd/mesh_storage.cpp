@@ -1009,6 +1009,7 @@ void MeshStorage::_mesh_surface_clear_source_arrays(Mesh::Surface *p_surface) {
 	p_surface->source_data.micro_geometry_mapped = true;
 	p_surface->keep_source_data = true;
 	p_surface->source_arrays_dropped = true;
+	p_surface->rt_invalidation_counter++;
 }
 
 void MeshStorage::mesh_set_micro_geometry(RID p_mesh, const Ref<MicroGeometryData> &p_data) {
@@ -1040,12 +1041,6 @@ void MeshStorage::mesh_set_micro_geometry(RID p_mesh, const Ref<MicroGeometryDat
 	}
 	mesh->micro_geometry = p_data;
 	mesh->micro_geometry_asset = asset;
-	if (asset.is_valid()) {
-		MutexLock lock(surface_data_mutex);
-		for (uint32_t i = 0; i < mesh->surface_count; i++) {
-			mesh->surfaces[i]->keep_source_data = true;
-		}
-	}
 	mesh->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MESH);
 }
 

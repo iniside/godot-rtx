@@ -273,10 +273,14 @@ Error renumber_surfaces(const Ref<ArrayMesh> &p_mesh, const Ref<ImporterMesh> &p
 		}
 	}
 	if (shadow) {
-		Ref<ImporterMesh> renumbered = ImporterMesh::from_mesh(p_mesh);
-		renumbered->create_shadow_mesh();
-		Ref<ImporterMesh> shadow_mesh = renumbered->get_shadow_mesh();
-		p_mesh->set_shadow_mesh(shadow_mesh.is_valid() ? shadow_mesh->get_mesh() : Ref<ArrayMesh>());
+		if (uint32_t(p_permutations.size()) == uint32_t(surface_count)) {
+			p_mesh->set_shadow_mesh(Ref<ArrayMesh>());
+		} else {
+			Ref<ImporterMesh> renumbered = ImporterMesh::from_mesh(p_mesh);
+			renumbered->create_shadow_mesh();
+			Ref<ImporterMesh> shadow_mesh = renumbered->get_shadow_mesh();
+			p_mesh->set_shadow_mesh(shadow_mesh.is_valid() ? shadow_mesh->get_mesh() : Ref<ArrayMesh>());
+		}
 	}
 	return OK;
 }

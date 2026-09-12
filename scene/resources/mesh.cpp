@@ -2311,7 +2311,7 @@ Error ArrayMesh::lightmap_unwrap_cached(const Transform3D &p_base_transform, flo
 
 void ArrayMesh::set_shadow_mesh(const Ref<ArrayMesh> &p_mesh) {
 	ERR_FAIL_COND_MSG(p_mesh == this, "Cannot set a mesh as its own shadow mesh.");
-	shadow_mesh = p_mesh;
+	shadow_mesh = _is_fully_micro_geometry_mapped() ? Ref<ArrayMesh>() : p_mesh;
 	if (shadow_mesh.is_valid()) {
 		RS::get_singleton()->mesh_set_shadow_mesh(mesh, shadow_mesh->get_rid());
 	} else {
@@ -2344,13 +2344,42 @@ void ArrayMesh::_micro_geometry_changed() {
 		_clear_mapped_surface_arrays(data);
 	}
 	RS::get_singleton()->mesh_set_micro_geometry(mesh, data);
+	if (shadow_mesh.is_valid() && _is_fully_micro_geometry_mapped()) {
+		set_shadow_mesh(Ref<ArrayMesh>());
+	}
 	emit_changed();
+}
+
+bool ArrayMesh::_is_fully_micro_geometry_mapped() const {
+	if (micro_geometry.is_null() || surfaces.is_empty()) {
+		return false;
+	}
+	Ref<MicroGeometryData> data = micro_geometry->get_data();
+	if (data.is_null()) {
+		return false;
+	}
+	const Vector<MicroGeometryData::Surface> &mapped = data->get_metadata().surfaces;
+	for (int i = 0; i < surfaces.size(); i++) {
+		bool found = false;
+		for (int j = 0; j < mapped.size() && !found; j++) {
+			found = mapped[j].source_surface == uint32_t(i);
+		}
+		if (!found) {
+			return false;
+		}
+	}
+	return true;
 }
 
 void ArrayMesh::_clear_mapped_surface_arrays(const Ref<MicroGeometryData> &p_data) {
 	const Vector<MicroGeometryData::Surface> &mapped = p_data->get_metadata().surfaces;
 	if (blend_shapes.size()) {
 		return;
+	}
+	for (int i = 0; i < surfaces.size(); i++) {
+		if (surfaces[i].format & (ARRAY_FORMAT_BONES | ARRAY_FORMAT_WEIGHTS)) {
+			return;
+		}
 	}
 	for (int i = 0; i < mapped.size(); i++) {
 		if (mapped[i].source_surface >= uint32_t(surfaces.size())) {
