@@ -115,9 +115,15 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 
 	ERR_FAIL_COND(mesh->surface_count == RSE::MAX_MESH_SURFACES);
 
+	if (p_surface.micro_geometry_mapped) {
+		ERR_FAIL_COND_MSG(mesh->blend_shape_count != 0, "Microgeometry-mapped surfaces do not support blend shapes.");
+		ERR_FAIL_COND_MSG(!p_surface.vertex_count || p_surface.primitive != RSE::PRIMITIVE_TRIANGLES, "Microgeometry-mapped surfaces must be indexed or non-indexed triangles with a vertex count.");
+		ERR_FAIL_COND_MSG(!p_surface.vertex_data.is_empty() || !p_surface.attribute_data.is_empty() || !p_surface.skin_data.is_empty() || !p_surface.index_data.is_empty() || !p_surface.blend_shape_data.is_empty() || !p_surface.lods.is_empty(), "Microgeometry-mapped surfaces must not carry source arrays.");
+	}
+
 #ifdef DEBUG_ENABLED
 	//do a validation, to catch errors first
-	{
+	if (!p_surface.micro_geometry_mapped) {
 		uint32_t stride = 0;
 		uint32_t attrib_stride = 0;
 		uint32_t skin_stride = 0;
@@ -219,6 +225,7 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 
 	s->format = new_surface.format;
 	s->primitive = new_surface.primitive;
+	s->micro_geometry_mapped = new_surface.micro_geometry_mapped;
 
 	if (new_surface.vertex_data.size()) {
 		glGenBuffers(1, &s->vertex_buffer);
@@ -264,7 +271,9 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 		mesh->has_bone_weights = true;
 	}
 
-	if (new_surface.index_count) {
+	if (new_surface.micro_geometry_mapped) {
+		s->index_count = new_surface.index_count;
+	} else if (new_surface.index_count) {
 		bool is_index_16 = new_surface.vertex_count <= 65536 && new_surface.vertex_count > 0;
 		glGenBuffers(1, &s->index_buffer);
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, s->index_buffer);
@@ -291,7 +300,7 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 
 	ERR_FAIL_COND_MSG(!new_surface.index_count && !new_surface.vertex_count, "Meshes must contain a vertex array, an index array, or both");
 
-	if (GLES3::Config::get_singleton()->generate_wireframes && s->primitive == RSE::PRIMITIVE_TRIANGLES) {
+	if (GLES3::Config::get_singleton()->generate_wireframes && s->primitive == RSE::PRIMITIVE_TRIANGLES && !s->micro_geometry_mapped) {
 		// Generate wireframes. This is mostly used by the editor.
 		s->wireframe = memnew(Mesh::Surface::Wireframe);
 		Vector<uint32_t> wf_indices;
@@ -450,6 +459,63 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 	}
 
 	mesh->material_cache.clear();
+}
+
+void MeshStorage::mesh_surface_clear_source_arrays(RID p_mesh, int p_surface) {
+	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
+	ERR_FAIL_NULL(mesh);
+	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_surface, mesh->surface_count);
+	Mesh::Surface &s = *mesh->surfaces[p_surface];
+	if (s.micro_geometry_mapped) {
+		return;
+	}
+
+	if (s.vertex_buffer != 0) {
+		GLES3::Utilities::get_singleton()->buffer_free_data(s.vertex_buffer);
+		s.vertex_buffer = 0;
+		s.vertex_buffer_size = 0;
+	}
+	if (s.attribute_buffer != 0) {
+		GLES3::Utilities::get_singleton()->buffer_free_data(s.attribute_buffer);
+		s.attribute_buffer = 0;
+		s.attribute_buffer_size = 0;
+	}
+	if (s.skin_buffer != 0) {
+		GLES3::Utilities::get_singleton()->buffer_free_data(s.skin_buffer);
+		s.skin_buffer = 0;
+		s.skin_buffer_size = 0;
+	}
+	if (s.index_buffer != 0) {
+		GLES3::Utilities::get_singleton()->buffer_free_data(s.index_buffer);
+		s.index_buffer = 0;
+		s.index_buffer_size = 0;
+	}
+	for (uint32_t i = 0; i < s.version_count; i++) {
+		glDeleteVertexArrays(1, &s.versions[i].vertex_array);
+		s.versions[i].vertex_array = 0;
+	}
+	if (s.versions) {
+		memfree(s.versions);
+		s.versions = nullptr;
+		s.version_count = 0;
+	}
+	if (s.wireframe) {
+		GLES3::Utilities::get_singleton()->buffer_free_data(s.wireframe->index_buffer);
+		memdelete(s.wireframe);
+		s.wireframe = nullptr;
+	}
+	for (uint32_t i = 0; i < s.lod_count; i++) {
+		if (s.lods[i].index_buffer != 0) {
+			GLES3::Utilities::get_singleton()->buffer_free_data(s.lods[i].index_buffer);
+		}
+	}
+	if (s.lod_count) {
+		memdelete_arr(s.lods);
+		s.lods = nullptr;
+		s.lod_count = 0;
+	}
+	s.micro_geometry_mapped = true;
+	mesh->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MESH);
 }
 
 void MeshStorage::_mesh_surface_clear(Mesh *mesh, int p_surface) {
@@ -629,6 +695,17 @@ RenderingServerTypes::SurfaceData MeshStorage::mesh_get_surface(RID p_mesh, int 
 
 	RenderingServerTypes::SurfaceData sd;
 	sd.format = s.format;
+	if (s.micro_geometry_mapped) {
+		sd.primitive = s.primitive;
+		sd.vertex_count = s.vertex_count;
+		sd.index_count = s.index_count;
+		sd.aabb = s.aabb;
+		sd.bone_aabbs = s.bone_aabbs;
+		sd.mesh_to_skeleton_xform = s.mesh_to_skeleton_xform;
+		sd.uv_scale = s.uv_scale;
+		sd.micro_geometry_mapped = true;
+		return sd;
+	}
 	if (s.vertex_buffer != 0) {
 		sd.vertex_data = Utilities::buffer_get_data(GL_ARRAY_BUFFER, s.vertex_buffer, s.vertex_buffer_size);
 

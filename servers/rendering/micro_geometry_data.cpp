@@ -647,12 +647,10 @@ Error MicroGeometryData::decode_surface_arrays(uint32_t p_surface, Array &r_arra
 	Vector<uint8_t> custom[4];
 	uint32_t custom_size[4] = {};
 	PackedInt32Array indices;
-	Vector<uint8_t> decoded_vertices;
 	Vector<uint8_t> decoded_triangles;
 
 	ERR_FAIL_COND_V(positions.resize(vertex_count) != OK, ERR_OUT_OF_MEMORY);
 	ERR_FAIL_COND_V(indices.resize(uint64_t(triangle_count) * 3) != OK, ERR_OUT_OF_MEMORY);
-	ERR_FAIL_COND_V(decoded_vertices.resize_initialized(vertex_count) != OK, ERR_OUT_OF_MEMORY);
 	ERR_FAIL_COND_V(decoded_triangles.resize_initialized(triangle_count) != OK, ERR_OUT_OF_MEMORY);
 	const bool has_normals = surface.attribute_offsets[1] != INVALID_ID;
 	const bool has_colors = surface.attribute_offsets[3] != INVALID_ID;
@@ -670,7 +668,7 @@ Error MicroGeometryData::decode_surface_arrays(uint32_t p_surface, Array &r_arra
 	for (uint32_t channel = 0; channel < 4; channel++) {
 		custom_size[channel] = custom_attribute_size(surface.format, channel);
 		if (custom_size[channel]) {
-			ERR_FAIL_COND_V(custom[channel].resize(uint64_t(vertex_count) * custom_size[channel]) != OK, ERR_OUT_OF_MEMORY);
+			ERR_FAIL_COND_V(custom[channel].resize_initialized(uint64_t(vertex_count) * custom_size[channel]) != OK, ERR_OUT_OF_MEMORY);
 		}
 	}
 
@@ -827,7 +825,6 @@ Error MicroGeometryData::decode_surface_arrays(uint32_t p_surface, Array &r_arra
 					ERR_FAIL_COND_V(offset + custom_size[channel] > page_size, ERR_FILE_CORRUPT);
 					memcpy(custom[channel].ptrw() + uint64_t(target) * custom_size[channel], page_data + offset, custom_size[channel]);
 				}
-				decoded_vertices.write[target] = 1;
 			}
 
 			BitStreamReader topology(page_data, page_size, topology_offset);
@@ -857,9 +854,6 @@ Error MicroGeometryData::decode_surface_arrays(uint32_t p_surface, Array &r_arra
 		}
 	}
 
-	for (uint32_t vertex = 0; vertex < vertex_count; vertex++) {
-		ERR_FAIL_COND_V(!decoded_vertices[vertex], ERR_FILE_CORRUPT);
-	}
 	for (uint32_t triangle = 0; triangle < triangle_count; triangle++) {
 		ERR_FAIL_COND_V(!decoded_triangles[triangle], ERR_FILE_CORRUPT);
 	}

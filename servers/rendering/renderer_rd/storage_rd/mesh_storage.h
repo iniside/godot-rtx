@@ -196,7 +196,7 @@ private:
 	uint64_t micro_geometry_admission_generation = 0;
 	mutable Mutex surface_data_mutex;
 	void _invalidate_micro_geometry(Mesh *p_mesh);
-	void _mesh_surface_drop_source_arrays(Mesh::Surface *p_surface);
+	void _mesh_surface_clear_source_arrays(Mesh::Surface *p_surface);
 
 	/* Mesh Instance API */
 
@@ -424,6 +424,7 @@ public:
 
 	virtual AABB mesh_get_aabb(RID p_mesh, RID p_skeleton = RID()) override;
 	virtual void mesh_set_micro_geometry(RID p_mesh, const Ref<MicroGeometryData> &p_data) override;
+	virtual void mesh_surface_clear_source_arrays(RID p_mesh, int p_surface) override;
 	MicroGeometryStorage *get_micro_geometry_storage() { return &micro_geometry_storage; }
 	RID mesh_get_micro_geometry_asset(RID p_mesh) const;
 	virtual void mesh_set_shadow_mesh(RID p_mesh, RID p_shadow_mesh) override;

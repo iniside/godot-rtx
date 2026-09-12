@@ -97,6 +97,7 @@ public:
 		s->mesh_to_skeleton_xform = p_surface.mesh_to_skeleton_xform;
 		s->blend_shape_data = p_surface.blend_shape_data;
 		s->uv_scale = p_surface.uv_scale;
+		s->micro_geometry_mapped = p_surface.micro_geometry_mapped;
 		s->material = p_surface.material;
 		m->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MESH);
 	}
@@ -157,6 +158,20 @@ public:
 		DummyMesh *mesh = mesh_owner.get_or_null(p_mesh);
 		ERR_FAIL_NULL(mesh);
 		mesh->micro_geometry = p_data;
+	}
+
+	virtual void mesh_surface_clear_source_arrays(RID p_mesh, int p_surface) override {
+		DummyMesh *m = mesh_owner.get_or_null(p_mesh);
+		ERR_FAIL_NULL(m);
+		ERR_FAIL_INDEX(p_surface, m->surfaces.size());
+		RenderingServerTypes::SurfaceData *s = &m->surfaces.write[p_surface];
+		s->vertex_data = Vector<uint8_t>();
+		s->attribute_data = Vector<uint8_t>();
+		s->skin_data = Vector<uint8_t>();
+		s->index_data = Vector<uint8_t>();
+		s->blend_shape_data = Vector<uint8_t>();
+		s->lods.clear();
+		s->micro_geometry_mapped = true;
 	}
 	virtual void mesh_set_shadow_mesh(RID p_mesh, RID p_shadow_mesh) override {}
 

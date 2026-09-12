@@ -2347,7 +2347,7 @@
 			<param index="0" name="mesh" type="RID" />
 			<param index="1" name="surface" type="int" />
 			<description>
-				Returns a mesh's surface's buffer arrays.
+				Returns a mesh's surface's buffer arrays. Fails on a surface mapped to an [ArrayMesh]'s microgeometry, which carries no source arrays; use [method Mesh.surface_get_arrays] to rebuild them from the cluster data.
 			</description>
 		</method>
 		<method name="mesh_surface_get_attribute_buffer_rd_rid" qualifiers="const">

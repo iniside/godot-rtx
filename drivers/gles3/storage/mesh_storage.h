@@ -62,6 +62,7 @@ struct Mesh {
 		};
 		RSE::PrimitiveType primitive = RSE::PRIMITIVE_POINTS;
 		uint64_t format = 0;
+		bool micro_geometry_mapped = false;
 
 		GLuint vertex_buffer = 0;
 		GLuint attribute_buffer = 0;
@@ -342,6 +343,7 @@ public:
 		ERR_FAIL_NULL(mesh);
 		mesh->micro_geometry = p_data;
 	}
+	virtual void mesh_surface_clear_source_arrays(RID p_mesh, int p_surface) override;
 	virtual void mesh_set_shadow_mesh(RID p_mesh, RID p_shadow_mesh) override;
 
 	virtual void mesh_clear(RID p_mesh) override;

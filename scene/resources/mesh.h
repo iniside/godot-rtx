@@ -311,6 +311,7 @@ class ArrayMesh : public Mesh {
 	Ref<ArrayMesh> shadow_mesh;
 	Ref<MicroGeometry> micro_geometry;
 	void _micro_geometry_changed();
+	void _clear_mapped_surface_arrays(const Ref<MicroGeometryData> &p_data);
 
 private:
 	struct Surface {

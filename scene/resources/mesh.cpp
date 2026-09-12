@@ -2339,8 +2339,32 @@ void ArrayMesh::set_micro_geometry(const Ref<MicroGeometry> &p_geometry) {
 
 void ArrayMesh::_micro_geometry_changed() {
 	_create_if_empty();
-	RS::get_singleton()->mesh_set_micro_geometry(mesh, micro_geometry.is_valid() ? micro_geometry->get_data() : Ref<MicroGeometryData>());
+	Ref<MicroGeometryData> data = micro_geometry.is_valid() ? micro_geometry->get_data() : Ref<MicroGeometryData>();
+	if (data.is_valid()) {
+		_clear_mapped_surface_arrays(data);
+	}
+	RS::get_singleton()->mesh_set_micro_geometry(mesh, data);
 	emit_changed();
+}
+
+void ArrayMesh::_clear_mapped_surface_arrays(const Ref<MicroGeometryData> &p_data) {
+	const Vector<MicroGeometryData::Surface> &mapped = p_data->get_metadata().surfaces;
+	if (blend_shapes.size()) {
+		return;
+	}
+	for (int i = 0; i < mapped.size(); i++) {
+		if (mapped[i].source_surface >= uint32_t(surfaces.size())) {
+			return;
+		}
+		const Surface &surface = surfaces[mapped[i].source_surface];
+		uint32_t triangles = uint32_t(surface.index_array_length ? surface.index_array_length : surface.array_length) / 3;
+		if (uint32_t(surface.array_length) != mapped[i].source_vertex_count || triangles != mapped[i].source_triangle_count) {
+			return;
+		}
+	}
+	for (int i = 0; i < mapped.size(); i++) {
+		RS::get_singleton()->mesh_surface_clear_source_arrays(mesh, mapped[i].source_surface);
+	}
 }
 
 void ArrayMesh::_bind_methods() {

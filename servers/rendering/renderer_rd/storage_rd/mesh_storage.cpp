@@ -946,7 +946,15 @@ String MeshStorage::mesh_get_path(RID p_mesh) const {
 	return mesh->path;
 }
 
-void MeshStorage::_mesh_surface_drop_source_arrays(Mesh::Surface *p_surface) {
+void MeshStorage::mesh_surface_clear_source_arrays(RID p_mesh, int p_surface) {
+	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
+	ERR_FAIL_NULL(mesh);
+	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_surface, mesh->surface_count);
+	_mesh_surface_clear_source_arrays(mesh->surfaces[p_surface]);
+	mesh->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MESH);
+}
+
+void MeshStorage::_mesh_surface_clear_source_arrays(Mesh::Surface *p_surface) {
 	MutexLock lock(surface_data_mutex);
 	if (p_surface->source_arrays_dropped) {
 		return;
@@ -1020,9 +1028,6 @@ void MeshStorage::mesh_set_micro_geometry(RID p_mesh, const Ref<MicroGeometryDat
 	}
 	_invalidate_micro_geometry(mesh);
 	if (p_data.is_valid()) {
-		for (const MicroGeometryData::Surface &surface : p_data->get_metadata().surfaces) {
-			_mesh_surface_drop_source_arrays(mesh->surfaces[surface.source_surface]);
-		}
 		asset = micro_geometry_storage.acquire(p_data);
 		if (asset.is_null()) {
 			mesh->pending_micro_geometry = p_data;
