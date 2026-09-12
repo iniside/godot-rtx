@@ -1200,6 +1200,10 @@ void RenderRaytracing::_populate_surface_blas(
 		uint32_t p_cache_key,
 		RTSurfaceData *r_surf_data,
 		LocalVector<RID> &r_dirty_blas_list) {
+	if (p_vertex_buffer_override.is_null() && !RendererRD::MeshStorage::get_singleton()->mesh_surface_has_source_arrays(p_mesh_surface)) {
+		return;
+	}
+
 	RID vertex_buffer, attribute_buffer, index_buffer;
 	_fill_surface_geometry_data(p_mesh_surface, p_force_uncompressed, r_surf_data,
 			&vertex_buffer, &attribute_buffer, &index_buffer);
@@ -2884,6 +2888,10 @@ bool RenderRaytracing::_build_merged_mm_blas(
 		RTSurfaceData *r_surf_data) {
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
 
+	if (!mesh_storage->mesh_surface_has_source_arrays(p_mesh_surface)) {
+		return false;
+	}
+
 	uint32_t vertex_count = mesh_storage->mesh_surface_get_vertex_count(p_mesh_surface);
 	RID index_buffer = mesh_storage->mesh_surface_get_index_buffer(p_mesh_surface, 0);
 	uint32_t index_count = mesh_storage->mesh_surface_get_index_count(p_mesh_surface, 0);
@@ -4068,6 +4076,12 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 		const uint32_t refits_before = dirty_blas_update_list.size();
 #endif
 		RTSurfaceData *resolved = nullptr;
+		if (!mesh_storage->mesh_surface_has_source_arrays(surface->surface)) {
+			if (request.required) {
+				resolved_surfaces.insert(entry.key, RTSurfaceData());
+			}
+			continue;
+		}
 		if (request.required && request.deformation.current_vb.is_valid()) {
 			resolved = process_deformed_surface(surface, surface->surface, request.deformation, dirty_blas_list, dirty_blas_update_list);
 		}
@@ -4319,7 +4333,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 						continue;
 					}
 
-					if (mm_surf->micro_geometry_source.is_valid()) {
+					if (mm_surf->micro_geometry_source.is_valid() || mm_surf->micro_geometry_only) {
 						mm_surf = mm_surf->next;
 						continue;
 					}
@@ -4404,7 +4418,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data)
 					continue;
 				}
 
-				if (surf->micro_geometry_source.is_valid()) {
+				if (surf->micro_geometry_source.is_valid() || surf->micro_geometry_only) {
 					surf = surf->next;
 					continue;
 				}

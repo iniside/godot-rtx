@@ -1796,7 +1796,7 @@ void RenderForwardClustered::_prepare_render_list_chunk(uint32_t p_batch, Render
 			element.flags = flags;
 			element.gi_offset = gi_offset;
 			element.sort.depth_layer = depth_layer;
-			if (rl->last_micro_pass && _micro_geometry_eligible(surf, p_preparation->pass_mode)) {
+			if (surf->micro_geometry_only || (rl->last_micro_pass && _micro_geometry_eligible(surf, p_preparation->pass_mode))) {
 				surf = surf->next;
 				continue;
 			}
@@ -5058,6 +5058,7 @@ void RenderForwardClustered::_geometry_instance_add_surface_with_material(Geomet
 	sdcache->material_uniform_set = p_material->uniform_set;
 	sdcache->surface = mesh_storage->mesh_get_surface(p_mesh, p_surface);
 	sdcache->primitive = mesh_storage->mesh_surface_get_primitive(sdcache->surface);
+	sdcache->micro_geometry_only = !mesh_storage->mesh_surface_has_source_arrays(sdcache->surface);
 	sdcache->surface_index = p_surface;
 
 	if (ginstance->data->dirty_dependencies) {

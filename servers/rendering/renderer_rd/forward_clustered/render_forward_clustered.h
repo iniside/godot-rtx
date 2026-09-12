@@ -729,6 +729,8 @@ protected:
 
 		mutable RID rt_deformed_handle;
 
+		bool micro_geometry_only = false;
+
 		GeometryInstanceSurfaceDataCache *next = nullptr;
 		GeometryInstanceForwardClustered *owner = nullptr;
 		SelfList<GeometryInstanceSurfaceDataCache> compilation_dirty_element;

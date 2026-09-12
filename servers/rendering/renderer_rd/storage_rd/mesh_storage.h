@@ -496,6 +496,10 @@ public:
 		return s->aabb;
 	}
 
+	_FORCE_INLINE_ bool mesh_surface_has_source_arrays(void *p_surface) const {
+		return !reinterpret_cast<Mesh::Surface *>(p_surface)->source_arrays_dropped;
+	}
+
 	_FORCE_INLINE_ uint64_t mesh_surface_get_format(void *p_surface) {
 		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
 		return s->format;
