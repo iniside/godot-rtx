@@ -48,7 +48,7 @@ class MeshStorage : public RendererMeshStorage {
 private:
 	static MeshStorage *singleton;
 
-	mutable RID_Owner<DummyMesh> mesh_owner;
+	mutable RID_Owner<DummyMesh, true> mesh_owner;
 
 	struct DummyMultiMesh {
 		PackedFloat32Array buffer;
