@@ -5,6 +5,8 @@
 
 #include <cstring>
 
+static EntitySchemaRegistry entity_component_descriptors;
+
 void initialize_entity_types() {
 	ecs_os_set_api_defaults();
 	ecs_os_api_t api = ecs_os_get_api();
@@ -34,6 +36,13 @@ void initialize_entity_types() {
 		return copy;
 	};
 	ecs_os_set_api(&api);
+	build_entity_component_fields();
+	register_entity_component_schemas(entity_component_descriptors);
+}
+
+void finalize_entity_types() {
+	entity_component_descriptors.clear();
+	clear_entity_component_fields();
 }
 
 const EntityFieldSchema *EntityComponentSchema::find_field(uint64_t p_id) const {
@@ -48,6 +57,17 @@ const EntityFieldSchema *EntityComponentSchema::find_field(uint64_t p_id) const 
 void EntitySchemaRegistry::add(EntityComponentSchema p_schema) {
 	ERR_FAIL_COND(components.has(p_schema.id));
 	components.insert(p_schema.id, p_schema);
+}
+
+void EntitySchemaRegistry::bind(flecs::world &p_world) {
+	components = entity_component_descriptors.components;
+	for (KeyValue<uint64_t, EntityComponentSchema> &entry : components) {
+		entry.value.runtime_id = entry.value.meta_type(p_world);
+	}
+}
+
+const EntitySchemaRegistry &EntitySchemaRegistry::descriptors() {
+	return entity_component_descriptors;
 }
 
 Error entity_encode_asset(const Ref<Resource> &p_asset, Variant &r_value) {

@@ -111,6 +111,9 @@ def emit(records):
     type_ids = {record["name"]: record["metadata"]["id"] for record in records}
     header = ['#pragma once', '', '#include "entity_component_schema.h"', '']
     implementation = ['#include "entity_component_schema.gen.h"', '', '#include <cstddef>', '']
+    builders = ['void build_entity_component_fields() {']
+    clears = ['void clear_entity_component_fields() {']
+    registrations = ['void register_entity_component_schemas(EntitySchemaRegistry &r_registry) {']
     for record in records:
         name = record["name"]
         header += [
@@ -118,38 +121,46 @@ def emit(records):
             f'\tstatic constexpr uint64_t id = 0x{record["metadata"]["id"]}ULL;',
             f'\tstatic constexpr const char *name = "{name}";',
             f'\tstatic constexpr bool is_component = {str(record["kind"] == "COMPONENT").lower()};',
-            '\tstatic Vector<EntityFieldSchema> fields();', '};', '',
+            '\tstatic const Vector<EntityFieldSchema> &fields();', '};', '',
             'template <>', f'struct EntityCodec<{name}> {{',
             '\tstatic constexpr Variant::Type variant_type = Variant::DICTIONARY;',
             f'\tstatic Error encode(const {name} &p_value, Variant &r_value) {{ return entity_encode_struct(p_value, r_value); }}',
             f'\tstatic Error decode(const Variant &p_value, {name} &r_value) {{ return entity_decode_struct(p_value, r_value); }}',
             '\tstatic ecs_entity_t meta_type(flecs::world &p_world);', '};', '',
         ]
-        implementation += [f'Vector<EntityFieldSchema> EntityComponentTraits<{name}>::fields() {{', '\tVector<EntityFieldSchema> fields;']
+        implementation += [
+            f'static Vector<EntityFieldSchema> entity_fields_{name};', '',
+            f'const Vector<EntityFieldSchema> &EntityComponentTraits<{name}>::fields() {{',
+            f'\treturn entity_fields_{name};', '}', '',
+        ]
+        builders += ['\t{', '\t\tVector<EntityFieldSchema> fields;']
         for field in record["fields"]:
             metadata = field["metadata"]
-            implementation += [
-                '\t{', f'\t\tEntityFieldSchema field = entity_make_field<{name}, {field["type"]}, &{name}::{field["name"]}>(0x{metadata["id"]}ULL, "{field["name"]}", "{field["type"]}");',
-                f'\t\tfield.serialized = {metadata.get("serialize", "true")};',
-                f'\t\tfield.editable = {metadata.get("edit", "true")};',
-                f'\t\tfield.entity_reference = {str(metadata.get("reference") == "entity").lower()};',
-                f'\t\tfield.asset_reference = {str(metadata.get("reference") == "asset").lower()};',
+            builders += [
+                '\t\t{', f'\t\t\tEntityFieldSchema field = entity_make_field<{name}, {field["type"]}, &{name}::{field["name"]}>(0x{metadata["id"]}ULL, "{field["name"]}", "{field["type"]}");',
+                f'\t\t\tfield.serialized = {metadata.get("serialize", "true")};',
+                f'\t\t\tfield.editable = {metadata.get("edit", "true")};',
+                f'\t\t\tfield.entity_reference = {str(metadata.get("reference") == "entity").lower()};',
+                f'\t\t\tfield.asset_reference = {str(metadata.get("reference") == "asset").lower()};',
             ]
             if "unit" in metadata:
-                implementation += [f'\t\tfield.unit = {json.dumps(metadata["unit"])};']
+                builders += [f'\t\t\tfield.unit = {json.dumps(metadata["unit"])};']
             if field["type"] in type_ids:
-                implementation += [f'\t\tfield.nested_type_id = 0x{type_ids[field["type"]]}ULL;']
+                builders += [f'\t\t\tfield.nested_type_id = 0x{type_ids[field["type"]]}ULL;']
             if "min" in metadata:
-                implementation += ['\t\tfield.has_range = true;', f'\t\tfield.minimum = {float(metadata["min"])};', f'\t\tfield.maximum = {float(metadata["max"])};']
-            implementation += ['\t\tfields.push_back(field);', '\t}']
-        implementation += ['\treturn fields;', '}', '', f'ecs_entity_t EntityCodec<{name}>::meta_type(flecs::world &p_world) {{', f'\tauto component = p_world.component<{name}>("{name}");', '\tif (!ecs_has_id(p_world.c_ptr(), component.id(), ecs_id(EcsStruct))) {']
+                builders += ['\t\t\tfield.has_range = true;', f'\t\t\tfield.minimum = {float(metadata["min"])};', f'\t\t\tfield.maximum = {float(metadata["max"])};']
+            builders += ['\t\t\tfields.push_back(field);', '\t\t}']
+        builders += [f'\t\tentity_fields_{name} = fields;', '\t}']
+        clears += [f'\tentity_fields_{name}.clear();']
+        registrations += [f'\tr_registry.add(entity_make_component<{name}>());']
+        implementation += [f'ecs_entity_t EntityCodec<{name}>::meta_type(flecs::world &p_world) {{', f'\tauto component = p_world.component<{name}>("{name}");', '\tif (!ecs_has_id(p_world.c_ptr(), component.id(), ecs_id(EcsStruct))) {']
         for field in record["fields"]:
             implementation += [f'\t\tcomponent.member(EntityCodec<{field["type"]}>::meta_type(p_world), "{field["name"]}", 1, offsetof({name}, {field["name"]}));']
         implementation += ['\t}', '\treturn component.id();', '}', '']
-    implementation += ['void register_entity_component_schemas(flecs::world &p_world, EntitySchemaRegistry &r_registry) {']
-    for record in records:
-        implementation += [f'\tr_registry.add(entity_make_component<{record["name"]}>(p_world));']
-    implementation += ['}', '']
+    builders += ['}', '']
+    clears += ['}', '']
+    registrations += ['}', '']
+    implementation += builders + clears + registrations
     return '\n'.join(header), '\n'.join(implementation)
 
 

@@ -15,7 +15,7 @@ static std::atomic<uint64_t> entity_world_generation{ 1 };
 EntityWorld::EntityWorld(EntityCatalog &p_catalog) :
 		catalog(p_catalog), generation(entity_world_generation.fetch_add(1)), transforms(*this), rendering(*this) {
 	ecs.component<Identity>();
-	register_entity_component_schemas(ecs, schemas);
+	schemas.bind(ecs);
 }
 
 EntityWorld::~EntityWorld() {

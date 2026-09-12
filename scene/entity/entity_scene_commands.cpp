@@ -86,11 +86,10 @@ Error EntitySceneCommands::_remap_fields(uint64_t p_type, Dictionary &r_fields, 
 	const EntityComponentSchema *schema = document.get_world()->schemas.find(p_type);
 	ERR_FAIL_NULL_V(schema, ERR_INVALID_DATA);
 	for (const EntityFieldSchema &field : schema->fields) {
-		String key = String::num_uint64(field.id, 16);
-		if (!field.serialized || !r_fields.has(key)) {
+		if (!field.serialized || !r_fields.has(field.key)) {
 			continue;
 		}
-		Variant value = r_fields[key];
+		Variant value = r_fields[field.key];
 		bool array = value.get_type() == Variant::ARRAY;
 		Array elements = array ? Array(value) : Array{value};
 		for (int i = 0; i < elements.size(); i++) {
@@ -105,7 +104,7 @@ Error EntitySceneCommands::_remap_fields(uint64_t p_type, Dictionary &r_fields, 
 				elements[i] = fields;
 			}
 		}
-		r_fields[key] = array ? Variant(elements) : elements[0];
+		r_fields[field.key] = array ? Variant(elements) : elements[0];
 	}
 	return OK;
 }
@@ -231,6 +230,9 @@ Error EntitySceneCommands::execute(const String &p_name, const Vector<Command> &
 	ERR_FAIL_COND_V(p_commands.is_empty(), ERR_INVALID_PARAMETER);
 	Vector<EntityId> needed;
 	HashSet<EntityId, EntityIdHasher> creating;
+	const EntityComponentSchema *transform_schema = document.get_world()->schemas.find(EntityComponentTraits<EntityTransform>::id);
+	ERR_FAIL_NULL_V(transform_schema, ERR_UNAVAILABLE);
+	const String transform_key = transform_schema->key;
 	for (const Command &command : p_commands) {
 		ERR_FAIL_COND_V(command.document != document.document_id, ERR_INVALID_PARAMETER);
 		if (command.kind == CREATE) {
@@ -254,7 +256,7 @@ Error EntitySceneCommands::execute(const String &p_name, const Vector<Command> &
 				needed.push_back(id);
 				if (command.kind == REPARENT) {
 					EntityResolution resolution = document.resolve(id);
-					bool transformed = resolution.state == EntityReferenceState::RESIDENT ? document.world->has<EntityTransform>(resolution.handle) : document.sections.has(id) && document.sections[id].components.has(String::num_uint64(EntityComponentTraits<EntityTransform>::id, 16));
+					bool transformed = resolution.state == EntityReferenceState::RESIDENT ? document.world->has<EntityTransform>(resolution.handle) : document.sections.has(id) && document.sections[id].components.has(transform_key);
 					if (transformed) {
 						continue;
 					}
@@ -533,7 +535,7 @@ Error EntitySceneCommands::_override_record(Dictionary &r_record, const Dictiona
 					Dictionary fields;
 					for (const EntityFieldSchema &entry : schema->fields) {
 						if (entry.serialized) {
-							fields[String::num_uint64(entry.id, 16)] = entry.default_value.duplicate(true);
+							fields[entry.key] = entry.default_value.duplicate(true);
 						}
 					}
 					components[component] = fields;
@@ -1115,12 +1117,12 @@ Error EntitySceneCommands::apply_overrides(EntityId p_instance, const Ref<Entity
 			const EntityFieldSchema *field = schema ? schema->find_field(command.field) : nullptr;
 			ERR_FAIL_NULL_V(field, ERR_INVALID_DATA);
 			Dictionary fields;
-			fields[String::num_uint64(command.field, 16)] = command.after;
+			fields[field->key] = command.after;
 			error = _remap_fields(command.component, fields, reverse);
 			if (error != OK) {
 				return error;
 			}
-			command.after = fields[String::num_uint64(command.field, 16)];
+			command.after = fields[field->key];
 			error = source_prepared->get_world()->read_field(source_prepared->resolve(command.entity).handle, command.component, command.field, command.before);
 		} else if (command.kind == CREATE) {
 			Dictionary record = command.after;

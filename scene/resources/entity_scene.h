@@ -106,6 +106,7 @@ private:
 	void _commit(EntityScene &p_prepared, const Vector<EntityId> &p_ids, bool p_resident, bool p_dirty = true);
 	Error _install(EntityId p_id, const Dictionary &p_record, LoadProfile *r_profile = nullptr);
 	Error _validate_fields(EntityId p_id, uint64_t p_type, const Dictionary &p_fields, bool p_decode_assets, const String &p_prefix = String());
+	Error _describe_components(EntityId p_id, const Dictionary &p_record, Section &r_section, Vector<uint64_t> &r_types);
 	Error _describe(EntityId p_id, const Dictionary &p_record, Section &r_section, bool p_decode_assets = true);
 	Error _fail(EntityId p_id, const String &p_field, Error p_error);
 	void _relocate(const String &p_path);

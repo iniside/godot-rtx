@@ -259,17 +259,13 @@ void collect_asset_dependencies(const EntitySchemaRegistry &p_schemas, uint64_t 
 	if (!schema) {
 		return;
 	}
-	const String prefix = p_prefix.is_empty() ? component_key(p_type) : p_prefix;
+	const String prefix = p_prefix.is_empty() ? schema->key : p_prefix;
 	for (const EntityFieldSchema &field : schema->fields) {
-		if (!field.serialized) {
+		if (!field.serialized || !p_fields.has(field.key)) {
 			continue;
 		}
-		const String key = component_key(field.id);
-		if (!p_fields.has(key)) {
-			continue;
-		}
-		const Variant value = p_fields[key];
-		const String address = prefix + "/" + key;
+		const Variant value = p_fields[field.key];
+		const String address = prefix + "/" + field.key;
 		Array entries;
 		if (value.get_type() == Variant::ARRAY) {
 			entries = value;
@@ -455,8 +451,9 @@ Error EntitySceneIO::load(const String &p_path, Ref<EntityScene> &r_scene) {
 		ids.push_back(entry.key);
 	}
 	ids.sort_custom<EntityIdSorter>();
-	EntityCatalog schema_catalog;
-	EntityWorld schemas(schema_catalog);
+	const EntitySchemaRegistry &schemas = EntitySchemaRegistry::descriptors();
+	const String streaming_key = component_key(EntityComponentTraits<EntityStreaming>::id);
+	const String name_key = component_key(EntityComponentTraits<EntityName>::id);
 	for (EntityId id : ids) {
 		const Dictionary record = tree.records[id];
 		const String path = directory.path_join(tree.files[id].path);
@@ -482,14 +479,14 @@ Error EntitySceneIO::load(const String &p_path, Ref<EntityScene> &r_scene) {
 		section.path = tree.files[id].path;
 		section.cluster = tree.files[id].cluster;
 		const Dictionary components = components_value;
-		const Variant streaming = components.get(component_key(EntityComponentTraits<EntityStreaming>::id), Variant());
+		const Variant streaming = components.get(streaming_key, Variant());
 		if (streaming.get_type() == Variant::DICTIONARY) {
 			const Variant grid = Dictionary(streaming).get("1", Variant());
 			if (grid.get_type() == Variant::STRING && !String(grid).is_empty()) {
 				ERR_FAIL_COND_V_MSG(!scene->grids.has(grid), scene->_fail(id, "streaming/grid", ERR_INVALID_DATA), "Entity uses unknown grid \"" + String(grid) + "\": " + path);
 			}
 		}
-		const Variant name = components.get(component_key(EntityComponentTraits<EntityName>::id), Variant());
+		const Variant name = components.get(name_key, Variant());
 		if (name.get_type() == Variant::DICTIONARY) {
 			const Variant text = Dictionary(name).get("1", Variant());
 			if (text.get_type() == Variant::STRING) {
@@ -500,17 +497,21 @@ Error EntitySceneIO::load(const String &p_path, Ref<EntityScene> &r_scene) {
 			if (component.get_type() != Variant::STRING || components[component].get_type() != Variant::DICTIONARY || !types.has(component)) {
 				ERR_FAIL_V_MSG(scene->_fail(id, String(component), ERR_INVALID_DATA), "Invalid component in entity record: " + path);
 			}
-			Vector<String> pending;
-			HashSet<String> seen;
-			pending.push_back(component);
+			Vector<uint64_t> pending;
+			HashSet<uint64_t> seen;
+			pending.push_back(String(component).hex_to_int());
 			for (int i = 0; i < pending.size(); i++) {
-				String type_id = pending[i];
-				if (seen.has(type_id)) {
+				uint64_t type = pending[i];
+				if (seen.has(type)) {
 					continue;
 				}
-				seen.insert(type_id);
-				const EntityComponentSchema *schema = schemas.get_schemas().find(type_id.hex_to_int());
-				if (!schema || !types.has(type_id) || types[type_id].get_type() != Variant::DICTIONARY) {
+				seen.insert(type);
+				const EntityComponentSchema *schema = schemas.find(type);
+				if (!schema) {
+					ERR_FAIL_V_MSG(scene->_fail(id, String(component), ERR_UNAVAILABLE), "Unknown component type in entity record: " + path);
+				}
+				const String type_id = schema->key;
+				if (!types.has(type_id) || types[type_id].get_type() != Variant::DICTIONARY) {
 					ERR_FAIL_V_MSG(scene->_fail(id, type_id, ERR_UNAVAILABLE), "Unknown component type in entity record: " + path);
 				}
 				Dictionary fields = types[type_id];
@@ -520,12 +521,11 @@ Error EntitySceneIO::load(const String &p_path, Ref<EntityScene> &r_scene) {
 						continue;
 					}
 					count++;
-					String field_id = component_key(field.id);
-					if (!fields.has(field_id) || fields[field_id] != String(field.native_type)) {
-						ERR_FAIL_V_MSG(scene->_fail(id, type_id + "/" + field_id, ERR_INVALID_DATA), "Entity scene type manifest does not match the engine: " + p_path);
+					if (!fields.has(field.key) || fields[field.key] != String(field.native_type)) {
+						ERR_FAIL_V_MSG(scene->_fail(id, type_id + "/" + field.key, ERR_INVALID_DATA), "Entity scene type manifest does not match the engine: " + p_path);
 					}
 					if (field.nested_type_id) {
-						pending.push_back(component_key(field.nested_type_id));
+						pending.push_back(field.nested_type_id);
 					}
 				}
 				if (count != fields.size()) {
@@ -905,10 +905,10 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 		Dictionary fields;
 		for (const EntityFieldSchema &field : entry.value.fields) {
 			if (field.serialized) {
-				fields[component_key(field.id)] = String(field.native_type);
+				fields[field.key] = String(field.native_type);
 			}
 		}
-		const String key = component_key(entry.key);
+		const String key = entry.value.key;
 		type_list.push_back(key);
 		type_fields.insert(key, fields);
 	}
@@ -1003,8 +1003,7 @@ ResourceUID::ID ResourceFormatLoaderEntityScene::get_resource_uid(const String &
 void ResourceFormatLoaderEntityScene::get_dependencies(const String &p_path, List<String> *p_dependencies, bool p_add_types) {
 	Ref<EntityScene> scene;
 	ERR_FAIL_COND(EntitySceneIO::load(p_path, scene) != OK);
-	EntityCatalog catalog;
-	EntityWorld schemas(catalog);
+	const EntitySchemaRegistry &schemas = EntitySchemaRegistry::descriptors();
 	Array dependencies;
 	Vector<EntityId> ids = scene->catalog.get_ids();
 	ids.sort_custom<EntityIdSorter>();
@@ -1019,7 +1018,7 @@ void ResourceFormatLoaderEntityScene::get_dependencies(const String &p_path, Lis
 			if (key.get_type() != Variant::STRING || components[key].get_type() != Variant::DICTIONARY) {
 				continue;
 			}
-			collect_asset_dependencies(schemas.get_schemas(), String(key).hex_to_int(), components[key], id, String(), dependencies);
+			collect_asset_dependencies(schemas, String(key).hex_to_int(), components[key], id, String(), dependencies);
 		}
 	}
 	Vector<String> instance_keys;

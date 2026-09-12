@@ -1378,6 +1378,7 @@ void unregister_scene_types() {
 	resource_loader_entity_scene.unref();
 	ResourceSaver::remove_resource_format_saver(resource_saver_entity_scene);
 	resource_saver_entity_scene.unref();
+	finalize_entity_types();
 #endif
 
 	ResourceSaver::remove_resource_format_saver(resource_saver_text);

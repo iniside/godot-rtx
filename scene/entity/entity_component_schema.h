@@ -5,6 +5,7 @@
 
 #include "core/io/resource_loader.h"
 #include "core/io/resource_uid.h"
+#include "core/os/memory.h"
 #include "core/templates/hash_map.h"
 #include "core/variant/array.h"
 #include "core/variant/dictionary.h"
@@ -19,6 +20,7 @@ struct EntityCodec;
 
 struct EntityFieldSchema {
 	uint64_t id = 0;
+	String key;
 	StringName name;
 	StringName native_type;
 	uint64_t nested_type_id = 0;
@@ -40,12 +42,18 @@ struct EntityFieldSchema {
 
 struct EntityComponentSchema {
 	uint64_t id = 0;
+	String key;
 	StringName name;
 	ecs_entity_t runtime_id = 0;
 	bool is_component = false;
+	size_t size = 0;
+	size_t alignment = 0;
 	Vector<EntityFieldSchema> fields;
 	Error (*encode)(const void *, Variant &) = nullptr;
 	Error (*decode)(void *, const Variant &) = nullptr;
+	void (*construct)(void *) = nullptr;
+	void (*destruct)(void *) = nullptr;
+	ecs_entity_t (*meta_type)(flecs::world &) = nullptr;
 	Error (*set_field)(flecs::world &, ecs_entity_t, uint64_t, const Variant &) = nullptr;
 	Error (*set_serialized)(flecs::world &, ecs_entity_t, const Variant &) = nullptr;
 	void (*add_default)(flecs::world &, ecs_entity_t) = nullptr;
@@ -60,10 +68,16 @@ public:
 	void add(EntityComponentSchema p_schema);
 	const EntityComponentSchema *find(uint64_t p_id) const { return components.getptr(p_id); }
 	const HashMap<uint64_t, EntityComponentSchema> &get_types() const { return components; }
+	void bind(flecs::world &p_world);
+	void clear() { components.clear(); }
+	static const EntitySchemaRegistry &descriptors();
 };
 
 void initialize_entity_types();
-void register_entity_component_schemas(flecs::world &p_world, EntitySchemaRegistry &r_registry);
+void finalize_entity_types();
+void build_entity_component_fields();
+void clear_entity_component_fields();
+void register_entity_component_schemas(EntitySchemaRegistry &r_registry);
 
 Error entity_encode_asset(const Ref<Resource> &p_asset, Variant &r_value);
 Error entity_decode_asset(const Variant &p_value, Ref<Resource> &r_asset);
@@ -388,6 +402,7 @@ template <typename C, typename T, T C::*Member>
 EntityFieldSchema entity_make_field(uint64_t p_id, const char *p_name, const char *p_type) {
 	EntityFieldSchema result;
 	result.id = p_id;
+	result.key = String::num_uint64(p_id, 16);
 	result.name = p_name;
 	result.native_type = p_type;
 	result.variant_type = EntityCodec<T>::variant_type;
@@ -416,7 +431,7 @@ Error entity_encode_struct(const T &p_value, Variant &r_value) {
 		Variant value;
 		Error error = field.read(&p_value, value);
 		ERR_FAIL_COND_V_MSG(error != OK, error, "Cannot encode entity field " + String(field.name));
-		fields[String::num_uint64(field.id, 16)] = value;
+		fields[field.key] = value;
 	}
 	r_value = fields;
 	return OK;
@@ -428,15 +443,14 @@ Error entity_decode_struct(const Variant &p_value, T &r_value) {
 		return ERR_INVALID_DATA;
 	}
 	Dictionary values = p_value;
-	Vector<EntityFieldSchema> fields = EntityComponentTraits<T>::fields();
+	const Vector<EntityFieldSchema> &fields = EntityComponentTraits<T>::fields();
 	T result;
 	int recognized = 0;
 	for (const EntityFieldSchema &field : fields) {
-		String key = String::num_uint64(field.id, 16);
-		if (!field.serialized || !values.has(key)) {
+		if (!field.serialized || !values.has(field.key)) {
 			continue;
 		}
-		Error error = field.write(&result, values[key]);
+		Error error = field.write(&result, values[field.key]);
 		ERR_FAIL_COND_V_MSG(error != OK, error, "Cannot decode entity field " + String(field.name));
 		recognized++;
 	}
@@ -448,15 +462,20 @@ Error entity_decode_struct(const Variant &p_value, T &r_value) {
 }
 
 template <typename T>
-EntityComponentSchema entity_make_component(flecs::world &p_world) {
+EntityComponentSchema entity_make_component() {
 	EntityComponentSchema result;
 	result.id = EntityComponentTraits<T>::id;
+	result.key = String::num_uint64(result.id, 16);
 	result.name = EntityComponentTraits<T>::name;
-	result.runtime_id = EntityCodec<T>::meta_type(p_world);
 	result.is_component = EntityComponentTraits<T>::is_component;
+	result.size = sizeof(T);
+	result.alignment = alignof(T);
 	result.fields = EntityComponentTraits<T>::fields();
 	result.encode = [](const void *p_component, Variant &r_value) { return EntityCodec<T>::encode(*static_cast<const T *>(p_component), r_value); };
 	result.decode = [](void *p_component, const Variant &p_value) { return EntityCodec<T>::decode(p_value, *static_cast<T *>(p_component)); };
+	result.construct = [](void *p_memory) { memnew_placement(p_memory, T); };
+	result.destruct = [](void *p_memory) { static_cast<T *>(p_memory)->~T(); };
+	result.meta_type = &EntityCodec<T>::meta_type;
 	result.add_default = [](flecs::world &p_ecs, ecs_entity_t p_entity) { p_ecs.entity(p_entity).template set<T>(T()); };
 	result.copy_to = [](flecs::world &p_ecs, ecs_entity_t p_entity, const void *p_value) { p_ecs.entity(p_entity).template set<T>(*static_cast<const T *>(p_value)); };
 	result.set_serialized = [](flecs::world &p_ecs, ecs_entity_t p_entity, const Variant &p_value) -> Error {
@@ -474,7 +493,8 @@ EntityComponentSchema entity_make_component(flecs::world &p_world) {
 			return ERR_DOES_NOT_EXIST;
 		}
 		T value = *existing;
-		for (const EntityFieldSchema &field : EntityComponentTraits<T>::fields()) {
+		const Vector<EntityFieldSchema> &fields = EntityComponentTraits<T>::fields();
+		for (const EntityFieldSchema &field : fields) {
 			if (field.id != p_field) {
 				continue;
 			}

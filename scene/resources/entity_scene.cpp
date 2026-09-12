@@ -293,11 +293,11 @@ Error EntityScene::_encode_record(EntityId p_id, Dictionary &r_record) {
 			Variant field_value;
 			Error error = world->read_field(target.handle, schema.id, field.id, field_value);
 			if (error != OK) {
-				return _fail(p_id, String::num_uint64(schema.id, 16) + "/" + String::num_uint64(field.id, 16), error);
+				return _fail(p_id, schema.key + "/" + field.key, error);
 			}
-			value[String::num_uint64(field.id, 16)] = field_value;
+			value[field.key] = field_value;
 		}
-		components[String::num_uint64(schema.id, 16)] = value;
+		components[schema.key] = value;
 	}
 	r_record["components"] = components;
 	return OK;
@@ -347,22 +347,18 @@ Error EntityScene::_read_record(EntityId p_id, Dictionary &r_record, bool *r_sto
 
 Error EntityScene::_validate_fields(EntityId p_id, uint64_t p_type, const Dictionary &p_fields, bool p_decode_assets, const String &p_prefix) {
 	const EntityComponentSchema *schema = get_world()->schemas.find(p_type);
-	String prefix = p_prefix.is_empty() ? String::num_uint64(p_type, 16) : p_prefix;
 	if (!schema) {
-		return _fail(p_id, prefix, ERR_UNAVAILABLE);
+		return _fail(p_id, p_prefix.is_empty() ? String::num_uint64(p_type, 16) : p_prefix, ERR_UNAVAILABLE);
 	}
-	int expected = 0;
+	const String prefix = p_prefix.is_empty() ? schema->key : p_prefix;
+	int recognized = 0;
 	for (const EntityFieldSchema &field : schema->fields) {
-		if (!field.serialized) {
+		if (!field.serialized || !p_fields.has(field.key)) {
 			continue;
 		}
-		expected++;
-		String key = String::num_uint64(field.id, 16);
-		String address = prefix + "/" + key;
-		if (!p_fields.has(key)) {
-			return _fail(p_id, address, ERR_DOES_NOT_EXIST);
-		}
-		Variant value = p_fields[key];
+		recognized++;
+		String address = prefix + "/" + field.key;
+		Variant value = p_fields[field.key];
 		Error validation_error = field.validate(value);
 		if (validation_error != OK) {
 			return _fail(p_id, address, validation_error);
@@ -400,11 +396,11 @@ Error EntityScene::_validate_fields(EntityId p_id, uint64_t p_type, const Dictio
 			}
 		}
 	}
-	if (expected != p_fields.size()) {
+	if (recognized != p_fields.size()) {
 		for (const Variant &key : p_fields.get_key_list()) {
 			bool found = false;
 			for (const EntityFieldSchema &field : schema->fields) {
-				found |= field.serialized && key == String::num_uint64(field.id, 16);
+				found |= field.serialized && key == field.key;
 			}
 			if (!found) {
 				return _fail(p_id, prefix + "/" + String(key), ERR_INVALID_DATA);
@@ -414,14 +410,16 @@ Error EntityScene::_validate_fields(EntityId p_id, uint64_t p_type, const Dictio
 	return OK;
 }
 
-Error EntityScene::_describe(EntityId p_id, const Dictionary &p_record, Section &r_section, bool p_decode_assets) {
+Error EntityScene::_describe_components(EntityId p_id, const Dictionary &p_record, Section &r_section, Vector<uint64_t> &r_types) {
 	if (!p_record.has("components") || p_record["components"].get_type() != Variant::DICTIONARY) {
 		return _fail(p_id, "components", ERR_INVALID_DATA);
 	}
-	Dictionary components = p_record["components"];
+	const Dictionary components = p_record["components"];
+	const EntitySchemaRegistry &schemas = get_world()->schemas;
 	r_section.components.clear();
 	r_section.name = String();
-	const Variant entity_name = components.get(String::num_uint64(EntityComponentTraits<EntityName>::id, 16), Variant());
+	const EntityComponentSchema *name_schema = schemas.find(EntityComponentTraits<EntityName>::id);
+	const Variant entity_name = name_schema ? components.get(name_schema->key, Variant()) : Variant();
 	if (entity_name.get_type() == Variant::DICTIONARY) {
 		const Variant text = Dictionary(entity_name).get("1", Variant());
 		if (text.get_type() == Variant::STRING) {
@@ -429,25 +427,38 @@ Error EntityScene::_describe(EntityId p_id, const Dictionary &p_record, Section 
 		}
 	}
 	for (const Variant &key : components.get_key_list()) {
-		String text = key;
-		uint64_t type = text.hex_to_int();
-		const EntityComponentSchema *schema = get_world()->schemas.find(type);
-		if (!schema || !schema->is_component || text != String::num_uint64(type, 16) || components[key].get_type() != Variant::DICTIONARY) {
+		const String text = key;
+		const EntityComponentSchema *schema = schemas.find(text.hex_to_int());
+		if (!schema || !schema->is_component || text != schema->key || components[key].get_type() != Variant::DICTIONARY) {
 			return _fail(p_id, text, ERR_INVALID_DATA);
 		}
-		Error error = _validate_fields(p_id, type, components[key], p_decode_assets);
+		r_section.components.push_back(schema->key);
+		r_types.push_back(schema->id);
+	}
+	return OK;
+}
+
+Error EntityScene::_describe(EntityId p_id, const Dictionary &p_record, Section &r_section, bool p_decode_assets) {
+	Vector<uint64_t> types;
+	Error error = _describe_components(p_id, p_record, r_section, types);
+	if (error != OK) {
+		return error;
+	}
+	const Dictionary components = p_record["components"];
+	for (int i = 0; i < types.size(); i++) {
+		error = _validate_fields(p_id, types[i], components[r_section.components[i]], p_decode_assets);
 		if (error != OK) {
 			return error;
 		}
-		r_section.components.push_back(text);
 	}
 	return OK;
 }
 
 Error EntityScene::_install(EntityId p_id, const Dictionary &p_record, LoadProfile *r_profile) {
 	Section section;
+	Vector<uint64_t> types;
 	uint64_t phase_begin = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
-	Error error = _describe(p_id, p_record, section, false);
+	Error error = _describe_components(p_id, p_record, section, types);
 	if (r_profile) {
 		const uint64_t now = OS::get_singleton()->get_ticks_usec();
 		r_profile->describe += now - phase_begin;
@@ -461,9 +472,10 @@ Error EntityScene::_install(EntityId p_id, const Dictionary &p_record, LoadProfi
 	if (error != OK) {
 		return error;
 	}
-	Dictionary components = p_record["components"];
-	for (const Variant &key : components.get_key_list()) {
-		error = world->write_component(handle, String(key).hex_to_int(), components[key]);
+	const Dictionary components = p_record["components"];
+	for (int i = 0; i < types.size(); i++) {
+		const String key = section.components[i];
+		error = world->write_component(handle, types[i], components[key]);
 		if (error != OK) {
 			world->unload_entity(handle);
 			return _fail(p_id, key, error);
