@@ -34,6 +34,7 @@
 #include "core/object/ref_counted.h"
 #include "core/os/mutex.h"
 #include "core/templates/vector.h"
+#include "core/variant/array.h"
 
 class MicroGeometryData : public RefCounted {
 public:
@@ -167,6 +168,7 @@ public:
 	String get_content_id() const;
 	Error read_encoded_page(uint32_t p_page, Vector<uint8_t> &r_data) const;
 	Error read_page(uint32_t p_page, Vector<uint8_t> &r_data) const;
+	Error decode_surface_arrays(uint32_t p_surface, Array &r_arrays) const;
 	Error save(const String &p_path) const;
 	static Error create(const Build &p_build, Ref<MicroGeometryData> &r_data);
 	static Error load(const String &p_path, Ref<MicroGeometryData> &r_data);

@@ -108,6 +108,9 @@ struct SurfaceData {
 
 	Vector4 uv_scale;
 
+	// Fork-local: the surface is mapped to microgeometry and carries no source arrays.
+	bool micro_geometry_mapped = false;
+
 	RID material;
 };
 

@@ -1572,6 +1572,10 @@ Array ArrayMesh::_get_surfaces() const {
 			data["2d"] = true;
 		}
 
+		if (surface.micro_geometry_mapped) {
+			data["micro_geometry_mapped"] = true;
+		}
+
 		ret.push_back(data);
 	}
 
@@ -1662,6 +1666,10 @@ void ArrayMesh::_set_surfaces(const Array &p_surfaces) {
 		bool _2d = false;
 		if (d.has("2d")) {
 			_2d = d["2d"];
+		}
+
+		if (d.has("micro_geometry_mapped")) {
+			surface.micro_geometry_mapped = d["micro_geometry_mapped"];
 		}
 
 #ifndef DISABLE_DEPRECATED
@@ -1847,6 +1855,21 @@ void ArrayMesh::add_surface_from_arrays(PrimitiveType p_primitive, const Array &
 
 Array ArrayMesh::surface_get_arrays(int p_surface) const {
 	ERR_FAIL_INDEX_V(p_surface, surfaces.size(), Array());
+	if (micro_geometry.is_valid()) {
+		Ref<MicroGeometryData> data = micro_geometry->get_data();
+		if (data.is_valid()) {
+			const Vector<MicroGeometryData::Surface> &mapped = data->get_metadata().surfaces;
+			for (int i = 0; i < mapped.size(); i++) {
+				if (mapped[i].source_surface != uint32_t(p_surface)) {
+					continue;
+				}
+				Array arrays;
+				Error err = data->decode_surface_arrays(i, arrays);
+				ERR_FAIL_COND_V_MSG(err != OK, Array(), "Cannot rebuild surface arrays of mesh '" + get_name() + "' from its microgeometry clusters.");
+				return arrays;
+			}
+		}
+	}
 	return RenderingServer::get_singleton()->mesh_surface_get_arrays(mesh, p_surface);
 }
 

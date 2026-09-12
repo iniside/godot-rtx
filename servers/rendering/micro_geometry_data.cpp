@@ -35,6 +35,7 @@
 #include "core/io/dir_access.h"
 #include "core/io/marshalls.h"
 #include "core/math/math_funcs.h"
+#include "core/variant/variant.h"
 #include "servers/rendering/rendering_server_enums.h"
 
 #include <cfloat>
@@ -98,6 +99,43 @@ struct ManifestReader {
 		return result;
 	}
 };
+
+struct BitStreamReader {
+	const uint8_t *data = nullptr;
+	uint64_t size = 0;
+	uint64_t base = 0;
+	uint64_t cursor = 0;
+	bool overrun = false;
+
+	BitStreamReader(const uint8_t *p_data, uint64_t p_size, uint64_t p_base, uint64_t p_cursor = 0) :
+			data(p_data), size(p_size), base(p_base), cursor(p_cursor) {}
+
+	uint32_t get(uint32_t p_bits) {
+		uint32_t result = 0;
+		for (uint32_t i = 0; i < p_bits; i++) {
+			const uint64_t bit = cursor + i;
+			const uint64_t byte = base + (bit >> 3);
+			if (byte >= size) {
+				overrun = true;
+				return 0;
+			}
+			result |= uint32_t((data[byte] >> (bit & 7)) & 1) << i;
+		}
+		cursor += p_bits;
+		return result;
+	}
+};
+
+uint32_t read_vertex_reference(BitStreamReader &r_reader, uint32_t &r_next) {
+	if (!r_reader.get(1)) {
+		return r_next++;
+	}
+	const uint32_t delta = r_reader.get(5);
+	if (delta < MicroGeometryData::VERTEX_REFERENCE_ESCAPE) {
+		return r_next ? r_next - 1 - delta : 0;
+	}
+	return r_reader.get(7);
+}
 
 bool valid_bounds(const MicroGeometryData::Bounds &p_bounds) {
 	for (float value : p_bounds.center) {
@@ -591,6 +629,273 @@ Error MicroGeometryData::read_page(uint32_t p_page, Vector<uint8_t> &r_data) con
 		ERR_FAIL_COND_V(uint64_t(cluster.disk_offset) + size > uint64_t(decoded.size()), ERR_FILE_CORRUPT);
 	}
 	r_data = decoded;
+	return OK;
+}
+
+Error MicroGeometryData::decode_surface_arrays(uint32_t p_surface, Array &r_arrays) const {
+	ERR_FAIL_UNSIGNED_INDEX_V(p_surface, uint32_t(metadata.surfaces.size()), ERR_INVALID_PARAMETER);
+	const Surface &surface = metadata.surfaces[p_surface];
+	const uint32_t vertex_count = surface.source_vertex_count;
+	const uint32_t triangle_count = surface.source_triangle_count;
+	ERR_FAIL_COND_V(!vertex_count || !triangle_count, ERR_INVALID_DATA);
+	ERR_FAIL_COND_V(!(metadata.position_step > 0), ERR_INVALID_DATA);
+
+	PackedVector3Array positions;
+	PackedVector3Array normals;
+	PackedColorArray colors;
+	PackedVector2Array uv[2];
+	Vector<uint8_t> custom[4];
+	uint32_t custom_size[4] = {};
+	PackedInt32Array indices;
+	Vector<uint8_t> decoded_vertices;
+	Vector<uint8_t> decoded_triangles;
+
+	ERR_FAIL_COND_V(positions.resize(vertex_count) != OK, ERR_OUT_OF_MEMORY);
+	ERR_FAIL_COND_V(indices.resize(uint64_t(triangle_count) * 3) != OK, ERR_OUT_OF_MEMORY);
+	ERR_FAIL_COND_V(decoded_vertices.resize_initialized(vertex_count) != OK, ERR_OUT_OF_MEMORY);
+	ERR_FAIL_COND_V(decoded_triangles.resize_initialized(triangle_count) != OK, ERR_OUT_OF_MEMORY);
+	const bool has_normals = surface.attribute_offsets[1] != INVALID_ID;
+	const bool has_colors = surface.attribute_offsets[3] != INVALID_ID;
+	if (has_normals) {
+		ERR_FAIL_COND_V(normals.resize(vertex_count) != OK, ERR_OUT_OF_MEMORY);
+	}
+	if (has_colors) {
+		ERR_FAIL_COND_V(colors.resize(vertex_count) != OK, ERR_OUT_OF_MEMORY);
+	}
+	for (uint32_t channel = 0; channel < 2; channel++) {
+		if (surface.uv_mode[channel] != UV_MODE_NONE) {
+			ERR_FAIL_COND_V(uv[channel].resize(vertex_count) != OK, ERR_OUT_OF_MEMORY);
+		}
+	}
+	for (uint32_t channel = 0; channel < 4; channel++) {
+		custom_size[channel] = custom_attribute_size(surface.format, channel);
+		if (custom_size[channel]) {
+			ERR_FAIL_COND_V(custom[channel].resize(uint64_t(vertex_count) * custom_size[channel]) != OK, ERR_OUT_OF_MEMORY);
+		}
+	}
+
+	const double step = metadata.position_step;
+	for (uint32_t page_index = 0; page_index < uint32_t(metadata.pages.size()); page_index++) {
+		const Page &page = metadata.pages[page_index];
+		bool wanted = false;
+		for (uint32_t i = 0; i < page.cluster_count && !wanted; i++) {
+			const Cluster &cluster = metadata.clusters[page.first_cluster + i];
+			wanted = cluster.surface == p_surface && cluster.refined_group == INVALID_ID;
+		}
+		if (!wanted) {
+			continue;
+		}
+		Vector<uint8_t> decoded;
+		Error err = read_page(page_index, decoded);
+		ERR_FAIL_COND_V(err != OK, err);
+		const uint8_t *page_data = decoded.ptr();
+		const uint64_t page_size = decoded.size();
+		for (uint32_t i = 0; i < page.cluster_count; i++) {
+			const Cluster &cluster = metadata.clusters[page.first_cluster + i];
+			if (cluster.surface != p_surface || cluster.refined_group != INVALID_ID) {
+				continue;
+			}
+			ERR_FAIL_COND_V(uint64_t(cluster.first_primitive) + cluster.triangle_count > uint64_t(triangle_count), ERR_FILE_CORRUPT);
+			const uint8_t *header = page_data + cluster.disk_offset;
+			int32_t minimum[3];
+			uint32_t position_bits[3];
+			for (uint32_t axis = 0; axis < 3; axis++) {
+				minimum[axis] = int32_t(decode_uint32(header + axis * 4));
+				position_bits[axis] = header[12 + axis];
+			}
+			const uint32_t vertex_id_bits = header[15];
+			const uint32_t cluster_vertices = cluster.vertex_count;
+			const uint32_t cluster_triangles = cluster.triangle_count;
+			const uint32_t topology_bytes = decode_uint16(header + 18);
+			uint32_t uv_low_min[4] = {};
+			uint32_t uv_low_max[4] = {};
+			uint32_t uv_high_min[4] = {};
+			uint32_t uv_bits[4] = {};
+			bool uv_split[4] = {};
+			uint32_t uv_header = CLUSTER_HEADER_SIZE;
+			for (uint32_t channel = 0; channel < 2; channel++) {
+				if (surface.uv_mode[channel] == UV_MODE_NONE) {
+					continue;
+				}
+				for (uint32_t component = 0; component < 2; component++) {
+					const uint32_t slot = channel * 2 + component;
+					const uint8_t *range = header + uv_header;
+					uv_low_min[slot] = decode_uint16(range);
+					uv_low_max[slot] = decode_uint16(range + 2);
+					uv_high_min[slot] = decode_uint16(range + 4);
+					uv_bits[slot] = range[8] & ~UV_SPLIT_FLAG;
+					uv_split[slot] = (range[8] & UV_SPLIT_FLAG) != 0;
+					uv_header += CLUSTER_UV_HEADER_SIZE;
+				}
+			}
+
+			uint64_t section = uint64_t(cluster.disk_offset) + cluster_header_size(surface);
+			const uint64_t positions_offset = section;
+			const uint32_t position_stride = position_bits[0] + position_bits[1] + position_bits[2];
+			section += (uint64_t(cluster_vertices) * position_stride + 7) / 8;
+			const uint64_t normals_offset = section;
+			if (has_normals) {
+				section += uint64_t(cluster_vertices) * 2;
+			}
+			const uint64_t colors_offset = section;
+			if (has_colors) {
+				section += uint64_t(cluster_vertices) * 4;
+			}
+			uint64_t uv_section[2];
+			for (uint32_t channel = 0; channel < 2; channel++) {
+				uv_section[channel] = section;
+				if (surface.uv_mode[channel] != UV_MODE_NONE) {
+					section += (uint64_t(cluster_vertices) * (uv_bits[channel * 2] + uv_bits[channel * 2 + 1]) + 7) / 8;
+				}
+			}
+			uint64_t custom_section[4];
+			for (uint32_t channel = 0; channel < 4; channel++) {
+				custom_section[channel] = section;
+				section += uint64_t(cluster_vertices) * custom_size[channel];
+			}
+			const uint64_t topology_offset = section;
+			const uint64_t identity_offset = section + topology_bytes;
+			ERR_FAIL_COND_V(identity_offset > page_size, ERR_FILE_CORRUPT);
+
+			uint32_t identities[MAX_CLUSTER_VERTICES];
+			{
+				BitStreamReader reader(page_data, page_size, identity_offset);
+				uint32_t identity = reader.get(32);
+				for (uint32_t vertex = 0; vertex < cluster_vertices; vertex++) {
+					if (vertex) {
+						const uint32_t code = reader.get(vertex_id_bits);
+						identity += (code >> 1) ^ (0u - (code & 1));
+					}
+					ERR_FAIL_COND_V(identity >= vertex_count, ERR_FILE_CORRUPT);
+					identities[vertex] = identity;
+				}
+				ERR_FAIL_COND_V(reader.overrun, ERR_FILE_CORRUPT);
+			}
+
+			for (uint32_t vertex = 0; vertex < cluster_vertices; vertex++) {
+				const uint32_t target = identities[vertex];
+				BitStreamReader reader(page_data, page_size, positions_offset, uint64_t(vertex) * position_stride);
+				Vector3 position;
+				for (uint32_t axis = 0; axis < 3; axis++) {
+					position[axis] = double(int64_t(minimum[axis]) + int64_t(reader.get(position_bits[axis]))) * step;
+				}
+				ERR_FAIL_COND_V(reader.overrun, ERR_FILE_CORRUPT);
+				positions.write[target] = position;
+				if (has_normals) {
+					const uint64_t offset = normals_offset + uint64_t(vertex) * 2;
+					ERR_FAIL_COND_V(offset + 2 > page_size, ERR_FILE_CORRUPT);
+					const float x = float(page_data[offset]) / 255.0f * 2.0f - 1.0f;
+					const float y = float(page_data[offset + 1]) / 255.0f * 2.0f - 1.0f;
+					const float z = 1.0f - Math::abs(x) - Math::abs(y);
+					Vector3 normal(x, y, z);
+					if (z < 0) {
+						normal.x = (1.0f - Math::abs(y)) * (x >= 0 ? 1.0f : -1.0f);
+						normal.y = (1.0f - Math::abs(x)) * (y >= 0 ? 1.0f : -1.0f);
+					}
+					normals.write[target] = normal.normalized();
+				}
+				if (has_colors) {
+					const uint64_t offset = colors_offset + uint64_t(vertex) * 4;
+					ERR_FAIL_COND_V(offset + 4 > page_size, ERR_FILE_CORRUPT);
+					colors.write[target] = Color(page_data[offset] / 255.0f, page_data[offset + 1] / 255.0f, page_data[offset + 2] / 255.0f, page_data[offset + 3] / 255.0f);
+				}
+				for (uint32_t channel = 0; channel < 2; channel++) {
+					if (surface.uv_mode[channel] == UV_MODE_NONE) {
+						continue;
+					}
+					const uint32_t slot = channel * 2;
+					BitStreamReader uv_reader(page_data, page_size, uv_section[channel], uint64_t(vertex) * (uv_bits[slot] + uv_bits[slot + 1]));
+					Vector2 value;
+					for (uint32_t component = 0; component < 2; component++) {
+						const uint32_t index = uv_reader.get(uv_bits[slot + component]);
+						const uint32_t span = uv_low_max[slot + component] - uv_low_min[slot + component] + 1;
+						const uint32_t code = (uv_split[slot + component] && index >= span) ? uv_high_min[slot + component] + index - span : uv_low_min[slot + component] + index;
+						if (surface.uv_mode[channel] == UV_MODE_UNORM16) {
+							value[component] = surface.uv_min[slot + component] + (float(code) / 65535.0f) * surface.uv_scale[slot + component];
+						} else {
+							value[component] = Math::half_to_float(uint16_t(code));
+						}
+					}
+					ERR_FAIL_COND_V(uv_reader.overrun, ERR_FILE_CORRUPT);
+					uv[channel].write[target] = value;
+				}
+				for (uint32_t channel = 0; channel < 4; channel++) {
+					if (!custom_size[channel]) {
+						continue;
+					}
+					const uint64_t offset = custom_section[channel] + uint64_t(vertex) * custom_size[channel];
+					ERR_FAIL_COND_V(offset + custom_size[channel] > page_size, ERR_FILE_CORRUPT);
+					memcpy(custom[channel].ptrw() + uint64_t(target) * custom_size[channel], page_data + offset, custom_size[channel]);
+				}
+				decoded_vertices.write[target] = 1;
+			}
+
+			BitStreamReader topology(page_data, page_size, topology_offset);
+			uint32_t next_vertex = 0;
+			uint32_t previous[3] = {};
+			for (uint32_t triangle = 0; triangle < cluster_triangles; triangle++) {
+				uint32_t corners[3];
+				if (topology.get(1)) {
+					for (uint32_t corner = 0; corner < 3; corner++) {
+						corners[corner] = read_vertex_reference(topology, next_vertex);
+					}
+				} else {
+					const uint32_t left = topology.get(1);
+					corners[0] = left ? previous[0] : previous[2];
+					corners[1] = left ? previous[2] : previous[1];
+					corners[2] = read_vertex_reference(topology, next_vertex);
+				}
+				const uint32_t primitive = cluster.first_primitive + triangle;
+				for (uint32_t corner = 0; corner < 3; corner++) {
+					ERR_FAIL_COND_V(corners[corner] >= cluster_vertices, ERR_FILE_CORRUPT);
+					previous[corner] = corners[corner];
+					indices.write[uint64_t(primitive) * 3 + corner] = int32_t(identities[corners[corner]]);
+				}
+				decoded_triangles.write[primitive] = 1;
+			}
+			ERR_FAIL_COND_V(topology.overrun || next_vertex != cluster_vertices, ERR_FILE_CORRUPT);
+		}
+	}
+
+	for (uint32_t vertex = 0; vertex < vertex_count; vertex++) {
+		ERR_FAIL_COND_V(!decoded_vertices[vertex], ERR_FILE_CORRUPT);
+	}
+	for (uint32_t triangle = 0; triangle < triangle_count; triangle++) {
+		ERR_FAIL_COND_V(!decoded_triangles[triangle], ERR_FILE_CORRUPT);
+	}
+
+	Array arrays;
+	arrays.resize(RSE::ARRAY_MAX);
+	arrays[RSE::ARRAY_VERTEX] = positions;
+	if (has_normals) {
+		arrays[RSE::ARRAY_NORMAL] = normals;
+	}
+	if (has_colors) {
+		arrays[RSE::ARRAY_COLOR] = colors;
+	}
+	for (uint32_t channel = 0; channel < 2; channel++) {
+		if (surface.uv_mode[channel] != UV_MODE_NONE) {
+			arrays[RSE::ARRAY_TEX_UV + channel] = uv[channel];
+		}
+	}
+	for (uint32_t channel = 0; channel < 4; channel++) {
+		if (!custom_size[channel]) {
+			continue;
+		}
+		const uint32_t format = (surface.format >> (RSE::ARRAY_FORMAT_CUSTOM0_SHIFT + RSE::ARRAY_FORMAT_CUSTOM_BITS * channel)) & RSE::ARRAY_FORMAT_CUSTOM_MASK;
+		if (format < RSE::ARRAY_CUSTOM_R_FLOAT) {
+			arrays[RSE::ARRAY_CUSTOM0 + channel] = custom[channel];
+		} else {
+			PackedFloat32Array values;
+			ERR_FAIL_COND_V(values.resize(custom[channel].size() / 4) != OK, ERR_OUT_OF_MEMORY);
+			for (int64_t j = 0; j < values.size(); j++) {
+				values.write[j] = decode_float(custom[channel].ptr() + j * 4);
+			}
+			arrays[RSE::ARRAY_CUSTOM0 + channel] = values;
+		}
+	}
+	arrays[RSE::ARRAY_INDEX] = indices;
+	r_arrays = arrays;
 	return OK;
 }
 

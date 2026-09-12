@@ -2307,7 +2307,7 @@
 			<param index="0" name="mesh" type="RID" />
 			<param index="1" name="surface" type="int" />
 			<description>
-				Returns a mesh's surface as a dictionary following the same structure as described in [method mesh_add_surface].
+				Returns a mesh's surface as a dictionary following the same structure as described in [method mesh_add_surface]. A surface mapped to an [ArrayMesh]'s microgeometry carries no vertex, attribute, skin, index, LOD or blend shape data and reports [code]micro_geometry_mapped[/code] instead.
 			</description>
 		</method>
 		<method name="mesh_get_surface_count" qualifiers="const">

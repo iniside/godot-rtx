@@ -1775,6 +1775,7 @@ Array RenderingServer::mesh_create_arrays_from_surface_data(const RenderingServe
 	Vector<uint8_t> attrib_data = p_data.attribute_data;
 	Vector<uint8_t> skin_data = p_data.skin_data;
 
+	ERR_FAIL_COND_V_MSG(p_data.micro_geometry_mapped, Array(), "Microgeometry-mapped surfaces carry no source arrays; use ArrayMesh.surface_get_arrays() to rebuild them from the microgeometry clusters.");
 	ERR_FAIL_COND_V(vertex_data.is_empty() && (p_data.format & RSE::ARRAY_FORMAT_VERTEX), Array());
 	int vertex_len = p_data.vertex_count;
 
@@ -1969,6 +1970,10 @@ static RenderingServerTypes::SurfaceData _dict_to_surf(const Dictionary &p_dicti
 		sd.material = p_dictionary["material"];
 	}
 
+	if (p_dictionary.has("micro_geometry_mapped")) {
+		sd.micro_geometry_mapped = p_dictionary["micro_geometry_mapped"];
+	}
+
 	return sd;
 }
 RID RenderingServer::_mesh_create_from_surfaces(const TypedArray<Dictionary> &p_surfaces, int p_blend_shape_count) {
@@ -2027,6 +2032,9 @@ Dictionary RenderingServer::_mesh_get_surface(RID p_mesh, int p_idx) {
 
 	if (sd.material.is_valid()) {
 		d["material"] = sd.material;
+	}
+	if (sd.micro_geometry_mapped) {
+		d["micro_geometry_mapped"] = true;
 	}
 	return d;
 }

@@ -270,9 +270,15 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 
 	ERR_FAIL_COND(mesh->surface_count == RSE::MAX_MESH_SURFACES);
 
+	if (p_surface.micro_geometry_mapped) {
+		ERR_FAIL_COND_MSG(mesh->blend_shape_count != 0, "Microgeometry-mapped surfaces do not support blend shapes.");
+		ERR_FAIL_COND_MSG(!p_surface.vertex_count || p_surface.primitive != RSE::PRIMITIVE_TRIANGLES, "Microgeometry-mapped surfaces must be indexed or non-indexed triangles with a vertex count.");
+		ERR_FAIL_COND_MSG(!p_surface.vertex_data.is_empty() || !p_surface.attribute_data.is_empty() || !p_surface.skin_data.is_empty() || !p_surface.index_data.is_empty() || !p_surface.blend_shape_data.is_empty() || !p_surface.lods.is_empty(), "Microgeometry-mapped surfaces must not carry source arrays.");
+	}
+
 #ifdef DEBUG_ENABLED
 	//do a validation, to catch errors first
-	{
+	if (!p_surface.micro_geometry_mapped) {
 		uint32_t stride = 0;
 		uint32_t attrib_stride = 0;
 		uint32_t skin_stride = 0;
@@ -431,7 +437,11 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 		mesh->has_bone_weights = true;
 	}
 
-	if (new_surface.index_count) {
+	if (new_surface.micro_geometry_mapped) {
+		s->index_count = new_surface.index_count;
+		s->keep_source_data = true;
+		s->source_arrays_dropped = true;
+	} else if (new_surface.index_count) {
 		bool is_index_16 = new_surface.vertex_count <= 65536 && new_surface.vertex_count > 0;
 
 		s->index_buffer = RD::get_singleton()->index_buffer_create(new_surface.index_count, is_index_16 ? RD::INDEX_BUFFER_FORMAT_UINT16 : RD::INDEX_BUFFER_FORMAT_UINT32, new_surface.index_data, false, requested_storage_flag);
@@ -534,9 +544,8 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 }
 
 void MeshStorage::_mesh_surface_clear(Mesh *p_mesh, int p_surface) {
-	MutexLock lock(exact_buffers_mutex);
+	MutexLock lock(surface_data_mutex);
 	Mesh::Surface &s = *p_mesh->surfaces[p_surface];
-	_mesh_surface_untrack_exact_buffers(&s);
 
 	if (s.vertex_buffer.is_valid()) {
 		RD::get_singleton()->free_rid(s.vertex_buffer); // Clears arrays as dependency automatically, including all versions.
@@ -597,9 +606,9 @@ void MeshStorage::mesh_surface_update_vertex_region(RID p_mesh, int p_surface, i
 	ERR_FAIL_NULL(mesh);
 	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_surface, mesh->surface_count);
 
+	ERR_FAIL_COND_MSG(mesh->surfaces[p_surface]->source_arrays_dropped, "Cannot update a microgeometry-mapped surface: it carries no source arrays.");
 	Vector<uint8_t> &source = mesh->surfaces[p_surface]->source_data.vertex_data;
 	ERR_FAIL_COND(p_offset < 0 || uint64_t(p_offset) + uint64_t(p_data.size()) > uint64_t(source.size()));
-	_mesh_surface_ensure_gpu_buffers(mesh->surfaces[p_surface]);
 	ERR_FAIL_COND(mesh->surfaces[p_surface]->vertex_buffer.is_null());
 	_invalidate_micro_geometry(mesh);
 	memcpy(source.ptrw() + p_offset, p_data.ptr(), p_data.size());
@@ -619,9 +628,9 @@ void MeshStorage::mesh_surface_update_attribute_region(RID p_mesh, int p_surface
 	ERR_FAIL_NULL(mesh);
 	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_surface, mesh->surface_count);
 
+	ERR_FAIL_COND_MSG(mesh->surfaces[p_surface]->source_arrays_dropped, "Cannot update a microgeometry-mapped surface: it carries no source arrays.");
 	Vector<uint8_t> &source = mesh->surfaces[p_surface]->source_data.attribute_data;
 	ERR_FAIL_COND(p_offset < 0 || uint64_t(p_offset) + uint64_t(p_data.size()) > uint64_t(source.size()));
-	_mesh_surface_ensure_gpu_buffers(mesh->surfaces[p_surface]);
 	ERR_FAIL_COND(mesh->surfaces[p_surface]->attribute_buffer.is_null());
 	_invalidate_micro_geometry(mesh);
 	memcpy(source.ptrw() + p_offset, p_data.ptr(), p_data.size());
@@ -642,6 +651,7 @@ void MeshStorage::mesh_surface_update_skin_region(RID p_mesh, int p_surface, int
 	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_surface, mesh->surface_count);
 	ERR_FAIL_COND(mesh->surfaces[p_surface]->skin_buffer.is_null());
 
+	ERR_FAIL_COND_MSG(mesh->surfaces[p_surface]->source_arrays_dropped, "Cannot update a microgeometry-mapped surface: it carries no source arrays.");
 	Vector<uint8_t> &source = mesh->surfaces[p_surface]->source_data.skin_data;
 	ERR_FAIL_COND(p_offset < 0 || uint64_t(p_offset) + uint64_t(p_data.size()) > uint64_t(source.size()));
 	_invalidate_micro_geometry(mesh);
@@ -662,9 +672,9 @@ void RendererRD::MeshStorage::mesh_surface_update_index_region(RID p_mesh, int p
 	ERR_FAIL_NULL(mesh);
 	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_surface, mesh->surface_count);
 
+	ERR_FAIL_COND_MSG(mesh->surfaces[p_surface]->source_arrays_dropped, "Cannot update a microgeometry-mapped surface: it carries no source arrays.");
 	Vector<uint8_t> &source = mesh->surfaces[p_surface]->source_data.index_data;
 	ERR_FAIL_COND(p_offset < 0 || uint64_t(p_offset) + uint64_t(p_data.size()) > uint64_t(source.size()));
-	_mesh_surface_ensure_gpu_buffers(mesh->surfaces[p_surface]);
 	ERR_FAIL_COND(mesh->surfaces[p_surface]->index_buffer.is_null());
 	_invalidate_micro_geometry(mesh);
 	memcpy(source.ptrw() + p_offset, p_data.ptr(), p_data.size());
@@ -682,7 +692,7 @@ RID MeshStorage::mesh_surface_get_vertex_buffer_rd_rid(RID p_mesh, int p_surface
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL_V(mesh, RID());
 	ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_surface, mesh->surface_count, RID());
-	_mesh_surface_pin_exact_buffers(mesh->surfaces[p_surface]);
+	ERR_FAIL_COND_V_MSG(mesh->surfaces[p_surface]->source_arrays_dropped, RID(), "Microgeometry-mapped surfaces carry no source arrays.");
 	return mesh->surfaces[p_surface]->vertex_buffer;
 }
 
@@ -690,7 +700,7 @@ RID MeshStorage::mesh_surface_get_attribute_buffer_rd_rid(RID p_mesh, int p_surf
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL_V(mesh, RID());
 	ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_surface, mesh->surface_count, RID());
-	_mesh_surface_pin_exact_buffers(mesh->surfaces[p_surface]);
+	ERR_FAIL_COND_V_MSG(mesh->surfaces[p_surface]->source_arrays_dropped, RID(), "Microgeometry-mapped surfaces carry no source arrays.");
 	return mesh->surfaces[p_surface]->attribute_buffer;
 }
 
@@ -698,6 +708,7 @@ RID MeshStorage::mesh_surface_get_skin_buffer_rd_rid(RID p_mesh, int p_surface) 
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL_V(mesh, RID());
 	ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_surface, mesh->surface_count, RID());
+	ERR_FAIL_COND_V_MSG(mesh->surfaces[p_surface]->source_arrays_dropped, RID(), "Microgeometry-mapped surfaces carry no source arrays.");
 	return mesh->surfaces[p_surface]->skin_buffer;
 }
 
@@ -705,7 +716,7 @@ RID MeshStorage::mesh_surface_get_index_buffer_rd_rid(RID p_mesh, int p_surface)
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL_V(mesh, RID());
 	ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_surface, mesh->surface_count, RID());
-	_mesh_surface_pin_exact_buffers(mesh->surfaces[p_surface]);
+	ERR_FAIL_COND_V_MSG(mesh->surfaces[p_surface]->source_arrays_dropped, RID(), "Microgeometry-mapped surfaces carry no source arrays.");
 	return mesh->surfaces[p_surface]->index_buffer;
 }
 
@@ -935,66 +946,9 @@ String MeshStorage::mesh_get_path(RID p_mesh) const {
 	return mesh->path;
 }
 
-void MeshStorage::_mesh_surface_untrack_exact_buffers(Mesh::Surface *p_surface) const {
-	MutexLock lock(exact_buffers_mutex);
-	if (!p_surface->exact_buffers_tracked) {
-		return;
-	}
-	for (uint32_t i = 0; i < tracked_exact_buffers.size(); i++) {
-		if (tracked_exact_buffers[i] == p_surface) {
-			tracked_exact_buffers.remove_at_unordered(i);
-			break;
-		}
-	}
-	p_surface->exact_buffers_tracked = false;
-}
-
-void MeshStorage::_mesh_surface_mark_exact_buffers_used(Mesh::Surface *p_surface) const {
-	MutexLock lock(exact_buffers_mutex);
-	if (!p_surface->micro_geometry_mapped || p_surface->exact_buffers_pinned) {
-		return;
-	}
-	p_surface->exact_buffers_last_use_frame = RSG::rasterizer->get_frame_number();
-	p_surface->exact_buffers_last_use_submission = RD::get_singleton()->get_pending_submission_serial();
-	if (!p_surface->exact_buffers_tracked) {
-		tracked_exact_buffers.push_back(p_surface);
-		p_surface->exact_buffers_tracked = true;
-	}
-}
-
-void MeshStorage::_mesh_surface_pin_exact_buffers(Mesh::Surface *p_surface) const {
-	MutexLock lock(exact_buffers_mutex);
-	p_surface->exact_buffers_pinned = true;
-	_mesh_surface_untrack_exact_buffers(p_surface);
-	_mesh_surface_ensure_gpu_buffers(p_surface);
-}
-
-void MeshStorage::_retire_unused_exact_buffers() {
-	MutexLock lock(exact_buffers_mutex);
-	const uint64_t current_frame = RSG::rasterizer->get_frame_number();
-	const uint64_t completed_submission = RD::get_singleton()->get_completed_submission_serial();
-	uint32_t i = 0;
-	while (i < tracked_exact_buffers.size()) {
-		Mesh::Surface *surface = tracked_exact_buffers[i];
-		if (!surface->micro_geometry_mapped || surface->exact_buffers_pinned || surface->gpu_buffers_discarded) {
-			surface->exact_buffers_tracked = false;
-			tracked_exact_buffers.remove_at_unordered(i);
-			continue;
-		}
-		if (current_frame - surface->exact_buffers_last_use_frame > 1 && surface->exact_buffers_last_use_submission <= completed_submission) {
-			surface->exact_buffers_tracked = false;
-			tracked_exact_buffers.remove_at_unordered(i);
-			_mesh_surface_discard_gpu_buffers(surface);
-			continue;
-		}
-		i++;
-	}
-}
-
-void MeshStorage::_mesh_surface_discard_gpu_buffers(Mesh::Surface *p_surface) {
-	MutexLock lock(exact_buffers_mutex);
-	_mesh_surface_untrack_exact_buffers(p_surface);
-	if (p_surface->gpu_buffers_discarded || p_surface->exact_buffers_pinned) {
+void MeshStorage::_mesh_surface_drop_source_arrays(Mesh::Surface *p_surface) {
+	MutexLock lock(surface_data_mutex);
+	if (p_surface->source_arrays_dropped) {
 		return;
 	}
 	if (p_surface->vertex_buffer.is_valid()) {
@@ -1006,6 +960,11 @@ void MeshStorage::_mesh_surface_discard_gpu_buffers(Mesh::Surface *p_surface) {
 		RD::get_singleton()->free_rid(p_surface->attribute_buffer);
 		p_surface->attribute_buffer = RID();
 		p_surface->attribute_buffer_size = 0;
+	}
+	if (p_surface->skin_buffer.is_valid()) {
+		RD::get_singleton()->free_rid(p_surface->skin_buffer);
+		p_surface->skin_buffer = RID();
+		p_surface->skin_buffer_size = 0;
 	}
 	if (p_surface->versions) {
 		memfree(p_surface->versions);
@@ -1021,56 +980,27 @@ void MeshStorage::_mesh_surface_discard_gpu_buffers(Mesh::Surface *p_surface) {
 	for (uint32_t i = 0; i < p_surface->lod_count; i++) {
 		if (p_surface->lods[i].index_buffer.is_valid()) {
 			RD::get_singleton()->free_rid(p_surface->lods[i].index_buffer);
-			p_surface->lods[i].index_buffer = RID();
-			p_surface->lods[i].index_array = RID();
-			p_surface->lods[i].index_buffer_size = 0;
 		}
 	}
-	p_surface->gpu_buffers_discarded = true;
-}
-
-void MeshStorage::_mesh_surface_ensure_gpu_buffers(Mesh::Surface *p_surface) const {
-	MutexLock lock(exact_buffers_mutex);
-	if (p_surface->gpu_buffers_discarded) {
-		const RenderingServerTypes::SurfaceData &source = p_surface->source_data;
-		const bool requested_storage_buffer = source.format & RSE::ARRAY_FLAG_USE_STORAGE_BUFFER;
-		BitField<RD::BufferCreationBits> buffer_flags = requested_storage_buffer ? RD::BUFFER_CREATION_AS_STORAGE_BIT : 0;
-		if (RD::get_singleton()->has_feature(RD::SUPPORTS_RAYTRACING_PIPELINE) || RD::get_singleton()->has_feature(RD::SUPPORTS_RAY_QUERY)) {
-			buffer_flags.set_flag(RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
-			buffer_flags.set_flag(RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT);
-			buffer_flags.set_flag(RD::BUFFER_CREATION_AS_STORAGE_BIT);
-		}
-		if (!source.vertex_data.is_empty()) {
-			if (!(source.format & RSE::ARRAY_FLAG_COMPRESS_ATTRIBUTES) && (source.format & RSE::ARRAY_FORMAT_NORMAL) && !(source.format & RSE::ARRAY_FORMAT_TANGENT)) {
-				Vector<uint8_t> vertex_data;
-				vertex_data.resize_initialized(source.vertex_data.size() + sizeof(uint16_t) * 2);
-				memcpy(vertex_data.ptrw(), source.vertex_data.ptr(), source.vertex_data.size());
-				p_surface->vertex_buffer = RD::get_singleton()->vertex_buffer_create(vertex_data.size(), vertex_data, buffer_flags);
-				p_surface->vertex_buffer_size = vertex_data.size();
-			} else {
-				p_surface->vertex_buffer = RD::get_singleton()->vertex_buffer_create(source.vertex_data.size(), source.vertex_data, buffer_flags);
-				p_surface->vertex_buffer_size = source.vertex_data.size();
-			}
-		}
-		if (!source.attribute_data.is_empty()) {
-			p_surface->attribute_buffer = RD::get_singleton()->vertex_buffer_create(source.attribute_data.size(), source.attribute_data, buffer_flags);
-			p_surface->attribute_buffer_size = source.attribute_data.size();
-		}
-		if (source.index_count) {
-			const bool is_index_16 = source.vertex_count <= 65536 && source.vertex_count > 0;
-			p_surface->index_buffer = RD::get_singleton()->index_buffer_create(source.index_count, is_index_16 ? RD::INDEX_BUFFER_FORMAT_UINT16 : RD::INDEX_BUFFER_FORMAT_UINT32, source.index_data, false, buffer_flags);
-			p_surface->index_buffer_size = source.index_data.size();
-			p_surface->index_array = RD::get_singleton()->index_array_create(p_surface->index_buffer, 0, source.index_count);
-			for (uint32_t i = 0; i < p_surface->lod_count; i++) {
-				const uint32_t index_count = source.lods[i].index_data.size() / (is_index_16 ? 2 : 4);
-				p_surface->lods[i].index_buffer = RD::get_singleton()->index_buffer_create(index_count, is_index_16 ? RD::INDEX_BUFFER_FORMAT_UINT16 : RD::INDEX_BUFFER_FORMAT_UINT32, source.lods[i].index_data, false, buffer_flags);
-				p_surface->lods[i].index_buffer_size = source.lods[i].index_data.size();
-				p_surface->lods[i].index_array = RD::get_singleton()->index_array_create(p_surface->lods[i].index_buffer, 0, index_count);
-			}
-		}
-		p_surface->gpu_buffers_discarded = false;
+	if (p_surface->lod_count) {
+		memdelete_arr(p_surface->lods);
+		p_surface->lods = nullptr;
+		p_surface->lod_count = 0;
 	}
-	_mesh_surface_mark_exact_buffers_used(p_surface);
+	if (p_surface->blend_shape_buffer.is_valid()) {
+		RD::get_singleton()->free_rid(p_surface->blend_shape_buffer);
+		p_surface->blend_shape_buffer = RID();
+		p_surface->blend_shape_buffer_size = 0;
+	}
+	p_surface->source_data.vertex_data = Vector<uint8_t>();
+	p_surface->source_data.attribute_data = Vector<uint8_t>();
+	p_surface->source_data.skin_data = Vector<uint8_t>();
+	p_surface->source_data.index_data = Vector<uint8_t>();
+	p_surface->source_data.blend_shape_data = Vector<uint8_t>();
+	p_surface->source_data.lods.clear();
+	p_surface->source_data.micro_geometry_mapped = true;
+	p_surface->keep_source_data = true;
+	p_surface->source_arrays_dropped = true;
 }
 
 void MeshStorage::mesh_set_micro_geometry(RID p_mesh, const Ref<MicroGeometryData> &p_data) {
@@ -1090,6 +1020,9 @@ void MeshStorage::mesh_set_micro_geometry(RID p_mesh, const Ref<MicroGeometryDat
 	}
 	_invalidate_micro_geometry(mesh);
 	if (p_data.is_valid()) {
+		for (const MicroGeometryData::Surface &surface : p_data->get_metadata().surfaces) {
+			_mesh_surface_drop_source_arrays(mesh->surfaces[surface.source_surface]);
+		}
 		asset = micro_geometry_storage.acquire(p_data);
 		if (asset.is_null()) {
 			mesh->pending_micro_geometry = p_data;
@@ -1102,28 +1035,10 @@ void MeshStorage::mesh_set_micro_geometry(RID p_mesh, const Ref<MicroGeometryDat
 	}
 	mesh->micro_geometry = p_data;
 	mesh->micro_geometry_asset = asset;
-	MutexLock lock(exact_buffers_mutex);
 	if (asset.is_valid()) {
+		MutexLock lock(surface_data_mutex);
 		for (uint32_t i = 0; i < mesh->surface_count; i++) {
-			Mesh::Surface *mesh_surface = mesh->surfaces[i];
-			mesh_surface->keep_source_data = true;
-			bool mapped = false;
-			for (const MicroGeometryData::Surface &surface : p_data->get_metadata().surfaces) {
-				if (surface.source_surface == i) {
-					mapped = true;
-					break;
-				}
-			}
-			mesh_surface->micro_geometry_mapped = mapped;
-			if (mapped) {
-				_mesh_surface_discard_gpu_buffers(mesh_surface);
-			} else {
-				_mesh_surface_ensure_gpu_buffers(mesh_surface);
-			}
-		}
-	} else {
-		for (uint32_t i = 0; i < mesh->surface_count; i++) {
-			_mesh_surface_ensure_gpu_buffers(mesh->surfaces[i]);
+			mesh->surfaces[i]->keep_source_data = true;
 		}
 	}
 	mesh->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MESH);
@@ -1134,13 +1049,6 @@ void MeshStorage::_invalidate_micro_geometry(Mesh *p_mesh) {
 		pending_micro_geometry.erase(p_mesh->pending_micro_geometry_id);
 		p_mesh->pending_micro_geometry_id = RID();
 		p_mesh->pending_micro_geometry.unref();
-	}
-	{
-		MutexLock lock(exact_buffers_mutex);
-		for (uint32_t i = 0; i < p_mesh->surface_count; i++) {
-			p_mesh->surfaces[i]->micro_geometry_mapped = false;
-			_mesh_surface_untrack_exact_buffers(p_mesh->surfaces[i]);
-		}
 	}
 	if (p_mesh->micro_geometry_asset.is_valid()) {
 		micro_geometry_storage.release(p_mesh->micro_geometry_asset);
@@ -2661,7 +2569,6 @@ void MeshStorage::_update_dirty_multimeshes() {
 			}
 		}
 	}
-	_retire_unused_exact_buffers();
 	while (multimesh_dirty_list) {
 		MultiMesh *multimesh = multimesh_dirty_list;
 
