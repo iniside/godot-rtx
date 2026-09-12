@@ -667,6 +667,7 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 		grid_names.insert(entry.key);
 	}
 	const bool complete = p_scene.storage_path != p_path;
+	HashSet<String> copied;
 	if (complete && !p_scene.storage_path.is_empty()) {
 		const String source = scene_directory(p_scene.storage_path).path_join("cells");
 		if (DirAccess::dir_exists_absolute(source)) {
@@ -686,6 +687,7 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 					if (error != OK) {
 						return error;
 					}
+					copied.insert(relative);
 				}
 			}
 		}
@@ -697,15 +699,26 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 	}
 	Vector<EntityId> ids = p_scene.catalog.get_ids();
 	ids.sort_custom<EntityIdSorter>();
+	auto add_existing = [&](EntityId p_id, const EntityScene::Section &p_section) {
+		if (p_section.path.is_empty() || existing.files.has(p_id)) {
+			return;
+		}
+		if (complete && !copied.has(p_section.path.get_base_dir())) {
+			return;
+		}
+		existing.files.insert(p_id, { p_section.path, p_section.cluster });
+		if (!p_section.cluster) {
+			existing.paths.push_back(p_section.path);
+		}
+	};
 	for (EntityId id : ids) {
 		const EntityScene::Section *section = p_scene.sections.getptr(id);
-		if (!section || section->path.is_empty() || existing.files.has(id)) {
-			continue;
+		if (section) {
+			add_existing(id, *section);
 		}
-		existing.files.insert(id, { section->path, section->cluster });
-		if (!section->cluster) {
-			existing.paths.push_back(section->path);
-		}
+	}
+	for (const KeyValue<EntityId, EntityScene::Section> &entry : p_scene.deleted_storage) {
+		add_existing(entry.key, entry.value);
 	}
 	HashSet<EntityId, EntityIdHasher> referenced;
 	Vector<String> instance_keys;
@@ -1122,6 +1135,7 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 	p_scene._relocate(p_path);
 	p_scene.revision = revision;
 	p_scene.dirty.clear();
+	p_scene.deleted_storage.clear();
 	error = p_scene._assign_cells(ids);
 	ERR_FAIL_COND_V_MSG(error != OK, error, "Entity scene has an invalid storage cell: " + directory + " (" + p_scene.get_last_error() + ")");
 	return OK;

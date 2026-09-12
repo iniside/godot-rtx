@@ -1,6 +1,5 @@
 #include "entity_scene_streaming.h"
 
-#include "core/math/math_funcs.h"
 #include "core/os/os.h"
 #include "core/string/print_string.h"
 
@@ -16,11 +15,6 @@ struct CellCandidateSorter {
 		return p_a.distance < p_b.distance;
 	}
 };
-
-int32_t cell_index(double p_value, double p_size) {
-	const double index = Math::floor(p_value / p_size);
-	return int32_t(CLAMP(index, double(INT32_MIN), double(INT32_MAX)));
-}
 
 double camera_distance(const AABB &p_aabb, const Vector<Vector3> &p_cameras) {
 	const Vector3 begin = p_aabb.position;
@@ -90,19 +84,16 @@ Error EntitySceneStreaming::step(EntityScene &p_scene, const Vector<Vector3> &p_
 				continue;
 			}
 			for (const Vector3 &camera : p_cameras) {
+				const Vector3 reach(range, range, range);
+				const EntityScene::CellKey low = p_scene.cell_for_position(grid, camera - reach);
+				const EntityScene::CellKey high = p_scene.cell_for_position(grid, camera + reach);
 				EntityScene::CellKey cell;
 				cell.grid = grid;
-				const int32_t min_x = cell_index(double(camera.x) - range, size);
-				const int32_t max_x = cell_index(double(camera.x) + range, size);
-				const int32_t min_y = cell_index(double(camera.y) - range, size);
-				const int32_t max_y = cell_index(double(camera.y) + range, size);
-				const int32_t min_z = cell_index(double(camera.z) - range, size);
-				const int32_t max_z = cell_index(double(camera.z) + range, size);
-				for (int64_t x = min_x; x <= max_x; x++) {
+				for (int64_t x = low.x; x <= high.x; x++) {
 					cell.x = int32_t(x);
-					for (int64_t y = min_y; y <= max_y; y++) {
+					for (int64_t y = low.y; y <= high.y; y++) {
 						cell.y = int32_t(y);
-						for (int64_t z = min_z; z <= max_z; z++) {
+						for (int64_t z = low.z; z <= high.z; z++) {
 							cell.z = int32_t(z);
 							if (visited.has(cell)) {
 								continue;

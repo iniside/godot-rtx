@@ -199,6 +199,7 @@ String EntityScene::_cell_path(const CellKey &p_cell) const {
 }
 
 bool EntityScene::cell_exists(const CellKey &p_cell, int *r_probe_budget) {
+	ERR_FAIL_COND_V(_owner() != OK, false);
 	if (resident_cells.has(p_cell) || cells.has(p_cell) || _is_cell_in_flight(p_cell)) {
 		return true;
 	}
@@ -901,6 +902,13 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, const Vector<EntityId>
 			}
 			sections.insert(id, section);
 		} else if (action == SECTION_ERASE) {
+			const Section *previous = sections.getptr(id);
+			if (deleted && previous && !previous->path.is_empty()) {
+				Section storage;
+				storage.path = previous->path;
+				storage.cluster = previous->cluster;
+				deleted_storage.insert(id, storage);
+			}
 			sections.erase(id);
 		}
 		if (p_dirty) {
@@ -1217,6 +1225,12 @@ Error EntityScene::_dispatch_cell(const CellKey &p_cell) {
 			}
 		}
 	}
+	const String relative = EntitySceneIO::cell_directory(p_cell.grid, p_cell.x, p_cell.y, p_cell.z);
+	for (const KeyValue<EntityId, Section> &entry : deleted_storage) {
+		if (entry.value.path.get_base_dir() == relative) {
+			job->skip.insert(entry.key);
+		}
+	}
 	job->directory = _cell_path(p_cell);
 	if (job->directory.is_empty() || !DirAccess::dir_exists_absolute(job->directory)) {
 		if (cells.has(p_cell)) {
@@ -1233,7 +1247,7 @@ Error EntityScene::_dispatch_cell(const CellKey &p_cell) {
 		memdelete(job);
 		return OK;
 	}
-	job->relative = EntitySceneIO::cell_directory(p_cell.grid, p_cell.x, p_cell.y, p_cell.z);
+	job->relative = relative;
 	job->globals = globals;
 	job->task = WorkerThreadPool::get_singleton()->add_native_task(_run_cell_job, job, false, "Entity cell load");
 	cell_jobs.push_back(job);
@@ -1372,9 +1386,9 @@ void EntityScene::_run_cell_job(void *p_job) {
 	job->worker_usec = OS::get_singleton()->get_ticks_usec() - began;
 }
 
-bool EntityScene::_revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids) {
+Error EntityScene::_revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids) {
 	if (resident_cells.has(p_job.result.key)) {
-		return false;
+		return ERR_BUSY;
 	}
 	HashSet<EntityId, EntityIdHasher> inside;
 	for (const PreparedEntity &entity : p_job.result.entities) {
@@ -1385,7 +1399,7 @@ bool EntityScene::_revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids) {
 		EntityId parent = entity.parent.id;
 		while (parent.is_valid() && !inside.has(parent)) {
 			if (resolve(parent).state != EntityReferenceState::RESIDENT) {
-				return false;
+				return ERR_BUSY;
 			}
 			PreparedEntity live;
 			live.id = parent;
@@ -1407,7 +1421,7 @@ bool EntityScene::_revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids) {
 		const EntityCatalog::Record *record = catalog.records.getptr(entity.id);
 		if (record) {
 			if (record->deleted != entity.deleted) {
-				return false;
+				return ERR_INVALID_DATA;
 			}
 			if (resolve(entity.id).state == EntityReferenceState::RESIDENT) {
 				entity.live = true;
@@ -1419,7 +1433,7 @@ bool EntityScene::_revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids) {
 		}
 		r_ids.push_back(entity.id);
 	}
-	return true;
+	return OK;
 }
 
 Error EntityScene::_load_cell_assets(CellJob &p_job) {
@@ -1457,9 +1471,14 @@ Error EntityScene::_commit_cell(CellJob &p_job, Stats &r_stats) {
 		return _fail(p_job.result.failing, p_job.result.failing_field, p_job.result.error);
 	}
 	Vector<EntityId> ids;
-	if (!_revalidate_job(p_job, ids)) {
+	const Error stale = _revalidate_job(p_job, ids);
+	if (stale != OK) {
 		r_stats.jobs_discarded++;
 		cell_assets.erase(p_job.result.key);
+		if (stale != ERR_BUSY) {
+			failed_cells.insert(p_job.result.key, revision);
+			return _fail(p_job.result.failing, EntitySceneIO::cell_directory(p_job.result.key.grid, p_job.result.key.x, p_job.result.key.y, p_job.result.key.z), stale);
+		}
 		return OK;
 	}
 	const PreparedSet set(p_job.result.entities);

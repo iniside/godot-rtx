@@ -143,6 +143,7 @@ private:
 	String cluster_path;
 	Dictionary cluster_records;
 	HashMap<EntityId, Section, EntityIdHasher> sections;
+	HashMap<EntityId, Section, EntityIdHasher> deleted_storage;
 	HashMap<CellKey, HashSet<EntityId, EntityIdHasher>, CellKeyHasher> cells;
 	HashMap<EntityId, CellKey, EntityIdHasher> cell_of;
 	HashSet<EntityId, EntityIdHasher> globals;
@@ -209,7 +210,7 @@ private:
 	static Error _prepare_stored(EntityId p_id, const Dictionary &p_record, PreparedEntity &r_prepared, String &r_field);
 	static Error _read_cell(CellJob &p_job);
 	static void _run_cell_job(void *p_job);
-	bool _revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids);
+	Error _revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids);
 	Error _commit_cell(CellJob &p_job, Stats &r_stats);
 	Error _fail(EntityId p_id, const String &p_field, Error p_error);
 	void _relocate(const String &p_path);
