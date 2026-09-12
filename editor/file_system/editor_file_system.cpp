@@ -49,6 +49,7 @@
 #include "editor/script/script_editor_plugin.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/settings/project_settings_editor.h"
+#include "scene/entity/entity_scene_io.h"
 #include "scene/main/scene_tree.h"
 #include "scene/resources/packed_scene.h"
 #include "servers/display/display_server.h"
@@ -930,8 +931,10 @@ bool EditorFileSystem::_update_scan_actions() {
 						WARN_PRINT(vformat("Duplicate UID detected for Resource at \"%s\".\nOld Resource path: \"%s\". The new file UID was changed automatically.", new_file_path, old_path));
 						ia.new_file->uid = new_id;
 					} else {
-						// Re-assign the UID to file, just in case it was pulled from cache.
-						ResourceSaver::set_uid(new_file_path, existing_id);
+						if (EntitySceneIO::companion_directory(new_file_path).is_empty()) {
+							// Re-assign the UID to file, just in case it was pulled from cache.
+							ResourceSaver::set_uid(new_file_path, existing_id);
+						}
 
 						if (id_known) {
 							ResourceUID::get_singleton()->set_id(existing_id, new_file_path);
@@ -3126,6 +3129,31 @@ void EditorFileSystem::reimport_file_with_custom_parameters(const String &p_file
 
 Error EditorFileSystem::_copy_file(const String &p_from, const String &p_to) {
 	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_RESOURCES);
+	const String companion = EntitySceneIO::companion_directory(p_from);
+	if (!companion.is_empty()) {
+		const String new_companion = EntitySceneIO::companion_directory(p_to);
+		if (new_companion.is_empty()) {
+			return ERR_FILE_UNRECOGNIZED;
+		}
+		Error err = da->copy(p_from, p_to);
+		if (err != OK) {
+			return err;
+		}
+		if (da->dir_exists(companion)) {
+			err = da->copy_dir(companion, new_companion);
+			if (err != OK) {
+				da->remove(p_to);
+				return err;
+			}
+		}
+		const ResourceUID::ID res_uid = ResourceUID::get_singleton()->create_id_for_path(p_to);
+		err = ResourceSaver::set_uid(p_to, res_uid);
+		if (err != OK) {
+			return err;
+		}
+		ResourceUID::get_singleton()->add_id(res_uid, p_to);
+		return OK;
+	}
 	if (FileAccess::exists(p_from + ".import")) {
 		Error err = da->copy(p_from, p_to);
 		if (err != OK) {

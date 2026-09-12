@@ -377,6 +377,16 @@ String EntitySceneIO::scene_directory(const String &p_path) {
 	return p_path.get_basename();
 }
 
+String EntitySceneIO::companion_directory(const String &p_path) {
+	if (p_path.get_extension().to_lower() != "escn" || is_child_path(p_path)) {
+		return String();
+	}
+	if (ResourceLoader::get_resource_type(p_path) != "EntityScene") {
+		return String();
+	}
+	return scene_directory(p_path);
+}
+
 bool EntitySceneIO::is_child_path(const String &p_path) {
 	const String name = p_path.get_file();
 	if (name.ends_with(".cluster.escn")) {
@@ -1088,7 +1098,9 @@ Error ResourceFormatSaverEntityScene::save(const Ref<Resource> &p_resource, cons
 }
 
 Error ResourceFormatSaverEntityScene::set_uid(const String &p_path, ResourceUID::ID p_uid) {
-	ERR_FAIL_COND_V(p_path.get_extension().to_lower() != "escn" || EntitySceneIO::is_child_path(p_path), ERR_FILE_UNRECOGNIZED);
+	if (p_path.get_extension().to_lower() != "escn" || EntitySceneIO::is_child_path(p_path)) {
+		return ERR_FILE_UNRECOGNIZED;
+	}
 	String text;
 	Error error = read_text(p_path, text);
 	if (error != OK) {

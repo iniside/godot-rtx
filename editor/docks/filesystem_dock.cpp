@@ -67,6 +67,7 @@
 #include "editor/shader/shader_create_dialog.h"
 #include "editor/themes/editor_scale.h"
 #include "editor/themes/editor_theme_manager.h"
+#include "scene/entity/entity_scene_io.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/item_list.h"
 #include "scene/gui/label.h"
@@ -74,6 +75,11 @@
 #include "scene/gui/progress_bar.h"
 #include "scene/resources/packed_scene.h"
 #include "servers/display/display_server.h"
+
+static bool has_companion_directory(const String &p_path) {
+	const String companion = EntitySceneIO::companion_directory(p_path);
+	return !companion.is_empty() && DirAccess::dir_exists_absolute(companion);
+}
 
 Control *FileSystemTree::make_custom_tooltip(const String &p_text) const {
 	TreeItem *item = get_item_at_position(get_local_mouse_position());
@@ -1559,10 +1565,29 @@ void FileSystemDock::_try_move_item(const FileOrFolder &p_item, const String &p_
 		_get_all_items_in_dir(EditorFileSystem::get_singleton()->get_filesystem_path(old_path), file_changed_paths, folder_changed_paths);
 	}
 
+	const String old_companion = p_item.is_file && has_companion_directory(old_path) ? EntitySceneIO::companion_directory(old_path) : String();
+	const String new_companion = old_companion.is_empty() ? String() : EntitySceneIO::companion_directory(new_path);
+	if (!old_companion.is_empty() && (new_companion.is_empty() || DirAccess::dir_exists_absolute(new_companion))) {
+		EditorNode::get_singleton()->add_io_error(TTR("Error moving:") + "\n" + old_companion + "\n");
+		return;
+	}
+
 	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_RESOURCES);
 	print_verbose("Moving " + old_path + " -> " + new_path);
 	Error err = da->rename(old_path, new_path);
 	if (err == OK) {
+		if (!old_companion.is_empty()) {
+			print_verbose("Moving " + old_companion + " -> " + new_companion);
+			err = da->rename(old_companion, new_companion);
+			if (err != OK) {
+				if (da->rename(new_path, old_path) != OK) {
+					EditorNode::get_singleton()->add_io_error(TTR("Error moving:") + "\n" + new_path + "\n");
+				}
+				EditorNode::get_singleton()->add_io_error(TTR("Error moving:") + "\n" + old_companion + "\n");
+				return;
+			}
+		}
+
 		// Move/Rename any corresponding import settings too.
 		if (p_item.is_file && FileAccess::exists(old_path + ".import")) {
 			err = da->rename(old_path + ".import", new_path + ".import");
@@ -1581,11 +1606,16 @@ void FileSystemDock::_try_move_item(const FileOrFolder &p_item, const String &p_
 		// Update scene if it is open.
 		for (int i = 0; i < file_changed_paths.size(); ++i) {
 			String new_item_path = p_item.is_file ? new_path : file_changed_paths[i].replace_first(old_path, new_path);
-			if (ResourceLoader::get_resource_type(new_item_path) == "PackedScene" && EditorNode::get_singleton()->is_scene_open(file_changed_paths[i])) {
+			const String new_item_type = ResourceLoader::get_resource_type(new_item_path);
+			if ((new_item_type == "PackedScene" || new_item_type == "EntityScene") && EditorNode::get_singleton()->is_scene_open(file_changed_paths[i])) {
 				EditorData *ed = &EditorNode::get_editor_data();
 				for (int j = 0; j < ed->get_edited_scene_count(); j++) {
 					if (ed->get_scene_path(j) == file_changed_paths[i]) {
-						ed->get_edited_scene_root(j)->set_scene_file_path(new_item_path);
+						if (ed->get_scene_document(j).is_valid()) {
+							ed->set_scene_path(j, new_item_path);
+						} else {
+							ed->get_edited_scene_root(j)->set_scene_file_path(new_item_path);
+						}
 						EditorNode::get_singleton()->save_editor_layout_delayed();
 						break;
 					}
@@ -1765,7 +1795,7 @@ String FileSystemDock::_get_unique_name(const FileOrFolder &p_entry, const Strin
 
 	int exist_counter = 1;
 	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_RESOURCES);
-	while (da->file_exists(new_path) || da->dir_exists(new_path)) {
+	while (da->file_exists(new_path) || da->dir_exists(new_path) || has_companion_directory(new_path)) {
 		exist_counter++;
 		new_path = vformat(new_path_base, exist_counter);
 	}
@@ -1909,7 +1939,7 @@ void FileSystemDock::_rename_operation_confirm() {
 	// Present a more user friendly warning for name conflict.
 	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_RESOURCES);
 
-	bool new_exist = (da->file_exists(new_path) || da->dir_exists(new_path));
+	bool new_exist = (da->file_exists(new_path) || da->dir_exists(new_path) || has_companion_directory(new_path));
 	if (!da->is_case_sensitive(new_path.get_base_dir())) {
 		new_exist = new_exist && (new_path.to_lower() != old_path.to_lower());
 	}
@@ -2028,7 +2058,7 @@ Vector<String> FileSystemDock::_check_existing() {
 		String old_path = item.path.trim_suffix("/");
 		String new_path = to_move_path.path_join(old_path.get_file());
 
-		if ((item.is_file && FileAccess::exists(new_path)) || (!item.is_file && DirAccess::exists(new_path))) {
+		if ((item.is_file && (FileAccess::exists(new_path) || has_companion_directory(new_path))) || (!item.is_file && DirAccess::exists(new_path))) {
 			conflicting_items.push_back(old_path);
 		}
 	}

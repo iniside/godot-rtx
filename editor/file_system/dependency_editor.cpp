@@ -42,6 +42,7 @@
 #include "editor/gui/editor_quick_open_dialog.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
+#include "scene/entity/entity_scene_io.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/item_list.h"
 #include "scene/gui/line_edit.h"
@@ -747,6 +748,10 @@ void DependencyRemoveDialog::show(const Vector<String> &p_folders, const Vector<
 	for (int i = 0; i < p_files.size(); ++i) {
 		all_remove_files[p_files[i]] = String();
 		files_to_delete.push_back(p_files[i]);
+		const String companion = EntitySceneIO::companion_directory(p_files[i]);
+		if (!companion.is_empty() && DirAccess::dir_exists_absolute(companion)) {
+			dirs_to_delete.push_back(companion + "/");
+		}
 	}
 
 	_show_files_to_delete_list();

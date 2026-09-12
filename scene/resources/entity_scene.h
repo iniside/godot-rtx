@@ -140,8 +140,6 @@ public:
 	Vector<String> get_grid_names() const;
 	double get_grid_size(const String &p_grid) const;
 	double get_grid_range(const String &p_grid) const;
-	String get_default_grid() const { return default_grid; }
-	double get_default_range() const { return default_range; }
 	String get_entity_name(EntityId p_id) const;
 	Error load_subset(const Vector<EntityId> &p_ids);
 	Error unload_subset(const Vector<EntityId> &p_ids);

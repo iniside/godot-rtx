@@ -160,6 +160,7 @@
 #include "scene/2d/node_2d.h"
 #include "scene/3d/bone_attachment_3d.h"
 #include "scene/animation/animation_tree.h"
+#include "scene/entity/entity_scene_io.h"
 #include "scene/entity/entity_world.h"
 #include "scene/gui/color_picker.h"
 #include "scene/gui/dialogs.h"
@@ -3431,6 +3432,7 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 		case SCENE_OPEN_SCENE: {
 			file->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_FILE);
 			List<String> extensions;
+			ResourceLoader::get_recognized_extensions_for_type("EntityScene", &extensions);
 			ResourceLoader::get_recognized_extensions_for_type("PackedScene", &extensions);
 			file->clear_filters();
 			for (const String &extension : extensions) {
@@ -3543,6 +3545,24 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 				scene_idx = scene_tabs->get_option_tab();
 				current_menu_option = SCENE_TAB_SAVE_SCENE;
 			}
+			const int document_idx = scene_idx < 0 ? editor_data.get_edited_scene() : scene_idx;
+			if (editor_data.get_scene_document(document_idx).is_valid()) {
+				file->set_file_mode(EditorFileDialog::FILE_MODE_SAVE_FILE);
+				List<String> native_extensions;
+				ResourceLoader::get_recognized_extensions_for_type("EntityScene", &native_extensions);
+				file->clear_filters();
+				for (const String &extension : native_extensions) {
+					file->add_filter("*." + extension, extension.to_upper());
+				}
+				const String document_path = editor_data.get_scene_path(document_idx);
+				if (!document_path.is_empty()) {
+					file->set_current_path(document_path);
+				}
+				file->set_title(TTR("Save Scene As..."));
+				file->popup_file_dialog();
+				break;
+			}
+
 			Node *scene = editor_data.get_edited_scene_root(scene_idx);
 			if (!scene) {
 				if (p_option == SCENE_SAVE_SCENE) {
@@ -3965,6 +3985,7 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 		case SETTINGS_PICK_MAIN_SCENE: {
 			file->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_FILE);
 			List<String> extensions;
+			ResourceLoader::get_recognized_extensions_for_type("EntityScene", &extensions);
 			ResourceLoader::get_recognized_extensions_for_type("PackedScene", &extensions);
 			file->clear_filters();
 			for (const String &extension : extensions) {
@@ -5431,7 +5452,12 @@ void EditorNode::_open_recent_scene(int p_idx) {
 		Array rc = EditorSettings::get_singleton()->get_project_metadata("recent_files", "scenes", Array());
 		ERR_FAIL_INDEX(p_idx, rc.size());
 
-		if (open_scene(rc[p_idx]) != OK) {
+		const String companion = EntitySceneIO::companion_directory(rc[p_idx]);
+		const bool missing_companion = !companion.is_empty() && !DirAccess::dir_exists_absolute(companion);
+		if (missing_companion) {
+			WARN_PRINT("Skipping native scene with a missing directory: " + companion);
+		}
+		if (missing_companion || open_scene(rc[p_idx]) != OK) {
 			rc.remove_at(p_idx);
 			EditorSettings::get_singleton()->set_project_metadata("recent_files", "scenes", rc);
 			_update_recent_scenes();
@@ -6416,9 +6442,15 @@ void EditorNode::_load_open_scenes_from_config(Ref<ConfigFile> p_layout) {
 
 	const PackedStringArray scenes = p_layout->get_value(EDITOR_NODE_CONFIG_SECTION, "open_scenes");
 	for (const String &scene_path : scenes) {
-		if (FileAccess::exists(scene_path)) {
-			load_scene(scene_path);
+		if (!FileAccess::exists(scene_path)) {
+			continue;
 		}
+		const String companion = EntitySceneIO::companion_directory(scene_path);
+		if (!companion.is_empty() && !DirAccess::dir_exists_absolute(companion)) {
+			WARN_PRINT("Skipping native scene with a missing directory: " + companion);
+			continue;
+		}
+		load_scene(scene_path);
 	}
 
 	bool current_scene_found = false;
