@@ -2351,7 +2351,7 @@ void ArrayMesh::_micro_geometry_changed() {
 }
 
 bool ArrayMesh::_is_fully_micro_geometry_mapped() const {
-	if (micro_geometry.is_null() || surfaces.is_empty()) {
+	if (micro_geometry.is_null() || surfaces.is_empty() || blend_shapes.size()) {
 		return false;
 	}
 	Ref<MicroGeometryData> data = micro_geometry->get_data();
@@ -2360,6 +2360,9 @@ bool ArrayMesh::_is_fully_micro_geometry_mapped() const {
 	}
 	const Vector<MicroGeometryData::Surface> &mapped = data->get_metadata().surfaces;
 	for (int i = 0; i < surfaces.size(); i++) {
+		if (surfaces[i].format & (ARRAY_FORMAT_BONES | ARRAY_FORMAT_WEIGHTS)) {
+			return false;
+		}
 		bool found = false;
 		for (int j = 0; j < mapped.size() && !found; j++) {
 			found = mapped[j].source_surface == uint32_t(i);

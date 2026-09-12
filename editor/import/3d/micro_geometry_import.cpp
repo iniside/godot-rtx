@@ -209,7 +209,6 @@ Error permute_arrays(Array &r_arrays, const Vector<uint32_t> &p_permutation) {
 
 Error renumber_surfaces(const Ref<ArrayMesh> &p_mesh, const Ref<ImporterMesh> &p_source, const Vector<MicroGeometryData::Permutation> &p_permutations) {
 	ERR_FAIL_COND_V(p_mesh->get_blend_shape_count() != 0, ERR_INVALID_DATA);
-	bool shadow = p_mesh->get_shadow_mesh().is_valid();
 	int surface_count = p_source->get_surface_count();
 	p_mesh->clear_surfaces();
 	for (int i = 0; i < surface_count; i++) {
@@ -272,16 +271,7 @@ Error renumber_surfaces(const Ref<ArrayMesh> &p_mesh, const Ref<ImporterMesh> &p
 			p_mesh->surface_set_name(i, name);
 		}
 	}
-	if (shadow) {
-		if (uint32_t(p_permutations.size()) == uint32_t(surface_count)) {
-			p_mesh->set_shadow_mesh(Ref<ArrayMesh>());
-		} else {
-			Ref<ImporterMesh> renumbered = ImporterMesh::from_mesh(p_mesh);
-			renumbered->create_shadow_mesh();
-			Ref<ImporterMesh> shadow_mesh = renumbered->get_shadow_mesh();
-			p_mesh->set_shadow_mesh(shadow_mesh.is_valid() ? shadow_mesh->get_mesh() : Ref<ArrayMesh>());
-		}
-	}
+	p_mesh->set_shadow_mesh(Ref<ArrayMesh>());
 	return OK;
 }
 

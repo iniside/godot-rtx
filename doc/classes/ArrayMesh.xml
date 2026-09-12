@@ -227,6 +227,7 @@
 		<member name="shadow_mesh" type="ArrayMesh" setter="set_shadow_mesh" getter="get_shadow_mesh">
 			An optional mesh which can be used for rendering shadows and the depth prepass. Can be used to increase performance by supplying a mesh with fused vertices and only vertex position data (without normals, UVs, colors, etc.).
 			[b]Note:[/b] This mesh must have exactly the same vertex positions as the source mesh (including the source mesh's LODs, if present). If vertex positions differ, then the mesh will not draw correctly.
+			[b]Note:[/b] A mesh whose every surface is mapped to [member micro_geometry] keeps no shadow mesh; assigning one stores [code]null[/code], because shadows are rendered from the cluster geometry.
 		</member>
 	</members>
 </class>
