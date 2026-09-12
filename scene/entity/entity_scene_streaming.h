@@ -5,6 +5,7 @@
 class EntitySceneStreaming {
 public:
 	static constexpr int DEFAULT_BUDGET = 256;
+	static constexpr int PROBE_BUDGET = 4096;
 
 	struct Stats {
 		EntityScene::Stats load;

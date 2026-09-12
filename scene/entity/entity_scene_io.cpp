@@ -1,7 +1,6 @@
 #include "entity_scene_io.h"
 
 #include "entity_scene_commands.h"
-#include "entity_transform_system.h"
 
 #include "core/config/project_settings.h"
 #include "core/io/config_file.h"
@@ -133,10 +132,6 @@ bool cell_name_is_valid(const String &p_name) {
 	return true;
 }
 
-String cell_directory(const String &p_grid, int64_t p_x, int64_t p_y, int64_t p_z) {
-	return "cells/" + p_grid + "/" + itos(p_x) + "_" + itos(p_y) + "_" + itos(p_z);
-}
-
 Error read_entity_directory(const String &p_directory, const String &p_relative, bool p_parse, StorageTree &r_tree) {
 	const String absolute = p_directory.path_join(p_relative);
 	if (!DirAccess::dir_exists_absolute(absolute)) {
@@ -206,17 +201,10 @@ Error collect_entity_directories(const String &p_directory, const HashSet<String
 	return OK;
 }
 
-Error read_tree(const String &p_directory, const HashSet<String> &p_grids, bool p_parse, StorageTree &r_tree) {
-	Vector<String> directories;
-	Error error = collect_entity_directories(p_directory, p_grids, directories);
+Error read_tree(const String &p_directory, bool p_parse, StorageTree &r_tree) {
+	Error error = read_entity_directory(p_directory, "global", p_parse, r_tree);
 	if (error != OK) {
 		return error;
-	}
-	for (const String &relative : directories) {
-		error = read_entity_directory(p_directory, relative, p_parse, r_tree);
-		if (error != OK) {
-			return error;
-		}
 	}
 	const String prefabs = p_directory.path_join("prefabs");
 	if (DirAccess::dir_exists_absolute(prefabs)) {
@@ -382,6 +370,10 @@ void scan_prefab_dependencies(const String &p_directory, HashMap<String, String>
 
 } // namespace
 
+String EntitySceneIO::cell_directory(const String &p_grid, int64_t p_x, int64_t p_y, int64_t p_z) {
+	return "cells/" + p_grid + "/" + itos(p_x) + "_" + itos(p_y) + "_" + itos(p_z);
+}
+
 Error EntitySceneIO::encode(const Variant &p_value, String &r_text) {
 	auto validate = [](auto &p_self, const Variant &p_entry, int p_depth) -> Error {
 		if (p_depth > 64) {
@@ -494,7 +486,6 @@ Error EntitySceneIO::load(const String &p_path, Ref<EntityScene> &r_scene) {
 	ERR_FAIL_COND_V_MSG(!default_range.is_num() || double(default_range) <= 0.0, ERR_FILE_CORRUPT, "Entity scene has no valid default range: " + p_path);
 	scene->default_range = default_range;
 	scene->grids.clear();
-	HashSet<String> grid_names;
 	if (config->has_section("grids")) {
 		for (const String &name : config->get_section_keys("grids")) {
 			ERR_FAIL_COND_V_MSG(!grid_name_is_valid(name), ERR_FILE_CORRUPT, "Invalid grid name \"" + name + "\": " + p_path);
@@ -506,7 +497,6 @@ Error EntitySceneIO::load(const String &p_path, Ref<EntityScene> &r_scene) {
 			const Variant range = entry.get("range", 0.0);
 			ERR_FAIL_COND_V_MSG(!range.is_num() || double(range) < 0.0, ERR_FILE_CORRUPT, "Grid \"" + name + "\" has no valid range: " + p_path);
 			scene->grids.insert(name, { double(size), double(range) });
-			grid_names.insert(name);
 		}
 	}
 	ERR_FAIL_COND_V_MSG(!scene->grids.has(scene->default_grid), ERR_FILE_CORRUPT, "Entity scene default grid \"" + scene->default_grid + "\" is not configured: " + p_path);
@@ -517,7 +507,7 @@ Error EntitySceneIO::load(const String &p_path, Ref<EntityScene> &r_scene) {
 		}
 	}
 	StorageTree tree;
-	error = read_tree(directory, grid_names, true, tree);
+	error = read_tree(directory, true, tree);
 	if (error != OK) {
 		return error;
 	}
@@ -634,7 +624,7 @@ Error EntitySceneIO::load(const String &p_path, Ref<EntityScene> &r_scene) {
 	if (error != OK) {
 		return error;
 	}
-	error = scene->_rebuild_cells();
+	error = scene->_assign_cells(scene->catalog.get_ids());
 	ERR_FAIL_COND_V_MSG(error != OK, error, "Entity scene has an invalid storage cell: " + directory + " (" + scene->get_last_error() + ")");
 	r_scene = scene;
 	return OK;
@@ -676,13 +666,47 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 	for (const KeyValue<String, EntityScene::Grid> &entry : p_scene.grids) {
 		grid_names.insert(entry.key);
 	}
+	const bool complete = p_scene.storage_path != p_path;
+	if (complete && !p_scene.storage_path.is_empty()) {
+		const String source = scene_directory(p_scene.storage_path).path_join("cells");
+		if (DirAccess::dir_exists_absolute(source)) {
+			Ref<DirAccess> access = DirAccess::create_for_path(source);
+			ERR_FAIL_COND_V_MSG(access.is_null(), ERR_CANT_CREATE, "Cannot read entity scene cells: " + source);
+			for (const String &grid : DirAccess::get_directories_at(source)) {
+				ERR_FAIL_COND_V_MSG(!grid_names.has(grid), ERR_FILE_CORRUPT, "Entity scene has no grid named \"" + grid + "\": " + source.path_join(grid));
+				const String grid_directory = source.path_join(grid);
+				for (const String &name : DirAccess::get_directories_at(grid_directory)) {
+					ERR_FAIL_COND_V_MSG(!cell_name_is_valid(name), ERR_FILE_CORRUPT, "Invalid cell directory name: " + grid_directory.path_join(name));
+					const String relative = "cells/" + grid + "/" + name;
+					EntityScene::CellKey key;
+					if (EntityScene::_parse_cell_directory(relative, key) && p_scene.resident_cells.has(key)) {
+						continue;
+					}
+					error = access->copy_dir(grid_directory.path_join(name), directory.path_join(relative));
+					if (error != OK) {
+						return error;
+					}
+				}
+			}
+		}
+	}
 	StorageTree existing;
-	error = read_tree(directory, grid_names, false, existing);
+	error = read_tree(directory, false, existing);
 	if (error != OK) {
 		return error;
 	}
 	Vector<EntityId> ids = p_scene.catalog.get_ids();
 	ids.sort_custom<EntityIdSorter>();
+	for (EntityId id : ids) {
+		const EntityScene::Section *section = p_scene.sections.getptr(id);
+		if (!section || section->path.is_empty() || existing.files.has(id)) {
+			continue;
+		}
+		existing.files.insert(id, { section->path, section->cluster });
+		if (!section->cluster) {
+			existing.paths.push_back(section->path);
+		}
+	}
 	HashSet<EntityId, EntityIdHasher> referenced;
 	Vector<String> instance_keys;
 	for (const Variant &key : p_scene.prefab_instances.get_key_list()) {
@@ -697,7 +721,6 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 		}
 	}
 	instance_keys.sort();
-	const bool complete = p_scene.storage_path != p_path;
 	HashSet<EntityId, EntityIdHasher> scope;
 	if (complete) {
 		for (EntityId id : ids) {
@@ -759,35 +782,19 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 	const String camera_key = component_key(EntityComponentTraits<EntityCamera>::id);
 	const String environment_key = component_key(EntityComponentTraits<EntityEnvironment>::id);
 	const String light_key = component_key(EntityComponentTraits<EntityLight>::id);
-	HashMap<EntityId, EntityPose, EntityIdHasher> poses;
-	auto world_pose = [&](auto &p_self, EntityId p_id) -> EntityPose {
-		const EntityPose *cached = poses.getptr(p_id);
+	HashMap<EntityId, String, EntityIdHasher> roots;
+	auto root_directory = [&](EntityId p_id, String &r_directory) -> Error {
+		const String *cached = roots.getptr(p_id);
 		if (cached) {
-			return *cached;
+			r_directory = *cached;
+			return OK;
 		}
-		EntityPose local;
 		const Dictionary *record = records.getptr(p_id);
-		if (record) {
-			const Dictionary components = (*record)["components"];
-			const Variant transform = components.get(transform_key, Variant());
-			if (transform.get_type() == Variant::DICTIONARY) {
-				EntityCodec<EntityPose>::decode(Dictionary(transform).get("1", Variant()), local);
-			}
-		}
-		const EntityId parent = p_scene.catalog.get_parent(p_id).id;
-		const EntityPose result = parent.is_valid() && records.has(parent) ? EntityTransformSystem::compose(p_self(p_self, parent), local) : local;
-		poses.insert(p_id, result);
-		return result;
-	};
-	HashMap<EntityId, String, EntityIdHasher> directories;
-	for (EntityId id : ids) {
-		const Dictionary *record = records.getptr(id);
-		if (!record || !scope.has(id)) {
-			const SceneFile *file = existing.files.getptr(id);
-			if (file) {
-				directories.insert(id, file->path.get_base_dir());
-			}
-			continue;
+		const SceneFile *file = existing.files.getptr(p_id);
+		if (!record || (!scope.has(p_id) && file)) {
+			r_directory = file ? file->path.get_base_dir() : String();
+			roots.insert(p_id, r_directory);
+			return OK;
 		}
 		const Dictionary components = (*record)["components"];
 		bool global = !components.has(transform_key) || components.has(environment_key) || components.has(camera_key);
@@ -799,8 +806,9 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 			}
 		}
 		if (global) {
-			directories.insert(id, "global");
-			continue;
+			r_directory = "global";
+			roots.insert(p_id, r_directory);
+			return OK;
 		}
 		String grid = p_scene.default_grid;
 		const Variant streaming = components.get(streaming_key, Variant());
@@ -811,19 +819,50 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 			}
 		}
 		const EntityScene::Grid *configuration = p_scene.grids.getptr(grid);
-		ERR_FAIL_COND_V_MSG(!configuration, p_scene._fail(id, "streaming/grid", ERR_INVALID_DATA), "Entity " + id.to_string() + " uses unknown grid \"" + grid + "\": " + p_path);
-		const EntityPose pose = world_pose(world_pose, id);
+		ERR_FAIL_COND_V_MSG(!configuration, p_scene._fail(p_id, "streaming/grid", ERR_INVALID_DATA), "Entity " + p_id.to_string() + " uses unknown grid \"" + grid + "\": " + p_path);
+		EntityPose pose;
+		const Variant transform = components.get(transform_key, Variant());
+		if (transform.get_type() == Variant::DICTIONARY) {
+			EntityCodec<EntityPose>::decode(Dictionary(transform).get("1", Variant()), pose);
+		}
 		const int32_t x = EntityScene::_cell_index(pose.translation.x, configuration->size);
 		const int32_t y = EntityScene::_cell_index(pose.translation.y, configuration->size);
 		const int32_t z = EntityScene::_cell_index(pose.translation.z, configuration->size);
-		directories.insert(id, cell_directory(grid, x, y, z));
+		r_directory = EntitySceneIO::cell_directory(grid, x, y, z);
+		roots.insert(p_id, r_directory);
+		return OK;
+	};
+	HashMap<EntityId, String, EntityIdHasher> directories;
+	for (EntityId id : ids) {
+		EntityId root = id;
+		int guard = p_scene.catalog.get_record_count() + 1;
+		while (guard-- > 0) {
+			const EntityId parent = p_scene.catalog.get_parent(root).id;
+			if (!parent.is_valid() || !p_scene.catalog.records.has(parent)) {
+				break;
+			}
+			root = parent;
+		}
+		String target;
+		error = root_directory(root, target);
+		if (error != OK) {
+			return error;
+		}
+		if (!target.is_empty()) {
+			directories.insert(id, target);
+		}
 	}
 	HashMap<String, String> texts;
 	HashMap<String, Dictionary> clusters;
+	HashMap<String, Vector<EntityId>> cluster_previous;
 	HashMap<EntityId, String, EntityIdHasher> targets;
 	for (EntityId id : ids) {
 		if (!scope.has(id)) {
 			continue;
+		}
+		const SceneFile *stale = existing.files.getptr(id);
+		if (stale && stale->cluster) {
+			cluster_previous[stale->path].push_back(id);
 		}
 		const Dictionary *record = records.getptr(id);
 		if (!record) {
@@ -855,6 +894,7 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 			clusters[previous->path][id.to_string()] = stored;
 			continue;
 		}
+		ERR_FAIL_COND_V_MSG(cell.is_empty(), ERR_INVALID_DATA, "Entity " + id.to_string() + " has no storage cell: " + p_path);
 		const String target = cell.path_join(id.to_string() + ".escn");
 		targets.insert(id, target);
 		String text;
@@ -864,13 +904,51 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 		}
 		texts.insert(target, text);
 	}
+	Vector<String> cluster_paths;
+	for (const KeyValue<String, Vector<EntityId>> &entry : cluster_previous) {
+		cluster_paths.push_back(entry.key);
+	}
 	for (const KeyValue<String, Dictionary> &entry : clusters) {
+		if (!cluster_previous.has(entry.key)) {
+			cluster_paths.push_back(entry.key);
+		}
+	}
+	cluster_paths.sort();
+	Vector<String> emptied;
+	for (const String &path : cluster_paths) {
+		const String absolute = directory.path_join(path);
+		Dictionary seed;
+		if (FileAccess::exists(absolute)) {
+			Variant parsed;
+			error = read_variant_file(absolute, parsed);
+			if (error == OK && parsed.get_type() != Variant::DICTIONARY) {
+				error = ERR_FILE_CORRUPT;
+			}
+			ERR_FAIL_COND_V_MSG(error != OK, error, "Cannot read entity cluster: " + absolute);
+			seed = parsed;
+		}
+		const Vector<EntityId> *previous = cluster_previous.getptr(path);
+		if (previous) {
+			for (EntityId id : *previous) {
+				seed.erase(id.to_string());
+			}
+		}
+		const Dictionary *updates = clusters.getptr(path);
+		if (updates) {
+			for (const Variant &key : updates->get_key_list()) {
+				seed[key] = (*updates)[key];
+			}
+		}
+		if (seed.is_empty()) {
+			emptied.push_back(path);
+			continue;
+		}
 		String text;
-		error = encode(entry.value, text);
+		error = encode(seed, text);
 		if (error != OK) {
 			return error;
 		}
-		texts.insert(entry.key, text);
+		texts.insert(path, text);
 	}
 	for (const String &key : instance_keys) {
 		Dictionary instance = Dictionary(p_scene.prefab_instances[key]).duplicate(true);
@@ -921,6 +999,7 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 	}
 	int changes = 0;
 	HashSet<String> moved;
+	HashSet<String> vacated;
 	for (EntityId id : ids) {
 		const SceneFile *previous = existing.files.getptr(id);
 		const String *target = targets.getptr(id);
@@ -937,6 +1016,7 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 			return error;
 		}
 		moved.insert(previous->path);
+		vacated.insert(previous->path.get_base_dir());
 		changes++;
 	}
 	for (const String &path : written) {
@@ -1002,6 +1082,7 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 	}
 	Vector<String> removed = existing.paths;
 	removed.append_array(existing.prefab_paths);
+	removed.append_array(emptied);
 	for (const String &path : removed) {
 		if (keep.has(path) || moved.has(path)) {
 			continue;
@@ -1009,20 +1090,20 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 		const String absolute = directory.path_join(path);
 		error = DirAccess::remove_absolute(absolute);
 		ERR_FAIL_COND_V_MSG(error != OK, error, "Cannot remove stale entity file: " + absolute);
+		vacated.insert(path.get_base_dir());
 	}
-	const String cells = directory.path_join("cells");
-	if (DirAccess::dir_exists_absolute(cells)) {
-		for (const String &grid : DirAccess::get_directories_at(cells)) {
-			const String grid_directory = cells.path_join(grid);
-			for (const String &cell : DirAccess::get_directories_at(grid_directory)) {
-				const String cell_path = grid_directory.path_join(cell);
-				if (DirAccess::get_files_at(cell_path).is_empty() && DirAccess::get_directories_at(cell_path).is_empty()) {
-					ERR_CONTINUE_MSG(DirAccess::remove_absolute(cell_path) != OK, "Cannot remove empty cell directory: " + cell_path);
-				}
-			}
-			if (DirAccess::get_files_at(grid_directory).is_empty() && DirAccess::get_directories_at(grid_directory).is_empty()) {
-				ERR_CONTINUE_MSG(DirAccess::remove_absolute(grid_directory) != OK, "Cannot remove empty grid directory: " + grid_directory);
-			}
+	for (const String &relative : vacated) {
+		if (!relative.begins_with("cells/")) {
+			continue;
+		}
+		const String cell_path = directory.path_join(relative);
+		if (!DirAccess::dir_exists_absolute(cell_path) || !DirAccess::get_files_at(cell_path).is_empty() || !DirAccess::get_directories_at(cell_path).is_empty()) {
+			continue;
+		}
+		ERR_CONTINUE_MSG(DirAccess::remove_absolute(cell_path) != OK, "Cannot remove empty cell directory: " + cell_path);
+		const String grid_directory = cell_path.get_base_dir();
+		if (DirAccess::get_files_at(grid_directory).is_empty() && DirAccess::get_directories_at(grid_directory).is_empty()) {
+			ERR_CONTINUE_MSG(DirAccess::remove_absolute(grid_directory) != OK, "Cannot remove empty grid directory: " + grid_directory);
 		}
 	}
 	for (EntityId id : scope) {
@@ -1041,7 +1122,7 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 	p_scene._relocate(p_path);
 	p_scene.revision = revision;
 	p_scene.dirty.clear();
-	error = p_scene._rebuild_cells();
+	error = p_scene._assign_cells(ids);
 	ERR_FAIL_COND_V_MSG(error != OK, error, "Entity scene has an invalid storage cell: " + directory + " (" + p_scene.get_last_error() + ")");
 	return OK;
 }

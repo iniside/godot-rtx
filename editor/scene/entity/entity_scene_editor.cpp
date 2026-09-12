@@ -76,7 +76,7 @@ void EntitySceneEditor::_refresh_page() {
 			item->select(0);
 		}
 	}
-	page_label->set_text(vformat("%d–%d / %d", filtered.is_empty() ? 0 : begin + 1, end, filtered.size()));
+	page_label->set_text(vformat("%d–%d / %d · %d cells", filtered.is_empty() ? 0 : begin + 1, end, filtered.size(), document.is_valid() ? document->get_resident_cell_count() : 0));
 	previous->set_disabled(page == 0);
 	next->set_disabled(end >= filtered.size());
 	rebuilding = false;

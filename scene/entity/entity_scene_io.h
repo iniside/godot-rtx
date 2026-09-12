@@ -10,6 +10,7 @@ public:
 	static Error decode(const String &p_text, Variant &r_value);
 	static Error read_variant_file(const String &p_path, Variant &r_value);
 	static String scene_directory(const String &p_path);
+	static String cell_directory(const String &p_grid, int64_t p_x, int64_t p_y, int64_t p_z);
 	static String companion_directory(const String &p_path);
 	static bool is_child_path(const String &p_path);
 	static Error load(const String &p_path, Ref<EntityScene> &r_scene);

@@ -1,14 +1,10 @@
 #include "entity_scene_streaming.h"
 
+#include "core/math/math_funcs.h"
 #include "core/os/os.h"
 #include "core/string/print_string.h"
 
 namespace {
-
-struct GridBounds {
-	double size = 0.0;
-	double range = 0.0;
-};
 
 struct CellCandidate {
 	EntityScene::CellKey cell;
@@ -20,6 +16,11 @@ struct CellCandidateSorter {
 		return p_a.distance < p_b.distance;
 	}
 };
+
+int32_t cell_index(double p_value, double p_size) {
+	const double index = Math::floor(p_value / p_size);
+	return int32_t(CLAMP(index, double(INT32_MIN), double(INT32_MAX)));
+}
 
 double camera_distance(const AABB &p_aabb, const Vector<Vector3> &p_cameras) {
 	const Vector3 begin = p_aabb.position;
@@ -58,7 +59,7 @@ void report_step(EntityScene &p_scene, const EntitySceneStreaming::Stats &p_stat
 			double(load.dispatch_usec) * to_ms,
 			double(load.commit_usec) * to_ms,
 			double(load.worker_usec) * to_ms,
-			p_scene.get_resident_cells().size(),
+			p_scene.get_resident_cell_count(),
 			p_scene.get_resident_count()));
 }
 
@@ -67,32 +68,58 @@ void report_step(EntityScene &p_scene, const EntitySceneStreaming::Stats &p_stat
 Error EntitySceneStreaming::step(EntityScene &p_scene, const Vector<Vector3> &p_cameras, int p_budget, Stats *r_stats) {
 	Stats stats;
 	Error result = p_scene.commit_ready(p_budget, &stats.load);
-	const Vector<EntityScene::CellKey> keys = result == OK && !p_cameras.is_empty() ? p_scene.get_cells() : Vector<EntityScene::CellKey>();
-	if (keys.is_empty()) {
-		if (r_stats) {
-			*r_stats = stats;
-		}
-		report_step(p_scene, stats);
-		return result;
-	}
-	HashMap<String, GridBounds> bounds;
-	for (const String &grid : p_scene.get_grid_names()) {
-		bounds.insert(grid, { p_scene.get_grid_size(grid), p_scene.get_grid_range(grid) });
-	}
-	Vector<CellCandidate> wanted;
 	Vector<EntityScene::CellKey> stale;
-	for (const EntityScene::CellKey &cell : keys) {
-		const GridBounds *grid = bounds.getptr(cell.grid);
-		if (!grid || grid->size <= 0.0) {
+	for (const EntityScene::CellKey &cell : p_scene.get_resident_cells()) {
+		const double size = p_scene.get_grid_size(cell.grid);
+		const double range = p_scene.get_grid_range(cell.grid);
+		if (size <= 0.0) {
 			continue;
 		}
-		const double distance = camera_distance(p_scene.cell_aabb(cell), p_cameras);
-		if (p_scene.is_cell_resident(cell)) {
-			if (distance > grid->range + grid->size) {
-				stale.push_back(cell);
+		if (p_cameras.is_empty() || camera_distance(p_scene.cell_aabb(cell), p_cameras) > range + size) {
+			stale.push_back(cell);
+		}
+	}
+	Vector<CellCandidate> wanted;
+	if (result == OK && !p_cameras.is_empty()) {
+		int probes = PROBE_BUDGET;
+		HashSet<EntityScene::CellKey, EntityScene::CellKeyHasher> visited;
+		for (const String &grid : p_scene.get_grid_names()) {
+			const double size = p_scene.get_grid_size(grid);
+			const double range = p_scene.get_grid_range(grid);
+			if (size <= 0.0 || range <= 0.0) {
+				continue;
 			}
-		} else if (distance <= grid->range) {
-			wanted.push_back({ cell, distance });
+			for (const Vector3 &camera : p_cameras) {
+				EntityScene::CellKey cell;
+				cell.grid = grid;
+				const int32_t min_x = cell_index(double(camera.x) - range, size);
+				const int32_t max_x = cell_index(double(camera.x) + range, size);
+				const int32_t min_y = cell_index(double(camera.y) - range, size);
+				const int32_t max_y = cell_index(double(camera.y) + range, size);
+				const int32_t min_z = cell_index(double(camera.z) - range, size);
+				const int32_t max_z = cell_index(double(camera.z) + range, size);
+				for (int64_t x = min_x; x <= max_x; x++) {
+					cell.x = int32_t(x);
+					for (int64_t y = min_y; y <= max_y; y++) {
+						cell.y = int32_t(y);
+						for (int64_t z = min_z; z <= max_z; z++) {
+							cell.z = int32_t(z);
+							if (visited.has(cell)) {
+								continue;
+							}
+							visited.insert(cell);
+							if (p_scene.is_cell_resident(cell)) {
+								continue;
+							}
+							const double distance = camera_distance(p_scene.cell_aabb(cell), p_cameras);
+							if (distance > range || !p_scene.cell_exists(cell, &probes)) {
+								continue;
+							}
+							wanted.push_back({ cell, distance });
+						}
+					}
+				}
+			}
 		}
 	}
 	if (result == OK && !wanted.is_empty()) {

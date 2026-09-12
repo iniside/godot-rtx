@@ -41,6 +41,8 @@ class EntityScene : public Resource {
 		bool live = false;
 		int64_t order = 0;
 		String name;
+		String path;
+		bool cluster = false;
 		Array components;
 		LocalVector<PreparedComponent> values;
 
@@ -107,16 +109,6 @@ public:
 	};
 
 private:
-	struct RecordSource {
-		EntityId id;
-		EntityRef parent;
-		int64_t order = 0;
-		bool deleted = false;
-		String path;
-		bool cluster = false;
-		Dictionary record;
-	};
-
 	struct PreparedCell {
 		CellKey key;
 		LocalVector<PreparedEntity> entities;
@@ -126,10 +118,12 @@ private:
 	};
 
 	struct CellJob {
-		Vector<RecordSource> sources;
+		String directory;
+		String relative;
+		HashSet<EntityId, EntityIdHasher> skip;
+		HashSet<EntityId, EntityIdHasher> globals;
 		Vector<String> missing;
 		Vector<EntityId> ancestors;
-		Vector<EntityId> resident;
 		PreparedCell result;
 		WorkerThreadPool::TaskID task = WorkerThreadPool::INVALID_TASK_ID;
 		SafeFlag cancelled;
@@ -156,6 +150,8 @@ private:
 	HashMap<CellKey, Vector<EntityId>, CellKeyHasher> resident_cells;
 	LocalVector<CellJob *> cell_jobs;
 	HashMap<CellKey, uint64_t, CellKeyHasher> failed_cells;
+	HashMap<CellKey, bool, CellKeyHasher> probed_cells;
+	uint64_t probed_revision = 0;
 	HashMap<CellKey, LocalVector<Ref<Resource>>, CellKeyHasher> cell_assets;
 	struct PrefabMember {
 		String instance;
@@ -187,10 +183,11 @@ private:
 	String _storage_directory(EntityId p_id, String &r_source) const;
 	Error _assign_cell(EntityId p_id);
 	void _forget_cell(EntityId p_id);
-	Error _rebuild_cells();
+	Error _assign_cells(const Vector<EntityId> &p_ids);
+	void _forget_entity(EntityId p_id);
+	String _cell_path(const CellKey &p_cell) const;
 	void _index_prefabs();
 	Error _load_resident(const Vector<EntityId> &p_ids, LoadProfile *r_profile);
-	Error _cell_entities(const CellKey &p_cell, Vector<EntityId> &r_ids, Vector<EntityId> &r_ancestors) const;
 	Error _read_record(EntityId p_id, Dictionary &r_record, bool *r_stored = nullptr, bool p_prefer_stored = false);
 	static Dictionary _shallow_record(const Dictionary &p_record);
 	Error _read_stored(EntityId p_id, Dictionary &r_record);
@@ -207,10 +204,10 @@ private:
 	static Error _describe_components(const Dictionary &p_record, Section &r_section, Vector<uint64_t> &r_types, String &r_field);
 	Error _describe(EntityId p_id, const Dictionary &p_record, Section &r_section);
 	bool _is_cell_in_flight(const CellKey &p_cell) const;
-	Error _snapshot_source(EntityId p_id, const String &p_directory, RecordSource &r_source);
 	Error _dispatch_cell(const CellKey &p_cell);
-	Error _load_cell(const CellKey &p_cell, const Vector<EntityId> &p_required, const Vector<EntityId> &p_ancestors);
 	Error _load_cell_assets(CellJob &p_job);
+	static Error _prepare_stored(EntityId p_id, const Dictionary &p_record, PreparedEntity &r_prepared, String &r_field);
+	static Error _read_cell(CellJob &p_job);
 	static void _run_cell_job(void *p_job);
 	bool _revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids);
 	Error _commit_cell(CellJob &p_job, Stats &r_stats);
@@ -241,10 +238,10 @@ public:
 	Error commit_ready(int p_max_entities, Stats *r_stats = nullptr);
 	void flush_streaming();
 	Error release_cells(const Vector<CellKey> &p_cells);
-	Vector<CellKey> get_cells() const;
 	Vector<CellKey> get_resident_cells() const;
 	bool is_cell_resident(const CellKey &p_cell) const { return resident_cells.has(p_cell); }
-	int get_cell_count() const { return cells.size(); }
+	int get_resident_cell_count() const { return resident_cells.size(); }
+	bool cell_exists(const CellKey &p_cell, int *r_probe_budget = nullptr);
 	CellKey cell_for_position(const String &p_grid, const Vector3 &p_position) const;
 	AABB cell_aabb(const CellKey &p_cell) const;
 	Vector<String> get_grid_names() const;

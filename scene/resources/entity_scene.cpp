@@ -1,6 +1,7 @@
 #ifndef _3D_DISABLED
 
 #include "entity_scene.h"
+#include "core/io/dir_access.h"
 #include "core/io/resource_loader.h"
 #include "core/math/math_funcs.h"
 #include "core/object/class_db.h"
@@ -170,18 +171,55 @@ Error EntityScene::_assign_cell(EntityId p_id) {
 	return OK;
 }
 
-Error EntityScene::_rebuild_cells() {
-	cells.clear();
-	cell_of.clear();
-	globals.clear();
+Error EntityScene::_assign_cells(const Vector<EntityId> &p_ids) {
 	Error result = OK;
-	for (const KeyValue<EntityId, EntityCatalog::Record> &entry : catalog.records) {
-		const Error error = _assign_cell(entry.key);
+	for (EntityId id : p_ids) {
+		const Error error = _assign_cell(id);
 		if (error != OK && result == OK) {
 			result = error;
 		}
 	}
 	return result;
+}
+
+void EntityScene::_forget_entity(EntityId p_id) {
+	_forget_cell(p_id);
+	sections.erase(p_id);
+	order.erase(p_id);
+	catalog._unlink_parent(p_id);
+	catalog.records.erase(p_id);
+	catalog.children.erase(p_id);
+}
+
+String EntityScene::_cell_path(const CellKey &p_cell) const {
+	if (storage_path.is_empty()) {
+		return String();
+	}
+	return EntitySceneIO::scene_directory(storage_path).path_join(EntitySceneIO::cell_directory(p_cell.grid, p_cell.x, p_cell.y, p_cell.z));
+}
+
+bool EntityScene::cell_exists(const CellKey &p_cell, int *r_probe_budget) {
+	if (resident_cells.has(p_cell) || cells.has(p_cell) || _is_cell_in_flight(p_cell)) {
+		return true;
+	}
+	if (probed_revision != revision) {
+		probed_revision = revision;
+		probed_cells.clear();
+	}
+	const bool *probed = probed_cells.getptr(p_cell);
+	if (probed) {
+		return *probed;
+	}
+	if (r_probe_budget && *r_probe_budget <= 0) {
+		return false;
+	}
+	if (r_probe_budget) {
+		(*r_probe_budget)--;
+	}
+	const String path = _cell_path(p_cell);
+	const bool exists = !path.is_empty() && DirAccess::dir_exists_absolute(path);
+	probed_cells.insert(p_cell, exists);
+	return exists;
 }
 
 void EntityScene::_index_prefabs() {
@@ -216,6 +254,8 @@ EntityScene::PreparedEntity &EntityScene::PreparedEntity::operator=(PreparedEnti
 	live = p_other.live;
 	order = p_other.order;
 	name = std::move(p_other.name);
+	path = std::move(p_other.path);
+	cluster = p_other.cluster;
 	components = std::move(p_other.components);
 	values = std::move(p_other.values);
 	return *this;
@@ -341,6 +381,8 @@ EntityScene::SectionAction EntityScene::PreparedSet::build_section(EntityId p_id
 	}
 	r_section.name = entry->name;
 	r_section.components = entry->components;
+	r_section.path = entry->path;
+	r_section.cluster = entry->cluster;
 	return SECTION_SET;
 }
 
@@ -1053,6 +1095,7 @@ void EntityScene::_relocate(const String &p_path) {
 	storage_path = p_path;
 	cluster_path = String();
 	cluster_records = Dictionary();
+	probed_cells.clear();
 	set_path_cache(p_path);
 }
 
@@ -1101,42 +1144,12 @@ Error EntityScene::create_play_document(Ref<EntityScene> &r_scene) {
 		}
 	}
 	result->_index_prefabs();
-	Error cell_error = result->_rebuild_cells();
+	Error cell_error = result->_assign_cells(result->catalog.get_ids());
 	if (cell_error != OK) {
 		last_error = result->last_error;
 		return cell_error;
 	}
 	r_scene = result;
-	return OK;
-}
-
-Error EntityScene::_cell_entities(const CellKey &p_cell, Vector<EntityId> &r_ids, Vector<EntityId> &r_ancestors) const {
-	const HashSet<EntityId, EntityIdHasher> *members = cells.getptr(p_cell);
-	if (!members) {
-		return ERR_DOES_NOT_EXIST;
-	}
-	HashSet<EntityId, EntityIdHasher> inside;
-	for (EntityId id : *members) {
-		if (catalog.get_state(id) != EntityReferenceState::UNLOADED) {
-			continue;
-		}
-		inside.insert(id);
-		r_ids.push_back(id);
-	}
-	HashSet<EntityId, EntityIdHasher> seen;
-	for (EntityId id : r_ids) {
-		int guard = catalog.get_record_count() + 1;
-		for (EntityId ancestor = catalog.get_parent(id).id; ancestor.is_valid(); ancestor = catalog.get_parent(ancestor).id) {
-			if (guard-- <= 0) {
-				return ERR_CYCLIC_LINK;
-			}
-			if (inside.has(ancestor) || seen.has(ancestor)) {
-				break;
-			}
-			seen.insert(ancestor);
-			r_ancestors.push_back(ancestor);
-		}
-	}
 	return OK;
 }
 
@@ -1169,200 +1182,240 @@ bool EntityScene::_is_cell_in_flight(const CellKey &p_cell) const {
 	return false;
 }
 
-Error EntityScene::_snapshot_source(EntityId p_id, const String &p_directory, RecordSource &r_source) {
-	r_source.id = p_id;
-	r_source.parent = catalog.get_parent(p_id);
-	r_source.order = get_order(p_id);
-	r_source.deleted = catalog.records[p_id].deleted;
-	if (r_source.deleted) {
-		return OK;
-	}
-	const Section *section = sections.getptr(p_id);
-	if (!section) {
-		return _fail(p_id, "record", ERR_DOES_NOT_EXIST);
-	}
-	if (!section->record.is_empty()) {
-		r_source.record = _shallow_record(section->record);
-		return OK;
-	}
-	if (section->path.is_empty() || p_directory.is_empty()) {
-		return _fail(p_id, "record", ERR_DOES_NOT_EXIST);
-	}
-	r_source.path = p_directory.path_join(section->path);
-	r_source.cluster = section->cluster;
-	return OK;
-}
-
 Error EntityScene::_dispatch_cell(const CellKey &p_cell) {
-	Vector<EntityId> ids;
-	Vector<EntityId> ancestors;
-	Error error = _cell_entities(p_cell, ids, ancestors);
-	if (error != OK) {
-		return error;
-	}
-	Vector<EntityId> wanted = ancestors;
-	wanted.append_array(ids);
-	Vector<EntityId> required;
-	error = _collect_required(wanted, required);
-	if (error != OK) {
-		return error;
-	}
-	for (EntityId id : required) {
-		if (prefab_members.has(id) && resolve(id).state != EntityReferenceState::RESIDENT) {
-			return _load_cell(p_cell, required, ancestors);
-		}
-	}
+	Vector<EntityId> known;
 	CellJob *job = memnew(CellJob);
 	job->result.key = p_cell;
-	job->ancestors = ancestors;
-	const String directory = storage_path.is_empty() ? String() : EntitySceneIO::scene_directory(storage_path);
-	for (EntityId id : required) {
-		const EntityResolution target = resolve(id);
-		if (target.state == EntityReferenceState::DELETED) {
-			memdelete(job);
-			return _fail(id, "record", ERR_DOES_NOT_EXIST);
+	const HashSet<EntityId, EntityIdHasher> *members = cells.getptr(p_cell);
+	if (members) {
+		for (EntityId id : *members) {
+			if (resolve(id).state == EntityReferenceState::RESIDENT || dirty.has(id)) {
+				job->skip.insert(id);
+			} else {
+				known.push_back(id);
+			}
 		}
-		if (target.state == EntityReferenceState::RESIDENT) {
-			job->resident.push_back(id);
-			continue;
+	}
+	if (!known.is_empty()) {
+		Vector<EntityId> required;
+		Error error = _collect_required(known, required);
+		if (error == OK) {
+			error = load_subset(required);
 		}
-		RecordSource source;
-		error = _snapshot_source(id, directory, source);
 		if (error != OK) {
 			memdelete(job);
 			return error;
 		}
-		job->sources.push_back(source);
+		HashSet<EntityId, EntityIdHasher> inside;
+		for (EntityId id : known) {
+			inside.insert(id);
+			job->skip.insert(id);
+		}
+		for (EntityId id : required) {
+			if (!inside.has(id)) {
+				job->ancestors.push_back(id);
+			}
+		}
 	}
-	if (job->sources.is_empty()) {
+	job->directory = _cell_path(p_cell);
+	if (job->directory.is_empty() || !DirAccess::dir_exists_absolute(job->directory)) {
+		if (cells.has(p_cell)) {
+			const Error error = pin(job->ancestors);
+			if (error != OK) {
+				memdelete(job);
+				return error;
+			}
+			resident_cells.insert(p_cell, job->ancestors);
+			residency_serial++;
+		} else {
+			probed_cells.insert(p_cell, false);
+		}
 		memdelete(job);
-		return _load_cell(p_cell, required, ancestors);
+		return OK;
 	}
+	job->relative = EntitySceneIO::cell_directory(p_cell.grid, p_cell.x, p_cell.y, p_cell.z);
+	job->globals = globals;
 	job->task = WorkerThreadPool::get_singleton()->add_native_task(_run_cell_job, job, false, "Entity cell load");
 	cell_jobs.push_back(job);
 	return OK;
 }
 
-Error EntityScene::_load_cell(const CellKey &p_cell, const Vector<EntityId> &p_required, const Vector<EntityId> &p_ancestors) {
-	Vector<EntityId> unloaded;
-	for (EntityId id : p_required) {
-		if (resolve(id).state != EntityReferenceState::RESIDENT) {
-			unloaded.push_back(id);
+Error EntityScene::_prepare_stored(EntityId p_id, const Dictionary &p_record, PreparedEntity &r_prepared, String &r_field) {
+	const Variant parent_value = p_record.get("parent", Variant());
+	EntityRef parent;
+	if (parent_value.get_type() != Variant::STRING || EntityId::parse(parent_value, parent.id) != OK) {
+		r_field = "parent";
+		return ERR_FILE_CORRUPT;
+	}
+	const Variant order_value = p_record.get("order", Variant());
+	if (order_value.get_type() != Variant::INT) {
+		r_field = "order";
+		return ERR_FILE_CORRUPT;
+	}
+	const Variant deleted_value = p_record.get("deleted", false);
+	if (deleted_value.get_type() != Variant::BOOL) {
+		r_field = "deleted";
+		return ERR_FILE_CORRUPT;
+	}
+	r_prepared.id = p_id;
+	r_prepared.parent = parent;
+	r_prepared.order = order_value;
+	r_prepared.deleted = deleted_value;
+	if (r_prepared.deleted) {
+		return OK;
+	}
+	return _decode_record(p_record, r_prepared, r_field, nullptr);
+}
+
+Error EntityScene::_read_cell(CellJob &p_job) {
+	PackedStringArray names = DirAccess::get_files_at(p_job.directory);
+	names.sort();
+	HashMap<EntityId, String, EntityIdHasher> owners;
+	Error result = OK;
+	for (const String &name : names) {
+		if (p_job.cancelled.is_set() || ResourceLoader::is_cleaning_tasks()) {
+			return ERR_SKIP;
+		}
+		if (name.get_extension().to_lower() != "escn") {
+			continue;
+		}
+		const String path = p_job.directory.path_join(name);
+		const bool cluster = name.ends_with(".cluster.escn");
+		Variant parsed;
+		Error error = EntitySceneIO::read_variant_file(path, parsed);
+		if (error == OK && parsed.get_type() != Variant::DICTIONARY) {
+			error = ERR_FILE_CORRUPT;
+		}
+		if (error != OK) {
+			p_job.result.failing_field = (cluster ? "cluster (" : "record (") + path + ")";
+			return error;
+		}
+		Vector<EntityId> ids;
+		Vector<Dictionary> records;
+		if (cluster) {
+			const Dictionary entries = parsed;
+			for (const Variant &key : entries.get_key_list()) {
+				EntityId id;
+				if (key.get_type() != Variant::STRING || EntityId::parse(key, id) != OK || !id.is_valid() || entries[key].get_type() != Variant::DICTIONARY) {
+					p_job.result.failing_field = "cluster (" + path + ")";
+					return ERR_FILE_CORRUPT;
+				}
+				ids.push_back(id);
+				records.push_back(entries[key]);
+			}
+		} else {
+			EntityId id;
+			if (EntityId::parse(name.get_basename(), id) != OK || !id.is_valid()) {
+				p_job.result.failing_field = "record (" + path + ")";
+				return ERR_FILE_CORRUPT;
+			}
+			ids.push_back(id);
+			records.push_back(parsed);
+		}
+		for (int i = 0; i < ids.size(); i++) {
+			const EntityId id = ids[i];
+			const String *owner = owners.getptr(id);
+			if (owner) {
+				p_job.result.failing = id;
+				p_job.result.failing_field = "record (" + path + " and " + *owner + ")";
+				return ERR_FILE_CORRUPT;
+			}
+			owners.insert(id, path);
+			if (p_job.skip.has(id)) {
+				continue;
+			}
+			PreparedEntity prepared;
+			prepared.path = p_job.relative.path_join(name);
+			prepared.cluster = cluster;
+			String field;
+			const Error record_error = _prepare_stored(id, records[i], prepared, field);
+			p_job.result.entities.push_back(std::move(prepared));
+			if (record_error == OK) {
+				continue;
+			}
+			if (result == OK) {
+				result = record_error;
+				p_job.result.failing = id;
+				p_job.result.failing_field = field + " (" + path + ")";
+			}
+			if (record_error != ERR_UNAVAILABLE) {
+				return result;
+			}
 		}
 	}
-	Error error = unloaded.is_empty() ? OK : load_subset(unloaded);
-	if (error != OK) {
-		return error;
+	if (result != OK) {
+		return result;
 	}
-	error = pin(p_ancestors);
-	if (error != OK) {
-		return error;
+	HashSet<EntityId, EntityIdHasher> inside(p_job.skip);
+	for (const PreparedEntity &entity : p_job.result.entities) {
+		inside.insert(entity.id);
 	}
-	resident_cells.insert(p_cell, p_ancestors);
-	residency_serial++;
+	for (const PreparedEntity &entity : p_job.result.entities) {
+		const EntityId parent = entity.parent.id;
+		if (!parent.is_valid() || inside.has(parent) || p_job.globals.has(parent)) {
+			continue;
+		}
+		p_job.result.failing = entity.id;
+		p_job.result.failing_field = "parent (" + p_job.directory.path_join(entity.path.get_file()) + ")";
+		return ERR_INVALID_DATA;
+	}
 	return OK;
 }
 
 void EntityScene::_run_cell_job(void *p_job) {
 	CellJob *job = static_cast<CellJob *>(p_job);
 	const uint64_t began = OS::get_singleton()->get_ticks_usec();
-	HashMap<String, Dictionary> clusters;
-	job->result.entities.reserve(job->sources.size());
 	entity_decode_assets_cached_only(true);
-	for (const RecordSource &source : job->sources) {
-		if (job->cancelled.is_set() || ResourceLoader::is_cleaning_tasks()) {
-			job->result.error = ERR_SKIP;
-			break;
-		}
-		PreparedEntity prepared;
-		prepared.id = source.id;
-		prepared.parent = source.parent;
-		prepared.order = source.order;
-		prepared.deleted = source.deleted;
-		Error error = OK;
-		String field;
-		if (!prepared.deleted) {
-			Dictionary record = source.record;
-			if (record.is_empty()) {
-				field = source.cluster ? "cluster" : "record";
-				const Dictionary *cluster = source.cluster ? clusters.getptr(source.path) : nullptr;
-				if (!cluster) {
-					Variant parsed;
-					error = EntitySceneIO::read_variant_file(source.path, parsed);
-					if (error == OK && parsed.get_type() != Variant::DICTIONARY) {
-						error = ERR_FILE_CORRUPT;
-					}
-					if (error == OK && source.cluster) {
-						clusters.insert(source.path, parsed);
-						cluster = clusters.getptr(source.path);
-					} else if (error == OK) {
-						record = parsed;
-					}
-				}
-				if (error == OK && cluster) {
-					const Variant value = cluster->get(source.id.to_string(), Variant());
-					if (value.get_type() != Variant::DICTIONARY) {
-						error = ERR_FILE_CORRUPT;
-					} else {
-						record = value;
-					}
-				}
-			}
-			if (error == OK) {
-				error = _decode_record(record, prepared, field, nullptr);
-			}
-		}
-		job->result.entities.push_back(std::move(prepared));
-		if (error != OK) {
-			if (job->result.error == OK) {
-				job->result.error = error;
-				job->result.failing = source.id;
-				job->result.failing_field = field;
-			}
-			if (error != ERR_UNAVAILABLE) {
-				break;
-			}
-		}
-	}
+	job->result.error = _read_cell(*job);
 	entity_decode_assets_cached_only(false);
 	entity_decode_take_missing_assets(job->missing);
 	job->worker_usec = OS::get_singleton()->get_ticks_usec() - began;
 }
 
 bool EntityScene::_revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids) {
-	if (!cells.has(p_job.result.key) || resident_cells.has(p_job.result.key)) {
+	if (resident_cells.has(p_job.result.key)) {
 		return false;
 	}
-	for (EntityId id : p_job.resident) {
-		if (resolve(id).state != EntityReferenceState::RESIDENT) {
-			return false;
-		}
-		PreparedEntity live;
-		live.id = id;
-		live.live = true;
-		live.parent = catalog.get_parent(id);
-		live.order = get_order(id);
-		p_job.result.entities.push_back(std::move(live));
-	}
-	HashSet<EntityId, EntityIdHasher> prepared_ids;
+	HashSet<EntityId, EntityIdHasher> inside;
 	for (const PreparedEntity &entity : p_job.result.entities) {
-		prepared_ids.insert(entity.id);
+		inside.insert(entity.id);
+	}
+	LocalVector<PreparedEntity> ancestors;
+	for (const PreparedEntity &entity : p_job.result.entities) {
+		EntityId parent = entity.parent.id;
+		while (parent.is_valid() && !inside.has(parent)) {
+			if (resolve(parent).state != EntityReferenceState::RESIDENT) {
+				return false;
+			}
+			PreparedEntity live;
+			live.id = parent;
+			live.live = true;
+			live.parent = catalog.get_parent(parent);
+			live.order = get_order(parent);
+			inside.insert(parent);
+			ancestors.push_back(std::move(live));
+			parent = catalog.get_parent(parent).id;
+		}
+	}
+	for (PreparedEntity &entity : ancestors) {
+		p_job.result.entities.push_back(std::move(entity));
 	}
 	for (PreparedEntity &entity : p_job.result.entities) {
-		const EntityCatalog::Record *record = catalog.records.getptr(entity.id);
-		if (!record || record->deleted) {
-			return false;
-		}
-		const EntityId parent = record->parent.id;
-		if (parent.is_valid() && !prepared_ids.has(parent) && resolve(parent).state != EntityReferenceState::RESIDENT) {
-			return false;
-		}
-		entity.parent = record->parent;
-		entity.order = get_order(entity.id);
-		if (entity.live || resolve(entity.id).state == EntityReferenceState::RESIDENT) {
-			entity.live = true;
-			entity.release();
+		if (entity.live) {
 			continue;
+		}
+		const EntityCatalog::Record *record = catalog.records.getptr(entity.id);
+		if (record) {
+			if (record->deleted != entity.deleted) {
+				return false;
+			}
+			if (resolve(entity.id).state == EntityReferenceState::RESIDENT) {
+				entity.live = true;
+				entity.parent = record->parent;
+				entity.order = get_order(entity.id);
+				entity.release();
+				continue;
+			}
 		}
 		r_ids.push_back(entity.id);
 	}
@@ -1518,8 +1571,10 @@ Error EntityScene::request_cells(const Vector<CellKey> &p_cells, int *r_remainin
 	int remaining = 0;
 	int dispatched = 0;
 	Error result = OK;
+	HashSet<CellKey, CellKeyHasher> wanted;
 	for (const CellKey &cell : p_cells) {
-		if (resident_cells.has(cell) || !cells.has(cell)) {
+		wanted.insert(cell);
+		if (resident_cells.has(cell)) {
 			continue;
 		}
 		const uint64_t *failed = failed_cells.getptr(cell);
@@ -1544,6 +1599,15 @@ Error EntityScene::request_cells(const Vector<CellKey> &p_cells, int *r_remainin
 		if (!resident_cells.has(cell)) {
 			remaining++;
 		}
+	}
+	Vector<CellKey> stale_assets;
+	for (const KeyValue<CellKey, LocalVector<Ref<Resource>>> &entry : cell_assets) {
+		if (!resident_cells.has(entry.key) && !wanted.has(entry.key) && !_is_cell_in_flight(entry.key)) {
+			stale_assets.push_back(entry.key);
+		}
+	}
+	for (const CellKey &cell : stale_assets) {
+		cell_assets.erase(cell);
 	}
 	if (r_remaining) {
 		*r_remaining = remaining;
@@ -1612,19 +1676,37 @@ Error EntityScene::release_cells(const Vector<CellKey> &p_cells) {
 		Error error = unload_subset(unloading);
 		if (error != OK) {
 			result = error;
+			continue;
+		}
+		HashSet<EntityId, EntityIdHasher> forgotten;
+		for (EntityId id : unloading) {
+			if (!prefab_members.has(id)) {
+				forgotten.insert(id);
+			}
+		}
+		bool pending = true;
+		while (pending) {
+			pending = false;
+			Vector<EntityId> kept;
+			for (EntityId id : forgotten) {
+				for (EntityId child : catalog.get_children(id)) {
+					if (!forgotten.has(child)) {
+						kept.push_back(id);
+						break;
+					}
+				}
+			}
+			for (EntityId id : kept) {
+				forgotten.erase(id);
+				pending = true;
+			}
+		}
+		for (EntityId id : forgotten) {
+			_forget_entity(id);
 		}
 	}
 	if (released) {
 		residency_serial++;
-	}
-	return result;
-}
-
-Vector<EntityScene::CellKey> EntityScene::get_cells() const {
-	Vector<CellKey> result;
-	result.reserve(cells.size());
-	for (const KeyValue<CellKey, HashSet<EntityId, EntityIdHasher>> &entry : cells) {
-		result.push_back(entry.key);
 	}
 	return result;
 }
