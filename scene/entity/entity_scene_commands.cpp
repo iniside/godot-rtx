@@ -724,12 +724,18 @@ Error EntitySceneCommands::_reconcile_prefab_catalog() {
 				conflicted.insert(id);
 				continue;
 			}
+			const bool was_deleted = document.catalog.records[id].deleted;
+			const EntityId was_parent = document.catalog.records[id].parent.id;
+			const int64_t was_order = document.get_order(id);
 			document.catalog._unlink_parent(id);
 			document.catalog.records[id].deleted = explicitly_deleted || (removed && !added);
 			document.catalog.records[id].parent = { parent };
 			document.order.insert(id, order);
 			if (!document.catalog.records[id].deleted) {
 				document.catalog._set_parent(id, { parent });
+			}
+			if (was_deleted != document.catalog.records[id].deleted || was_parent != parent || was_order != order) {
+				document.dirty.insert(id);
 			}
 		}
 		instance["mapping"] = mapping;
@@ -747,6 +753,7 @@ Error EntitySceneCommands::_reconcile_prefab_catalog() {
 			if (document.catalog.get_state(child) != EntityReferenceState::DELETED && !conflicted.has(child)) {
 				document.catalog.records[child].deleted = true;
 				document.catalog._unlink_parent(child);
+				document.dirty.insert(child);
 				deleted.push_back(child);
 			}
 		}

@@ -98,15 +98,22 @@ bool EntityScene::_parse_cell_directory(const String &p_directory, CellKey &r_ke
 	return true;
 }
 
-String EntityScene::_storage_directory(EntityId p_id) const {
+int32_t EntityScene::_cell_index(double p_value, double p_size) {
+	const double index = Math::floor(p_value / p_size);
+	return int32_t(CLAMP(index, double(INT32_MIN), double(INT32_MAX)));
+}
+
+String EntityScene::_storage_directory(EntityId p_id, String &r_source) const {
 	const Section *section = sections.getptr(p_id);
 	if (section && !section->path.is_empty()) {
+		r_source = section->path;
 		return section->path.get_base_dir();
 	}
 	const PrefabMember *member = prefab_members.getptr(p_id);
 	if (!member) {
 		return String();
 	}
+	r_source = String("prefabs").path_join(member->instance + ".escn");
 	const Variant value = prefab_instances.get(member->instance, Variant());
 	if (value.get_type() != Variant::DICTIONARY) {
 		return String();
@@ -132,35 +139,41 @@ void EntityScene::_forget_cell(EntityId p_id) {
 	}
 }
 
-void EntityScene::_assign_cell(EntityId p_id) {
+Error EntityScene::_assign_cell(EntityId p_id) {
 	_forget_cell(p_id);
 	if (catalog.get_state(p_id) != EntityReferenceState::UNLOADED) {
-		return;
+		return OK;
 	}
-	const String directory = _storage_directory(p_id);
+	String source;
+	const String directory = _storage_directory(p_id, source);
 	if (directory.is_empty()) {
-		return;
+		return source.is_empty() ? OK : _fail(p_id, "cell/" + source, ERR_INVALID_DATA);
 	}
 	if (directory == "global") {
 		globals.insert(p_id);
-		return;
+		return OK;
 	}
 	CellKey key;
-	if (!_parse_cell_directory(directory, key)) {
-		ERR_PRINT("Entity " + p_id.to_string() + " has an invalid cell directory: " + directory);
-		return;
+	if (!_parse_cell_directory(directory, key) || !grids.has(key.grid)) {
+		return _fail(p_id, "cell/" + source, ERR_INVALID_DATA);
 	}
 	cells[key].insert(p_id);
 	cell_of.insert(p_id, key);
+	return OK;
 }
 
-void EntityScene::_rebuild_cells() {
+Error EntityScene::_rebuild_cells() {
 	cells.clear();
 	cell_of.clear();
 	globals.clear();
+	Error result = OK;
 	for (const KeyValue<EntityId, EntityCatalog::Record> &entry : catalog.records) {
-		_assign_cell(entry.key);
+		const Error error = _assign_cell(entry.key);
+		if (error != OK && result == OK) {
+			result = error;
+		}
 	}
+	return result;
 }
 
 void EntityScene::_index_prefabs() {
@@ -744,7 +757,6 @@ Error EntityScene::unload_subset(const Vector<EntityId> &p_ids) {
 	HashMap<EntityId, Section, EntityIdHasher> saved;
 	for (EntityId id : p_ids) {
 		requested.insert(id);
-		// Dirty entities are pinned implicitly; a pinned entity is always resident, so the children check below covers pinned descendants.
 		if (pins.has(id) || dirty.has(id)) {
 			return ERR_BUSY;
 		}
@@ -824,6 +836,7 @@ Error EntityScene::create_play_document(Ref<EntityScene> &r_scene) {
 	result->default_range = default_range;
 	result->prefab_instances = prefab_instances.duplicate(true);
 	result->storage_path = storage_path;
+	result->dirty = dirty;
 	for (EntityId id : catalog.get_ids()) {
 		Dictionary record;
 		Error error = _read_record(id, record);
@@ -849,7 +862,11 @@ Error EntityScene::create_play_document(Ref<EntityScene> &r_scene) {
 		}
 	}
 	result->_index_prefabs();
-	result->_rebuild_cells();
+	Error cell_error = result->_rebuild_cells();
+	if (cell_error != OK) {
+		last_error = result->last_error;
+		return cell_error;
+	}
 	r_scene = result;
 	return OK;
 }
@@ -1057,15 +1074,9 @@ EntityScene::CellKey EntityScene::cell_for_position(const String &p_grid, const 
 	ERR_FAIL_NULL_V_MSG(grid, key, "Entity scene has no grid named \"" + grid_name + "\".");
 	ERR_FAIL_COND_V(grid->size <= 0.0, key);
 	key.grid = grid_name;
-	const double axes[3] = { double(p_position.x), double(p_position.y), double(p_position.z) };
-	int32_t cell[3] = { 0, 0, 0 };
-	for (int i = 0; i < 3; i++) {
-		const double index = Math::floor(axes[i] / grid->size);
-		cell[i] = int32_t(CLAMP(index, double(INT32_MIN), double(INT32_MAX)));
-	}
-	key.x = cell[0];
-	key.y = cell[1];
-	key.z = cell[2];
+	key.x = _cell_index(double(p_position.x), grid->size);
+	key.y = _cell_index(double(p_position.y), grid->size);
+	key.z = _cell_index(double(p_position.z), grid->size);
 	return key;
 }
 

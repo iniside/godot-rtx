@@ -88,10 +88,11 @@ private:
 
 	Error _owner();
 	static bool _parse_cell_directory(const String &p_directory, CellKey &r_key);
-	String _storage_directory(EntityId p_id) const;
-	void _assign_cell(EntityId p_id);
+	static int32_t _cell_index(double p_value, double p_size);
+	String _storage_directory(EntityId p_id, String &r_source) const;
+	Error _assign_cell(EntityId p_id);
 	void _forget_cell(EntityId p_id);
-	void _rebuild_cells();
+	Error _rebuild_cells();
 	void _index_prefabs();
 	void _clear_scratch();
 	Error _load_resident(const Vector<EntityId> &p_ids, LoadProfile *r_profile);

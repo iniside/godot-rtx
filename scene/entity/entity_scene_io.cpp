@@ -548,7 +548,8 @@ Error EntitySceneIO::load(const String &p_path, Ref<EntityScene> &r_scene) {
 	if (error != OK) {
 		return error;
 	}
-	scene->_rebuild_cells();
+	error = scene->_rebuild_cells();
+	ERR_FAIL_COND_V_MSG(error != OK, error, "Entity scene has an invalid storage cell: " + directory + " (" + scene->get_last_error() + ")");
 	r_scene = scene;
 	return OK;
 }
@@ -725,9 +726,9 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 		const EntityScene::Grid *configuration = p_scene.grids.getptr(grid);
 		ERR_FAIL_COND_V_MSG(!configuration, p_scene._fail(id, "streaming/grid", ERR_INVALID_DATA), "Entity " + id.to_string() + " uses unknown grid \"" + grid + "\": " + p_path);
 		const EntityPose pose = world_pose(world_pose, id);
-		const int64_t x = int64_t(Math::floor(pose.translation.x / configuration->size));
-		const int64_t y = int64_t(Math::floor(pose.translation.y / configuration->size));
-		const int64_t z = int64_t(Math::floor(pose.translation.z / configuration->size));
+		const int32_t x = EntityScene::_cell_index(pose.translation.x, configuration->size);
+		const int32_t y = EntityScene::_cell_index(pose.translation.y, configuration->size);
+		const int32_t z = EntityScene::_cell_index(pose.translation.z, configuration->size);
 		directories.insert(id, cell_directory(grid, x, y, z));
 	}
 	HashMap<String, String> texts;
@@ -791,7 +792,7 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 		EntityId root;
 		for (const Variant &source : mapping.get_key_list()) {
 			EntityId id;
-			if (EntityId::parse(mapping[source], id) != OK || !directories.has(id)) {
+			if (EntityId::parse(mapping[source], id) != OK || !directories.has(id) || p_scene.catalog.get_state(id) != EntityReferenceState::UNLOADED) {
 				continue;
 			}
 			const EntityId parent = p_scene.catalog.get_parent(id).id;
@@ -955,7 +956,8 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 	p_scene.storage_path = p_path;
 	p_scene.revision = revision;
 	p_scene.dirty.clear();
-	p_scene._rebuild_cells();
+	error = p_scene._rebuild_cells();
+	ERR_FAIL_COND_V_MSG(error != OK, error, "Entity scene has an invalid storage cell: " + directory + " (" + p_scene.get_last_error() + ")");
 	return OK;
 }
 
