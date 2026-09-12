@@ -1,5 +1,23 @@
 # Project State
 
+World storage: text cell scenes and streaming (2026-09-12, `ff0cc1162f`..`41772e02f3`):
+`.escn` is now a small text main file (uid line, grids, `[types]`) plus a
+`.gdignore` companion directory with one text file per entity under
+`global/` and `cells/<grid>/<x>_<y>_<z>/`, clusters and prefab instance
+files; no binary reader. Named grids per scene (size, optional range in
+meters), `EntityStreaming.grid` assigns an entity, cell from the serialized
+world pose at save, unknown grid = hard error. `EntityScene` streams by
+`CellKey` on `load_subset`/`unload_subset`/`pin` (`request_cells` with a
+per-tick budget, `release_cells`, `dirty` pinned, `residency_serial`,
+`load_global`); `EntitySceneStreaming::step` runs in `Node3DEditor` and
+`EntitySceneRuntime` with range/hysteresis `range + size`; the editor dock
+pairs the file with its directory. Stress scene: catalog read 3.2 s for
+10 005 files, globals 8 ms, nine 64 m cells streamed in ~4.2 s (0.9 s per
+2250-entity cell); hand-authored `streaming_test.escn` (10 m cells, 5 m
+range) streams 4 → 8 → 7 cells under camera motion with zero errors. Editor
+UI save/move/duplicate flows are review-verified only. See
+[measurements and limits](../research/2026-09-12-1700-world-storage-text-cells-status.md).
+
 Microgeometry `.mgdata` v3 compression (2026-09-12, `e656e5b415`, `dcab8fd312`,
 `f06247d0a5`, `c7f99ac2a2`): owner-approved Nanite-style split into a dense
 disk format (global grid positions with per-cluster bit widths, octahedral
