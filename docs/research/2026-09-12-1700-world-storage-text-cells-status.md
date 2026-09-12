@@ -103,7 +103,9 @@ once the camera is more than 15 m from its box, so a 10 m move adds cells
 without releasing any.
 
 Headless editor and headless runtime (`--headless --path . streaming_test.escn`)
-report the same 4 cells / 12 entities with zero errors.
+report the same 4 cells / 12 entities with zero errors. Owner opened
+`streaming_test.escn` in the windowed editor and confirmed the streaming
+visually (2026-09-12).
 
 ## Limits and open items
 
