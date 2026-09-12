@@ -1091,4 +1091,31 @@ AABB EntityScene::cell_aabb(const CellKey &p_cell) const {
 	return AABB(Vector3(double(p_cell.x) * size, double(p_cell.y) * size, double(p_cell.z) * size), Vector3(size, size, size));
 }
 
+Vector<String> EntityScene::get_grid_names() const {
+	Vector<String> result;
+	result.reserve(grids.size());
+	for (const KeyValue<String, Grid> &entry : grids) {
+		result.push_back(entry.key);
+	}
+	return result;
+}
+
+double EntityScene::get_grid_size(const String &p_grid) const {
+	const Grid *grid = grids.getptr(p_grid.is_empty() ? default_grid : p_grid);
+	return grid ? grid->size : 0.0;
+}
+
+double EntityScene::get_grid_range(const String &p_grid) const {
+	const Grid *grid = grids.getptr(p_grid.is_empty() ? default_grid : p_grid);
+	if (!grid) {
+		return 0.0;
+	}
+	return grid->range > 0.0 ? grid->range : default_range;
+}
+
+String EntityScene::get_entity_name(EntityId p_id) const {
+	const Section *section = sections.getptr(p_id);
+	return section ? section->name : String();
+}
+
 #endif

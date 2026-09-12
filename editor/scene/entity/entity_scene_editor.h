@@ -17,6 +17,7 @@ class EntitySceneEditor : public VBoxContainer {
 	Ref<EntityScene> document;
 	EntityId selected;
 	uint64_t revision = 0;
+	uint64_t residency_serial = 0;
 	Vector<EntityId> entities;
 	Vector<EntityId> filtered;
 	HashMap<EntityId, String, EntityIdHasher> names;

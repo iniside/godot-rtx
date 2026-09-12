@@ -19,6 +19,7 @@ class EntitySceneRuntime : public MainLoop {
 	bool quit_requested = false;
 	bool interpolation_enabled = false;
 
+	void _stream();
 	void _window_resized();
 	void _window_event(int p_event);
 	void _input_event(const Ref<InputEvent> &p_event);

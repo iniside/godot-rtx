@@ -93,6 +93,7 @@
 #include "scene/3d/physics/collision_shape_3d.h"
 #include "scene/3d/physics/physics_body_3d.h"
 #include "scene/3d/world_environment.h"
+#include "scene/entity/entity_scene_streaming.h"
 #include "scene/entity/entity_world.h"
 #include "scene/gui/button.h"
 #include "scene/gui/center_container.h"
@@ -2211,6 +2212,7 @@ void Node3DEditor::_update_theme() {
 void Node3DEditor::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_INTERNAL_PROCESS: {
+			_stream_scene_document();
 			entity_world->get_transforms().begin_tick();
 			entity_world->get_transforms().update();
 			entity_world->get_transforms().interpolate(1.0);
@@ -2831,15 +2833,8 @@ void Node3DEditor::set_scene_document(const Ref<EntityScene> &p_document, bool p
 	scene_document = p_document;
 	document_status->set_text(vformat(TTR("Native scene: %d entities. Select in the Scene dock or click a mesh."), p_document->get_resident_count()));
 	entity_world = next_world;
-	native_directional_light = false;
-	native_environment = false;
 	const uint64_t queries_begin = OS::get_singleton()->get_ticks_usec();
-	entity_world->query<EntityLight>().each([&](const EntityLight &p_light) {
-		native_directional_light |= p_light.type == RSE::LIGHT_DIRECTIONAL;
-	});
-	entity_world->query<EntityEnvironment>().each([&](const EntityEnvironment &) {
-		native_environment = true;
-	});
+	_update_native_lighting();
 	const uint64_t queries_end = OS::get_singleton()->get_ticks_usec();
 	RID scenario = entity_world->get_scenario();
 	for (ToolRenderData *record : { &origin_instance, &grid_instance[0], &grid_instance[1], &grid_instance[2], &indicators_instance, &cursor_instance }) {
@@ -2888,6 +2883,45 @@ void Node3DEditor::set_scene_document(const Ref<EntityScene> &p_document, bool p
 				double(transforms_end - transforms_begin) * to_ms,
 				double(publish_end - publish_begin) * to_ms,
 				double(sync_end - publish_end) * to_ms));
+	}
+}
+
+bool Node3DEditor::_update_native_lighting() {
+	const bool had_light = native_directional_light;
+	const bool had_environment = native_environment;
+	native_directional_light = false;
+	native_environment = false;
+	entity_world->query<EntityLight>().each([&](const EntityLight &p_light) {
+		native_directional_light |= p_light.type == RSE::LIGHT_DIRECTIONAL;
+	});
+	entity_world->query<EntityEnvironment>().each([&](const EntityEnvironment &) {
+		native_environment = true;
+	});
+	return had_light != native_directional_light || had_environment != native_environment;
+}
+
+void Node3DEditor::_stream_scene_document() {
+	if (scene_document.is_null()) {
+		return;
+	}
+	Vector<Vector3> cameras;
+	for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
+		if (!viewports[i]->is_visible_in_tree()) {
+			continue;
+		}
+		Camera3D *camera = viewports[i]->get_camera_3d();
+		if (camera) {
+			cameras.push_back(camera->get_global_position());
+		}
+	}
+	const uint64_t serial = scene_document->get_residency_serial();
+	EntitySceneStreaming::step(**scene_document, cameras);
+	if (scene_document->get_residency_serial() == serial) {
+		return;
+	}
+	document_status->set_text(vformat(TTR("Native scene: %d entities. Select in the Scene dock or click a mesh."), scene_document->get_resident_count()));
+	if (_update_native_lighting()) {
+		_update_preview_environment();
 	}
 }
 

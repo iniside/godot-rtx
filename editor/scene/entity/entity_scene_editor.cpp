@@ -31,7 +31,8 @@ void EntitySceneEditor::_refresh_catalog() {
 				continue;
 			}
 			const EntityName *name = target.state == EntityReferenceState::RESIDENT ? document->get_world()->get<EntityName>(target.handle) : nullptr;
-			names[id] = name && !name->name.is_empty() ? name->name : id.to_string();
+			const String stored = name && !name->name.is_empty() ? name->name : document->get_entity_name(id);
+			names[id] = stored.is_empty() ? id.to_string() : stored;
 			entities.push_back(id);
 		}
 		struct EntityOrder {
@@ -497,6 +498,7 @@ void EntitySceneEditor::_history_changed() {
 void EntitySceneEditor::_document_changed() {
 	if (document.is_valid()) {
 		revision = document->get_revision();
+		residency_serial = document->get_residency_serial();
 		const uint64_t catalog_begin = OS::get_singleton()->get_ticks_usec();
 		_refresh_catalog();
 		const uint64_t catalog_end = OS::get_singleton()->get_ticks_usec();
@@ -525,6 +527,9 @@ void EntitySceneEditor::_notification(int p_what) {
 	}
 	Ref<EntityScene> next_document = editor_data.get_scene_document();
 	if (next_document == document) {
+		if (document.is_valid() && (document->get_revision() != revision || document->get_residency_serial() != residency_serial)) {
+			_document_changed();
+		}
 		return;
 	}
 	commit_pending_edits();

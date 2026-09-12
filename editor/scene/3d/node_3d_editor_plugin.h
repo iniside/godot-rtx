@@ -103,6 +103,8 @@ private:
 	bool native_directional_light = false;
 	bool native_environment = false;
 	EntityWorld *entity_world = nullptr;
+	bool _update_native_lighting();
+	void _stream_scene_document();
 	void _update_default_environment();
 
 	EditorSelection *editor_selection = nullptr;

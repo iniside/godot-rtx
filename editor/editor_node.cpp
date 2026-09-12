@@ -4919,14 +4919,8 @@ Error EditorNode::load_scene(const String &p_scene, bool p_ignore_broken_deps, b
 	Ref<EntityScene> document = ResourceLoader::load(path, "EntityScene", ResourceFormatLoader::CACHE_MODE_IGNORE, &error);
 	OS::get_singleton()->benchmark_end_measure("Scene Load", benchmark_file + ": Resource Load");
 	ERR_FAIL_COND_V_MSG(error != OK || document.is_null(), error == OK ? ERR_INVALID_DATA : error, "Cannot load native EntityScene: " + path);
-	Vector<EntityId> initial;
-	for (EntityId id : document->get_catalog().get_ids()) {
-		if (document->get_catalog().get_state(id) != EntityReferenceState::DELETED) {
-			initial.push_back(id);
-		}
-	}
 	OS::get_singleton()->benchmark_begin_measure("Scene Load", benchmark_file + ": Load Subset");
-	error = document->load_subset(initial);
+	error = document->load_global();
 	OS::get_singleton()->benchmark_end_measure("Scene Load", benchmark_file + ": Load Subset");
 	ERR_FAIL_COND_V_MSG(error != OK, error, document->get_last_error());
 	OS::get_singleton()->benchmark_begin_measure("Scene Load", benchmark_file + ": Initialize Services");

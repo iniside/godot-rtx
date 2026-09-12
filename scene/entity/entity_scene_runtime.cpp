@@ -8,6 +8,7 @@
 #include "core/object/message_queue.h"
 #include "core/os/os.h"
 #include "core/string/translation_server.h"
+#include "scene/entity/entity_scene_streaming.h"
 #include "scene/resources/image_texture.h"
 #include "scene/resources/particle_process_material.h"
 #include "servers/display/display_server.h"
@@ -28,13 +29,7 @@ Error EntitySceneRuntime::setup(const String &p_scene_path) {
 		Error error = OK;
 		document = ResourceLoader::load(path, "EntityScene", ResourceFormatLoader::CACHE_MODE_IGNORE, &error);
 		ERR_FAIL_COND_V_MSG(error != OK || document.is_null(), error == OK ? ERR_INVALID_DATA : error, "Cannot load native EntityScene: " + p_scene_path);
-		Vector<EntityId> initial;
-		for (EntityId id : document->get_catalog().get_ids()) {
-			if (document->get_catalog().get_state(id) != EntityReferenceState::DELETED) {
-				initial.push_back(id);
-			}
-		}
-		error = document->load_subset(initial);
+		error = document->load_global();
 		if (error != OK) {
 			document.unref();
 			return error;
@@ -111,6 +106,21 @@ Error EntitySceneRuntime::setup(const String &p_scene_path) {
 	display->window_set_title(title);
 	_window_resized();
 	return OK;
+}
+
+void EntitySceneRuntime::_stream() {
+	if (document.is_null()) {
+		return;
+	}
+	Vector<Vector3> cameras;
+	world->query<EntityCamera, EntityTransform>().each([&](const EntityCamera &p_camera, const EntityTransform &p_transform) {
+		if (!p_camera.current) {
+			return;
+		}
+		const EntityPose &pose = p_transform.current;
+		cameras.push_back(Vector3(pose.translation.x, pose.translation.y, pose.translation.z));
+	});
+	EntitySceneStreaming::step(**document, cameras);
 }
 
 void EntitySceneRuntime::_window_resized() {
@@ -204,6 +214,7 @@ void EntitySceneRuntime::iteration_end() {
 
 bool EntitySceneRuntime::process(double p_time) {
 	MessageQueue::get_singleton()->flush();
+	_stream();
 	world->get_transforms().interpolate(interpolation_enabled ? Engine::get_singleton()->get_physics_interpolation_fraction() : 1.0);
 	BaseMaterial3D::flush_changes();
 	ParticleProcessMaterial::flush_changes();
