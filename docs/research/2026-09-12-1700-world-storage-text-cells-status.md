@@ -116,8 +116,9 @@ report the same 4 cells / 12 entities with zero errors.
   inline in `1b6d99488e`), Krok 4 used both rounds (`dda2a58359` fixed the
   rename → save failure, `41772e02f3` the case-only rename conflict found
   in round 2).
-- Only `target=editor precision=double` was built; `template_debug` and
-  single precision were not.
+- Built: `target=editor precision=double` (validated) and
+  `target=template_debug` single precision (links, not run); the single
+  precision editor was not built.
 - One editor run with `--quit-after 4000` exited with `0xC0000005` after a
   cold shader compile; the same command exited 0 on the rerun and every
   window close exited 0. Not reproduced, no backtrace (no PDB).
