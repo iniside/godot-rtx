@@ -569,18 +569,14 @@ Error EntitySceneCommands::_override_record(Dictionary &r_record, const Dictiona
 
 Error EntitySceneCommands::_prefab_record(EntityId p_id, Dictionary &r_record, bool &r_found) {
 	r_found = false;
-	for (const Variant &key : document.prefab_instances.get_key_list()) {
+	const EntityScene::PrefabMember *member = document.prefab_members.getptr(p_id);
+	if (member) {
+		const String key = member->instance;
+		const String source_id = member->source;
 		Dictionary instance = document.prefab_instances[key];
 		Dictionary mapping = instance["mapping"];
-		String source_id;
-		for (const Variant &source : mapping.get_key_list()) {
-			if (mapping[source] == p_id.to_string()) {
-				source_id = source;
-				break;
-			}
-		}
-		if (source_id.is_empty()) {
-			continue;
+		if (source_id.is_empty() || mapping.get(source_id, Variant()) != p_id.to_string()) {
+			return OK;
 		}
 		Ref<Resource> resource;
 		Error error = entity_decode_asset(instance["uid"], resource);
@@ -755,6 +751,7 @@ Error EntitySceneCommands::_reconcile_prefab_catalog() {
 			}
 		}
 	}
+	document._index_prefabs();
 	Vector<EntityId> ordered;
 	return document._collect_required(document.catalog.get_ids(), ordered);
 }

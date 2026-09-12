@@ -1,6 +1,7 @@
 #ifndef _3D_DISABLED
 
 #include "entity_scene.h"
+#include "core/math/math_funcs.h"
 #include "core/object/class_db.h"
 #include "core/os/os.h"
 #include "core/string/print_string.h"
@@ -69,6 +70,148 @@ Error EntityScene::_fail(EntityId p_id, const String &p_field, Error p_error) {
 	last_error = "Entity " + p_id.to_string() + ", field " + p_field + ": " + error_names[p_error];
 	ERR_PRINT(last_error);
 	return p_error;
+}
+
+bool EntityScene::_parse_cell_directory(const String &p_directory, CellKey &r_key) {
+	const Vector<String> parts = p_directory.split("/", true);
+	if (parts.size() != 3 || parts[0] != "cells" || parts[1].is_empty()) {
+		return false;
+	}
+	const Vector<String> coordinates = parts[2].split("_", true);
+	if (coordinates.size() != 3) {
+		return false;
+	}
+	int64_t values[3] = { 0, 0, 0 };
+	for (int i = 0; i < 3; i++) {
+		if (coordinates[i].is_empty() || !coordinates[i].is_valid_int()) {
+			return false;
+		}
+		values[i] = coordinates[i].to_int();
+		if (itos(values[i]) != coordinates[i] || values[i] < INT32_MIN || values[i] > INT32_MAX) {
+			return false;
+		}
+	}
+	r_key.grid = parts[1];
+	r_key.x = int32_t(values[0]);
+	r_key.y = int32_t(values[1]);
+	r_key.z = int32_t(values[2]);
+	return true;
+}
+
+String EntityScene::_storage_directory(EntityId p_id) const {
+	const Section *section = sections.getptr(p_id);
+	if (section && !section->path.is_empty()) {
+		return section->path.get_base_dir();
+	}
+	const PrefabMember *member = prefab_members.getptr(p_id);
+	if (!member) {
+		return String();
+	}
+	const Variant value = prefab_instances.get(member->instance, Variant());
+	if (value.get_type() != Variant::DICTIONARY) {
+		return String();
+	}
+	const Variant cell = Dictionary(value).get("cell", Variant());
+	return cell.get_type() == Variant::STRING ? String(cell) : String();
+}
+
+void EntityScene::_forget_cell(EntityId p_id) {
+	globals.erase(p_id);
+	const CellKey *entry = cell_of.getptr(p_id);
+	if (!entry) {
+		return;
+	}
+	const CellKey key = *entry;
+	cell_of.erase(p_id);
+	HashSet<EntityId, EntityIdHasher> *members = cells.getptr(key);
+	if (members) {
+		members->erase(p_id);
+		if (members->is_empty()) {
+			cells.erase(key);
+		}
+	}
+}
+
+void EntityScene::_assign_cell(EntityId p_id) {
+	_forget_cell(p_id);
+	if (catalog.get_state(p_id) != EntityReferenceState::UNLOADED) {
+		return;
+	}
+	const String directory = _storage_directory(p_id);
+	if (directory.is_empty()) {
+		return;
+	}
+	if (directory == "global") {
+		globals.insert(p_id);
+		return;
+	}
+	CellKey key;
+	if (!_parse_cell_directory(directory, key)) {
+		ERR_PRINT("Entity " + p_id.to_string() + " has an invalid cell directory: " + directory);
+		return;
+	}
+	cells[key].insert(p_id);
+	cell_of.insert(p_id, key);
+}
+
+void EntityScene::_rebuild_cells() {
+	cells.clear();
+	cell_of.clear();
+	globals.clear();
+	for (const KeyValue<EntityId, EntityCatalog::Record> &entry : catalog.records) {
+		_assign_cell(entry.key);
+	}
+}
+
+void EntityScene::_index_prefabs() {
+	prefab_members.clear();
+	for (const Variant &key : prefab_instances.get_key_list()) {
+		const Variant value = prefab_instances[key];
+		if (value.get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		const Variant mapping = Dictionary(value).get("mapping", Variant());
+		if (mapping.get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		const Dictionary entries = mapping;
+		for (const Variant &source : entries.get_key_list()) {
+			EntityId id;
+			if (entries[source].get_type() == Variant::STRING && EntityId::parse(entries[source], id) == OK && id.is_valid() && !prefab_members.has(id)) {
+				prefab_members.insert(id, { key, source });
+			}
+		}
+	}
+}
+
+void EntityScene::_clear_scratch() {
+	if (scratch.is_null()) {
+		return;
+	}
+	EntityScene &target = **scratch;
+	if (target.world) {
+		Vector<EntityId> ordered;
+		Error error = target._collect_required(target.catalog.get_ids(), ordered);
+		for (int i = ordered.size() - 1; error == OK && i >= 0; i--) {
+			EntityResolution resolution = target.resolve(ordered[i]);
+			if (resolution.state == EntityReferenceState::RESIDENT) {
+				error = target.world->unload_entity(resolution.handle);
+			}
+		}
+		if (error != OK || target.world->get_resident_count() != 0) {
+			scratch.unref();
+			return;
+		}
+		target.world->drain_changed();
+		target.world->get_rendering().clear();
+	}
+	target.catalog.children.clear();
+	target.catalog.records.clear();
+	target.order.clear();
+	target.sections.clear();
+	target.prefab_instances = Dictionary();
+	target.prefab_members.clear();
+	target.last_error = String();
 }
 
 Error EntityScene::_read_stored(EntityId p_id, Dictionary &r_record) {
@@ -185,7 +328,7 @@ Error EntityScene::_read_record(EntityId p_id, Dictionary &r_record, bool *r_sto
 	return OK;
 }
 
-Error EntityScene::_validate_fields(EntityId p_id, uint64_t p_type, const Dictionary &p_fields, const String &p_prefix) {
+Error EntityScene::_validate_fields(EntityId p_id, uint64_t p_type, const Dictionary &p_fields, bool p_decode_assets, const String &p_prefix) {
 	const EntityComponentSchema *schema = get_world()->schemas.find(p_type);
 	String prefix = p_prefix.is_empty() ? String::num_uint64(p_type, 16) : p_prefix;
 	if (!schema) {
@@ -218,13 +361,13 @@ Error EntityScene::_validate_fields(EntityId p_id, uint64_t p_type, const Dictio
 				if (entries[i].get_type() != Variant::DICTIONARY) {
 					return _fail(p_id, address, ERR_INVALID_DATA);
 				}
-				Error error = _validate_fields(p_id, field.nested_type_id, entries[i], address);
+				Error error = _validate_fields(p_id, field.nested_type_id, entries[i], p_decode_assets, address);
 				if (error != OK) {
 					return error;
 				}
 			}
 		}
-		if (field.asset_reference) {
+		if (field.asset_reference && p_decode_assets) {
 			Array assets;
 			if (value.get_type() == Variant::ARRAY) {
 				assets = value;
@@ -254,7 +397,7 @@ Error EntityScene::_validate_fields(EntityId p_id, uint64_t p_type, const Dictio
 	return OK;
 }
 
-Error EntityScene::_describe(EntityId p_id, const Dictionary &p_record, Section &r_section) {
+Error EntityScene::_describe(EntityId p_id, const Dictionary &p_record, Section &r_section, bool p_decode_assets) {
 	if (!p_record.has("components") || p_record["components"].get_type() != Variant::DICTIONARY) {
 		return _fail(p_id, "components", ERR_INVALID_DATA);
 	}
@@ -275,7 +418,7 @@ Error EntityScene::_describe(EntityId p_id, const Dictionary &p_record, Section 
 		if (!schema || !schema->is_component || text != String::num_uint64(type, 16) || components[key].get_type() != Variant::DICTIONARY) {
 			return _fail(p_id, text, ERR_INVALID_DATA);
 		}
-		Error error = _validate_fields(p_id, type, components[key]);
+		Error error = _validate_fields(p_id, type, components[key], p_decode_assets);
 		if (error != OK) {
 			return error;
 		}
@@ -287,7 +430,7 @@ Error EntityScene::_describe(EntityId p_id, const Dictionary &p_record, Section 
 Error EntityScene::_install(EntityId p_id, const Dictionary &p_record, LoadProfile *r_profile) {
 	Section section;
 	uint64_t phase_begin = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
-	Error error = _describe(p_id, p_record, section);
+	Error error = _describe(p_id, p_record, section, false);
 	if (r_profile) {
 		const uint64_t now = OS::get_singleton()->get_ticks_usec();
 		r_profile->describe += now - phase_begin;
@@ -341,7 +484,7 @@ Error EntityScene::_collect_required(const Vector<EntityId> &p_ids, Vector<Entit
 	return OK;
 }
 
-Error EntityScene::_prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_scene, bool p_prefer_stored, LoadProfile *r_profile) {
+Error EntityScene::_prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_scene, bool p_prefer_stored, LoadProfile *r_profile, bool p_scratch) {
 	ERR_FAIL_COND_V(_owner() != OK, ERR_UNAUTHORIZED);
 	Vector<EntityId> required;
 	Error error = _collect_required(p_ids, required);
@@ -349,7 +492,15 @@ Error EntityScene::_prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_s
 		return error;
 	}
 	Ref<EntityScene> prepared;
-	prepared.instantiate();
+	if (p_scratch) {
+		_clear_scratch();
+		if (scratch.is_null()) {
+			scratch.instantiate();
+		}
+		prepared = scratch;
+	} else {
+		prepared.instantiate();
+	}
 	prepared->document_id = document_id;
 	for (EntityId id : required) {
 		Dictionary record;
@@ -413,7 +564,7 @@ Error EntityScene::_can_commit(const EntityScene &p_prepared, const Vector<Entit
 	return OK;
 }
 
-void EntityScene::_commit(EntityScene &p_prepared, const Vector<EntityId> &p_ids, bool p_resident) {
+void EntityScene::_commit(EntityScene &p_prepared, const Vector<EntityId> &p_ids, bool p_resident, bool p_dirty) {
 	EntityWorld *target = get_world();
 	HashSet<EntityId, EntityIdHasher> residency;
 	Vector<EntityId> active;
@@ -469,9 +620,18 @@ void EntityScene::_commit(EntityScene &p_prepared, const Vector<EntityId> &p_ids
 		}
 		order.insert(id, p_prepared.get_order(id));
 		if (!record.deleted && p_prepared.sections.has(id)) {
-			sections.insert(id, p_prepared.sections[id]);
+			Section section = p_prepared.sections[id];
+			const Section *previous = sections.getptr(id);
+			if (previous && section.path.is_empty()) {
+				section.path = previous->path;
+				section.cluster = previous->cluster;
+			}
+			sections.insert(id, section);
 		} else {
 			sections.erase(id);
+		}
+		if (p_dirty) {
+			dirty.insert(id);
 		}
 	}
 	for (EntityId id : p_ids) {
@@ -485,7 +645,41 @@ void EntityScene::_commit(EntityScene &p_prepared, const Vector<EntityId> &p_ids
 			}
 		}
 	}
+	if (p_dirty) {
+		_index_prefabs();
+	}
+	for (EntityId id : p_ids) {
+		_assign_cell(id);
+	}
 	revision++;
+}
+
+Error EntityScene::_load_resident(const Vector<EntityId> &p_ids, LoadProfile *r_profile) {
+	Ref<EntityScene> prepared;
+	const uint64_t prepare_begin = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
+	Error error = _prepare(p_ids, prepared, false, r_profile, true);
+	if (r_profile) {
+		r_profile->prepare = OS::get_singleton()->get_ticks_usec() - prepare_begin;
+	}
+	if (error == OK) {
+		const uint64_t check_begin = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
+		error = _can_commit(**prepared, p_ids);
+		if (r_profile) {
+			r_profile->check = OS::get_singleton()->get_ticks_usec() - check_begin;
+		}
+	}
+	if (error == OK) {
+		const uint64_t commit_begin = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
+		const uint64_t previous_revision = revision;
+		_commit(**prepared, p_ids, true, false);
+		revision = previous_revision;
+		if (r_profile) {
+			r_profile->commit = OS::get_singleton()->get_ticks_usec() - commit_begin;
+		}
+	}
+	prepared.unref();
+	_clear_scratch();
+	return error;
 }
 
 Error EntityScene::load_subset(const Vector<EntityId> &p_ids) {
@@ -515,20 +709,10 @@ Error EntityScene::load_subset(const Vector<EntityId> &p_ids) {
 		return OK;
 	}
 	const uint64_t collected = OS::get_singleton()->get_ticks_usec();
-	Ref<EntityScene> prepared;
-	error = _prepare(unloaded, prepared, false, profiling ? &profile : nullptr);
+	error = _load_resident(unloaded, profiling ? &profile : nullptr);
 	if (error != OK) {
 		return error;
 	}
-	const uint64_t prepared_at = OS::get_singleton()->get_ticks_usec();
-	error = _can_commit(**prepared, unloaded);
-	if (error != OK) {
-		return error;
-	}
-	const uint64_t checked = OS::get_singleton()->get_ticks_usec();
-	uint64_t previous_revision = revision;
-	_commit(**prepared, unloaded, true);
-	revision = previous_revision;
 	const uint64_t committed = OS::get_singleton()->get_ticks_usec();
 	if (profiling) {
 		uint64_t asset_usec = 0;
@@ -539,7 +723,7 @@ Error EntityScene::load_subset(const Vector<EntityId> &p_ids) {
 		print_line(vformat("EntityScene load_subset: records=%d collect=%.2fms prepare=%.2fms (read_record=%.2fms install=%.2fms describe=%.2fms world=%.2fms asset_load=%.2fms loads=%d cache_hits=%d) can_commit=%.2fms commit=%.2fms total=%.2fms",
 				unloaded.size(),
 				double(collected - started) * to_ms,
-				double(prepared_at - collected) * to_ms,
+				double(profile.prepare) * to_ms,
 				double(profile.read_record) * to_ms,
 				double(profile.install) * to_ms,
 				double(profile.describe) * to_ms,
@@ -547,8 +731,8 @@ Error EntityScene::load_subset(const Vector<EntityId> &p_ids) {
 				double(asset_usec) * to_ms,
 				asset_loads,
 				asset_cache_hits,
-				double(checked - prepared_at) * to_ms,
-				double(committed - checked) * to_ms,
+				double(profile.check) * to_ms,
+				double(profile.commit) * to_ms,
 				double(committed - started) * to_ms));
 	}
 	return OK;
@@ -560,15 +744,19 @@ Error EntityScene::unload_subset(const Vector<EntityId> &p_ids) {
 	HashMap<EntityId, Section, EntityIdHasher> saved;
 	for (EntityId id : p_ids) {
 		requested.insert(id);
-		for (const KeyValue<EntityId, uint32_t> &pin : pins) {
-			for (EntityId ancestor = pin.key; ancestor.is_valid(); ancestor = catalog.get_parent(ancestor).id) {
-				if (ancestor == id) {
-					return ERR_BUSY;
-				}
-			}
+		// Dirty entities are pinned implicitly; a pinned entity is always resident, so the children check below covers pinned descendants.
+		if (pins.has(id) || dirty.has(id)) {
+			return ERR_BUSY;
 		}
 		if (resolve(id).state != EntityReferenceState::RESIDENT) {
 			return ERR_UNAVAILABLE;
+		}
+		const Section *stored = sections.getptr(id);
+		if (stored && !stored->path.is_empty()) {
+			Section section = *stored;
+			section.record = Dictionary();
+			saved.insert(id, section);
+			continue;
 		}
 		Dictionary record;
 		Error error = _encode_record(id, record);
@@ -635,6 +823,7 @@ Error EntityScene::create_play_document(Ref<EntityScene> &r_scene) {
 	result->default_grid = default_grid;
 	result->default_range = default_range;
 	result->prefab_instances = prefab_instances.duplicate(true);
+	result->storage_path = storage_path;
 	for (EntityId id : catalog.get_ids()) {
 		Dictionary record;
 		Error error = _read_record(id, record);
@@ -651,11 +840,240 @@ Error EntityScene::create_play_document(Ref<EntityScene> &r_scene) {
 				return error;
 			}
 			section.record = record;
+			const Section *source = sections.getptr(id);
+			if (source) {
+				section.path = source->path;
+				section.cluster = source->cluster;
+			}
 			result->sections.insert(id, section);
 		}
 	}
+	result->_index_prefabs();
+	result->_rebuild_cells();
 	r_scene = result;
 	return OK;
+}
+
+Error EntityScene::_cell_entities(const CellKey &p_cell, Vector<EntityId> &r_ids, Vector<EntityId> &r_ancestors) const {
+	const HashSet<EntityId, EntityIdHasher> *members = cells.getptr(p_cell);
+	if (!members) {
+		return ERR_DOES_NOT_EXIST;
+	}
+	HashSet<EntityId, EntityIdHasher> inside;
+	for (EntityId id : *members) {
+		if (catalog.get_state(id) != EntityReferenceState::UNLOADED) {
+			continue;
+		}
+		inside.insert(id);
+		r_ids.push_back(id);
+	}
+	HashSet<EntityId, EntityIdHasher> seen;
+	for (EntityId id : r_ids) {
+		int guard = catalog.get_record_count() + 1;
+		for (EntityId ancestor = catalog.get_parent(id).id; ancestor.is_valid(); ancestor = catalog.get_parent(ancestor).id) {
+			if (guard-- <= 0) {
+				return ERR_CYCLIC_LINK;
+			}
+			if (inside.has(ancestor) || seen.has(ancestor)) {
+				break;
+			}
+			seen.insert(ancestor);
+			r_ancestors.push_back(ancestor);
+		}
+	}
+	return OK;
+}
+
+Error EntityScene::load_global() {
+	ERR_FAIL_COND_V(_owner() != OK, ERR_UNAUTHORIZED);
+	if (global_pinned) {
+		return OK;
+	}
+	Vector<EntityId> ids;
+	for (EntityId id : globals) {
+		if (catalog.get_state(id) == EntityReferenceState::UNLOADED) {
+			ids.push_back(id);
+		}
+	}
+	Error error = pin(ids);
+	if (error != OK) {
+		return error;
+	}
+	global_pinned = true;
+	residency_serial++;
+	return OK;
+}
+
+Error EntityScene::request_cells(const Vector<CellKey> &p_cells, int p_max_entities, int *r_remaining) {
+	ERR_FAIL_COND_V(_owner() != OK, ERR_UNAUTHORIZED);
+	if (r_remaining) {
+		*r_remaining = 0;
+	}
+	Vector<EntityId> batch;
+	HashSet<EntityId, EntityIdHasher> queued;
+	Vector<CellKey> accepted;
+	Vector<Vector<EntityId>> accepted_ancestors;
+	int remaining = 0;
+	bool exhausted = false;
+	for (const CellKey &cell : p_cells) {
+		if (resident_cells.has(cell) || !cells.has(cell)) {
+			continue;
+		}
+		if (exhausted) {
+			remaining++;
+			continue;
+		}
+		Vector<EntityId> ids;
+		Vector<EntityId> ancestors;
+		Error error = _cell_entities(cell, ids, ancestors);
+		if (error != OK) {
+			return error;
+		}
+		Vector<EntityId> pending;
+		for (EntityId id : ancestors) {
+			if (!queued.has(id) && resolve(id).state != EntityReferenceState::RESIDENT) {
+				pending.push_back(id);
+			}
+		}
+		for (EntityId id : ids) {
+			if (!queued.has(id) && resolve(id).state != EntityReferenceState::RESIDENT) {
+				pending.push_back(id);
+			}
+		}
+		if (p_max_entities > 0 && !batch.is_empty() && batch.size() + pending.size() > p_max_entities) {
+			exhausted = true;
+			remaining++;
+			continue;
+		}
+		for (EntityId id : pending) {
+			queued.insert(id);
+			batch.push_back(id);
+		}
+		accepted.push_back(cell);
+		accepted_ancestors.push_back(ancestors);
+	}
+	if (r_remaining) {
+		*r_remaining = remaining;
+	}
+	if (accepted.is_empty()) {
+		return OK;
+	}
+	Error error = batch.is_empty() ? OK : load_subset(batch);
+	if (error != OK) {
+		return error;
+	}
+	for (int i = 0; i < accepted.size(); i++) {
+		error = pin(accepted_ancestors[i]);
+		if (error != OK) {
+			return error;
+		}
+		resident_cells.insert(accepted[i], accepted_ancestors[i]);
+	}
+	residency_serial++;
+	return OK;
+}
+
+Error EntityScene::release_cells(const Vector<CellKey> &p_cells) {
+	ERR_FAIL_COND_V(_owner() != OK, ERR_UNAUTHORIZED);
+	Error result = OK;
+	bool released = false;
+	for (const CellKey &cell : p_cells) {
+		const Vector<EntityId> *pinned = resident_cells.getptr(cell);
+		if (!pinned) {
+			continue;
+		}
+		const Vector<EntityId> ancestors = *pinned;
+		resident_cells.erase(cell);
+		unpin(ancestors);
+		released = true;
+		const HashSet<EntityId, EntityIdHasher> *members = cells.getptr(cell);
+		if (!members) {
+			continue;
+		}
+		HashSet<EntityId, EntityIdHasher> candidates;
+		for (EntityId id : *members) {
+			if (resolve(id).state == EntityReferenceState::RESIDENT && !pins.has(id) && !dirty.has(id)) {
+				candidates.insert(id);
+			}
+		}
+		bool blocked = true;
+		while (blocked) {
+			blocked = false;
+			Vector<EntityId> rejected;
+			for (EntityId id : candidates) {
+				for (EntityId child : catalog.get_children(id)) {
+					if (resolve(child).state == EntityReferenceState::RESIDENT && !candidates.has(child)) {
+						rejected.push_back(id);
+						break;
+					}
+				}
+			}
+			for (EntityId id : rejected) {
+				candidates.erase(id);
+				blocked = true;
+			}
+		}
+		if (candidates.is_empty()) {
+			continue;
+		}
+		Vector<EntityId> unloading;
+		unloading.reserve(candidates.size());
+		for (EntityId id : candidates) {
+			unloading.push_back(id);
+		}
+		Error error = unload_subset(unloading);
+		if (error != OK) {
+			result = error;
+		}
+	}
+	if (released) {
+		residency_serial++;
+	}
+	return result;
+}
+
+Vector<EntityScene::CellKey> EntityScene::get_cells() const {
+	Vector<CellKey> result;
+	result.reserve(cells.size());
+	for (const KeyValue<CellKey, HashSet<EntityId, EntityIdHasher>> &entry : cells) {
+		result.push_back(entry.key);
+	}
+	return result;
+}
+
+Vector<EntityScene::CellKey> EntityScene::get_resident_cells() const {
+	Vector<CellKey> result;
+	result.reserve(resident_cells.size());
+	for (const KeyValue<CellKey, Vector<EntityId>> &entry : resident_cells) {
+		result.push_back(entry.key);
+	}
+	return result;
+}
+
+EntityScene::CellKey EntityScene::cell_for_position(const String &p_grid, const Vector3 &p_position) const {
+	CellKey key;
+	const String grid_name = p_grid.is_empty() ? default_grid : p_grid;
+	const Grid *grid = grids.getptr(grid_name);
+	ERR_FAIL_NULL_V_MSG(grid, key, "Entity scene has no grid named \"" + grid_name + "\".");
+	ERR_FAIL_COND_V(grid->size <= 0.0, key);
+	key.grid = grid_name;
+	const double axes[3] = { double(p_position.x), double(p_position.y), double(p_position.z) };
+	int32_t cell[3] = { 0, 0, 0 };
+	for (int i = 0; i < 3; i++) {
+		const double index = Math::floor(axes[i] / grid->size);
+		cell[i] = int32_t(CLAMP(index, double(INT32_MIN), double(INT32_MAX)));
+	}
+	key.x = cell[0];
+	key.y = cell[1];
+	key.z = cell[2];
+	return key;
+}
+
+AABB EntityScene::cell_aabb(const CellKey &p_cell) const {
+	const Grid *grid = grids.getptr(p_cell.grid);
+	ERR_FAIL_NULL_V_MSG(grid, AABB(), "Entity scene has no grid named \"" + p_cell.grid + "\".");
+	const double size = grid->size;
+	return AABB(Vector3(double(p_cell.x) * size, double(p_cell.y) * size, double(p_cell.z) * size), Vector3(size, size, size));
 }
 
 #endif

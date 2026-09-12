@@ -548,6 +548,7 @@ Error EntitySceneIO::load(const String &p_path, Ref<EntityScene> &r_scene) {
 	if (error != OK) {
 		return error;
 	}
+	scene->_rebuild_cells();
 	r_scene = scene;
 	return OK;
 }
@@ -608,10 +609,48 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 		}
 	}
 	instance_keys.sort();
+	const bool complete = p_scene.storage_path != p_path;
+	HashSet<EntityId, EntityIdHasher> scope;
+	if (complete) {
+		for (EntityId id : ids) {
+			scope.insert(id);
+		}
+	} else {
+		HashMap<String, Vector<EntityId>> cluster_members;
+		for (const KeyValue<EntityId, SceneFile> &entry : existing.files) {
+			if (entry.value.cluster) {
+				cluster_members[entry.value.path].push_back(entry.key);
+			}
+		}
+		Vector<EntityId> pending;
+		for (EntityId id : ids) {
+			if (p_scene.dirty.has(id) || !existing.files.has(id)) {
+				pending.push_back(id);
+			}
+		}
+		for (int i = 0; i < pending.size(); i++) {
+			const EntityId id = pending[i];
+			if (scope.has(id)) {
+				continue;
+			}
+			scope.insert(id);
+			pending.append_array(p_scene.catalog.get_children(id));
+			const SceneFile *file = existing.files.getptr(id);
+			if (file && file->cluster) {
+				pending.append_array(cluster_members[file->path]);
+			}
+		}
+	}
+	HashSet<EntityId, EntityIdHasher> read_scope;
+	for (EntityId id : scope) {
+		for (EntityId ancestor = id; ancestor.is_valid() && !read_scope.has(ancestor); ancestor = p_scene.catalog.get_parent(ancestor).id) {
+			read_scope.insert(ancestor);
+		}
+	}
 	HashMap<EntityId, Dictionary, EntityIdHasher> records;
 	HashMap<EntityId, EntityScene::Section, EntityIdHasher> sections;
 	for (EntityId id : ids) {
-		if (p_scene.catalog.get_state(id) == EntityReferenceState::DELETED) {
+		if (p_scene.catalog.get_state(id) == EntityReferenceState::DELETED || !read_scope.has(id)) {
 			continue;
 		}
 		Dictionary record;
@@ -655,7 +694,11 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 	HashMap<EntityId, String, EntityIdHasher> directories;
 	for (EntityId id : ids) {
 		const Dictionary *record = records.getptr(id);
-		if (!record) {
+		if (!record || !scope.has(id)) {
+			const SceneFile *file = existing.files.getptr(id);
+			if (file) {
+				directories.insert(id, file->path.get_base_dir());
+			}
 			continue;
 		}
 		const Dictionary components = (*record)["components"];
@@ -691,6 +734,9 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 	HashMap<String, Dictionary> clusters;
 	HashMap<EntityId, String, EntityIdHasher> targets;
 	for (EntityId id : ids) {
+		if (!scope.has(id)) {
+			continue;
+		}
 		const Dictionary *record = records.getptr(id);
 		if (!record) {
 			if (!referenced.has(id)) {
@@ -779,12 +825,18 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 	for (const String &path : written) {
 		keep.insert(path);
 	}
+	for (EntityId id : ids) {
+		const SceneFile *file = existing.files.getptr(id);
+		if (file && !scope.has(id)) {
+			keep.insert(file->path);
+		}
+	}
 	int changes = 0;
 	HashSet<String> moved;
 	for (EntityId id : ids) {
 		const SceneFile *previous = existing.files.getptr(id);
 		const String *target = targets.getptr(id);
-		if (!previous || previous->cluster || !target || previous->path == *target) {
+		if (!scope.has(id) || !previous || previous->cluster || !target || previous->path == *target) {
 			continue;
 		}
 		const String absolute = directory.path_join(*target);
@@ -885,18 +937,25 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 			}
 		}
 	}
-	for (KeyValue<EntityId, EntityScene::Section> &entry : sections) {
-		const String *target = targets.getptr(entry.key);
-		if (target) {
-			entry.value.path = *target;
-			entry.value.cluster = target->ends_with(".cluster.escn");
+	for (EntityId id : scope) {
+		EntityScene::Section *section = sections.getptr(id);
+		if (!section) {
+			p_scene.sections.erase(id);
+			continue;
 		}
+		const String *target = targets.getptr(id);
+		if (target) {
+			section->path = *target;
+			section->cluster = target->ends_with(".cluster.escn");
+		}
+		p_scene.sections.insert(id, *section);
 	}
-	p_scene.sections = sections;
 	p_scene.cluster_path = String();
 	p_scene.cluster_records = Dictionary();
 	p_scene.storage_path = p_path;
 	p_scene.revision = revision;
+	p_scene.dirty.clear();
+	p_scene._rebuild_cells();
 	return OK;
 }
 
