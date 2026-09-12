@@ -15,8 +15,8 @@ class EntityScene : public Resource {
 	struct Section {
 		String path;
 		bool cluster = false;
+		String name;
 		Dictionary record;
-		Array dependencies;
 		Array components;
 	};
 
@@ -58,7 +58,7 @@ class EntityScene : public Resource {
 	Error _can_commit(const EntityScene &p_prepared, const Vector<EntityId> &p_ids) const;
 	void _commit(EntityScene &p_prepared, const Vector<EntityId> &p_ids, bool p_resident);
 	Error _install(EntityId p_id, const Dictionary &p_record, LoadProfile *r_profile = nullptr);
-	Error _validate_fields(EntityId p_id, uint64_t p_type, const Dictionary &p_fields, Array *r_dependencies = nullptr, const String &p_prefix = String());
+	Error _validate_fields(EntityId p_id, uint64_t p_type, const Dictionary &p_fields, const String &p_prefix = String());
 	Error _describe(EntityId p_id, const Dictionary &p_record, Section &r_section);
 	Error _fail(EntityId p_id, const String &p_field, Error p_error);
 

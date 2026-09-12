@@ -472,6 +472,20 @@ Error EntitySceneIO::load(const String &p_path, Ref<EntityScene> &r_scene) {
 		section.path = tree.files[id].path;
 		section.cluster = tree.files[id].cluster;
 		const Dictionary components = components_value;
+		const Variant streaming = components.get(component_key(EntityComponentTraits<EntityStreaming>::id), Variant());
+		if (streaming.get_type() == Variant::DICTIONARY) {
+			const Variant grid = Dictionary(streaming).get("1", Variant());
+			if (grid.get_type() == Variant::STRING && !String(grid).is_empty()) {
+				ERR_FAIL_COND_V_MSG(!scene->grids.has(grid), scene->_fail(id, "streaming/grid", ERR_INVALID_DATA), "Entity uses unknown grid \"" + String(grid) + "\": " + path);
+			}
+		}
+		const Variant name = components.get(component_key(EntityComponentTraits<EntityName>::id), Variant());
+		if (name.get_type() == Variant::DICTIONARY) {
+			const Variant text = Dictionary(name).get("1", Variant());
+			if (text.get_type() == Variant::STRING) {
+				section.name = text;
+			}
+		}
 		for (const Variant &component : components.get_key_list()) {
 			if (component.get_type() != Variant::STRING || components[component].get_type() != Variant::DICTIONARY || !types.has(component)) {
 				ERR_FAIL_V_MSG(scene->_fail(id, String(component), ERR_INVALID_DATA), "Invalid component in entity record: " + path);
@@ -852,7 +866,9 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 		if (keep.has(path) || moved.has(path)) {
 			continue;
 		}
-		DirAccess::remove_absolute(directory.path_join(path));
+		const String absolute = directory.path_join(path);
+		error = DirAccess::remove_absolute(absolute);
+		ERR_FAIL_COND_V_MSG(error != OK, error, "Cannot remove stale entity file: " + absolute);
 	}
 	const String cells = directory.path_join("cells");
 	if (DirAccess::dir_exists_absolute(cells)) {
@@ -861,11 +877,11 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 			for (const String &cell : DirAccess::get_directories_at(grid_directory)) {
 				const String cell_path = grid_directory.path_join(cell);
 				if (DirAccess::get_files_at(cell_path).is_empty() && DirAccess::get_directories_at(cell_path).is_empty()) {
-					DirAccess::remove_absolute(cell_path);
+					ERR_CONTINUE_MSG(DirAccess::remove_absolute(cell_path) != OK, "Cannot remove empty cell directory: " + cell_path);
 				}
 			}
 			if (DirAccess::get_files_at(grid_directory).is_empty() && DirAccess::get_directories_at(grid_directory).is_empty()) {
-				DirAccess::remove_absolute(grid_directory);
+				ERR_CONTINUE_MSG(DirAccess::remove_absolute(grid_directory) != OK, "Cannot remove empty grid directory: " + grid_directory);
 			}
 		}
 	}

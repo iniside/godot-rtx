@@ -683,11 +683,7 @@ Error EntitySceneCommands::_reconcile_prefab_catalog() {
 			document.catalog.records.insert(id, {});
 			EntityScene::Section section;
 			section.components = prefab->sections[source_id].components;
-			section.dependencies = prefab->sections[source_id].dependencies.duplicate(true);
-			for (int i = 0; i < section.dependencies.size(); i++) {
-				Dictionary dependency = section.dependencies[i];
-				dependency["entity"] = id.to_string();
-			}
+			section.name = prefab->sections[source_id].name;
 			document.sections.insert(id, section);
 		}
 		Array conflicts;

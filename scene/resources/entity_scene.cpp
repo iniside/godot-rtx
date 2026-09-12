@@ -185,7 +185,7 @@ Error EntityScene::_read_record(EntityId p_id, Dictionary &r_record, bool *r_sto
 	return OK;
 }
 
-Error EntityScene::_validate_fields(EntityId p_id, uint64_t p_type, const Dictionary &p_fields, Array *r_dependencies, const String &p_prefix) {
+Error EntityScene::_validate_fields(EntityId p_id, uint64_t p_type, const Dictionary &p_fields, const String &p_prefix) {
 	const EntityComponentSchema *schema = get_world()->schemas.find(p_type);
 	String prefix = p_prefix.is_empty() ? String::num_uint64(p_type, 16) : p_prefix;
 	if (!schema) {
@@ -218,7 +218,7 @@ Error EntityScene::_validate_fields(EntityId p_id, uint64_t p_type, const Dictio
 				if (entries[i].get_type() != Variant::DICTIONARY) {
 					return _fail(p_id, address, ERR_INVALID_DATA);
 				}
-				Error error = _validate_fields(p_id, field.nested_type_id, entries[i], r_dependencies, address);
+				Error error = _validate_fields(p_id, field.nested_type_id, entries[i], address);
 				if (error != OK) {
 					return error;
 				}
@@ -236,16 +236,6 @@ Error EntityScene::_validate_fields(EntityId p_id, uint64_t p_type, const Dictio
 				Error error = entity_decode_asset(assets[i], asset);
 				if (error != OK) {
 					return _fail(p_id, address + "[" + itos(i) + "]", error);
-				}
-				if (asset.is_valid() && r_dependencies) {
-					Dictionary dependency;
-					String uid = assets[i];
-					dependency["uid"] = uid.get_slice("::", 0);
-					dependency["path"] = asset->get_path().get_slice("::", 0);
-					dependency["type"] = ResourceLoader::get_resource_type(dependency["path"]);
-					dependency["entity"] = p_id.to_string();
-					dependency["field"] = address + "[" + itos(i) + "]";
-					r_dependencies->push_back(dependency);
 				}
 			}
 		}
@@ -270,7 +260,14 @@ Error EntityScene::_describe(EntityId p_id, const Dictionary &p_record, Section 
 	}
 	Dictionary components = p_record["components"];
 	r_section.components.clear();
-	r_section.dependencies.clear();
+	r_section.name = String();
+	const Variant entity_name = components.get(String::num_uint64(EntityComponentTraits<EntityName>::id, 16), Variant());
+	if (entity_name.get_type() == Variant::DICTIONARY) {
+		const Variant text = Dictionary(entity_name).get("1", Variant());
+		if (text.get_type() == Variant::STRING) {
+			r_section.name = text;
+		}
+	}
 	for (const Variant &key : components.get_key_list()) {
 		String text = key;
 		uint64_t type = text.hex_to_int();
@@ -278,7 +275,7 @@ Error EntityScene::_describe(EntityId p_id, const Dictionary &p_record, Section 
 		if (!schema || !schema->is_component || text != String::num_uint64(type, 16) || components[key].get_type() != Variant::DICTIONARY) {
 			return _fail(p_id, text, ERR_INVALID_DATA);
 		}
-		Error error = _validate_fields(p_id, type, components[key], &r_section.dependencies);
+		Error error = _validate_fields(p_id, type, components[key]);
 		if (error != OK) {
 			return error;
 		}
@@ -634,6 +631,9 @@ Error EntityScene::create_play_document(Ref<EntityScene> &r_scene) {
 	result.instantiate();
 	result->document_id = document_id;
 	result->revision = revision;
+	result->grids = grids;
+	result->default_grid = default_grid;
+	result->default_range = default_range;
 	result->prefab_instances = prefab_instances.duplicate(true);
 	for (EntityId id : catalog.get_ids()) {
 		Dictionary record;
