@@ -189,23 +189,33 @@ Error read_entity_directory(const String &p_directory, const String &p_relative,
 	return OK;
 }
 
+Error collect_entity_directories(const String &p_directory, const HashSet<String> &p_grids, Vector<String> &r_relative) {
+	r_relative.push_back("global");
+	const String cells = p_directory.path_join("cells");
+	if (!DirAccess::dir_exists_absolute(cells)) {
+		return OK;
+	}
+	for (const String &grid : DirAccess::get_directories_at(cells)) {
+		ERR_FAIL_COND_V_MSG(!p_grids.has(grid), ERR_FILE_CORRUPT, "Entity scene has no grid named \"" + grid + "\": " + cells.path_join(grid));
+		const String grid_directory = cells.path_join(grid);
+		for (const String &cell : DirAccess::get_directories_at(grid_directory)) {
+			ERR_FAIL_COND_V_MSG(!cell_name_is_valid(cell), ERR_FILE_CORRUPT, "Invalid cell directory name: " + grid_directory.path_join(cell));
+			r_relative.push_back("cells/" + grid + "/" + cell);
+		}
+	}
+	return OK;
+}
+
 Error read_tree(const String &p_directory, const HashSet<String> &p_grids, bool p_parse, StorageTree &r_tree) {
-	Error error = read_entity_directory(p_directory, "global", p_parse, r_tree);
+	Vector<String> directories;
+	Error error = collect_entity_directories(p_directory, p_grids, directories);
 	if (error != OK) {
 		return error;
 	}
-	const String cells = p_directory.path_join("cells");
-	if (DirAccess::dir_exists_absolute(cells)) {
-		for (const String &grid : DirAccess::get_directories_at(cells)) {
-			ERR_FAIL_COND_V_MSG(!p_grids.has(grid), ERR_FILE_CORRUPT, "Entity scene has no grid named \"" + grid + "\": " + cells.path_join(grid));
-			const String grid_directory = cells.path_join(grid);
-			for (const String &cell : DirAccess::get_directories_at(grid_directory)) {
-				ERR_FAIL_COND_V_MSG(!cell_name_is_valid(cell), ERR_FILE_CORRUPT, "Invalid cell directory name: " + grid_directory.path_join(cell));
-				error = read_entity_directory(p_directory, "cells/" + grid + "/" + cell, p_parse, r_tree);
-				if (error != OK) {
-					return error;
-				}
-			}
+	for (const String &relative : directories) {
+		error = read_entity_directory(p_directory, relative, p_parse, r_tree);
+		if (error != OK) {
+			return error;
 		}
 	}
 	const String prefabs = p_directory.path_join("prefabs");
@@ -254,18 +264,16 @@ Error read_main(const String &p_path, Ref<ConfigFile> &r_config) {
 	return OK;
 }
 
-void collect_asset_dependencies(const EntitySchemaRegistry &p_schemas, uint64_t p_type, const Dictionary &p_fields, EntityId p_id, const String &p_prefix, Array &r_dependencies) {
+void collect_asset_uids(const EntitySchemaRegistry &p_schemas, uint64_t p_type, const Dictionary &p_fields, HashSet<String> &r_uids) {
 	const EntityComponentSchema *schema = p_schemas.find(p_type);
 	if (!schema) {
 		return;
 	}
-	const String prefix = p_prefix.is_empty() ? schema->key : p_prefix;
 	for (const EntityFieldSchema &field : schema->fields) {
 		if (!field.serialized || !p_fields.has(field.key)) {
 			continue;
 		}
 		const Variant value = p_fields[field.key];
-		const String address = prefix + "/" + field.key;
 		Array entries;
 		if (value.get_type() == Variant::ARRAY) {
 			entries = value;
@@ -275,7 +283,7 @@ void collect_asset_dependencies(const EntitySchemaRegistry &p_schemas, uint64_t 
 		if (field.nested_type_id) {
 			for (int i = 0; i < entries.size(); i++) {
 				if (entries[i].get_type() == Variant::DICTIONARY) {
-					collect_asset_dependencies(p_schemas, field.nested_type_id, entries[i], p_id, address, r_dependencies);
+					collect_asset_uids(p_schemas, field.nested_type_id, entries[i], r_uids);
 				}
 			}
 		}
@@ -290,17 +298,85 @@ void collect_asset_dependencies(const EntitySchemaRegistry &p_schemas, uint64_t 
 			if (!text.begins_with("uid://")) {
 				continue;
 			}
-			const String uid = text.get_slice("::", 0);
-			const ResourceUID::ID resource_id = ResourceUID::get_singleton()->text_to_id(uid);
-			const String path = ResourceUID::get_singleton()->has_id(resource_id) ? ResourceUID::get_singleton()->get_id_path(resource_id) : String();
-			Dictionary dependency;
-			dependency["uid"] = uid;
-			dependency["path"] = path;
-			dependency["type"] = path.is_empty() ? String("Resource") : ResourceLoader::get_resource_type(path);
-			dependency["entity"] = p_id.to_string();
-			dependency["field"] = address + "[" + itos(i) + "]";
-			r_dependencies.push_back(dependency);
+			r_uids.insert(text.get_slice("::", 0));
 		}
+	}
+}
+
+void collect_record_uids(const EntitySchemaRegistry &p_schemas, const Variant &p_record, HashSet<String> &r_uids) {
+	if (p_record.get_type() != Variant::DICTIONARY) {
+		return;
+	}
+	const Variant components_value = Dictionary(p_record).get("components", Variant());
+	if (components_value.get_type() != Variant::DICTIONARY) {
+		return;
+	}
+	const Dictionary components = components_value;
+	for (const Variant &key : components.get_key_list()) {
+		if (key.get_type() != Variant::STRING || components[key].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		collect_asset_uids(p_schemas, String(key).hex_to_int(), components[key], r_uids);
+	}
+}
+
+void scan_entity_dependencies(const String &p_directory, const String &p_relative, const EntitySchemaRegistry &p_schemas, HashSet<String> &r_uids) {
+	const String absolute = p_directory.path_join(p_relative);
+	if (!DirAccess::dir_exists_absolute(absolute)) {
+		return;
+	}
+	for (const String &name : DirAccess::get_files_at(absolute)) {
+		if (name.get_extension().to_lower() != "escn") {
+			continue;
+		}
+		const String path = absolute.path_join(name);
+		Variant parsed;
+		Error error = EntitySceneIO::read_variant_file(path, parsed);
+		if (error == OK && parsed.get_type() != Variant::DICTIONARY) {
+			error = ERR_FILE_CORRUPT;
+		}
+		if (error != OK) {
+			ERR_PRINT("Cannot read entity record: " + path);
+			continue;
+		}
+		if (name.ends_with(".cluster.escn")) {
+			const Dictionary cluster = parsed;
+			for (const Variant &key : cluster.get_key_list()) {
+				collect_record_uids(p_schemas, cluster[key], r_uids);
+			}
+			continue;
+		}
+		collect_record_uids(p_schemas, parsed, r_uids);
+	}
+}
+
+void scan_prefab_dependencies(const String &p_directory, HashMap<String, String> &r_uids) {
+	const String prefabs = p_directory.path_join("prefabs");
+	if (!DirAccess::dir_exists_absolute(prefabs)) {
+		return;
+	}
+	for (const String &name : DirAccess::get_files_at(prefabs)) {
+		if (name.get_extension().to_lower() != "escn") {
+			continue;
+		}
+		const String path = prefabs.path_join(name);
+		Variant parsed;
+		Error error = EntitySceneIO::read_variant_file(path, parsed);
+		if (error == OK && parsed.get_type() != Variant::DICTIONARY) {
+			error = ERR_FILE_CORRUPT;
+		}
+		if (error != OK) {
+			ERR_PRINT("Cannot read prefab instance: " + path);
+			continue;
+		}
+		const Dictionary instance = parsed;
+		const Variant uid = instance.get("uid", Variant());
+		if (uid.get_type() != Variant::STRING || !String(uid).begins_with("uid://")) {
+			ERR_PRINT("Prefab instance has no valid uid: " + path);
+			continue;
+		}
+		const Variant source = instance.get("path", Variant());
+		r_uids.insert(uid, source.get_type() == Variant::STRING ? String(source) : String());
 	}
 }
 
@@ -1002,53 +1078,51 @@ ResourceUID::ID ResourceFormatLoaderEntityScene::get_resource_uid(const String &
 }
 
 void ResourceFormatLoaderEntityScene::get_dependencies(const String &p_path, List<String> *p_dependencies, bool p_add_types) {
-	Ref<EntityScene> scene;
-	ERR_FAIL_COND(EntitySceneIO::load(p_path, scene) != OK);
+	Ref<ConfigFile> config;
+	ERR_FAIL_COND_MSG(read_main(p_path, config) != OK, "Cannot read entity scene: " + p_path);
+	const String directory = EntitySceneIO::scene_directory(p_path);
+	ERR_FAIL_COND_MSG(!DirAccess::dir_exists_absolute(directory), "Entity scene directory is missing: " + directory);
+	HashSet<String> grid_names;
+	if (config->has_section("grids")) {
+		for (const String &name : config->get_section_keys("grids")) {
+			grid_names.insert(name);
+		}
+	}
+	config.unref();
+	Vector<String> directories;
+	if (collect_entity_directories(directory, grid_names, directories) != OK) {
+		return;
+	}
 	const EntitySchemaRegistry &schemas = EntitySchemaRegistry::descriptors();
-	Array dependencies;
-	Vector<EntityId> ids = scene->catalog.get_ids();
-	ids.sort_custom<EntityIdSorter>();
-	for (EntityId id : ids) {
-		const EntityScene::Section *section = scene->sections.getptr(id);
-		Dictionary record;
-		if (!section || section->path.is_empty() || scene->_read_stored(id, record) != OK) {
-			continue;
-		}
-		const Dictionary components = record.get("components", Dictionary());
-		for (const Variant &key : components.get_key_list()) {
-			if (key.get_type() != Variant::STRING || components[key].get_type() != Variant::DICTIONARY) {
-				continue;
-			}
-			collect_asset_dependencies(schemas, String(key).hex_to_int(), components[key], id, String(), dependencies);
+	HashSet<String> assets;
+	for (const String &relative : directories) {
+		scan_entity_dependencies(directory, relative, schemas, assets);
+	}
+	HashMap<String, String> prefabs;
+	scan_prefab_dependencies(directory, prefabs);
+	Vector<String> uids;
+	uids.reserve(assets.size() + prefabs.size());
+	for (const String &uid : assets) {
+		uids.push_back(uid);
+	}
+	for (const KeyValue<String, String> &entry : prefabs) {
+		if (!assets.has(entry.key)) {
+			uids.push_back(entry.key);
 		}
 	}
-	Vector<String> instance_keys;
-	for (const Variant &key : scene->prefab_instances.get_key_list()) {
-		instance_keys.push_back(key);
-	}
-	instance_keys.sort();
-	for (const String &key : instance_keys) {
-		Dictionary instance = scene->prefab_instances[key];
-		Dictionary dependency;
-		dependency["uid"] = instance["uid"];
-		dependency["path"] = instance["path"];
-		dependency["type"] = "EntityScene";
-		dependencies.push_back(dependency);
-	}
-	HashSet<String> seen;
-	for (const Variant &value : dependencies) {
-		Dictionary dependency = value;
-		String uid = dependency["uid"];
-		if (seen.has(uid)) {
-			continue;
+	uids.sort();
+	for (const String &uid : uids) {
+		const ResourceUID::ID id = ResourceUID::get_singleton()->text_to_id(uid);
+		String path = ResourceUID::get_singleton()->has_id(id) ? ResourceUID::get_singleton()->get_id_path(id) : String();
+		const bool asset = assets.has(uid);
+		if (!asset && path.is_empty()) {
+			path = prefabs[uid];
 		}
-		seen.insert(uid);
-		String path = dependency["path"];
-		ResourceUID::ID id = ResourceUID::get_singleton()->text_to_id(uid);
-		if (ResourceUID::get_singleton()->has_id(id)) {
-			path = ResourceUID::get_singleton()->get_id_path(id);
+		String type;
+		if (p_add_types) {
+			type = asset ? (path.is_empty() ? String("Resource") : ResourceLoader::get_resource_type(path)) : String("EntityScene");
 		}
-		p_dependencies->push_back(uid + "::" + (p_add_types ? String(dependency["type"]) : String()) + "::" + path);
+		p_dependencies->push_back(uid + "::" + type + "::" + path);
 	}
 }
 
