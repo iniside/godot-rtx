@@ -903,10 +903,7 @@ Error EntitySceneCommands::_refresh_instance(EntityScene &p_target, EntityId p_i
 		if (error != OK) {
 			return error;
 		}
-		error = EntitySceneIO::encode(records[id.to_string()], p_target.sections[id].bytes);
-		if (error != OK) {
-			return error;
-		}
+		p_target.sections[id].record = Dictionary(records[id.to_string()]).duplicate(true);
 	}
 	instance["revision"] = int64_t(p_source_changes ? p_source_changes->revision : p_source.revision);
 	p_target.prefab_instances[key] = instance;
@@ -1011,11 +1008,8 @@ Error EntitySceneCommands::refresh_prefab(EntityId p_instance, const Ref<EntityS
 		return error;
 	}
 	for (EntityId id : changed) {
-		if (prepared->catalog.get_state(id) != EntityReferenceState::DELETED && prepared->sections[id].bytes.is_empty()) {
-			error = EntitySceneIO::encode(item.after[id.to_string()], prepared->sections[id].bytes);
-			if (error != OK) {
-				return error;
-			}
+		if (prepared->catalog.get_state(id) != EntityReferenceState::DELETED && prepared->sections[id].record.is_empty()) {
+			prepared->sections[id].record = Dictionary(item.after[id.to_string()]).duplicate(true);
 		}
 	}
 	error = document._can_commit(**prepared, changed);
@@ -1159,12 +1153,10 @@ Error EntitySceneCommands::apply_overrides(EntityId p_instance, const Ref<Entity
 		if (source_prepared->catalog.get_state(id) != EntityReferenceState::DELETED) {
 			Dictionary record;
 			error = source_prepared->_read_record(id, record);
-			if (error == OK) {
-				error = EntitySceneIO::encode(record, source_prepared->sections[id].bytes);
-			}
 			if (error != OK) {
 				return error;
 			}
+			source_prepared->sections[id].record = record;
 		}
 	}
 	Vector<Ref<EntityScene>> users = p_users;
@@ -1222,12 +1214,10 @@ Error EntitySceneCommands::apply_overrides(EntityId p_instance, const Ref<Entity
 			if (prepared->catalog.get_state(id) != EntityReferenceState::DELETED) {
 				Dictionary record;
 				error = prepared->_read_record(id, record);
-				if (error == OK) {
-					error = EntitySceneIO::encode(record, prepared->sections[id].bytes);
-				}
 				if (error != OK) {
 					return error;
 				}
+				prepared->sections[id].record = record;
 			}
 		}
 		prepared_users.push_back(prepared);

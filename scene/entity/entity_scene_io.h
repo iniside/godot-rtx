@@ -6,10 +6,11 @@
 
 class EntitySceneIO {
 public:
-	static constexpr uint32_t FORMAT_VERSION = 1;
-	static Error encode(const Variant &p_value, PackedByteArray &r_bytes);
-	static Error decode(const PackedByteArray &p_bytes, Variant &r_value);
-	static Error read_manifest(const String &p_path, Dictionary &r_manifest, Ref<FileAccess> &r_file);
+	static Error encode(const Variant &p_value, String &r_text);
+	static Error decode(const String &p_text, Variant &r_value);
+	static Error read_variant_file(const String &p_path, Variant &r_value);
+	static String scene_directory(const String &p_path);
+	static bool is_child_path(const String &p_path);
 	static Error load(const String &p_path, Ref<EntityScene> &r_scene);
 	static Error save(EntityScene &p_scene, const String &p_path, ResourceUID::ID p_uid = ResourceUID::INVALID_ID);
 };

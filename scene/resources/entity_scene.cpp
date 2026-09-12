@@ -11,6 +11,9 @@
 EntityScene::EntityScene() {
 	Error error = EntityId::generate(document_id);
 	ERR_FAIL_COND(error != OK);
+	default_grid = "default";
+	default_range = 256.0;
+	grids.insert(default_grid, { 64.0, 0.0 });
 }
 
 EntityScene::~EntityScene() {
@@ -68,24 +71,49 @@ Error EntityScene::_fail(EntityId p_id, const String &p_field, Error p_error) {
 	return p_error;
 }
 
-Error EntityScene::_read_bytes(EntityId p_id, PackedByteArray &r_bytes) {
+Error EntityScene::_read_stored(EntityId p_id, Dictionary &r_record) {
 	const Section *section = sections.getptr(p_id);
 	if (!section) {
 		return _fail(p_id, "record", ERR_DOES_NOT_EXIST);
 	}
-	if (!section->bytes.is_empty()) {
-		r_bytes = section->bytes;
+	if (!section->record.is_empty()) {
+		r_record = section->record.duplicate(true);
 		return OK;
 	}
-	if (source.is_null() && !storage_path.is_empty()) {
-		source = FileAccess::open(storage_path, FileAccess::READ);
+	if (section->path.is_empty() || storage_path.is_empty()) {
+		return _fail(p_id, "record", ERR_DOES_NOT_EXIST);
 	}
-	if (source.is_null() || !section->length || section->offset > source->get_length() || section->length > source->get_length() - section->offset) {
-		return _fail(p_id, "section", ERR_FILE_CORRUPT);
+	const String path = EntitySceneIO::scene_directory(storage_path).path_join(section->path);
+	if (section->cluster) {
+		if (cluster_path != path) {
+			Variant parsed;
+			Error error = EntitySceneIO::read_variant_file(path, parsed);
+			if (error == OK && parsed.get_type() != Variant::DICTIONARY) {
+				error = ERR_FILE_CORRUPT;
+			}
+			if (error != OK) {
+				return _fail(p_id, "cluster", error);
+			}
+			cluster_path = path;
+			cluster_records = parsed;
+		}
+		Variant value = cluster_records.get(p_id.to_string(), Variant());
+		if (value.get_type() != Variant::DICTIONARY) {
+			return _fail(p_id, "cluster", ERR_FILE_CORRUPT);
+		}
+		r_record = Dictionary(value).duplicate(true);
+		return OK;
 	}
-	source->seek(section->offset);
-	r_bytes = source->get_buffer(section->length);
-	return uint64_t(r_bytes.size()) == section->length ? OK : _fail(p_id, "section", ERR_FILE_CORRUPT);
+	Variant parsed;
+	Error error = EntitySceneIO::read_variant_file(path, parsed);
+	if (error == OK && parsed.get_type() != Variant::DICTIONARY) {
+		error = ERR_FILE_CORRUPT;
+	}
+	if (error != OK) {
+		return _fail(p_id, "record", error);
+	}
+	r_record = parsed;
+	return OK;
 }
 
 Error EntityScene::_encode_record(EntityId p_id, Dictionary &r_record) {
@@ -126,7 +154,7 @@ Error EntityScene::_read_record(EntityId p_id, Dictionary &r_record, bool *r_sto
 	} else if (target.state == EntityReferenceState::UNLOADED) {
 		bool prefab_record = false;
 		const Section *section = sections.getptr(p_id);
-		if (!p_prefer_stored || !section || (section->bytes.is_empty() && !section->length)) {
+		if (!p_prefer_stored || !section || (section->record.is_empty() && section->path.is_empty())) {
 			error = get_commands()._prefab_record(p_id, r_record, prefab_record);
 		}
 		if (error != OK) {
@@ -135,17 +163,10 @@ Error EntityScene::_read_record(EntityId p_id, Dictionary &r_record, bool *r_sto
 		if (prefab_record) {
 			return OK;
 		}
-		PackedByteArray bytes;
-		error = _read_bytes(p_id, bytes);
-		Variant record;
+		Dictionary stored;
+		error = _read_stored(p_id, stored);
 		if (error == OK) {
-			error = EntitySceneIO::decode(bytes, record);
-		}
-		if (error == OK && record.get_type() != Variant::DICTIONARY) {
-			error = ERR_FILE_CORRUPT;
-		}
-		if (error == OK) {
-			r_record = record;
+			r_record = stored;
 			if (r_stored) {
 				*r_stored = true;
 			}
@@ -512,9 +533,6 @@ Error EntityScene::load_subset(const Vector<EntityId> &p_ids) {
 	_commit(**prepared, unloaded, true);
 	revision = previous_revision;
 	const uint64_t committed = OS::get_singleton()->get_ticks_usec();
-	if (get_resident_count() == sections.size()) {
-		source.unref();
-	}
 	if (profiling) {
 		uint64_t asset_usec = 0;
 		uint32_t asset_loads = 0;
@@ -561,12 +579,10 @@ Error EntityScene::unload_subset(const Vector<EntityId> &p_ids) {
 		if (error == OK) {
 			error = _describe(id, record, section);
 		}
-		if (error == OK) {
-			error = EntitySceneIO::encode(record, section.bytes);
-		}
 		if (error != OK) {
 			return error;
 		}
+		section.record = record;
 		saved.insert(id, section);
 	}
 	for (EntityId id : p_ids) {
@@ -631,12 +647,10 @@ Error EntityScene::create_play_document(Ref<EntityScene> &r_scene) {
 			result->catalog._set_parent(id, catalog.get_parent(id));
 			Section section;
 			error = _describe(id, record, section);
-			if (error == OK) {
-				error = EntitySceneIO::encode(record, section.bytes);
-			}
 			if (error != OK) {
 				return error;
 			}
+			section.record = record;
 			result->sections.insert(id, section);
 		}
 	}

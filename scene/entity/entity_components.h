@@ -465,3 +465,8 @@ struct ENTITY_COMPONENT("id=2000000000000011") EntityParticlesCollision {
 	ENTITY_FIELD("id=000000000000000d;serialize=false;edit=false")
 	uint32_t update_revision = 0;
 };
+
+struct ENTITY_COMPONENT("id=2000000000000012") EntityStreaming {
+	ENTITY_FIELD("id=0000000000000001")
+	String grid;
+};

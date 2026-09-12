@@ -1,7 +1,6 @@
 #pragma once
 
 #include "core/io/resource.h"
-#include "core/io/file_access.h"
 #include "scene/entity/entity_world.h"
 
 class EntitySceneCommands;
@@ -14,18 +13,27 @@ class EntityScene : public Resource {
 	friend class ResourceFormatLoaderEntityScene;
 
 	struct Section {
-		uint64_t offset = 0;
-		uint64_t length = 0;
-		PackedByteArray bytes;
+		String path;
+		bool cluster = false;
+		Dictionary record;
 		Array dependencies;
 		Array components;
+	};
+
+	struct Grid {
+		double size = 0.0;
+		double range = 0.0;
 	};
 	EntityId document_id;
 	EntityCatalog catalog;
 	EntityWorld *world = nullptr;
 	EntitySceneCommands *commands = nullptr;
-	Ref<FileAccess> source;
 	String storage_path;
+	HashMap<String, Grid> grids;
+	String default_grid;
+	double default_range = 0.0;
+	String cluster_path;
+	Dictionary cluster_records;
 	HashMap<EntityId, Section, EntityIdHasher> sections;
 	HashMap<EntityId, uint32_t, EntityIdHasher> pins;
 	HashMap<EntityId, int64_t, EntityIdHasher> order;
@@ -43,7 +51,7 @@ class EntityScene : public Resource {
 
 	Error _owner();
 	Error _read_record(EntityId p_id, Dictionary &r_record, bool *r_stored = nullptr, bool p_prefer_stored = false);
-	Error _read_bytes(EntityId p_id, PackedByteArray &r_bytes);
+	Error _read_stored(EntityId p_id, Dictionary &r_record);
 	Error _encode_record(EntityId p_id, Dictionary &r_record);
 	Error _collect_required(const Vector<EntityId> &p_ids, Vector<EntityId> &r_ids) const;
 	Error _prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_scene, bool p_prefer_stored = false, LoadProfile *r_profile = nullptr);
