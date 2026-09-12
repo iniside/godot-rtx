@@ -273,6 +273,12 @@ po brakujących assetach i parsowana od nowa; commit 80–130 ms na komórkę
   da się usunąć (rezerwacje map, przenoszenie `PreparedEntity` zamiast
   kopii, klucze sekcji współdzielone); cel ≤ 40 ms na komórkę 10 k. Komórka
   pozostaje atomowa.
+- Dok encji (edytor): pomiar `d6308c0f1c` na mapie: `refresh_catalog`
+  190–200 ms przy 200 k wpisów na każdą zmianę rezydencji, czyli większy
+  hitch niż commit. Dok nie przebudowuje całej listy przy zmianie
+  rezydencji: lista jest stronicowana z katalogu (widoczny zakres), a zmiana
+  rezydencji odświeża tylko licznik i bieżącą stronę; cel ≤ 5 ms na
+  zmianę rezydencji niezależnie od liczby encji.
 - Miary sukcesu na mapie 16 × 16 (runtime i edytor, kamera w środku):
   pierwsza komórka ≤ 2 s po otwarciu (bez zimnej kompilacji shaderów),
   16 komórek ≤ 6 s, brak ticku wątku właściciela > 50 ms poza jednorazowym
@@ -372,7 +378,9 @@ po brakujących assetach i parsowana od nowa; commit 80–130 ms na komórkę
   `scene/entity/entity_record_parser.h/.cpp` (szybki parser + fallback;
   `scene/entity/SCsub`), `scene/entity/entity_scene_io.cpp`
   (`read_variant_file` używa nowego parsera dla rekordów i klastrów),
-  `scene/entity/entity_scene_streaming.cpp` (liczniki).
+  `scene/entity/entity_scene_streaming.cpp` (liczniki),
+  `editor/scene/entity/entity_scene_editor.h/.cpp` (odświeżanie doku bez
+  pełnej przebudowy).
 - why now: bez tego ładowanie komórek jest ograniczone parserem i sztywnym
   limitem zadań, a pierwsza tura jest marnowana.
 - how: D9; format i pisarz bez zmian; parity parserów mierzona.
