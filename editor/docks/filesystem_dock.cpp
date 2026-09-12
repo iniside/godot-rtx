@@ -1571,12 +1571,15 @@ void FileSystemDock::_try_move_item(const FileOrFolder &p_item, const String &p_
 		EditorNode::get_singleton()->add_io_error(TTR("Cannot derive the scene directory of a native scene moved to:") + "\n" + new_path + "\n");
 		return;
 	}
-	if (!new_companion.is_empty() && DirAccess::dir_exists_absolute(new_companion)) {
-		EditorNode::get_singleton()->add_io_error(TTR("A scene directory already exists at:") + "\n" + new_companion + "\n");
-		return;
+	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_RESOURCES);
+	if (!new_companion.is_empty() && da->dir_exists(new_companion)) {
+		const bool same_companion = !da->is_case_sensitive(new_companion.get_base_dir()) && new_companion.to_lower() == old_companion.to_lower();
+		if (!same_companion) {
+			EditorNode::get_singleton()->add_io_error(TTR("A scene directory already exists at:") + "\n" + new_companion + "\n");
+			return;
+		}
 	}
 
-	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_RESOURCES);
 	print_verbose("Moving " + old_path + " -> " + new_path);
 	Error err = da->rename(old_path, new_path);
 	if (err == OK) {
