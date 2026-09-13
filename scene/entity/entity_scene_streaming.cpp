@@ -37,24 +37,62 @@ void report_step(EntityScene &p_scene, const EntitySceneStreaming::Stats &p_stat
 	if (!OS::get_singleton()->is_use_benchmark_set()) {
 		return;
 	}
-	if (!load.jobs_dispatched && !load.jobs_completed && !load.jobs_discarded && !load.cells_committed && !p_stats.cells_released && !p_stats.entities_unloaded) {
+	if (!load.jobs_dispatched && !load.jobs_completed && !load.jobs_discarded && !load.jobs_resumed && !load.cells_committed && !p_stats.cells_released && !p_stats.entities_unloaded) {
 		return;
 	}
 	const double to_ms = 1.0 / 1000.0;
-	print_line(vformat("EntityScene streaming: jobs_dispatched=%d jobs_completed=%d jobs_discarded=%d cells_committed=%d cells_released=%d cells_remaining=%d entities_committed=%d entities_unloaded=%d dispatch=%.2fms commit=%.2fms worker=%.2fms resident_cells=%d resident_entities=%d",
+	String message = vformat("EntityScene streaming: jobs_dispatched=%d jobs_completed=%d jobs_discarded=%d jobs_resumed=%d cells_committed=%d cells_released=%d cells_remaining=%d entities_committed=%d entities_unloaded=%d dispatch=%.2fms",
 			load.jobs_dispatched,
 			load.jobs_completed,
 			load.jobs_discarded,
+			load.jobs_resumed,
 			load.cells_committed,
 			p_stats.cells_released,
 			p_stats.cells_remaining,
 			load.entities_committed,
 			p_stats.entities_unloaded,
-			double(load.dispatch_usec) * to_ms,
-			double(load.commit_usec) * to_ms,
-			double(load.worker_usec) * to_ms,
+			double(load.dispatch_usec) * to_ms);
+	message += vformat(" owner_total=%.2fms owner_phases(asset_load=%.2fms revalidate=%.2fms commit_validate=%.2fms install=%.2fms residency=%.2fms job_scan_cleanup=%.2fms)",
+			double(load.owner_total_usec) * to_ms,
+			double(load.owner_asset_load_usec) * to_ms,
+			double(load.owner_revalidate_usec) * to_ms,
+			double(load.owner_commit_validate_usec) * to_ms,
+			double(load.owner_install_usec) * to_ms,
+			double(load.owner_residency_usec) * to_ms,
+			double(load.owner_job_scan_cleanup_usec) * to_ms);
+	message += vformat(" worker_total=%.2fms worker_phases(parse=%.2fms decode=%.2fms remainder=%.2fms)",
+			double(load.worker_total_usec) * to_ms,
+			double(load.parse_usec) * to_ms,
+			double(load.decode_usec) * to_ms,
+			double(load.worker_remainder_usec) * to_ms);
+	message += vformat(" install_detail(required_catalog=%.2fms ecs_parent_remove=%.2fms ecs_entity_destroy=%.2fms ecs_entity_create_identity=%.2fms ecs_materialize_parent_set=%.2fms resident_remove=%.2fms resident_insert=%.2fms initial_dirty=%.2fms prepared_schema_lookup=%.2fms component_mutation=%.2fms component_changed=%.2fms change_bookkeeping=%.2fms sections_order=%.2fms catalog_parent=%.2fms ecs_final_parent_set=%.2fms assign_cell=%.2fms remainder=%.2fms)",
+			double(load.install_required_catalog_usec) * to_ms,
+			double(load.install_ecs_parent_remove_usec) * to_ms,
+			double(load.install_ecs_entity_destroy_usec) * to_ms,
+			double(load.install_ecs_entity_create_identity_usec) * to_ms,
+			double(load.install_ecs_materialize_parent_set_usec) * to_ms,
+			double(load.install_resident_remove_usec) * to_ms,
+			double(load.install_resident_insert_usec) * to_ms,
+			double(load.install_initial_dirty_usec) * to_ms,
+			double(load.install_prepared_schema_lookup_usec) * to_ms,
+			double(load.install_component_mutation_usec) * to_ms,
+			double(load.install_component_changed_usec) * to_ms,
+			double(load.install_change_bookkeeping_usec) * to_ms,
+			double(load.install_sections_order_usec) * to_ms,
+			double(load.install_catalog_parent_usec) * to_ms,
+			double(load.install_ecs_final_parent_set_usec) * to_ms,
+			double(load.install_assign_cell_usec) * to_ms,
+			double(load.install_remainder_usec) * to_ms);
+	message += vformat(" operations(materialized=%d destroyed=%d parent_removals=%d materialize_parent_sets=%d component_mutations=%d final_parent_sets=%d) resident_cells=%d resident_entities=%d",
+			load.entities_materialized,
+			load.entities_destroyed,
+			load.parent_removals,
+			load.materialize_parent_sets,
+			load.component_mutations,
+			load.final_parent_sets,
 			p_scene.get_resident_cell_count(),
-			p_scene.get_resident_count()));
+			p_scene.get_resident_count());
+	print_line(message);
 }
 
 } // namespace

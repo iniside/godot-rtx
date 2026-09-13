@@ -1,5 +1,6 @@
 #include "entity_scene_io.h"
 
+#include "entity_record_parser.h"
 #include "entity_scene_commands.h"
 
 #include "core/config/project_settings.h"
@@ -429,11 +430,23 @@ Error EntitySceneIO::decode(const String &p_text, Variant &r_value) {
 }
 
 Error EntitySceneIO::read_variant_file(const String &p_path, Variant &r_value) {
-	String text;
-	Error error = read_text(p_path, text);
+	Error error = OK;
+	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::READ, &error);
 	if (error != OK) {
 		return error;
 	}
+	const uint64_t length = file->get_length();
+	LocalVector<uint8_t> data;
+	data.resize(length + 1);
+	if (file->get_buffer(data.ptr(), length) != length) {
+		return ERR_FILE_CANT_READ;
+	}
+	data[length] = 0;
+	if (EntityRecordParser::parse_utf8(data.ptr(), length, r_value)) {
+		return OK;
+	}
+	String text;
+	text.append_utf8((const char *)data.ptr(), length);
 	return decode(text, r_value);
 }
 
@@ -642,6 +655,7 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 	}
 	ERR_FAIL_COND_V_MSG(!p_scene.grids.has(p_scene.default_grid), ERR_INVALID_DATA, "Entity scene default grid \"" + p_scene.default_grid + "\" is not configured: " + p_path);
 	const String directory = scene_directory(p_path);
+	ERR_FAIL_COND_V_MSG(!p_scene.storage_path.is_empty() && p_scene.storage_path != p_path && DirAccess::dir_exists_absolute(directory), ERR_ALREADY_EXISTS, "Entity scene companion directory already exists: " + directory);
 	Error error = OK;
 	if (!DirAccess::dir_exists_absolute(directory)) {
 		error = DirAccess::make_dir_recursive_absolute(directory);
@@ -703,7 +717,9 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 		if (p_section.path.is_empty() || existing.files.has(p_id)) {
 			return;
 		}
-		if (complete && !copied.has(p_section.path.get_base_dir())) {
+		const String base = p_section.path.get_base_dir();
+		EntityScene::CellKey key;
+		if (complete && !copied.has(base) && !(p_section.cluster && EntityScene::_parse_cell_directory(base, key) && p_scene.resident_cells.has(key))) {
 			return;
 		}
 		existing.files.insert(p_id, { p_section.path, p_section.cluster });

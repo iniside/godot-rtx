@@ -3,6 +3,7 @@
 #include "entity_components.h"
 
 #include "core/templates/hash_map.h"
+#include "core/templates/local_vector.h"
 
 struct EntityRenderPoseUpdate {
 	EntityId id;
@@ -62,11 +63,29 @@ struct EntityRenderPacket {
 	Vector<EntityRenderPoseUpdate> poses;
 };
 
+struct EntityInitialRender {
+	EntityId id;
+	EntityHandle handle;
+	uint32_t components = 0;
+};
+
+struct EntityInitialRenderGroup {
+	LocalVector<EntityInitialRender> entities;
+	const void *table = nullptr;
+	uint64_t storage_tag = 0;
+};
+
+struct EntityInitialRenderProfile {
+	uint32_t table_rows = 0;
+	uint32_t fallback_rows = 0;
+};
+
 class EntityWorld;
 
 class EntityRenderSystem {
 	EntityWorld &world;
 	HashMap<EntityId, uint32_t, EntityIdHasher> dirty;
+	Vector<EntityRenderUpdate> initial_updates;
 	uint64_t sequence = 0;
 
 public:
@@ -77,6 +96,7 @@ public:
 			dirty[p_id] |= p_mask;
 		}
 	}
+	void prepare_initial(const LocalVector<EntityInitialRenderGroup> &p_groups, EntityInitialRenderProfile *r_profile = nullptr);
 	void publish();
 	void release();
 };

@@ -267,6 +267,11 @@ Comment: ENet
 Copyright: 2002-2024, Lee Salzman
 License: Expat
 
+Files: thirdparty/enkits/*
+Comment: enkiTS
+Copyright: 2013, Doug Binks
+License: Zlib
+
 Files: thirdparty/etcpak/*
 Comment: etcpak
 Copyright: 2013-2022, Bartosz Taudul

@@ -21,19 +21,26 @@
 
 EntitySceneEditor *EntitySceneEditor::singleton = nullptr;
 
+String EntitySceneEditor::_entity_name(EntityId p_id) {
+	if (document.is_null()) {
+		return p_id.to_string();
+	}
+	EntityResolution target = document->resolve(p_id);
+	const EntityName *name = target.state == EntityReferenceState::RESIDENT ? document->get_world()->get<EntityName>(target.handle) : nullptr;
+	const String stored = name && !name->name.is_empty() ? name->name : document->get_entity_name(p_id);
+	return stored.is_empty() ? p_id.to_string() : stored;
+}
+
 void EntitySceneEditor::_refresh_catalog() {
 	entities.clear();
-	names.clear();
 	if (document.is_valid()) {
-		for (EntityId id : document->get_catalog().get_ids()) {
-			EntityResolution target = document->resolve(id);
-			if (target.state == EntityReferenceState::DELETED || target.state == EntityReferenceState::MISSING) {
-				continue;
+		const EntityCatalog &catalog = document->get_catalog();
+		const Vector<EntityId> ids = catalog.get_ids();
+		entities.reserve(ids.size());
+		for (EntityId id : ids) {
+			if (catalog.get_state(id) != EntityReferenceState::DELETED) {
+				entities.push_back(id);
 			}
-			const EntityName *name = target.state == EntityReferenceState::RESIDENT ? document->get_world()->get<EntityName>(target.handle) : nullptr;
-			const String stored = name && !name->name.is_empty() ? name->name : document->get_entity_name(id);
-			names[id] = stored.is_empty() ? id.to_string() : stored;
-			entities.push_back(id);
 		}
 		struct EntityOrder {
 			bool operator()(const EntityId &p_a, const EntityId &p_b) const {
@@ -46,10 +53,14 @@ void EntitySceneEditor::_refresh_catalog() {
 }
 
 void EntitySceneEditor::_filter_changed(const String &p_text) {
-	filtered.clear();
-	for (EntityId id : entities) {
-		if (p_text.is_empty() || names[id].containsn(p_text) || id.to_string().containsn(p_text)) {
-			filtered.push_back(id);
+	if (p_text.is_empty()) {
+		filtered = entities;
+	} else {
+		filtered.clear();
+		for (EntityId id : entities) {
+			if (_entity_name(id).containsn(p_text) || id.to_string().containsn(p_text)) {
+				filtered.push_back(id);
+			}
 		}
 	}
 	page = MAX(0, filtered.find(selected) / PAGE_SIZE);
@@ -69,7 +80,7 @@ void EntitySceneEditor::_refresh_page() {
 	const int end = MIN(begin + PAGE_SIZE, filtered.size());
 	for (int i = begin; i < end; i++) {
 		TreeItem *item = tree->create_item(root);
-		item->set_text(0, names[filtered[i]]);
+		item->set_text(0, _entity_name(filtered[i]));
 		item->set_metadata(0, filtered[i].to_string());
 		item->set_tooltip_text(0, filtered[i].to_string());
 		if (filtered[i] == selected) {
@@ -289,7 +300,7 @@ void EntitySceneEditor::_inspect() {
 		InspectorDock::get_singleton()->show_native_editor();
 		return;
 	}
-	fields->add_child(memnew(Label(names.has(selected) ? names[selected] : selected.to_string())));
+	fields->add_child(memnew(Label(_entity_name(selected))));
 	EntityWorld *world = document->get_world();
 	Vector<uint64_t> components;
 	for (const KeyValue<uint64_t, EntityComponentSchema> &entry : world->get_schemas().get_types()) {
@@ -495,6 +506,17 @@ void EntitySceneEditor::_history_changed() {
 	callable_mp(this, &EntitySceneEditor::_document_changed).call_deferred();
 }
 
+void EntitySceneEditor::_residency_changed() {
+	residency_serial = document->get_residency_serial();
+	const uint64_t began = OS::get_singleton()->get_ticks_usec();
+	_refresh_catalog();
+	if (OS::get_singleton()->is_use_benchmark_set()) {
+		print_line(vformat("EntitySceneEditor residency changed: entities=%d refresh=%.2fms",
+				entities.size(),
+				double(OS::get_singleton()->get_ticks_usec() - began) / 1000.0));
+	}
+}
+
 void EntitySceneEditor::_document_changed() {
 	if (document.is_valid()) {
 		revision = document->get_revision();
@@ -527,8 +549,12 @@ void EntitySceneEditor::_notification(int p_what) {
 	}
 	Ref<EntityScene> next_document = editor_data.get_scene_document();
 	if (next_document == document) {
-		if (document.is_valid() && (document->get_revision() != revision || document->get_residency_serial() != residency_serial)) {
-			_document_changed();
+		if (document.is_valid()) {
+			if (document->get_revision() != revision) {
+				_document_changed();
+			} else if (document->get_residency_serial() != residency_serial) {
+				_residency_changed();
+			}
 		}
 		return;
 	}

@@ -2,6 +2,7 @@
 
 #include "core/config/project_settings.h"
 #include "core/io/resource_loader.h"
+#include "core/os/os.h"
 #include "servers/rendering/rendering_server.h"
 
 #ifndef NAVIGATION_3D_DISABLED
@@ -126,20 +127,99 @@ void EntityWorld::_mark_changed(EntityId p_id, uint32_t p_render_mask) {
 	if (resident) {
 		resident->revision = change_serial;
 	}
-	changed.insert(p_id);
+	changed.insert(p_id, true);
 	rendering.mark_dirty(p_id, p_render_mask);
 }
 
-EntityHandle EntityWorld::_materialize(EntityId p_id) {
+EntityHandle EntityWorld::_materialize(EntityId p_id, MaterializeProfile *r_profile) {
+	const bool timed = r_profile != nullptr;
+	uint64_t began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
 	flecs::entity entity = ecs.entity().set<Identity>({ p_id });
+	if (timed) {
+		r_profile->ecs_entity_create_identity_usec += OS::get_singleton()->get_ticks_usec() - began;
+		r_profile->entities_materialized++;
+		began = OS::get_singleton()->get_ticks_usec();
+	}
 	EntityRef parent = catalog.get_parent(p_id);
+	if (timed) {
+		r_profile->catalog_usec += OS::get_singleton()->get_ticks_usec() - began;
+	}
 	if (parent.id.is_valid()) {
-		entity.set<flecs::Parent>({ resolve(parent).handle.entity });
+		began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
+		EntityResolution parent_resolution = resolve(parent);
+		if (timed) {
+			r_profile->catalog_usec += OS::get_singleton()->get_ticks_usec() - began;
+		}
+		began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
+		entity.set<flecs::Parent>({ parent_resolution.handle.entity });
+		if (timed) {
+			r_profile->ecs_parent_set_usec += OS::get_singleton()->get_ticks_usec() - began;
+			r_profile->parent_sets++;
+		}
 	}
 	EntityHandle handle{ generation, entity.id() };
+	began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
 	residents.insert(p_id, { handle, 0 });
+	if (timed) {
+		r_profile->resident_insert_usec += OS::get_singleton()->get_ticks_usec() - began;
+	}
+	began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
 	_mark_changed(p_id);
+	if (timed) {
+		r_profile->initial_dirty_usec += OS::get_singleton()->get_ticks_usec() - began;
+	}
 	return handle;
+}
+
+Error EntityWorld::_materialize_bulk(const LocalVector<EntityId> &p_ids, ecs_bulk_desc_t &r_desc, const ecs_table_t *&r_table, ecs_entity_t &r_storage_tag, MaterializeProfile *r_profile) {
+	DEV_ASSERT(_is_owner());
+	LocalVector<Identity> identities;
+	identities.resize(p_ids.size());
+	for (uint32_t i = 0; i < p_ids.size(); i++) {
+		DEV_ASSERT(!residents.has(p_ids[i]));
+		identities[i].id = p_ids[i];
+	}
+	r_desc.ids[0] = ecs.id<Identity>();
+	r_desc.ids[1] = ecs.id<EntityTransformSystem::State>();
+	r_desc.data[0] = identities.ptr();
+	r_desc.count = p_ids.size();
+	uint64_t began = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
+	ecs_entity_t storage_tag = 0;
+	for (ecs_entity_t tag : bulk_storage_tags) {
+		if (ecs_count_id(ecs.c_ptr(), tag) == 0) {
+			storage_tag = tag;
+			break;
+		}
+	}
+	if (!storage_tag) {
+		storage_tag = ecs.entity().id();
+		bulk_storage_tags.push_back(storage_tag);
+	}
+	uint32_t tag_index = 2;
+	while (r_desc.ids[tag_index]) {
+		tag_index++;
+	}
+	DEV_ASSERT(tag_index + 1 < FLECS_ID_DESC_MAX);
+	// An unoccupied tag prevents table growth from relocating earlier live batches, including edited rows.
+	r_desc.ids[tag_index] = storage_tag;
+	const ecs_entity_t *entities = ecs_bulk_init(ecs.c_ptr(), &r_desc);
+	if (r_profile) {
+		r_profile->ecs_bulk_create_components_usec += OS::get_singleton()->get_ticks_usec() - began;
+		began = OS::get_singleton()->get_ticks_usec();
+	}
+	ERR_FAIL_NULL_V(entities, ERR_CANT_CREATE);
+	r_table = ecs_get_table(ecs.c_ptr(), entities[0]);
+	r_storage_tag = storage_tag;
+	for (uint32_t i = 0; i < p_ids.size(); i++) {
+		residents.insert(p_ids[i], { { generation, entities[i] }, 0 });
+	}
+	if (r_profile) {
+		r_profile->resident_insert_usec += OS::get_singleton()->get_ticks_usec() - began;
+		r_profile->entities_materialized += p_ids.size();
+	}
+	r_desc.data[0] = nullptr;
+	r_desc.ids[tag_index] = 0;
+	return OK;
 }
 
 Error EntityWorld::create_entity(EntityHandle &r_handle, EntityId p_id) {
@@ -349,8 +429,8 @@ Vector<EntityId> EntityWorld::drain_changed() {
 	ERR_FAIL_COND_V(!_is_owner(), Vector<EntityId>());
 	Vector<EntityId> result;
 	result.reserve(changed.size());
-	for (EntityId id : changed) {
-		result.push_back(id);
+	for (const KeyValue<EntityId, bool> &entry : changed) {
+		result.push_back(entry.key);
 	}
 	changed.clear();
 	return result;

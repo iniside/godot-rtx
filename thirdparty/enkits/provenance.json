@@ -1,0 +1,12 @@
+{
+  "upstream": "https://github.com/dougbinks/enkiTS",
+  "revision": "6ffccbdb1000253d8d513dd7a5ae9226e5023a5c",
+  "version": "1.11",
+  "recipe": "python misc/scripts/import_enkits.py",
+  "files": {
+    "TaskScheduler.h": "24b164d509db1865c4248d46adadab76e4dd265845b8b08660a9174aab63676e",
+    "TaskScheduler.cpp": "2b2d7c59ab39c88c42dd537f51ea573919e8a19bae7b954411c17a1268e77c6f",
+    "LockLessMultiReadPipe.h": "d346681dbdd7f6cadbc025341b9c41b14bde072496e9b9cd91677f57501d8eef",
+    "License.txt": "445bc1c1f7c6a7c6c7b57e4132c02404816a64ed8bf678d3c8c049bebf57d61b"
+  }
+}

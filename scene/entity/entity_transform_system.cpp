@@ -101,54 +101,71 @@ void EntityTransformSystem::update() {
 	for (const Entry &entry : ordered) {
 		flecs::entity entity = world.ecs.entity(entry.entity);
 		State &state = entity.ensure<State>();
-		EntityTransform *transform = entity.try_get_mut<EntityTransform>();
-		bool changed = false;
-		if (transform) {
-			EntityPose pose = transform->local;
-			for (uint64_t parent = ecs_get_parent(world.ecs.c_ptr(), entry.entity); parent; parent = ecs_get_parent(world.ecs.c_ptr(), parent)) {
-				const EntityTransform *parent_transform = world.ecs.entity(parent).try_get<EntityTransform>();
-				if (parent_transform) {
-					pose = compose(parent_transform->current, pose);
-					break;
-				}
-			}
-			changed = !state.initialized || !entity_pose_equal(pose, transform->current);
-			transform->current = pose;
-			if (!state.initialized || reset.has(entry.entity)) {
-				transform->previous = pose;
-				transform->render = pose;
-				state.reset_revision = ++reset_serial;
-				state.initialized = true;
-				moving.erase(entry.entity);
-				changed = true;
-			} else if (!entity_pose_equal(transform->previous, pose)) {
-				state.interpolation_method = TransformInterpolator::find_method(transform->previous.basis, pose.basis);
-				moving.insert(entry.entity);
-			}
-			if (changed) {
-				render_dirty.insert(entry.entity);
-			}
-		} else {
-			state.initialized = false;
-		}
-		EntityVisibility *visibility = entity.try_get_mut<EntityVisibility>();
-		if (visibility) {
-			bool effective = visibility->visible;
-			uint64_t parent = ecs_get_parent(world.ecs.c_ptr(), entry.entity);
-			if (visibility->inherit_parent && parent) {
-				const EntityVisibility *parent_visibility = world.ecs.entity(parent).try_get<EntityVisibility>();
-				if (parent_visibility) {
-					effective &= parent_visibility->effective;
-				}
-			}
-			changed |= effective != visibility->effective;
-			visibility->effective = effective;
-		}
-		if (changed) {
+		if (_update_entity(entry.entity, state, false)) {
 			world._mark_changed(world.get_id({ world.generation, entry.entity }), EntityRenderUpdate::POSE);
 		}
 	}
 	reset.clear();
+}
+
+bool EntityTransformSystem::_update_entity(uint64_t p_entity, State &r_state, bool p_initial) {
+	flecs::entity entity = world.ecs.entity(p_entity);
+	EntityTransform *transform = entity.try_get_mut<EntityTransform>();
+	bool changed = false;
+	if (transform) {
+		EntityPose pose = transform->local;
+		for (uint64_t parent = ecs_get_parent(world.ecs.c_ptr(), p_entity); parent; parent = ecs_get_parent(world.ecs.c_ptr(), parent)) {
+			const EntityTransform *parent_transform = world.ecs.entity(parent).try_get<EntityTransform>();
+			if (parent_transform) {
+				pose = compose(parent_transform->current, pose);
+				break;
+			}
+		}
+		changed = !r_state.initialized || !entity_pose_equal(pose, transform->current);
+		transform->current = pose;
+		if (!r_state.initialized || reset.has(p_entity)) {
+			transform->previous = pose;
+			transform->render = pose;
+			r_state.reset_revision = ++reset_serial;
+			r_state.initialized = true;
+			moving.erase(p_entity);
+			changed = true;
+		} else if (!entity_pose_equal(transform->previous, pose)) {
+			r_state.interpolation_method = TransformInterpolator::find_method(transform->previous.basis, pose.basis);
+			moving.insert(p_entity);
+		}
+		if (changed && !p_initial) {
+			render_dirty.insert(p_entity);
+		}
+	} else {
+		r_state.initialized = false;
+	}
+	EntityVisibility *visibility = entity.try_get_mut<EntityVisibility>();
+	if (visibility) {
+		bool effective = visibility->visible;
+		uint64_t parent = ecs_get_parent(world.ecs.c_ptr(), p_entity);
+		if (visibility->inherit_parent && parent) {
+			const EntityVisibility *parent_visibility = world.ecs.entity(parent).try_get<EntityVisibility>();
+			if (parent_visibility) {
+				effective &= parent_visibility->effective;
+			}
+		}
+		changed |= effective != visibility->effective;
+		visibility->effective = effective;
+	}
+	return changed;
+}
+
+Error EntityTransformSystem::finalize_created(const LocalVector<uint64_t> &p_ordered) {
+	for (uint64_t id : p_ordered) {
+		const State *state = world.ecs.entity(id).try_get<State>();
+		ERR_FAIL_COND_V(!state || state->initialized, ERR_BUG);
+	}
+	for (uint64_t id : p_ordered) {
+		State *state = world.ecs.entity(id).try_get_mut<State>();
+		_update_entity(id, *state, true);
+	}
+	return OK;
 }
 
 void EntityTransformSystem::interpolate(double p_fraction) {

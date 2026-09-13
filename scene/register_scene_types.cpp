@@ -38,8 +38,9 @@
 #include "core/os/os.h"
 #ifndef _3D_DISABLED
 #include "scene/entity/entity_component_schema.h"
-#include "scene/entity/entity_scene_runtime.h"
 #include "scene/entity/entity_scene_io.h"
+#include "scene/entity/entity_scene_runtime.h"
+#include "scene/entity/entity_task_scheduler.h"
 #endif
 #include "scene/animation/animation_blend_space_1d.h"
 #include "scene/animation/animation_blend_space_2d.h"
@@ -407,6 +408,7 @@ void register_scene_types() {
 
 #ifndef _3D_DISABLED
 	initialize_entity_types();
+	memnew(EntityTaskScheduler);
 	GDREGISTER_CLASS(EntityScene);
 	resource_loader_entity_scene.instantiate();
 	ResourceLoader::add_resource_format_loader(resource_loader_entity_scene, true);
@@ -1378,6 +1380,7 @@ void unregister_scene_types() {
 	resource_loader_entity_scene.unref();
 	ResourceSaver::remove_resource_format_saver(resource_saver_entity_scene);
 	resource_saver_entity_scene.unref();
+	memdelete(EntityTaskScheduler::get_singleton());
 	finalize_entity_types();
 #endif
 

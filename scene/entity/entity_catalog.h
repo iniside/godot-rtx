@@ -2,9 +2,12 @@
 
 #include "entity_id.h"
 
+#include "core/templates/a_hash_map.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/hash_set.h"
 #include "core/templates/vector.h"
+#include "core/variant/array.h"
+#include "core/variant/dictionary.h"
 
 class EntityWorld;
 
@@ -13,11 +16,28 @@ class EntityCatalog {
 	friend class EntityScene;
 	friend class EntitySceneCommands;
 	friend class EntitySceneIO;
+	struct Section {
+		String path;
+		bool cluster = false;
+		String name;
+		Dictionary record;
+		Array components;
+	};
 	struct Record {
 		bool deleted = false;
 		EntityRef parent;
+		int64_t order = 0;
+		Section section;
+		String cell_grid;
+		int32_t cell_x = 0;
+		int32_t cell_y = 0;
+		int32_t cell_z = 0;
+		bool has_order = false;
+		bool has_section = false;
+		bool has_cell = false;
 	};
-	HashMap<EntityId, Record, EntityIdHasher> records;
+	using RecordMap = AHashMap<EntityId, Record, EntityIdHasher>;
+	RecordMap records;
 	HashMap<EntityId, HashSet<EntityId, EntityIdHasher>, EntityIdHasher> children;
 
 	void _unlink_parent(EntityId p_id) {

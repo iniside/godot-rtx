@@ -262,6 +262,18 @@ Important: Building against a system wide ENet is possible, but will limit its
 functionality to IPv4 only and no DTLS. We recommend against it.
 
 
+## enkits
+
+- Upstream: https://github.com/dougbinks/enkiTS
+- Version: 1.11 (`6ffccbdb1000253d8d513dd7a5ae9226e5023a5c`)
+- License: Zlib
+
+Run `python misc/scripts/import_enkits.py` to import the pinned C++ scheduler,
+its lockless pipe header, and `License.txt`. The C interface is not used.
+`enkits/provenance.json` records the revision, recipe, and SHA-256 of each
+unmodified upstream file. The importer refuses to overwrite modified files.
+
+
 ## etcpak
 
 - Upstream: https://github.com/wolfpld/etcpak

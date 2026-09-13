@@ -7,11 +7,13 @@
 #include "entity_transform_system.h"
 
 #include "core/os/thread.h"
+#include "core/templates/a_hash_map.h"
 #include "core/templates/hash_set.h"
 #include "scene/resources/environment.h"
 
 class EntityWorld {
 	friend class EntityTransformSystem;
+	friend class EntityRenderSystem;
 	friend class EntityScene;
 	friend class EntitySceneCommands;
 	struct Identity {
@@ -21,12 +23,23 @@ class EntityWorld {
 		EntityHandle handle;
 		uint64_t revision = 0;
 	};
+	struct MaterializeProfile {
+		uint64_t catalog_usec = 0;
+		uint64_t ecs_entity_create_identity_usec = 0;
+		uint64_t ecs_parent_set_usec = 0;
+		uint64_t resident_insert_usec = 0;
+		uint64_t initial_dirty_usec = 0;
+		uint64_t ecs_bulk_create_components_usec = 0;
+		int entities_materialized = 0;
+		int parent_sets = 0;
+	};
 
 	EntityCatalog &catalog;
 	flecs::world ecs;
 	EntitySchemaRegistry schemas;
-	HashMap<EntityId, Resident, EntityIdHasher> residents;
-	HashSet<EntityId, EntityIdHasher> changed;
+	AHashMap<EntityId, Resident, EntityIdHasher> residents;
+	LocalVector<ecs_entity_t> bulk_storage_tags;
+	AHashMap<EntityId, bool, EntityIdHasher> changed;
 	uint64_t generation = 0;
 	uint64_t change_serial = 0;
 	Thread::ID owner_thread = Thread::get_caller_id();
@@ -38,7 +51,10 @@ class EntityWorld {
 	Ref<Environment> fallback_environment;
 
 	bool _is_owner() const { return owner_thread == Thread::get_caller_id(); }
-	EntityHandle _materialize(EntityId p_id);
+	EntityHandle _materialize(EntityId p_id, MaterializeProfile *r_profile = nullptr);
+	Error _materialize_bulk(const LocalVector<EntityId> &p_ids, ecs_bulk_desc_t &r_desc, const ecs_table_t *&r_table, ecs_entity_t &r_storage_tag, MaterializeProfile *r_profile);
+	const void *_get_transform_states(const ecs_table_t *p_table) const { return ecs_table_get_id(ecs.c_ptr(), p_table, ecs.id<EntityTransformSystem::State>(), 0); }
+	uint64_t _get_transform_reset_revision(const void *p_states, int32_t p_row) const { return static_cast<const EntityTransformSystem::State *>(p_states)[p_row].reset_revision; }
 	void _mark_changed(EntityId p_id, uint32_t p_render_mask = EntityRenderUpdate::ALL);
 	void _component_changed(EntityHandle p_handle, uint64_t p_component = 0);
 	bool _has_resident_children(EntityHandle p_handle) const;

@@ -20,7 +20,6 @@ class EntitySceneEditor : public VBoxContainer {
 	uint64_t residency_serial = 0;
 	Vector<EntityId> entities;
 	Vector<EntityId> filtered;
-	HashMap<EntityId, String, EntityIdHasher> names;
 	Tree *tree = nullptr;
 	LineEdit *filter = nullptr;
 	Label *page_label = nullptr;
@@ -46,7 +45,9 @@ class EntitySceneEditor : public VBoxContainer {
 	HashMap<uint64_t, bool> folded_components;
 	static constexpr int PAGE_SIZE = 256;
 
+	String _entity_name(EntityId p_id);
 	void _refresh_catalog();
+	void _residency_changed();
 	void _filter_changed(const String &p_text);
 	void _page(int p_delta);
 	void _refresh_page();
