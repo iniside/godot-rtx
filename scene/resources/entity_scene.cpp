@@ -860,7 +860,7 @@ Error EntityScene::PreparedSet::materialize_groups(EntityWorld &p_target, LocalV
 		}
 		const ecs_table_t *table = nullptr;
 		ecs_entity_t storage_tag = 0;
-		const Error error = p_target._materialize_bulk(ids, nullptr, desc, table, storage_tag, nullptr, nullptr, r_profile ? &materialize_profile : nullptr);
+		const Error error = p_target._materialize_bulk(ids, nullptr, desc, table, storage_tag, nullptr, nullptr, true, r_profile ? &materialize_profile : nullptr);
 		if (error != OK) {
 			return error;
 		}
@@ -2685,6 +2685,9 @@ uint32_t EntityScene::CellJob::prepare(bool p_decode_only) {
 		p_job.result.error = ERR_SKIP;
 		return 0;
 	}
+	if (p_job.refresh_only) {
+		return 0;
+	}
 	if (!p_decode_only && p_job.result.error == OK) {
 		uint64_t first = UINT64_MAX;
 		uint64_t last = 0;
@@ -2715,7 +2718,8 @@ void EntityScene::CellJob::prepare_range(uint32_t p_index) {
 
 void EntityScene::CellJob::finish_prepare() {
 	const uint64_t began = profile ? OS::get_singleton()->get_ticks_usec() : 0;
-	result.error = _finish_cell_decode(*this);
+	result.error = _finish_cell_decode(*this, refresh_only);
+	refresh_only = false;
 	if (profile) {
 		worker_total_usec += OS::get_singleton()->get_ticks_usec() - began;
 	}
@@ -2914,47 +2918,62 @@ void EntityScene::_run_cell_decode_range(CellJob &p_job, uint32_t p_index) {
 	}
 }
 
-Error EntityScene::_finish_cell_decode(CellJob &p_job) {
+Error EntityScene::_finish_cell_decode(CellJob &p_job, bool p_refresh_only) {
 	Error result = OK;
-	p_job.missing.clear();
-	uint32_t remaining = 0;
-	for (const CellDecodeRange &range : p_job.decode_ranges) {
-		p_job.decode_usec += range.decode_usec;
-		p_job.worker_total_usec += range.decode_usec;
-		if (range.error != OK && result == OK) {
-			result = range.error;
-			p_job.result.failing = range.failing;
-			p_job.result.failing_field = range.failing_field;
-		}
-		for (const String &path : range.missing) {
-			if (!p_job.missing.has(path)) {
-				p_job.missing.push_back(path);
+	if (!p_refresh_only) {
+		p_job.missing.clear();
+		uint32_t remaining = 0;
+		for (const CellDecodeRange &range : p_job.decode_ranges) {
+			p_job.decode_usec += range.decode_usec;
+			p_job.worker_total_usec += range.decode_usec;
+			if (range.error != OK && result == OK) {
+				result = range.error;
+				p_job.result.failing = range.failing;
+				p_job.result.failing_field = range.failing_field;
+			}
+			for (const String &path : range.missing) {
+				if (!p_job.missing.has(path)) {
+					p_job.missing.push_back(path);
+				}
 			}
 		}
-	}
-	if (result != OK && result != ERR_UNAVAILABLE) {
+		if (result != OK && result != ERR_UNAVAILABLE) {
+			p_job.decode_ranges.clear();
+			return result;
+		}
+		for (uint32_t i = 0; i < p_job.pending.size(); i++) {
+			if (!p_job.pending[i].record.is_empty()) {
+				if (remaining != i) {
+					p_job.pending[remaining] = std::move(p_job.pending[i]);
+				}
+				remaining++;
+			}
+		}
+		p_job.pending.resize(remaining);
 		p_job.decode_ranges.clear();
-		return result;
-	}
-	for (uint32_t i = 0; i < p_job.pending.size(); i++) {
-		if (!p_job.pending[i].record.is_empty()) {
-			if (remaining != i) {
-				p_job.pending[remaining] = std::move(p_job.pending[i]);
-			}
-			remaining++;
+		if (result == ERR_UNAVAILABLE) {
+			p_job.missing.sort();
+			return result;
 		}
-	}
-	p_job.pending.resize(remaining);
-	p_job.decode_ranges.clear();
-	if (result == ERR_UNAVAILABLE) {
-		p_job.missing.sort();
-		return result;
 	}
 	const uint64_t inside_count = uint64_t(p_job.skip.size()) + p_job.result.entities.size();
 	const uint64_t hierarchy_bytes = inside_count * sizeof(EntityId) * 4 + uint64_t(p_job.result.entities.size()) * (sizeof(uint32_t) * 5 + sizeof(int32_t)) + 128;
-	if (!p_job.reserve_payload(hierarchy_bytes)) {
+	if (!p_refresh_only && !p_job.reserve_payload(hierarchy_bytes)) {
 		return ERR_OUT_OF_MEMORY;
 	}
+	p_job.result.sorted_rows.clear();
+	p_job.result.parent_rows.clear();
+	p_job.result.child_offsets.clear();
+	p_job.result.children.clear();
+	p_job.result.layer_offsets.clear();
+	p_job.result.layer_rows.clear();
+	p_job.result.catalog_ids.clear();
+	p_job.result.catalog_records.clear();
+	p_job.result.catalog_topological_rows.clear();
+	p_job.result.catalog_child_offsets.clear();
+	p_job.result.catalog_child_rows.clear();
+	p_job.result.parent_edge_rows.clear();
+	p_job.result.catalog_archetypes.clear();
 	Vector<EntityId> inside;
 	inside.resize(inside_count);
 	int inside_index = 0;
@@ -3131,6 +3150,7 @@ Error EntityScene::_finish_cell_decode(CellJob &p_job) {
 		PreparedGroup &group = *p_entity.group;
 		group.ids[p_entity.row] = p_entity.id;
 		EntityRenderUpdate &update = group.render_updates.write[p_entity.row];
+		update = EntityRenderUpdate();
 		update.id = p_entity.id;
 		for (const PreparedColumn &prepared_column : group.columns) {
 			const uint64_t id = prepared_column.schema->id;
@@ -3245,6 +3265,7 @@ Error EntityScene::_finish_cell_decode(CellJob &p_job) {
 }
 
 Error EntityScene::_revalidate_job(CellJob &p_job) {
+	p_job.refresh_requested = false;
 	if (resident_cells.has(p_job.result.key)) {
 		return ERR_BUSY;
 	}
@@ -3253,23 +3274,207 @@ Error EntityScene::_revalidate_job(CellJob &p_job) {
 			return ERR_BUSY;
 		}
 	}
+	for (const ExternalTransformSnapshot &snapshot : p_job.external_transforms) {
+		const EntityCatalog::RowState *state = catalog.get_state_ptr(snapshot.id);
+		if (!state || !state->resident || state->revision != snapshot.revision) {
+			p_job.refresh_requested = true;
+			return ERR_BUSY;
+		}
+	}
+	return OK;
+}
+
+Error EntityScene::_refresh_external_transforms(CellJob &p_job) {
+	Vector<EntityId> ids;
+	ids.reserve(p_job.external_transforms.size());
+	for (const ExternalTransformSnapshot &snapshot : p_job.external_transforms) {
+		ids.push_back(snapshot.id);
+	}
+	Vector<EntityId> ancestors = p_job.ancestors;
+	_sort_snapshot_ids(ancestors);
+	uint32_t cursor = 0;
+	while (cursor < ids.size()) {
+		const EntityId id = ids[cursor++];
+		const EntityResolution resolved = resolve(id);
+		if (resolved.state != EntityReferenceState::RESIDENT) {
+			return ERR_BUSY;
+		}
+		const EntityRef parent = catalog.get_parent(id);
+		if (parent.id.is_valid() && !_snapshot_has(ids, parent.id)) {
+			ids.push_back(parent.id);
+			_sort_snapshot_ids(ids);
+			cursor = 0;
+		}
+	}
+	cursor = 0;
+	while (cursor < ancestors.size()) {
+		const EntityId id = ancestors[cursor++];
+		if (resolve(id).state != EntityReferenceState::RESIDENT) {
+			return ERR_BUSY;
+		}
+		const EntityRef parent = catalog.get_parent(id);
+		if (parent.id.is_valid() && !_snapshot_has(ancestors, parent.id)) {
+			ancestors.push_back(parent.id);
+			_sort_snapshot_ids(ancestors);
+			cursor = 0;
+		}
+	}
+	Vector<ExternalTransformSnapshot> refreshed;
+	refreshed.reserve(ids.size());
+	for (EntityId id : ids) {
+		const EntityResolution resolved = resolve(id);
+		const EntityCatalog::RowState *state = catalog.get_state_ptr(id);
+		if (resolved.state != EntityReferenceState::RESIDENT || !state) {
+			return ERR_BUSY;
+		}
+		ExternalTransformSnapshot snapshot;
+		snapshot.id = id;
+		snapshot.parent = catalog.get_parent(id);
+		snapshot.revision = state->revision;
+		if (const EntityTransform *transform = world->get<EntityTransform>(resolved.handle)) {
+			snapshot.pose = transform->current;
+			snapshot.has_transform = true;
+		}
+		if (const EntityVisibility *visibility = world->get<EntityVisibility>(resolved.handle)) {
+			snapshot.visible = visibility->effective;
+			snapshot.has_visibility = true;
+		}
+		refreshed.push_back(snapshot);
+	}
+	p_job.external_transforms = std::move(refreshed);
+	p_job.ancestors = std::move(ancestors);
 	return OK;
 }
 
 Error EntityScene::_commit_prepared_cell(CellJob &p_job, CommitProfile *r_profile) {
 	EntityWorld *target = get_world();
+	ERR_FAIL_NULL_V(target, ERR_UNCONFIGURED);
 	for (const ExternalTransformSnapshot &snapshot : p_job.external_transforms) {
 		const EntityCatalog::RowState *state = catalog.get_state_ptr(snapshot.id);
 		if (!state || !state->resident || state->revision != snapshot.revision) {
 			return ERR_BUSY;
 		}
 	}
+	const uint32_t entity_count = p_job.result.catalog_ids.size();
+	ERR_FAIL_COND_V(p_job.result.catalog_records.size() != entity_count || p_job.result.catalog_child_offsets.size() != entity_count + 1 || p_job.result.catalog_topological_rows.size() != entity_count, ERR_INVALID_DATA);
+	uint32_t archetype_end = 0;
+	for (const EntityCatalog::ArchetypeSpan &span : p_job.result.catalog_archetypes) {
+		ERR_FAIL_COND_V(span.first != archetype_end || span.count > entity_count - span.first, ERR_INVALID_DATA);
+		archetype_end += span.count;
+	}
+	ERR_FAIL_COND_V(archetype_end != entity_count, ERR_INVALID_DATA);
+	ERR_FAIL_COND_V(p_job.result.catalog_child_offsets[0] != 0 || p_job.result.catalog_child_offsets[entity_count] != uint32_t(p_job.result.catalog_child_rows.size()), ERR_INVALID_DATA);
+	Vector<uint8_t> topological_rows;
+	topological_rows.resize_initialized(entity_count);
+	for (uint32_t row : p_job.result.catalog_topological_rows) {
+		ERR_FAIL_COND_V(row >= entity_count || topological_rows[row], ERR_INVALID_DATA);
+		topological_rows.write[row] = 1;
+	}
+	for (uint32_t row = 0; row < entity_count; row++) {
+		ERR_FAIL_COND_V(p_job.result.catalog_child_offsets[row] > p_job.result.catalog_child_offsets[row + 1], ERR_INVALID_DATA);
+	}
+	for (uint32_t row : p_job.result.catalog_child_rows) {
+		ERR_FAIL_COND_V(row >= entity_count, ERR_INVALID_DATA);
+	}
+	Vector<uint8_t> materialized_rows;
+	materialized_rows.resize_initialized(entity_count);
+	for (PreparedGroup *group : p_job.result.groups) {
+		ERR_FAIL_NULL_V(group, ERR_INVALID_DATA);
+		ERR_FAIL_COND_V(group->ids.size() != group->capacity || group->catalog_rows.size() != group->capacity || group->render_updates.size() != group->capacity || group->columns.size() + 3 >= FLECS_ID_DESC_MAX, ERR_INVALID_DATA);
+		for (const PreparedColumn &column : group->columns) {
+			ERR_FAIL_COND_V(!column.schema || !target->schemas.find(column.schema->id) || (group->capacity && !column.buffer), ERR_INVALID_DATA);
+		}
+		for (uint32_t row : group->catalog_rows) {
+			ERR_FAIL_COND_V(row >= entity_count || materialized_rows[row], ERR_INVALID_DATA);
+			ERR_FAIL_COND_V(p_job.result.catalog_records[row].deleted, ERR_INVALID_DATA);
+			materialized_rows.write[row] = 1;
+		}
+		for (uint32_t row = 0; row < group->capacity; row++) {
+			ERR_FAIL_COND_V(group->ids[row] != p_job.result.catalog_ids[group->catalog_rows[row]] || group->render_updates[row].id != group->ids[row], ERR_INVALID_DATA);
+		}
+	}
+	for (uint32_t row = 0; row < entity_count; row++) {
+		ERR_FAIL_COND_V(bool(materialized_rows[row]) == p_job.result.catalog_records[row].deleted, ERR_INVALID_DATA);
+	}
+	struct PreparedParentEdge {
+		uint32_t child = 0;
+		uint32_t parent = UINT32_MAX;
+		EntityHandle external;
+	};
+	LocalVector<PreparedParentEdge> parent_edges;
+	parent_edges.reserve(p_job.result.parent_edge_rows.size());
+	auto find_catalog_row = [&](EntityId p_id) -> uint32_t {
+		int32_t low = 0;
+		int32_t high = p_job.result.catalog_ids.size() - 1;
+		while (low <= high) {
+			const int32_t middle = low + (high - low) / 2;
+			const EntityId candidate = p_job.result.catalog_ids[middle];
+			if (candidate == p_id) {
+				return middle;
+			}
+			if (SnapshotIdOrder()(candidate, p_id)) {
+				low = middle + 1;
+			} else {
+				high = middle - 1;
+			}
+		}
+		return UINT32_MAX;
+	};
+	for (EntityId ancestor : p_job.ancestors) {
+		const uint32_t row = find_catalog_row(ancestor);
+		if (row != UINT32_MAX) {
+			ERR_FAIL_COND_V(!materialized_rows[row] || p_job.result.catalog_records[row].deleted, ERR_INVALID_DATA);
+		} else if (resolve(ancestor).state != EntityReferenceState::RESIDENT) {
+			return ERR_BUSY;
+		}
+	}
+	for (uint32_t child : p_job.result.parent_edge_rows) {
+		ERR_FAIL_COND_V(child >= entity_count, ERR_INVALID_DATA);
+		const EntityCatalog::Record &record = p_job.result.catalog_records[child];
+		ERR_FAIL_COND_V(record.deleted || !record.parent.id.is_valid() || !materialized_rows[child], ERR_INVALID_DATA);
+		PreparedParentEdge edge;
+		edge.child = child;
+		edge.parent = find_catalog_row(record.parent.id);
+		if (edge.parent != UINT32_MAX) {
+			ERR_FAIL_COND_V(!materialized_rows[edge.parent] || p_job.result.catalog_records[edge.parent].deleted, ERR_INVALID_DATA);
+		} else {
+			const EntityResolution parent = resolve(record.parent.id);
+			if (parent.state != EntityReferenceState::RESIDENT) {
+				return ERR_BUSY;
+			}
+			edge.external = parent.handle;
+		}
+		parent_edges.push_back(edge);
+	}
 	const uint64_t began = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
-	const uint32_t block_index = catalog.add_prepared_block(std::move(p_job.result.catalog_ids), std::move(p_job.result.catalog_records), std::move(p_job.result.catalog_topological_rows), std::move(p_job.result.catalog_child_offsets), std::move(p_job.result.catalog_child_rows), std::move(p_job.result.catalog_archetypes), p_job.result.key.grid, p_job.result.key.x, p_job.result.key.y, p_job.result.key.z);
-	ERR_FAIL_COND_V(block_index == UINT32_MAX, catalog.get_last_publish_error() == OK ? ERR_CANT_CREATE : catalog.get_last_publish_error());
-	EntityCatalog::CellRuntimeBlock *block = catalog.get_block(block_index);
-	ERR_FAIL_NULL_V(block, ERR_BUG);
-	const uint64_t row_revision = ++target->change_serial;
+	EntityCatalog::PreparedBlock prepared_block;
+	const Error prepare_error = catalog.prepare_block(std::move(p_job.result.catalog_ids), std::move(p_job.result.catalog_records), std::move(p_job.result.catalog_topological_rows), std::move(p_job.result.catalog_child_offsets), std::move(p_job.result.catalog_child_rows), std::move(p_job.result.catalog_archetypes), p_job.result.key.grid, p_job.result.key.x, p_job.result.key.y, p_job.result.key.z, prepared_block);
+	if (prepare_error != OK) {
+		return prepare_error;
+	}
+	EntityCatalog::CellRuntimeBlock *block = prepared_block.block;
+	const uint32_t block_index = prepared_block.index;
+	const uint64_t previous_change_serial = target->change_serial;
+	const uint64_t previous_reset_serial = target->_get_transform_reset_serial();
+	const uint32_t previous_storage_tags = target->bulk_storage_tags.size();
+	const uint64_t row_revision = previous_change_serial + 1;
+	LocalVector<EntityHandle> created;
+	CommitProfile committed_profile;
+	auto rollback = [&]() {
+		for (EntityHandle handle : created) {
+			if (target->ecs.is_alive(handle.entity)) {
+				target->ecs.entity(handle.entity).destruct();
+			}
+		}
+		for (uint32_t i = previous_storage_tags; i < target->bulk_storage_tags.size(); i++) {
+			if (target->ecs.is_alive(target->bulk_storage_tags[i])) {
+				target->ecs.entity(target->bulk_storage_tags[i]).destruct();
+			}
+		}
+		target->bulk_storage_tags.resize(previous_storage_tags);
+		target->_set_transform_reset_serial(previous_reset_serial);
+		target->change_serial = previous_change_serial;
+	};
 	for (PreparedGroup *group : p_job.result.groups) {
 		if (group->ids.is_empty()) {
 			continue;
@@ -3296,47 +3501,62 @@ Error EntityScene::_commit_prepared_cell(CellJob &p_job, CommitProfile *r_profil
 		handles.reserve(group->ids.size());
 		reset_revisions.reserve(group->ids.size());
 		EntityWorld::MaterializeProfile materialize_profile;
-		const Error materialize_error = target->_materialize_bulk(group->ids, &locations, desc, table, storage_tag, &handles, &reset_revisions, r_profile ? &materialize_profile : nullptr);
+		const Error materialize_error = target->_materialize_bulk(group->ids, &locations, desc, table, storage_tag, &handles, &reset_revisions, false, r_profile ? &materialize_profile : nullptr);
 		if (materialize_error != OK) {
+			rollback();
 			return materialize_error;
 		}
 		for (uint32_t row = 0; row < handles.size(); row++) {
+			created.push_back(handles[row]);
 			EntityRenderUpdate &update = group->render_updates.write[row];
 			update.handle = handles[row];
 			update.reset_revision = reset_revisions[row];
 			EntityCatalog::RowState &state = block->states.write[group->catalog_rows[row]];
+			state.handle = handles[row];
+			state.resident = true;
 			state.revision = row_revision;
 		}
-		target->rendering.enqueue_initial(std::move(group->render_updates));
-		if (r_profile) {
-			r_profile->ecs_bulk_create_components_usec += materialize_profile.ecs_bulk_create_components_usec;
-			r_profile->resident_insert_usec += materialize_profile.resident_insert_usec;
-			r_profile->entities_materialized += materialize_profile.entities_materialized;
-			r_profile->bulk_groups++;
-			r_profile->bulk_rows += group->ids.size();
-			r_profile->initial_packet_updates += group->ids.size();
-		}
+		committed_profile.ecs_bulk_create_components_usec += materialize_profile.ecs_bulk_create_components_usec;
+		committed_profile.resident_insert_usec += materialize_profile.resident_insert_usec;
+		committed_profile.entities_materialized += materialize_profile.entities_materialized;
+		committed_profile.bulk_groups++;
+		committed_profile.bulk_rows += group->ids.size();
+		committed_profile.initial_packet_updates += group->ids.size();
 	}
-	for (uint32_t row : p_job.result.parent_edge_rows) {
-		const EntityCatalog::Record &record = block->base[row];
-		if (record.deleted || !record.parent.id.is_valid() || !block->states[row].resident) {
-			continue;
+	for (const PreparedParentEdge &edge : parent_edges) {
+		const EntityHandle parent = edge.parent == UINT32_MAX ? edge.external : block->states[edge.parent].handle;
+		if (!target->ecs.is_alive(block->states[edge.child].handle.entity) || !target->ecs.is_alive(parent.entity)) {
+			rollback();
+			return ERR_BUSY;
 		}
-		const EntityResolution parent = resolve(record.parent.id);
-		if (parent.state != EntityReferenceState::RESIDENT) {
-			return _fail(block->ids[row], "parent (" + record.parent.id.to_string() + ")", ERR_BUSY);
-		}
-		target->ecs.entity(block->states[row].handle.entity).set<flecs::Parent>({ parent.handle.entity });
-		if (r_profile) {
-			r_profile->final_parent_sets++;
-		}
+		target->ecs.entity(block->states[edge.child].handle.entity).set<flecs::Parent>({ parent.entity });
+		committed_profile.final_parent_sets++;
 	}
+	const Error adopt_error = catalog.adopt_block(prepared_block);
+	if (adopt_error != OK) {
+		rollback();
+		return adopt_error;
+	}
+	target->change_serial = row_revision;
 	CellMembers &members = cells[p_job.result.key];
 	members = std::move(p_job.members);
+	for (PreparedGroup *group : p_job.result.groups) {
+		target->rendering.enqueue_initial(std::move(group->render_updates));
+	}
 	if (r_profile) {
-		r_profile->cell_membership_insertions += members.size();
-		r_profile->metadata_new_records += block->ids.size();
-		r_profile->metadata_commit_usec += OS::get_singleton()->get_ticks_usec() - began;
+		committed_profile.cell_membership_insertions += members.size();
+		committed_profile.metadata_new_records += block->ids.size();
+		committed_profile.metadata_commit_usec += OS::get_singleton()->get_ticks_usec() - began;
+		r_profile->ecs_bulk_create_components_usec += committed_profile.ecs_bulk_create_components_usec;
+		r_profile->resident_insert_usec += committed_profile.resident_insert_usec;
+		r_profile->entities_materialized += committed_profile.entities_materialized;
+		r_profile->bulk_groups += committed_profile.bulk_groups;
+		r_profile->bulk_rows += committed_profile.bulk_rows;
+		r_profile->initial_packet_updates += committed_profile.initial_packet_updates;
+		r_profile->final_parent_sets += committed_profile.final_parent_sets;
+		r_profile->cell_membership_insertions += committed_profile.cell_membership_insertions;
+		r_profile->metadata_new_records += committed_profile.metadata_new_records;
+		r_profile->metadata_commit_usec += committed_profile.metadata_commit_usec;
 	}
 	revision++;
 	return OK;
@@ -3439,6 +3659,20 @@ Error EntityScene::_commit_cell(CellJob &p_job, Stats &r_stats, OwnerProfile *r_
 		r_profile->revalidate_usec += OS::get_singleton()->get_ticks_usec() - began;
 	}
 	if (stale != OK) {
+		if (stale == ERR_BUSY && p_job.refresh_requested) {
+			const Error refresh_error = _refresh_external_transforms(p_job);
+			if (refresh_error == ERR_BUSY) {
+				p_job.retry_owner = true;
+				return OK;
+			}
+			if (refresh_error != OK) {
+				return refresh_error;
+			}
+			p_job.refresh_only = true;
+			p_job.resume = true;
+			r_stats.jobs_resumed++;
+			return OK;
+		}
 		r_stats.jobs_discarded++;
 		cell_assets.erase(p_job.result.key);
 		if (stale != ERR_BUSY) {
@@ -3465,12 +3699,8 @@ Error EntityScene::_commit_cell(CellJob &p_job, Stats &r_stats, OwnerProfile *r_
 		return error;
 	}
 	began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
-	error = pin(p_job.ancestors);
-	if (error != OK) {
-		if (timed) {
-			r_profile->residency_usec += OS::get_singleton()->get_ticks_usec() - began;
-		}
-		return error;
+	for (EntityId ancestor : p_job.ancestors) {
+		_pin_row(ancestor);
 	}
 	resident_cells.insert(p_job.result.key, p_job.ancestors);
 	residency_serial++;
@@ -3554,6 +3784,11 @@ Error EntityScene::commit_ready(int p_max_entities, Stats *r_stats) {
 				result = error;
 			}
 			if (job->awaiting_assets) {
+				cell_jobs.push_back(job);
+				continue;
+			}
+			if (job->retry_owner) {
+				job->retry_owner = false;
 				cell_jobs.push_back(job);
 				continue;
 			}

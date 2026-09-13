@@ -15,6 +15,12 @@ EntityCatalog::~EntityCatalog() {
 	clear();
 }
 
+EntityCatalog::PreparedBlock::~PreparedBlock() {
+	if (block) {
+		memdelete(block);
+	}
+}
+
 void EntityCatalog::clear() {
 	flush_maintenance();
 	for (CellRuntimeBlock *block : blocks) {
@@ -357,19 +363,20 @@ uint32_t EntityCatalog::add_block(const Vector<EntityId> &p_ids, const Vector<Re
 	return index;
 }
 
-uint32_t EntityCatalog::add_prepared_block(Vector<EntityId> &&p_ids, Vector<Record> &&p_records, Vector<uint32_t> &&p_topological_rows, Vector<uint32_t> &&p_child_offsets, Vector<uint32_t> &&p_child_rows, Vector<ArchetypeSpan> &&p_archetypes, const String &p_grid, int32_t p_x, int32_t p_y, int32_t p_z) {
+Error EntityCatalog::prepare_block(Vector<EntityId> &&p_ids, Vector<Record> &&p_records, Vector<uint32_t> &&p_topological_rows, Vector<uint32_t> &&p_child_offsets, Vector<uint32_t> &&p_child_rows, Vector<ArchetypeSpan> &&p_archetypes, const String &p_grid, int32_t p_x, int32_t p_y, int32_t p_z, PreparedBlock &r_prepared) {
 	last_publish_error = OK;
-	ERR_FAIL_COND_V(p_ids.size() != p_records.size(), UINT32_MAX);
-	ERR_FAIL_COND_V(p_child_offsets.size() != p_ids.size() + 1, UINT32_MAX);
+	ERR_FAIL_COND_V(r_prepared.block, ERR_ALREADY_IN_USE);
+	ERR_FAIL_COND_V(p_ids.size() != p_records.size(), ERR_INVALID_PARAMETER);
+	ERR_FAIL_COND_V(p_child_offsets.size() != p_ids.size() + 1, ERR_INVALID_PARAMETER);
 	for (int32_t i = 1; i < p_ids.size(); i++) {
-		ERR_FAIL_COND_V(!_id_less(p_ids[i - 1], p_ids[i]), UINT32_MAX);
+		ERR_FAIL_COND_V(!_id_less(p_ids[i - 1], p_ids[i]), ERR_INVALID_PARAMETER);
 	}
-	ERR_FAIL_COND_V(!p_ids.is_empty() && !p_ids[0].is_valid(), UINT32_MAX);
+	ERR_FAIL_COND_V(!p_ids.is_empty() && !p_ids[0].is_valid(), ERR_INVALID_PARAMETER);
 	const uint64_t run_bytes = uint64_t(p_ids.size()) * (sizeof(LocatorEntry) + sizeof(ChildEntry) * 2);
 	last_publish_error = _ensure_run_capacity(1, 1, run_bytes);
-	ERR_FAIL_COND_V(last_publish_error != OK, UINT32_MAX);
+	ERR_FAIL_COND_V(last_publish_error != OK, last_publish_error);
 	CellRuntimeBlock *block = memnew(CellRuntimeBlock);
-	block->generation = next_block_generation++;
+	block->generation = next_block_generation;
 	block->grid = p_grid;
 	block->x = p_x;
 	block->y = p_y;
@@ -393,12 +400,29 @@ uint32_t EntityCatalog::add_prepared_block(Vector<EntityId> &&p_ids, Vector<Reco
 			break;
 		}
 	}
-	if (index == blocks.size()) {
+	blocks.reserve(index + 1);
+	r_prepared.block = block;
+	r_prepared.index = index;
+	return OK;
+}
+
+Error EntityCatalog::adopt_block(PreparedBlock &p_prepared) {
+	ERR_FAIL_NULL_V(p_prepared.block, ERR_INVALID_PARAMETER);
+	CellRuntimeBlock *block = p_prepared.block;
+	ERR_FAIL_COND_V(block->generation != next_block_generation, ERR_BUSY);
+	ERR_FAIL_COND_V(p_prepared.index < blocks.size() && blocks[p_prepared.index], ERR_BUSY);
+	if (p_prepared.index == blocks.size()) {
 		blocks.push_back(block);
 	} else {
-		blocks[index] = block;
+		blocks[p_prepared.index] = block;
 	}
+	p_prepared.block = nullptr;
+	next_block_generation++;
 	active_records += block->ids.size();
+	for (const RowState &state : block->states) {
+		resident_records += state.resident;
+	}
+	const uint32_t index = p_prepared.index;
 	_publish_locator_rows(index);
 	Vector<ChildEntry> external_children;
 	for (uint32_t row = 0; row < uint32_t(block->ids.size()); row++) {
@@ -413,7 +437,7 @@ uint32_t EntityCatalog::add_prepared_block(Vector<EntityId> &&p_ids, Vector<Reco
 	}
 	_publish_child_entries(std::move(external_children));
 	maintenance();
-	return index;
+	return OK;
 }
 
 Error EntityCatalog::add_record(EntityId p_id, EntityRef p_parent) {

@@ -234,7 +234,7 @@ EntityHandle EntityWorld::_materialize(EntityId p_id, MaterializeProfile *r_prof
 	return handle;
 }
 
-Error EntityWorld::_materialize_bulk(const LocalVector<EntityId> &p_ids, const LocalVector<EntityCatalog::RowLocation> *p_locations, ecs_bulk_desc_t &r_desc, const ecs_table_t *&r_table, ecs_entity_t &r_storage_tag, LocalVector<EntityHandle> *r_handles, LocalVector<uint64_t> *r_reset_revisions, MaterializeProfile *r_profile) {
+Error EntityWorld::_materialize_bulk(const LocalVector<EntityId> &p_ids, const LocalVector<EntityCatalog::RowLocation> *p_locations, ecs_bulk_desc_t &r_desc, const ecs_table_t *&r_table, ecs_entity_t &r_storage_tag, LocalVector<EntityHandle> *r_handles, LocalVector<uint64_t> *r_reset_revisions, bool p_publish_catalog, MaterializeProfile *r_profile) {
 	DEV_ASSERT(_is_owner());
 	LocalVector<Identity> identities;
 	LocalVector<EntityTransformSystem::State> transform_states;
@@ -281,9 +281,9 @@ Error EntityWorld::_materialize_bulk(const LocalVector<EntityId> &p_ids, const L
 	r_storage_tag = storage_tag;
 	for (uint32_t i = 0; i < p_ids.size(); i++) {
 		EntityHandle handle{ generation, entities[i] };
-		EntityCatalog::RowState *state = catalog.get_state_ptr(identities[i].row);
-		DEV_ASSERT(state);
-		if (state) {
+		EntityCatalog::RowState *state = p_publish_catalog ? catalog.get_state_ptr(identities[i].row) : nullptr;
+		DEV_ASSERT(!p_publish_catalog || state);
+		if (p_publish_catalog && state) {
 			if (!state->resident) {
 				catalog.resident_records++;
 			}

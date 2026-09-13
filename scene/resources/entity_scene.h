@@ -373,6 +373,9 @@ private:
 		Vector<ExternalTransformSnapshot> external_transforms;
 		LocalVector<PendingRecord> pending;
 		bool resume = false;
+		bool retry_owner = false;
+		bool refresh_only = false;
+		bool refresh_requested = false;
 		bool awaiting_assets = false;
 		Error asset_request_error = OK;
 		PreparedCell result;
@@ -537,7 +540,8 @@ private:
 	void _flush_cleanup_jobs();
 	static Error _plan_cell_decode(CellJob &p_job);
 	static void _run_cell_decode_range(CellJob &p_job, uint32_t p_index);
-	static Error _finish_cell_decode(CellJob &p_job);
+	static Error _finish_cell_decode(CellJob &p_job, bool p_refresh_only = false);
+	Error _refresh_external_transforms(CellJob &p_job);
 	Error _revalidate_job(CellJob &p_job);
 	Error _commit_prepared_cell(CellJob &p_job, CommitProfile *r_profile);
 	Error _commit_cell(CellJob &p_job, Stats &r_stats, OwnerProfile *r_profile = nullptr);
