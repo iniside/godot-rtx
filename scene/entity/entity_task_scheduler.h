@@ -31,7 +31,9 @@ private:
 	public:
 		Mutex mutex;
 		uint64_t reserved_bytes = 0;
+		uint64_t maintenance_bytes = 0;
 		uint32_t graphs = 0;
+		uint32_t maintenance_graphs = 0;
 	};
 
 public:
@@ -39,6 +41,7 @@ public:
 		friend class EntityTaskScheduler;
 		Ref<Budget> budget;
 		uint64_t bytes = 0;
+		bool maintenance = false;
 
 	public:
 		Reservation() = default;
@@ -68,6 +71,7 @@ public:
 		bool decode_only = false;
 		bool submitted = false;
 		bool admitted = false;
+		bool maintenance = false;
 		bool pipeline_linked = false;
 		uint64_t queued_usec = 0;
 		uint64_t queue_usec = 0;
@@ -96,8 +100,10 @@ public:
 
 private:
 	static constexpr uint32_t MAX_GRAPHS = 2;
+	static constexpr uint32_t MAX_MAINTENANCE_GRAPHS = 1;
 	static constexpr uint32_t INGRESS_CAPACITY = 16;
 	static constexpr uint64_t MAX_RESERVED_BYTES = 512 * 1024 * 1024;
+	static constexpr uint64_t MAX_MAINTENANCE_BYTES = 256 * 1024 * 1024;
 	static EntityTaskScheduler *singleton;
 	enki::TaskScheduler scheduler;
 	Thread ingress;
@@ -123,7 +129,7 @@ private:
 public:
 	static EntityTaskScheduler *get_singleton() { return singleton; }
 	Error submit(Graph *p_graph, const Ref<Mailbox> &p_mailbox, bool p_decode_only = false, Priority p_priority = NORMAL);
-	Error reserve(Reservation &r_reservation, uint64_t p_snapshot_bytes);
+	Error reserve(Reservation &r_reservation, uint64_t p_snapshot_bytes, bool p_maintenance = false);
 	void adopt(Graph *p_graph, Reservation &p_reservation);
 	uint32_t get_worker_count() const { return worker_count; }
 	EntityTaskScheduler();

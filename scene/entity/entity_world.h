@@ -78,6 +78,7 @@ public:
 	Error load_entity(EntityId p_id, EntityHandle &r_handle);
 	Error restore_entity(EntityId p_id, EntityHandle &r_handle);
 	Error unload_entity(EntityHandle p_handle);
+	void remap_catalog_row(EntityHandle p_handle, EntityCatalog::RowLocation p_old, EntityCatalog::RowLocation p_new);
 	Error delete_entity(EntityId p_id);
 	Error delete_hierarchy(EntityId p_id);
 	Error reparent(EntityHandle p_handle, EntityRef p_parent, ReparentMode p_mode = KEEP_WORLD);

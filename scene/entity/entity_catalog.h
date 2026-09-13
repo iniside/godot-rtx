@@ -98,6 +98,11 @@ public:
 		Vector<uint32_t> child_rows;
 		Vector<ArchetypeSpan> archetypes;
 	};
+	struct ReleasePlan {
+		Vector<EntityId> unloading;
+		Vector<RowLocation> retiring;
+		Vector<EntityId> retiring_ids;
+	};
 
 private:
 	struct LocatorEntry {
@@ -146,7 +151,9 @@ private:
 		void prepare(bool) override;
 	};
 
-	static constexpr uint32_t RUN_COMPACTION_THRESHOLD = 8;
+	static constexpr uint32_t RUN_COMPACTION_THRESHOLD = 4;
+	static constexpr uint32_t RUN_HARD_CAP = 8;
+	static constexpr uint64_t RUN_BYTE_HARD_CAP = 256 * 1024 * 1024;
 	LocalVector<Ref<LocatorRun>> locator_runs;
 	LocalVector<Ref<ChildRun>> child_runs;
 	Ref<EntityTaskScheduler::Mailbox> compaction_mailbox;
@@ -154,10 +161,22 @@ private:
 	uint32_t next_block_generation = 1;
 	uint32_t active_records = 0;
 	uint32_t resident_records = 0;
+	uint64_t pending_compaction_bytes = 0;
+	uint64_t run_backpressure_count = 0;
+	uint64_t max_locator_runs = 0;
+	uint64_t max_child_runs = 0;
+	uint64_t max_run_bytes = 0;
+	Error last_publish_error = OK;
 	bool shutting_down = false;
 
 	static bool _id_less(EntityId p_left, EntityId p_right);
 	const LocatorEntry *_find_in_run(const LocatorRun &p_run, EntityId p_id) const;
+	uint64_t _run_bytes() const;
+	Error _ensure_run_capacity(uint32_t p_locator_runs, uint32_t p_child_runs, uint64_t p_bytes);
+	Error _prepare_child_publication(uint32_t p_rows);
+	void _record_run_high_water();
+	void _publish_locator_entries(Vector<LocatorEntry> &&p_entries);
+	void _publish_child_entries(Vector<ChildEntry> &&p_entries);
 	void _publish_locator_rows(uint32_t p_block, const Vector<uint32_t> *p_rows = nullptr, bool p_invalid = false);
 	void _publish_child_rows(uint32_t p_block, const Vector<uint32_t> *p_rows = nullptr, bool p_invalid = false);
 	void _rebuild_block_indices(uint32_t p_block);
@@ -184,7 +203,8 @@ public:
 	Error add_record(EntityId p_id, EntityRef p_parent = {});
 	Error insert_record(EntityId p_id, const Record &p_record);
 	bool erase_record(EntityId p_id);
-	void retire_rows(const Vector<RowLocation> &p_rows);
+	Error build_release_plan(const Vector<EntityId> &p_members, ReleasePlan &r_plan);
+	Error retire_rows(const Vector<RowLocation> &p_rows, EntityWorld *p_world = nullptr);
 	bool has_record(EntityId p_id) const { return locate(p_id).is_valid(); }
 	void clear();
 	void maintenance();
@@ -192,8 +212,9 @@ public:
 
 	Vector<EntityId> get_ids() const;
 	Vector<EntityId> get_children(EntityId p_id) const;
-	void _refresh_parent(EntityId p_id);
-	void _set_parent(EntityId p_id, EntityRef p_parent);
+	Error _refresh_parent(EntityId p_id);
+	Error _refresh_parents(const Vector<EntityId> &p_ids);
+	Error _set_parent(EntityId p_id, EntityRef p_parent);
 	EntityReferenceState get_state(EntityId p_id) const;
 	EntityRef get_parent(EntityId p_id) const;
 	int get_record_count() const;
@@ -203,4 +224,5 @@ public:
 	const LocalVector<CellRuntimeBlock *> &get_blocks() const { return blocks; }
 	uint32_t get_locator_run_count() const { return locator_runs.size(); }
 	uint32_t get_child_run_count() const { return child_runs.size(); }
+	Error get_last_publish_error() const { return last_publish_error; }
 };

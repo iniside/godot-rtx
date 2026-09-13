@@ -395,6 +395,23 @@ bool EntityScene::cell_exists(const CellKey &p_cell, int *r_probe_budget) {
 	return exists;
 }
 
+const EntityScene::PrefabMember *EntityScene::_find_prefab_member(EntityId p_id) const {
+	int32_t low = 0;
+	int32_t high = prefab_mappings.size() - 1;
+	while (low <= high) {
+		const int32_t middle = low + (high - low) / 2;
+		if (prefab_mappings[middle].id == p_id) {
+			return &prefab_mappings[middle].member;
+		}
+		if (SnapshotIdOrder()(prefab_mappings[middle].id, p_id)) {
+			low = middle + 1;
+		} else {
+			high = middle - 1;
+		}
+	}
+	return nullptr;
+}
+
 void EntityScene::_index_prefabs() {
 	HashMap<EntityId, PrefabMember, EntityIdHasher> desired;
 	for (const Variant &key : prefab_instances.get_key_list()) {
@@ -414,6 +431,15 @@ void EntityScene::_index_prefabs() {
 			}
 		}
 	}
+	prefab_mappings.clear();
+	prefab_mappings.reserve(desired.size());
+	for (const KeyValue<EntityId, PrefabMember> &entry : desired) {
+		prefab_mappings.push_back({ entry.key, entry.value });
+	}
+	struct PrefabMappingOrder {
+		bool operator()(const PrefabMapping &p_left, const PrefabMapping &p_right) const { return SnapshotIdOrder()(p_left.id, p_right.id); }
+	};
+	prefab_mappings.sort_custom<PrefabMappingOrder>();
 	for (uint32_t block_index = 0; block_index < catalog.blocks.size(); block_index++) {
 		EntityCatalog::CellRuntimeBlock *block = catalog.blocks[block_index];
 		if (!block) {
@@ -1489,6 +1515,10 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 				record.cell_z = p_streamed_cell->z;
 				record.has_cell = true;
 			}
+			if (const PrefabMember *prefab = _find_prefab_member(item.id)) {
+				record.prefab_instance = prefab->instance;
+				record.prefab_source = prefab->source;
+			}
 			new_ids.push_back(item.id);
 			new_base.push_back(record);
 		}
@@ -1496,7 +1526,7 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 	uint32_t new_block_index = UINT32_MAX;
 	if (!new_ids.is_empty()) {
 		new_block_index = catalog.add_block(new_ids, new_base, p_streamed_cell ? p_streamed_cell->grid : String(), p_streamed_cell ? p_streamed_cell->x : 0, p_streamed_cell ? p_streamed_cell->y : 0, p_streamed_cell ? p_streamed_cell->z : 0, p_streamed_cell != nullptr);
-		ERR_FAIL_COND_V(new_block_index == UINT32_MAX, ERR_CANT_CREATE);
+		ERR_FAIL_COND_V(new_block_index == UINT32_MAX, catalog.get_last_publish_error() == OK ? ERR_CANT_CREATE : catalog.get_last_publish_error());
 		EntityCatalog::CellRuntimeBlock *block = catalog.get_block(new_block_index);
 		for (uint32_t row = 0; row < uint32_t(new_ids.size()); row++) {
 			const PreparedEntity *prepared = p_prepared.find(new_ids[row]);
@@ -1894,9 +1924,15 @@ Error EntityScene::load_subset(const Vector<EntityId> &p_ids) {
 }
 
 Error EntityScene::unload_subset(const Vector<EntityId> &p_ids) {
+	return _unload_subset(p_ids, false);
+}
+
+Error EntityScene::_unload_subset(const Vector<EntityId> &p_ids, bool p_prevalidated_order) {
 	ERR_FAIL_COND_V(_owner() != OK, ERR_UNAUTHORIZED);
 	Vector<EntityId> requested = p_ids;
-	_sort_snapshot_ids(requested);
+	if (!p_prevalidated_order) {
+		_sort_snapshot_ids(requested);
+	}
 	Vector<Section> saved;
 	saved.resize(p_ids.size());
 	for (int32_t requested_index = 0; requested_index < requested.size(); requested_index++) {
@@ -1926,25 +1962,42 @@ Error EntityScene::unload_subset(const Vector<EntityId> &p_ids) {
 		section.record = record;
 		saved.write[requested_index] = section;
 	}
-	for (EntityId id : p_ids) {
-		for (EntityId child : catalog.get_children(id)) {
-			if (resolve(child).state == EntityReferenceState::RESIDENT && !_snapshot_has(requested, child)) {
-				return ERR_BUSY;
+	if (!p_prevalidated_order) {
+		for (EntityId id : p_ids) {
+			for (EntityId child : catalog.get_children(id)) {
+				if (resolve(child).state == EntityReferenceState::RESIDENT && !_snapshot_has(requested, child)) {
+					return ERR_BUSY;
+				}
 			}
 		}
 	}
 	Vector<EntityId> ordered;
-	Error error = _collect_required(p_ids, ordered);
-	if (error != OK) {
-		return error;
+	if (p_prevalidated_order) {
+		ordered = p_ids;
+	} else {
+		Error error = _collect_required(p_ids, ordered);
+		if (error != OK) {
+			return error;
+		}
 	}
-	for (int i = ordered.size() - 1; i >= 0; i--) {
-		EntityId id = ordered[i];
-		if (_snapshot_has(requested, id)) {
-			const int32_t saved_index = requested.bsearch_custom<SnapshotIdOrder>(id, true);
-			DEV_ASSERT(saved_index >= 0);
-			*_edit_section(id) = saved[saved_index];
-			world->unload_entity(resolve(id).handle);
+	if (p_prevalidated_order) {
+		for (int32_t i = 0; i < ordered.size(); i++) {
+			const EntityId id = ordered[i];
+			*_edit_section(id) = saved[i];
+			const Error error = world->unload_entity(resolve(id).handle);
+			if (error != OK) {
+				return error;
+			}
+		}
+	} else {
+		for (int i = ordered.size() - 1; i >= 0; i--) {
+			EntityId id = ordered[i];
+			if (_snapshot_has(requested, id)) {
+				const int32_t saved_index = requested.bsearch_custom<SnapshotIdOrder>(id, true);
+				DEV_ASSERT(saved_index >= 0);
+				*_edit_section(id) = saved[saved_index];
+				world->unload_entity(resolve(id).handle);
+			}
 		}
 	}
 	return OK;
@@ -2011,7 +2064,7 @@ Error EntityScene::create_play_document(Ref<EntityScene> &r_scene) {
 		copied_records.write[i] = *catalog.get_record(id);
 		serialized_records.write[i] = record;
 	}
-	ERR_FAIL_COND_V(result->catalog.add_block(ids, copied_records) == UINT32_MAX, ERR_CANT_CREATE);
+	ERR_FAIL_COND_V(result->catalog.add_block(ids, copied_records) == UINT32_MAX, result->catalog.get_last_publish_error() == OK ? ERR_CANT_CREATE : result->catalog.get_last_publish_error());
 	for (int32_t i = 0; i < ids.size(); i++) {
 		const EntityId id = ids[i];
 		result->_set_dirty(id, _is_dirty(id));
@@ -2939,7 +2992,9 @@ Error EntityScene::_commit_cell(CellJob &p_job, Stats &r_stats, OwnerProfile *r_
 	revision = previous_revision;
 	cell_assets.erase(p_job.result.key);
 	if (error != OK) {
-		failed_cells.insert(p_job.result.key, revision);
+		if (error != ERR_BUSY) {
+			failed_cells.insert(p_job.result.key, revision);
+		}
 		return error;
 	}
 	began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
@@ -3274,56 +3329,24 @@ Error EntityScene::release_cells(const Vector<CellKey> &p_cells) {
 				job->cancelled.set();
 			}
 		}
-		cell_assets.erase(cell);
 		const Vector<EntityId> *pinned = resident_cells.getptr(cell);
 		if (!pinned) {
+			cell_assets.erase(cell);
 			continue;
 		}
 		const Vector<EntityId> ancestors = *pinned;
-		resident_cells.erase(cell);
-		unpin(ancestors);
-		released = true;
 		const CellMembers *stored_members = cells.getptr(cell);
-		if (!stored_members) {
-			continue;
-		}
-		Vector<EntityId> members = *stored_members;
-		_sort_snapshot_ids(members);
-		Vector<EntityId> candidates;
-		for (EntityId id : members) {
-			if (resolve(id).state == EntityReferenceState::RESIDENT && !_is_pinned(id) && !_is_dirty(id)) {
-				candidates.push_back(id);
+		EntityCatalog::ReleasePlan plan;
+		if (stored_members) {
+			const Error plan_error = catalog.build_release_plan(*stored_members, plan);
+			if (plan_error != OK) {
+				result = plan_error;
+				continue;
 			}
 		}
-		_sort_snapshot_ids(candidates);
-		Vector<EntityId> blocked;
-		for (EntityId id : candidates) {
-			for (EntityId child : catalog.get_children(id)) {
-				if (resolve(child).state == EntityReferenceState::RESIDENT && !_snapshot_has(candidates, child)) {
-					blocked.push_back(id);
-					break;
-				}
-			}
-		}
-		_sort_snapshot_ids(blocked);
-		Vector<EntityId> blocked_queue = blocked;
-		for (uint32_t index = 0; index < uint32_t(blocked_queue.size()); index++) {
-			const EntityId parent = catalog.get_parent(blocked_queue[index]).id;
-			if (parent.is_valid() && _snapshot_has(candidates, parent) && !_snapshot_has(blocked, parent)) {
-				_cell_members_insert(blocked, parent);
-				blocked_queue.push_back(parent);
-			}
-		}
-		Vector<EntityId> unloading;
-		unloading.reserve(candidates.size());
-		for (EntityId id : candidates) {
-			if (!_snapshot_has(blocked, id)) {
-				unloading.push_back(id);
-			}
-		}
-		if (!unloading.is_empty()) {
+		if (!plan.unloading.is_empty()) {
 			const uint64_t unload_began = profiling ? OS::get_singleton()->get_ticks_usec() : 0;
-			const Error error = unload_subset(unloading);
+			const Error error = _unload_subset(plan.unloading, true);
 			if (profiling) {
 				unload_usec += OS::get_singleton()->get_ticks_usec() - unload_began;
 			}
@@ -3331,63 +3354,32 @@ Error EntityScene::release_cells(const Vector<CellKey> &p_cells) {
 				result = error;
 				continue;
 			}
-			unloaded_count += unloading.size();
+			unloaded_count += plan.unloading.size();
 		}
-		Vector<EntityId> retire_candidates;
-		for (EntityId id : members) {
-			const EntityCatalog::RowLocation location = catalog.locate(id);
-			const EntityCatalog::CellRuntimeBlock *block = catalog.get_block(location.block);
-			const EntityCatalog::Record *record = catalog.get_record(id);
-			const EntityCatalog::RowState *state = catalog.get_state_ptr(location);
-			if (block && block->ordinary_cell && record && state && !state->resident && !state->document_dirty && !state->pin_count && !state->prefab && !state->dependency && !state->tombstone) {
-				retire_candidates.push_back(id);
-			}
-		}
-		_sort_snapshot_ids(retire_candidates);
-		Vector<EntityId> retained;
-		for (EntityId id : retire_candidates) {
-			for (EntityId child : catalog.get_children(id)) {
-				if (!_snapshot_has(retire_candidates, child)) {
-					retained.push_back(id);
-					break;
-				}
-			}
-		}
-		_sort_snapshot_ids(retained);
-		Vector<EntityId> retained_queue = retained;
-		for (uint32_t index = 0; index < uint32_t(retained_queue.size()); index++) {
-			const EntityId parent = catalog.get_parent(retained_queue[index]).id;
-			if (parent.is_valid() && _snapshot_has(retire_candidates, parent) && !_snapshot_has(retained, parent)) {
-				_cell_members_insert(retained, parent);
-				retained_queue.push_back(parent);
-			}
-		}
-		Vector<EntityCatalog::RowLocation> retiring;
-		Vector<EntityId> retiring_ids;
-		retiring.reserve(retire_candidates.size());
-		retiring_ids.reserve(retire_candidates.size());
-		for (EntityId id : retire_candidates) {
-			if (!_snapshot_has(retained, id)) {
-				retiring.push_back(catalog.locate(id));
-				retiring_ids.push_back(id);
-			}
-		}
-		if (!retiring.is_empty()) {
+		resident_cells.erase(cell);
+		unpin(ancestors);
+		cell_assets.erase(cell);
+		released = true;
+		if (!plan.retiring.is_empty()) {
 			const uint64_t retire_began = profiling ? OS::get_singleton()->get_ticks_usec() : 0;
-			catalog.retire_rows(retiring);
+			const Error retire_error = catalog.retire_rows(plan.retiring, world);
 			if (profiling) {
 				retire_usec += OS::get_singleton()->get_ticks_usec() - retire_began;
 			}
-			retired_count += retiring.size();
+			if (retire_error != OK) {
+				result = retire_error;
+				continue;
+			}
+			retired_count += plan.retiring.size();
 			CellMembers *remaining = cells.getptr(cell);
 			if (remaining) {
 				int write = 0;
 				int retired = 0;
 				for (EntityId id : *remaining) {
-					while (retired < retiring_ids.size() && SnapshotIdOrder()(retiring_ids[retired], id)) {
+					while (retired < plan.retiring_ids.size() && SnapshotIdOrder()(plan.retiring_ids[retired], id)) {
 						retired++;
 					}
-					if (retired >= retiring_ids.size() || retiring_ids[retired] != id) {
+					if (retired >= plan.retiring_ids.size() || plan.retiring_ids[retired] != id) {
 						remaining->write[write++] = id;
 					}
 				}

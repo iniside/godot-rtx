@@ -55,7 +55,7 @@ Error EntitySceneCommands::_restore(const Dictionary &p_records, const Dictionar
 		catalog_records.push_back(metadata);
 		ids.push_back(id);
 	}
-	ERR_FAIL_COND_V(prepared->catalog.add_block(ids, catalog_records) == UINT32_MAX, ERR_CANT_CREATE);
+	ERR_FAIL_COND_V(prepared->catalog.add_block(ids, catalog_records) == UINT32_MAX, prepared->catalog.get_last_publish_error() == OK ? ERR_CANT_CREATE : prepared->catalog.get_last_publish_error());
 	Vector<EntityId> ordered;
 	Error error = prepared->_collect_required(ids, ordered);
 	if (error != OK) {
@@ -100,7 +100,7 @@ Error EntitySceneCommands::_remap_fields(uint64_t p_type, Dictionary &r_fields, 
 		}
 		Variant value = r_fields[field.key];
 		bool array = value.get_type() == Variant::ARRAY;
-		Array elements = array ? Array(value) : Array{value};
+		Array elements = array ? Array(value) : Array{ value };
 		for (int i = 0; i < elements.size(); i++) {
 			if (field.entity_reference && p_remap.has(elements[i])) {
 				elements[i] = p_remap[elements[i]];
@@ -649,7 +649,7 @@ Error EntitySceneCommands::_reconcile_prefab_catalog() {
 			return ERR_FILE_CORRUPT;
 		}
 		Dictionary instance = document.prefab_instances[key];
-		if (!instance.has_all(Array{"uid", "path", "document", "revision", "mapping", "overrides", "conflicts"}) || instance["mapping"].get_type() != Variant::DICTIONARY || instance["overrides"].get_type() != Variant::ARRAY) {
+		if (!instance.has_all(Array{ "uid", "path", "document", "revision", "mapping", "overrides", "conflicts" }) || instance["mapping"].get_type() != Variant::DICTIONARY || instance["overrides"].get_type() != Variant::ARRAY) {
 			return ERR_FILE_CORRUPT;
 		}
 		Ref<Resource> resource;
@@ -667,7 +667,7 @@ Error EntitySceneCommands::_reconcile_prefab_catalog() {
 			}
 		}
 		for (const Variant &value : Array(instance["overrides"])) {
-			if (value.get_type() != Variant::DICTIONARY || !Dictionary(value).has_all(Array{"source", "kind", "component", "field", "before", "after", "parent"})) {
+			if (value.get_type() != Variant::DICTIONARY || !Dictionary(value).has_all(Array{ "source", "kind", "component", "field", "before", "after", "parent" })) {
 				return ERR_FILE_CORRUPT;
 			}
 			Dictionary override = value;
@@ -749,14 +749,15 @@ Error EntitySceneCommands::_reconcile_prefab_catalog() {
 			const int64_t was_order = document.get_order(id);
 			const bool deleted = explicitly_deleted || (removed && !added);
 			if (was_deleted != deleted || was_parent != parent || was_order != order) {
+				ERR_FAIL_COND_V(document.catalog._prepare_child_publication(1) != OK, ERR_BUSY);
 				EntityCatalog::Record *record = document.catalog.edit_record(id);
 				record->deleted = deleted;
 				record->parent = { parent };
 				document._set_order(id, order);
 				if (!deleted) {
-					document.catalog._set_parent(id, { parent });
+					ERR_FAIL_COND_V(document.catalog._set_parent(id, { parent }) != OK, ERR_BUSY);
 				} else {
-					document.catalog._refresh_parent(id);
+					ERR_FAIL_COND_V(document.catalog._refresh_parent(id) != OK, ERR_BUSY);
 				}
 				document._set_dirty(id);
 			}
@@ -774,8 +775,9 @@ Error EntitySceneCommands::_reconcile_prefab_catalog() {
 	for (int i = 0; i < deleted.size(); i++) {
 		for (EntityId child : document.catalog.get_children(deleted[i])) {
 			if (document.catalog.get_state(child) != EntityReferenceState::DELETED && !conflicted.has(child)) {
+				ERR_FAIL_COND_V(document.catalog._prepare_child_publication(1) != OK, ERR_BUSY);
 				document.catalog.edit_record(child)->deleted = true;
-				document.catalog._refresh_parent(child);
+				ERR_FAIL_COND_V(document.catalog._refresh_parent(child) != OK, ERR_BUSY);
 				document._set_dirty(child);
 				deleted.push_back(child);
 			}

@@ -385,6 +385,11 @@ private:
 		String instance;
 		String source;
 	};
+	struct PrefabMapping {
+		EntityId id;
+		PrefabMember member;
+	};
+	Vector<PrefabMapping> prefab_mappings;
 	uint64_t residency_serial = 0;
 	bool global_pinned = false;
 	Dictionary prefab_instances;
@@ -425,8 +430,10 @@ private:
 	Error _assign_cell(EntityId p_id);
 	Error _assign_cells(const Vector<EntityId> &p_ids);
 	String _cell_path(const CellKey &p_cell) const;
+	const PrefabMember *_find_prefab_member(EntityId p_id) const;
 	void _index_prefabs();
 	Error _load_resident(const Vector<EntityId> &p_ids, LoadProfile *r_profile);
+	Error _unload_subset(const Vector<EntityId> &p_ids, bool p_prevalidated_order);
 	Error _read_record(EntityId p_id, Dictionary &r_record, bool *r_stored = nullptr, bool p_prefer_stored = false);
 	static Dictionary _shallow_record(const Dictionary &p_record);
 	Error _read_stored(EntityId p_id, Dictionary &r_record);

@@ -749,7 +749,7 @@ Error EntitySceneIO::load(const String &p_path, Ref<EntityScene> &r_scene) {
 			}
 		}
 	}
-	ERR_FAIL_COND_V(scene->catalog.add_block(ids, catalog_records) == UINT32_MAX, ERR_CANT_CREATE);
+	ERR_FAIL_COND_V(scene->catalog.add_block(ids, catalog_records) == UINT32_MAX, scene->catalog.get_last_publish_error() == OK ? ERR_CANT_CREATE : scene->catalog.get_last_publish_error());
 	for (EntityId id : scene->catalog.get_ids()) {
 		if (scene->catalog.get_record(id)->deleted) {
 			continue;

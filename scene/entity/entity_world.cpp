@@ -317,9 +317,10 @@ Error EntityWorld::restore_entity(EntityId p_id, EntityHandle &r_handle) {
 	ERR_FAIL_COND_V(catalog.get_state(p_id) != EntityReferenceState::DELETED, ERR_INVALID_PARAMETER);
 	EntityRef parent = catalog.get_parent(p_id);
 	ERR_FAIL_COND_V(parent.id.is_valid() && resolve(parent).state != EntityReferenceState::RESIDENT, ERR_UNAVAILABLE);
+	ERR_FAIL_COND_V(catalog._prepare_child_publication(1) != OK, ERR_BUSY);
 	catalog.edit_record(p_id)->deleted = false;
 	catalog.get_state_ptr(p_id)->tombstone = false;
-	catalog._set_parent(p_id, parent);
+	ERR_FAIL_COND_V(catalog._set_parent(p_id, parent) != OK, ERR_BUSY);
 	r_handle = _materialize(p_id);
 	return OK;
 }
@@ -336,8 +337,24 @@ Error EntityWorld::unload_entity(EntityHandle p_handle) {
 	return OK;
 }
 
+void EntityWorld::remap_catalog_row(EntityHandle p_handle, EntityCatalog::RowLocation p_old, EntityCatalog::RowLocation p_new) {
+	ERR_FAIL_COND(!_is_owner());
+	if (p_handle.world_generation == generation && p_handle.entity && ecs_is_alive(ecs.c_ptr(), p_handle.entity)) {
+		Identity &identity = ecs.entity(p_handle.entity).get_mut<Identity>();
+		if (identity.row == p_old) {
+			identity.row = p_new;
+		}
+	}
+	for (ChangedRow &changed : changed_rows) {
+		if (changed.location == p_old) {
+			changed.location = p_new;
+		}
+	}
+}
+
 Error EntityWorld::delete_entity(EntityId p_id) {
 	ERR_FAIL_COND_V(!_is_owner(), ERR_UNAUTHORIZED);
+	ERR_FAIL_COND_V(catalog._prepare_child_publication(1) != OK, ERR_BUSY);
 	EntityCatalog::Record *record = catalog.edit_record(p_id);
 	ERR_FAIL_COND_V(!record, ERR_DOES_NOT_EXIST);
 	if (record->deleted) {
@@ -353,7 +370,7 @@ Error EntityWorld::delete_entity(EntityId p_id) {
 	}
 	record->deleted = true;
 	catalog.get_state_ptr(p_id)->tombstone = true;
-	catalog._refresh_parent(p_id);
+	ERR_FAIL_COND_V(catalog._refresh_parent(p_id) != OK, ERR_BUSY);
 	_mark_changed(p_id);
 	return OK;
 }
@@ -368,6 +385,7 @@ Error EntityWorld::delete_hierarchy(EntityId p_id) {
 			ordered.push_back(descendant);
 		}
 	}
+	ERR_FAIL_COND_V(catalog._prepare_child_publication(ordered.size()) != OK, ERR_BUSY);
 	for (int i = ordered.size() - 1; i >= 0; i--) {
 		EntityId id = ordered[i];
 		EntityCatalog::RowState *resident = _resident(id);
@@ -379,9 +397,9 @@ Error EntityWorld::delete_hierarchy(EntityId p_id) {
 		}
 		catalog.edit_record(id)->deleted = true;
 		catalog.get_state_ptr(id)->tombstone = true;
-		catalog._refresh_parent(id);
 		_mark_changed(id);
 	}
+	ERR_FAIL_COND_V(catalog._refresh_parents(ordered) != OK, ERR_BUSY);
 	return OK;
 }
 
@@ -394,6 +412,7 @@ Error EntityWorld::reparent(EntityHandle p_handle, EntityRef p_parent, ReparentM
 	for (EntityRef ancestor = p_parent; ancestor.id.is_valid(); ancestor = catalog.get_parent(ancestor.id)) {
 		ERR_FAIL_COND_V(ancestor.id == id, ERR_CYCLIC_LINK);
 	}
+	ERR_FAIL_COND_V(catalog._prepare_child_publication(1) != OK, ERR_BUSY);
 	transforms.update();
 	struct LocalChange {
 		EntityHandle handle;
@@ -435,7 +454,7 @@ Error EntityWorld::reparent(EntityHandle p_handle, EntityRef p_parent, ReparentM
 	} else {
 		entity.remove<flecs::Parent>();
 	}
-	catalog._set_parent(id, p_parent);
+	ERR_FAIL_COND_V(catalog._set_parent(id, p_parent) != OK, ERR_BUSY);
 	for (const LocalChange &change : local_changes) {
 		ecs.entity(change.handle.entity).get_mut<EntityTransform>().local = change.local;
 		if (!(change.handle == p_handle)) {
