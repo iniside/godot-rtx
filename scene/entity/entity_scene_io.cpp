@@ -629,7 +629,10 @@ Error EntitySceneIO::load(const String &p_path, Ref<EntityScene> &r_scene) {
 	const EntitySchemaRegistry &schemas = EntitySchemaRegistry::descriptors();
 	const String streaming_key = component_key(EntityComponentTraits<EntityStreaming>::id);
 	const String name_key = component_key(EntityComponentTraits<EntityName>::id);
-	for (EntityId id : ids) {
+	Vector<EntityCatalog::Record> catalog_records;
+	catalog_records.resize(ids.size());
+	for (int32_t id_index = 0; id_index < ids.size(); id_index++) {
+		const EntityId id = ids[id_index];
 		const Dictionary record = tree.records[id];
 		const String path = directory.path_join(tree.files[id].path);
 		const Variant parent_value = record.get("parent", Variant());
@@ -641,8 +644,11 @@ Error EntitySceneIO::load(const String &p_path, Ref<EntityScene> &r_scene) {
 		const Variant deleted_value = record.get("deleted", false);
 		ERR_FAIL_COND_V_MSG(deleted_value.get_type() != Variant::BOOL, scene->_fail(id, "deleted", ERR_FILE_CORRUPT), "Invalid entity record: " + path);
 		const bool deleted = deleted_value;
-		scene->catalog.records.insert(id, { deleted, parent });
-		scene->order.insert(id, order_value);
+		EntityCatalog::Record &catalog_record = catalog_records.write[id_index];
+		catalog_record.deleted = deleted;
+		catalog_record.parent = parent;
+		catalog_record.order = order_value;
+		catalog_record.has_order = true;
 		if (deleted) {
 			continue;
 		}
@@ -709,10 +715,12 @@ Error EntitySceneIO::load(const String &p_path, Ref<EntityScene> &r_scene) {
 			}
 			section.components.push_back(component);
 		}
-		scene->sections.insert(id, section);
+		catalog_record.section = section;
+		catalog_record.has_section = true;
 	}
+	ERR_FAIL_COND_V(scene->catalog.add_block(ids, catalog_records) == UINT32_MAX, ERR_CANT_CREATE);
 	for (EntityId id : scene->catalog.get_ids()) {
-		if (scene->catalog.records[id].deleted) {
+		if (scene->catalog.get_record(id)->deleted) {
 			continue;
 		}
 		EntityRef parent = scene->catalog.get_parent(id);
@@ -824,7 +832,7 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 		}
 	};
 	for (EntityId id : ids) {
-		const EntityScene::Section *section = p_scene.sections.getptr(id);
+		const EntityScene::Section *section = p_scene._get_section(id);
 		if (section) {
 			add_existing(id, *section);
 		}
@@ -860,7 +868,7 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 		}
 		Vector<EntityId> pending;
 		for (EntityId id : ids) {
-			if (p_scene.dirty.has(id) || !existing.files.has(id)) {
+			if (p_scene._is_dirty(id) || !existing.files.has(id)) {
 				pending.push_back(id);
 			}
 		}
@@ -963,7 +971,7 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 		int guard = p_scene.catalog.get_record_count() + 1;
 		while (guard-- > 0) {
 			const EntityId parent = p_scene.catalog.get_parent(root).id;
-			if (!parent.is_valid() || !p_scene.catalog.records.has(parent)) {
+			if (!parent.is_valid() || !p_scene.catalog.has_record(parent)) {
 				break;
 			}
 			root = parent;
@@ -1234,7 +1242,7 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 	for (EntityId id : scope) {
 		EntityScene::Section *section = sections.getptr(id);
 		if (!section) {
-			p_scene.sections.erase(id);
+			p_scene._erase_section(id);
 			continue;
 		}
 		const String *target = targets.getptr(id);
@@ -1242,11 +1250,13 @@ Error EntitySceneIO::save(EntityScene &p_scene, const String &p_path, ResourceUI
 			section->path = *target;
 			section->cluster = target->ends_with(".cluster.escn");
 		}
-		p_scene.sections.insert(id, *section);
+		*p_scene._edit_section(id) = *section;
 	}
 	p_scene._relocate(p_path);
 	p_scene.revision = revision;
-	p_scene.dirty.clear();
+	for (EntityId id : p_scene.catalog.get_ids()) {
+		p_scene._set_dirty(id, false);
+	}
 	p_scene.deleted_storage.clear();
 	error = p_scene._assign_cells(ids);
 	ERR_FAIL_COND_V_MSG(error != OK, error, "Entity scene has an invalid storage cell: " + directory + " (" + p_scene.get_last_error() + ")");

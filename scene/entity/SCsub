@@ -17,6 +17,7 @@ env_entity.add_source_files(
     env.scene_sources,
     [
         "entity_id.cpp",
+		"entity_catalog.cpp",
         "entity_world.cpp",
         "entity_component_schema.cpp",
         "entity_transform_system.cpp",

@@ -47,6 +47,106 @@ Error EntityScene::_owner() {
 	return OK;
 }
 
+const EntityScene::Section *EntityScene::_get_section(EntityId p_id) const {
+	const EntityCatalog::Record *record = catalog.get_record(p_id);
+	return record && record->has_section ? &record->section : nullptr;
+}
+
+EntityScene::Section *EntityScene::_edit_section(EntityId p_id) {
+	EntityCatalog::Record *record = catalog.edit_record(p_id);
+	if (!record) {
+		return nullptr;
+	}
+	record->has_section = true;
+	return &record->section;
+}
+
+void EntityScene::_erase_section(EntityId p_id) {
+	EntityCatalog::Record *record = catalog.edit_record(p_id);
+	if (record && record->has_section) {
+		record->section = Section();
+		record->has_section = false;
+	}
+}
+
+const int64_t *EntityScene::_get_order_ptr(EntityId p_id) const {
+	const EntityCatalog::Record *record = catalog.get_record(p_id);
+	return record && record->has_order ? &record->order : nullptr;
+}
+
+void EntityScene::_set_order(EntityId p_id, int64_t p_order) {
+	EntityCatalog::Record *record = catalog.edit_record(p_id);
+	if (record) {
+		record->order = p_order;
+		record->has_order = true;
+	}
+}
+
+void EntityScene::_erase_order(EntityId p_id) {
+	EntityCatalog::Record *record = catalog.edit_record(p_id);
+	if (record) {
+		record->order = 0;
+		record->has_order = false;
+	}
+}
+
+bool EntityScene::_is_dirty(EntityId p_id) const {
+	const EntityCatalog::RowState *state = catalog.get_state_ptr(p_id);
+	return state && state->document_dirty;
+}
+
+void EntityScene::_set_dirty(EntityId p_id, bool p_dirty) {
+	EntityCatalog::RowState *state = catalog.get_state_ptr(p_id);
+	if (state) {
+		state->document_dirty = p_dirty;
+	}
+}
+
+bool EntityScene::_is_global(EntityId p_id) const {
+	const EntityCatalog::RowState *state = catalog.get_state_ptr(p_id);
+	return state && state->global;
+}
+
+void EntityScene::_set_global(EntityId p_id, bool p_global) {
+	EntityCatalog::RowState *state = catalog.get_state_ptr(p_id);
+	if (state) {
+		state->global = p_global;
+	}
+}
+
+bool EntityScene::_is_pinned(EntityId p_id) const {
+	const EntityCatalog::RowState *state = catalog.get_state_ptr(p_id);
+	return state && state->pin_count != 0;
+}
+
+void EntityScene::_pin_row(EntityId p_id) {
+	EntityCatalog::RowState *state = catalog.get_state_ptr(p_id);
+	if (state) {
+		state->pin_count++;
+	}
+}
+
+void EntityScene::_unpin_row(EntityId p_id) {
+	EntityCatalog::RowState *state = catalog.get_state_ptr(p_id);
+	if (state && state->pin_count) {
+		state->pin_count--;
+	}
+}
+
+bool EntityScene::_cell_members_has(const CellMembers &p_members, EntityId p_id) {
+	return p_members.has(p_id);
+}
+
+void EntityScene::_cell_members_insert(CellMembers &r_members, EntityId p_id) {
+	if (!r_members.has(p_id)) {
+		r_members.push_back(p_id);
+	}
+}
+
+void EntityScene::_cell_members_erase(CellMembers &r_members, EntityId p_id) {
+	r_members.erase(p_id);
+}
+
 EntityWorld *EntityScene::get_world() {
 	ERR_FAIL_COND_V(_owner() != OK, nullptr);
 	if (!world) {
@@ -68,7 +168,7 @@ EntityResolution EntityScene::resolve(EntityId p_id) const {
 }
 
 int64_t EntityScene::get_order(EntityId p_id) const {
-	const int64_t *value = order.getptr(p_id);
+	const int64_t *value = _get_order_ptr(p_id);
 	return value ? *value : 0;
 }
 
@@ -139,16 +239,16 @@ int32_t EntityScene::_cell_index(double p_value, double p_size) {
 }
 
 String EntityScene::_storage_directory(EntityId p_id, String &r_source) const {
-	const Section *section = sections.getptr(p_id);
+	const Section *section = _get_section(p_id);
 	if (section && !section->path.is_empty()) {
 		r_source = section->path;
 		return section->path.get_base_dir();
 	}
-	const PrefabMember *member = prefab_members.getptr(p_id);
-	if (!member) {
+	const EntityCatalog::Record *record = catalog.get_record(p_id);
+	if (!record || record->prefab_instance.is_empty()) {
 		return String();
 	}
-	const Variant value = prefab_instances.get(member->instance, Variant());
+	const Variant value = prefab_instances.get(record->prefab_instance, Variant());
 	if (value.get_type() != Variant::DICTIONARY) {
 		return String();
 	}
@@ -156,14 +256,14 @@ String EntityScene::_storage_directory(EntityId p_id, String &r_source) const {
 	if (!instance.has("cell")) {
 		return String();
 	}
-	r_source = String("prefabs").path_join(member->instance + ".escn");
+	r_source = String("prefabs").path_join(record->prefab_instance + ".escn");
 	const Variant cell = instance["cell"];
 	return cell.get_type() == Variant::STRING ? String(cell) : String();
 }
 
 void EntityScene::_forget_cell(EntityId p_id) {
-	globals.erase(p_id);
-	EntityCatalog::Record *record = catalog.records.getptr(p_id);
+	_set_global(p_id, false);
+	EntityCatalog::Record *record = catalog.edit_record(p_id);
 	if (!record || !record->has_cell) {
 		return;
 	}
@@ -172,7 +272,7 @@ void EntityScene::_forget_cell(EntityId p_id) {
 	record->has_cell = false;
 	CellMembers *members = cells.getptr(key);
 	if (members) {
-		members->erase(p_id);
+		_cell_members_erase(*members, p_id);
 		if (members->is_empty()) {
 			cells.erase(key);
 		}
@@ -190,7 +290,7 @@ Error EntityScene::_assign_cell(EntityId p_id) {
 		return source.is_empty() ? OK : _fail(p_id, "cell/" + source, ERR_INVALID_DATA);
 	}
 	if (directory == "global") {
-		globals.insert(p_id);
+		_set_global(p_id, true);
 		return OK;
 	}
 	if (directory != assigned_directory) {
@@ -201,13 +301,14 @@ Error EntityScene::_assign_cell(EntityId p_id) {
 		assigned_directory = directory;
 		assigned_key = key;
 	}
-	cells[assigned_key].insert(p_id, true);
-	EntityCatalog::Record &record = catalog.records[p_id];
-	record.cell_grid = assigned_key.grid;
-	record.cell_x = assigned_key.x;
-	record.cell_y = assigned_key.y;
-	record.cell_z = assigned_key.z;
-	record.has_cell = true;
+	_cell_members_insert(cells[assigned_key], p_id);
+	EntityCatalog::Record *record = catalog.edit_record(p_id);
+	ERR_FAIL_NULL_V(record, ERR_DOES_NOT_EXIST);
+	record->cell_grid = assigned_key.grid;
+	record->cell_x = assigned_key.x;
+	record->cell_y = assigned_key.y;
+	record->cell_z = assigned_key.z;
+	record->has_cell = true;
 	return OK;
 }
 
@@ -224,11 +325,10 @@ Error EntityScene::_assign_cells(const Vector<EntityId> &p_ids) {
 
 void EntityScene::_forget_entity(EntityId p_id) {
 	_forget_cell(p_id);
-	sections.erase(p_id);
-	order.erase(p_id);
+	_erase_section(p_id);
+	_erase_order(p_id);
 	catalog._unlink_parent(p_id);
-	catalog.records.erase(p_id);
-	catalog.children.erase(p_id);
+	catalog.erase_record(p_id);
 }
 
 String EntityScene::_cell_path(const CellKey &p_cell) const {
@@ -264,7 +364,13 @@ bool EntityScene::cell_exists(const CellKey &p_cell, int *r_probe_budget) {
 }
 
 void EntityScene::_index_prefabs() {
-	prefab_members.clear();
+	for (EntityId id : catalog.get_ids()) {
+		EntityCatalog::Record *record = catalog.edit_record(id);
+		record->prefab_instance = String();
+		record->prefab_source = String();
+		EntityCatalog::RowState *state = catalog.get_state_ptr(id);
+		state->prefab = false;
+	}
 	for (const Variant &key : prefab_instances.get_key_list()) {
 		const Variant value = prefab_instances[key];
 		if (value.get_type() != Variant::DICTIONARY) {
@@ -277,8 +383,13 @@ void EntityScene::_index_prefabs() {
 		const Dictionary entries = mapping;
 		for (const Variant &source : entries.get_key_list()) {
 			EntityId id;
-			if (entries[source].get_type() == Variant::STRING && EntityId::parse(entries[source], id) == OK && id.is_valid() && !prefab_members.has(id)) {
-				prefab_members.insert(id, { key, source });
+			if (entries[source].get_type() == Variant::STRING && EntityId::parse(entries[source], id) == OK && id.is_valid()) {
+				EntityCatalog::Record *record = catalog.edit_record(id);
+				if (record && record->prefab_instance.is_empty()) {
+					record->prefab_instance = key;
+					record->prefab_source = source;
+					catalog.get_state_ptr(id)->prefab = true;
+				}
 			}
 		}
 	}
@@ -409,23 +520,43 @@ void EntityScene::PreparedEntity::release() {
 
 EntityScene::PreparedSet::PreparedSet(const LocalVector<PreparedEntity> &p_entities, const LocalVector<PreparedGroup *> *p_bulk_groups) :
 		entities(&p_entities), bulk_groups(p_bulk_groups) {
-	lookup.reserve(p_entities.size());
+	sorted_rows.resize(p_entities.size());
 	for (uint32_t i = 0; i < p_entities.size(); i++) {
-		lookup.insert(p_entities[i].id, i);
+		sorted_rows.write[i] = i;
 	}
+	sorted_rows.sort_custom<RowOrder>(&p_entities);
 }
 
 const EntityScene::PreparedEntity *EntityScene::PreparedSet::find(EntityId p_id) const {
+	const int32_t row = find_row(p_id);
+	return row >= 0 ? &(*entities)[row] : nullptr;
+}
+
+int32_t EntityScene::PreparedSet::find_row(EntityId p_id) const {
 	if (!entities) {
-		return nullptr;
+		return -1;
 	}
-	const uint32_t *index = lookup.getptr(p_id);
-	return index ? &(*entities)[*index] : nullptr;
+	int32_t low = 0;
+	int32_t high = sorted_rows.size() - 1;
+	while (low <= high) {
+		const int32_t middle = low + (high - low) / 2;
+		const PreparedEntity &entry = (*entities)[sorted_rows[middle]];
+		if (entry.id == p_id) {
+			return sorted_rows[middle];
+		}
+		if (entry.id.high != p_id.high ? entry.id.high < p_id.high : entry.id.low < p_id.low) {
+			low = middle + 1;
+		} else {
+			high = middle - 1;
+		}
+	}
+	return -1;
 }
 
 bool EntityScene::PreparedSet::is_deleted(EntityId p_id) const {
 	if (scene) {
-		return scene->catalog.records[p_id].deleted;
+		const EntityCatalog::Record *record = scene->catalog.get_record(p_id);
+		return !record || record->deleted;
 	}
 	const PreparedEntity *entry = find(p_id);
 	return entry ? entry->deleted : true;
@@ -451,29 +582,30 @@ Error EntityScene::PreparedSet::collect_required(const Vector<EntityId> &p_ids, 
 	if (scene) {
 		return scene->_collect_required(p_ids, r_ids);
 	}
-	HashSet<EntityId, EntityIdHasher> seen;
-	seen.reserve(p_ids.size());
+	Vector<bool> seen;
+	seen.resize_initialized(entities->size());
 	r_ids.reserve(r_ids.size() + p_ids.size());
-	LocalVector<EntityId> ancestors;
-	HashSet<EntityId, EntityIdHasher> chain;
+	LocalVector<uint32_t> ancestors;
 	for (EntityId id : p_ids) {
 		ancestors.clear();
-		chain.clear();
-		while (id.is_valid() && !seen.has(id)) {
-			const PreparedEntity *entry = find(id);
-			if (!entry) {
+		while (id.is_valid()) {
+			const int32_t row = find_row(id);
+			if (row < 0) {
 				return ERR_DOES_NOT_EXIST;
 			}
-			if (chain.has(id)) {
+			if (seen[row]) {
+				break;
+			}
+			if (ancestors.has(row)) {
 				return ERR_CYCLIC_LINK;
 			}
-			chain.insert(id);
-			ancestors.push_back(id);
-			id = entry->deleted ? EntityId() : entry->parent.id;
+			ancestors.push_back(row);
+			const PreparedEntity &entry = (*entities)[row];
+			id = entry.deleted ? EntityId() : entry.parent.id;
 		}
 		for (uint32_t i = ancestors.size(); i > 0; i--) {
-			seen.insert(ancestors[i - 1]);
-			r_ids.push_back(ancestors[i - 1]);
+			seen.write[ancestors[i - 1]] = true;
+			r_ids.push_back((*entities)[ancestors[i - 1]].id);
 		}
 	}
 	return OK;
@@ -481,7 +613,7 @@ Error EntityScene::PreparedSet::collect_required(const Vector<EntityId> &p_ids, 
 
 EntityScene::SectionAction EntityScene::PreparedSet::build_section(EntityId p_id, Section &r_section) const {
 	if (scene) {
-		const Section *section = scene->sections.getptr(p_id);
+		const Section *section = scene->_get_section(p_id);
 		if (!section) {
 			return SECTION_ERASE;
 		}
@@ -505,7 +637,7 @@ EntityScene::SectionAction EntityScene::PreparedSet::build_section(EntityId p_id
 void EntityScene::PreparedSet::build_commit_item(EntityId p_id, CommitItem &r_item) const {
 	r_item.id = p_id;
 	if (scene) {
-		const EntityCatalog::Record *record = scene->catalog.records.getptr(p_id);
+		const EntityCatalog::Record *record = scene->catalog.get_record(p_id);
 		r_item.deleted = record ? record->deleted : true;
 		r_item.parent = record ? record->parent : EntityRef();
 		r_item.order = scene->get_order(p_id);
@@ -576,13 +708,10 @@ void EntityScene::PreparedSet::write_components(EntityWorld &p_target, EntityHan
 Error EntityScene::PreparedSet::materialize_groups(EntityWorld &p_target, LocalVector<EntityInitialRenderGroup> &r_initial, CommitProfile *r_profile) const {
 	DEV_ASSERT(entities && bulk_groups);
 	uint64_t began = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
-	HashMap<PreparedGroup *, uint32_t> group_indices;
 	LocalVector<LocalVector<const PreparedEntity *>> rows;
 	rows.resize(bulk_groups->size());
-	group_indices.reserve(bulk_groups->size());
 	for (uint32_t i = 0; i < bulk_groups->size(); i++) {
 		PreparedGroup *group = (*bulk_groups)[i];
-		group_indices.insert(group, i);
 		rows[i].resize(group->capacity);
 		for (const PreparedEntity *&entry : rows[i]) {
 			entry = nullptr;
@@ -590,7 +719,12 @@ Error EntityScene::PreparedSet::materialize_groups(EntityWorld &p_target, LocalV
 	}
 	for (const PreparedEntity &entry : *entities) {
 		if (entry.group && !entry.live && !entry.deleted) {
-			rows[group_indices[entry.group]][entry.row] = &entry;
+			for (uint32_t group_index = 0; group_index < bulk_groups->size(); group_index++) {
+				if ((*bulk_groups)[group_index] == entry.group) {
+					rows[group_index][entry.row] = &entry;
+					break;
+				}
+			}
 		}
 	}
 	if (r_profile) {
@@ -655,7 +789,7 @@ Error EntityScene::PreparedSet::materialize_groups(EntityWorld &p_target, LocalV
 		initial.storage_tag = storage_tag;
 		initial.entities.reserve(ids.size());
 		for (EntityId id : ids) {
-			const EntityWorld::Resident *resident = p_target.residents.getptr(id);
+			const EntityCatalog::RowState *resident = p_target._resident(id);
 			DEV_ASSERT(resident);
 			if (resident) {
 				initial.entities.push_back({ id, resident->handle, render_components });
@@ -684,7 +818,7 @@ Dictionary EntityScene::_shallow_record(const Dictionary &p_record) {
 }
 
 Error EntityScene::_read_stored(EntityId p_id, Dictionary &r_record) {
-	const Section *section = sections.getptr(p_id);
+	const Section *section = _get_section(p_id);
 	if (!section) {
 		return _fail(p_id, "record", ERR_DOES_NOT_EXIST);
 	}
@@ -765,7 +899,7 @@ Error EntityScene::_read_record(EntityId p_id, Dictionary &r_record, bool *r_sto
 		error = _encode_record(p_id, r_record);
 	} else if (target.state == EntityReferenceState::UNLOADED) {
 		bool prefab_record = false;
-		const Section *section = sections.getptr(p_id);
+		const Section *section = _get_section(p_id);
 		if (!p_prefer_stored || !section || (section->record.is_empty() && section->path.is_empty())) {
 			error = get_commands()._prefab_record(p_id, r_record, prefab_record);
 		}
@@ -931,30 +1065,37 @@ Error EntityScene::_install(EntityId p_id, const Dictionary &p_record) {
 			return _fail(p_id, key, error);
 		}
 	}
-	sections.insert(p_id, section);
+	*_edit_section(p_id) = section;
 	return OK;
 }
 
 Error EntityScene::_collect_required(const Vector<EntityId> &p_ids, Vector<EntityId> &r_ids) const {
-	HashSet<EntityId, EntityIdHasher> seen;
+	static std::atomic<uint64_t> next_visit{ 2 };
+	const uint64_t visit = next_visit.fetch_add(2, std::memory_order_relaxed);
 	for (EntityId id : p_ids) {
-		Vector<EntityId> ancestors;
-		HashSet<EntityId, EntityIdHasher> chain;
-		while (id.is_valid() && !seen.has(id)) {
-			if (chain.has(id)) {
+		LocalVector<EntityCatalog::RowLocation> ancestors;
+		while (id.is_valid()) {
+			const EntityCatalog::RowLocation location = catalog.locate(id);
+			const EntityCatalog::RowState *row = catalog.get_state_ptr(location);
+			if (!row) {
+				return ERR_DOES_NOT_EXIST;
+			}
+			if (row->snapshot_visit == visit) {
+				break;
+			}
+			if (row->snapshot_visit == visit + 1) {
 				return ERR_CYCLIC_LINK;
 			}
 			EntityReferenceState state = catalog.get_state(id);
-			if (state == EntityReferenceState::MISSING) {
-				return ERR_DOES_NOT_EXIST;
-			}
-			chain.insert(id);
-			ancestors.push_back(id);
+			row->snapshot_visit = visit + 1;
+			ancestors.push_back(location);
 			id = state == EntityReferenceState::DELETED ? EntityId() : catalog.get_parent(id).id;
 		}
-		for (int i = ancestors.size() - 1; i >= 0; i--) {
-			seen.insert(ancestors[i]);
-			r_ids.push_back(ancestors[i]);
+		for (uint32_t i = ancestors.size(); i > 0; i--) {
+			const EntityCatalog::RowLocation location = ancestors[i - 1];
+			const EntityCatalog::CellRuntimeBlock *block = catalog.get_block(location.block);
+			catalog.get_state_ptr(location)->snapshot_visit = visit;
+			r_ids.push_back(block->ids[location.row]);
 		}
 	}
 	return OK;
@@ -976,8 +1117,10 @@ Error EntityScene::_prepare(const Vector<EntityId> &p_ids, Ref<EntityScene> &r_s
 		if (error != OK) {
 			return error;
 		}
-		prepared->catalog.records.insert(id, catalog.records[id]);
-		prepared->order.insert(id, get_order(id));
+		EntityCatalog::Record record_metadata = *catalog.get_record(id);
+		record_metadata.order = get_order(id);
+		record_metadata.has_order = true;
+		prepared->catalog.insert_record(id, record_metadata);
 		if (!bool(record["deleted"])) {
 			prepared->catalog._set_parent(id, catalog.get_parent(id));
 			error = prepared->_install(id, record);
@@ -1053,7 +1196,7 @@ Error EntityScene::_prepare_entities(const Vector<EntityId> &p_ids, LocalVector<
 		prepared.id = id;
 		prepared.parent = catalog.get_parent(id);
 		prepared.order = get_order(id);
-		prepared.deleted = catalog.records[id].deleted;
+		prepared.deleted = catalog.get_record(id)->deleted;
 		if (resolve(id).state == EntityReferenceState::RESIDENT) {
 			prepared.live = true;
 			r_entities.push_back(std::move(prepared));
@@ -1090,7 +1233,7 @@ void EntityScene::_build_commit_items(const PreparedSet &p_prepared, const Vecto
 		CommitItem item;
 		p_prepared.build_commit_item(id, item);
 		item.existing = resolve(id);
-		const EntityCatalog::Record *previous = catalog.records.getptr(id);
+		const EntityCatalog::Record *previous = catalog.get_record(id);
 		item.had_record = previous != nullptr;
 		if (previous) {
 			item.previous_deleted = previous->deleted;
@@ -1107,11 +1250,11 @@ void EntityScene::_build_commit_items(const PreparedSet &p_prepared, const Vecto
 			item.cell_y = previous->cell_y;
 			item.cell_z = previous->cell_z;
 		}
-		item.had_global = globals.has(id);
-		const int64_t *previous_order = order.getptr(id);
+		item.had_global = _is_global(id);
+		const int64_t *previous_order = _get_order_ptr(id);
 		item.had_order = previous_order != nullptr;
 		item.order_changed = previous_order ? *previous_order != item.order : item.order != 0;
-		const Section *previous_section = sections.getptr(id);
+		const Section *previous_section = _get_section(id);
 		item.had_section = previous_section != nullptr;
 		if (item.section_action == SECTION_SET) {
 			if (previous_section && item.section.path.is_empty()) {
@@ -1141,7 +1284,7 @@ Error EntityScene::_can_commit(const PreparedSet &p_prepared, const Vector<Entit
 		if (!parent.is_valid()) {
 			return OK;
 		}
-		const EntityCatalog::Record *parent_record = p_prepared.scene ? p_prepared.scene->catalog.records.getptr(parent) : nullptr;
+		const EntityCatalog::Record *parent_record = p_prepared.scene ? p_prepared.scene->catalog.get_record(parent) : nullptr;
 		const PreparedEntity *parent_entity = p_prepared.find(parent);
 		EntityReferenceState parent_state;
 		if (parent_record) {
@@ -1164,24 +1307,22 @@ Error EntityScene::_can_commit(const PreparedSet &p_prepared, const Vector<Entit
 			}
 		}
 	} else {
-		for (const KeyValue<EntityId, EntityCatalog::Record> &entry : p_prepared.scene->catalog.records) {
-			const Error error = validate_parent(entry.key);
+		for (EntityId id : p_prepared.scene->catalog.get_ids()) {
+			const Error error = validate_parent(id);
 			if (error != OK) {
 				return error;
 			}
 		}
 	}
-	HashSet<EntityId, EntityIdHasher> affected;
-	for (EntityId id : p_ids) {
-		affected.insert(id);
-	}
+	Vector<EntityId> affected = p_ids;
+	_sort_snapshot_ids(affected);
 	for (const CommitItem &item : r_items) {
 		if (item.deleted) {
-			if (pins.has(item.id)) {
+			if (_is_pinned(item.id)) {
 				return _fail(item.id, "record", ERR_BUSY);
 			}
 			for (EntityId child : catalog.get_children(item.id)) {
-				if (!affected.has(child) || (!p_prepared.is_deleted(child) && p_prepared.get_parent(child).id == item.id)) {
+				if (!_snapshot_has(affected, child) || (!p_prepared.is_deleted(child) && p_prepared.get_parent(child).id == item.id)) {
 					return _fail(item.id, "children", ERR_BUSY);
 				}
 			}
@@ -1224,17 +1365,20 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 	if (required_error != OK) {
 		return _fail(active.is_empty() ? EntityId() : active[0], "required", required_error);
 	}
-	HashSet<EntityId, EntityIdHasher> residency;
-	HashSet<EntityId, EntityIdHasher> item_ids;
+	Vector<EntityId> residency;
+	Vector<EntityId> item_ids;
+	item_ids.resize(p_items.size());
+	uint32_t item_index = 0;
 	for (const CommitItem &item : p_items) {
-		item_ids.insert(item.id);
+		item_ids.write[item_index++] = item.id;
 	}
+	_sort_snapshot_ids(item_ids);
 	for (EntityId id : required) {
 		if (p_prepared.is_deleted(id)) {
 			return _fail(id, "required ancestor", ERR_DOES_NOT_EXIST);
 		}
-		residency.insert(id);
-		if (!item_ids.has(id) && resolve(id).state != EntityReferenceState::RESIDENT) {
+		residency.push_back(id);
+		if (!_snapshot_has(item_ids, id) && resolve(id).state != EntityReferenceState::RESIDENT) {
 			Vector<EntityId> added_ids;
 			added_ids.push_back(id);
 			LocalVector<CommitItem> added_items;
@@ -1245,6 +1389,7 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 			return _fail(id, "prepared ancestor", ERR_UNAVAILABLE);
 		}
 	}
+	_sort_snapshot_ids(residency);
 	if (bulk) {
 		began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
 		target->transforms.update();
@@ -1253,78 +1398,64 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 		}
 	}
 	began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
-	uint32_t new_records = 0;
-	uint32_t new_orders = 0;
-	uint32_t new_sections = 0;
 	uint32_t new_deleted_storage = 0;
-	uint32_t new_dirty = 0;
 	for (const CommitItem &item : p_items) {
-		new_records += !item.had_record;
-		new_orders += item.order_changed && !item.had_order;
-		new_sections += item.section_changed && item.section_action == SECTION_SET && !item.had_section;
 		new_deleted_storage += item.section_changed && item.section_action == SECTION_ERASE && item.deleted && item.had_section && !deleted_storage.has(item.id);
-		new_dirty += p_dirty && !dirty.has(item.id);
-	}
-	if (new_records) {
-		catalog.records.reserve(catalog.records.size() + new_records);
 	}
 	if (timed) {
 		profile.required_catalog_usec += OS::get_singleton()->get_ticks_usec() - began;
 	}
 	began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
-	if (new_orders) {
-		order.reserve(order.size() + new_orders);
-	}
-	if (new_sections) {
-		sections.reserve(sections.size() + new_sections);
-	}
 	if (new_deleted_storage) {
 		deleted_storage.reserve(deleted_storage.size() + new_deleted_storage);
-	}
-	if (new_dirty) {
-		dirty.reserve(dirty.size() + new_dirty);
 	}
 	if (timed) {
 		profile.sections_order_usec += OS::get_singleton()->get_ticks_usec() - began;
 	}
-	HashMap<EntityId, uint32_t, EntityIdHasher> child_additions;
+	for (CommitItem &item : p_items) {
+		item.install = !item.deleted && _snapshot_has(residency, item.id);
+	}
+	Vector<EntityId> new_ids;
+	Vector<EntityCatalog::Record> new_base;
 	for (const CommitItem &item : p_items) {
-		if (item.parent_index_changed && !item.deleted && item.parent.id.is_valid()) {
-			child_additions[item.parent.id]++;
-		}
-	}
-	for (const KeyValue<EntityId, uint32_t> &entry : child_additions) {
-		HashSet<EntityId, EntityIdHasher> &children = catalog.children[entry.key];
-		children.reserve(children.size() + entry.value);
-	}
-	for (CommitItem &item : p_items) {
-		item.install = !item.deleted && residency.has(item.id);
-	}
-	began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
-	HashSet<EntityId, EntityIdHasher> touched_parents;
-	touched_parents.reserve(child_additions.size());
-	for (CommitItem &item : p_items) {
-		if (item.parent_index_changed && item.had_record && !item.previous_deleted && item.previous_parent.id.is_valid()) {
-			HashSet<EntityId, EntityIdHasher> *siblings = catalog.children.getptr(item.previous_parent.id);
-			if (siblings) {
-				siblings->erase(item.id);
-			}
-			touched_parents.insert(item.previous_parent.id);
-		}
 		if (!item.had_record) {
-			EntityCatalog::Record &record = catalog.records[item.id];
+			EntityCatalog::Record record;
 			record.deleted = item.deleted;
 			record.parent = item.parent;
+			record.order = item.order;
+			record.has_order = item.order_changed;
+			if (item.section_changed && item.section_action == SECTION_SET) {
+				record.section = item.section;
+				record.has_section = true;
+			}
+			new_ids.push_back(item.id);
+			new_base.push_back(record);
+		}
+	}
+	uint32_t new_block_index = UINT32_MAX;
+	if (!new_ids.is_empty()) {
+		new_block_index = catalog.add_block(new_ids, new_base, p_streamed_cell ? p_streamed_cell->grid : String(), p_streamed_cell ? p_streamed_cell->x : 0, p_streamed_cell ? p_streamed_cell->y : 0, p_streamed_cell ? p_streamed_cell->z : 0, p_streamed_cell != nullptr);
+		ERR_FAIL_COND_V(new_block_index == UINT32_MAX, ERR_CANT_CREATE);
+		EntityCatalog::CellRuntimeBlock *block = catalog.get_block(new_block_index);
+		for (uint32_t row = 0; row < uint32_t(new_ids.size()); row++) {
+			const PreparedEntity *prepared = p_prepared.find(new_ids[row]);
+			const Vector<uint64_t> signature = prepared && prepared->group ? prepared->group->signature : Vector<uint64_t>();
+			if (!block->archetypes.is_empty() && block->archetypes[block->archetypes.size() - 1].signature == signature && block->archetypes[block->archetypes.size() - 1].first + block->archetypes[block->archetypes.size() - 1].count == row) {
+				block->archetypes.write[block->archetypes.size() - 1].count++;
+			} else {
+				block->archetypes.push_back({ signature, row, 1 });
+			}
+		}
+	}
+	began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
+	for (CommitItem &item : p_items) {
+		if (!item.had_record) {
 			if (item.order_changed) {
-				record.order = item.order;
-				record.has_order = true;
 				if (timed) {
 					profile.metadata_order_updates++;
 				}
 			}
 			if (item.section_changed && item.section_action == SECTION_SET) {
-				record.section = std::move(item.section);
-				record.has_section = true;
 				if (timed) {
 					profile.metadata_section_updates++;
 				}
@@ -1333,48 +1464,45 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 				profile.metadata_new_records++;
 			}
 		} else if (item.previous_deleted != item.deleted || item.parent_changed) {
-			EntityCatalog::Record *record = catalog.records.getptr(item.id);
+			EntityCatalog::Record *record = catalog.edit_record(item.id);
 			record->deleted = item.deleted;
-			record->parent = item.parent;
+			if (item.parent_changed) {
+				catalog._set_parent(item.id, item.parent);
+			}
 			if (timed) {
 				profile.metadata_record_updates++;
 			}
 		}
-		if (item.parent_index_changed && !item.deleted && item.parent.id.is_valid()) {
-			catalog.children[item.parent.id].insert(item.id);
-		}
 		if (item.had_record && item.order_changed) {
-			order.insert(item.id, item.order);
+			_set_order(item.id, item.order);
 			if (timed) {
 				profile.metadata_order_updates++;
 			}
 		}
 		if (item.had_record && item.section_changed && item.section_action == SECTION_SET) {
-			sections[item.id] = std::move(item.section);
+			*_edit_section(item.id) = std::move(item.section);
 			if (timed) {
 				profile.metadata_section_updates++;
 			}
 		} else if (item.had_record && item.section_changed && item.section_action == SECTION_ERASE) {
-			const Section *previous = sections.getptr(item.id);
+			const Section *previous = _get_section(item.id);
 			if (item.deleted && previous && !previous->path.is_empty()) {
 				Section storage;
 				storage.path = previous->path;
 				storage.cluster = previous->cluster;
 				deleted_storage[item.id] = std::move(storage);
 			}
-			sections.erase(item.id);
+			_erase_section(item.id);
 			if (timed) {
 				profile.metadata_section_updates++;
 			}
 		}
 		if (p_dirty) {
-			dirty.insert(item.id);
+			_set_dirty(item.id);
 		}
-	}
-	for (EntityId parent : touched_parents) {
-		const HashSet<EntityId, EntityIdHasher> *children = catalog.children.getptr(parent);
-		if (children && children->is_empty()) {
-			catalog.children.erase(parent);
+		EntityCatalog::RowState *row_state = catalog.get_state_ptr(item.id);
+		if (row_state) {
+			row_state->tombstone = item.deleted;
 		}
 	}
 	if (timed) {
@@ -1401,7 +1529,7 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 		if (item.deleted && resident) {
 			began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
 			target->transforms.forget(item.existing.handle.entity);
-			target->residents.erase(item.id);
+			target->_clear_resident(item.id);
 			if (timed) {
 				profile.resident_remove_usec += OS::get_singleton()->get_ticks_usec() - began;
 			}
@@ -1440,10 +1568,6 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 	}
 	if (bulk) {
 		began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
-		target->residents.reserve(target->residents.size() + active.size());
-		if (timed) {
-			profile.resident_insert_usec += OS::get_singleton()->get_ticks_usec() - began;
-		}
 		const Error error = p_prepared.materialize_groups(*target, initial, timed ? &profile : nullptr);
 		if (error != OK) {
 			return error;
@@ -1458,7 +1582,7 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 		if (!needs_parent) {
 			continue;
 		}
-		const EntityWorld::Resident *resident = target->residents.getptr(item.id);
+		const EntityCatalog::RowState *resident = target->_resident(item.id);
 		if (!resident || !target->is_alive(resident->handle)) {
 			return _fail(item.id, "resident", ERR_BUG);
 		}
@@ -1488,7 +1612,7 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 		for (EntityId id : required) {
 			const PreparedEntity *entry = p_prepared.find(id);
 			if (entry && !entry->live && !entry->deleted) {
-				const EntityWorld::Resident *resident = target->residents.getptr(id);
+				const EntityCatalog::RowState *resident = target->_resident(id);
 				if (!resident || !target->is_alive(resident->handle)) {
 					return _fail(id, "resident", ERR_BUG);
 				}
@@ -1514,15 +1638,18 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 			profile.initial_packet_fallback_rows += render_profile.fallback_rows;
 		}
 		began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
-		target->changed.reserve(target->changed.size() + active.size());
 		const uint64_t change_serial = ++target->change_serial;
 		for (const EntityInitialRenderGroup &group : initial) {
 			for (const EntityInitialRender &created : group.entities) {
-				EntityWorld::Resident *resident = target->residents.getptr(created.id);
+				EntityCatalog::RowState *resident = target->_resident(created.id);
 				if (resident) {
 					resident->revision = change_serial;
 				}
-				target->changed.insert(created.id, true);
+				const EntityCatalog::RowLocation location = target->catalog.locate(created.id);
+				if (resident && !resident->world_changed) {
+					resident->world_changed = true;
+					target->changed_rows.push_back({ location, created.id });
+				}
 			}
 		}
 		if (timed) {
@@ -1535,7 +1662,7 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 		touched_cells.reserve(MIN(uint32_t(p_items.size()), uint32_t(cells.size())));
 		for (const CommitItem &item : p_items) {
 			if (item.had_global) {
-				globals.erase(item.id);
+				_set_global(item.id, false);
 			}
 			if (!item.had_cell) {
 				continue;
@@ -1544,10 +1671,10 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 			if (!item.install || key != *p_streamed_cell) {
 				CellMembers *members = cells.getptr(key);
 				if (members) {
-					members->erase(item.id);
+					_cell_members_erase(*members, item.id);
 				}
 				touched_cells.insert(key);
-				EntityCatalog::Record *record = catalog.records.getptr(item.id);
+				EntityCatalog::Record *record = catalog.edit_record(item.id);
 				if (record) {
 					record->cell_grid = String();
 					record->has_cell = false;
@@ -1575,7 +1702,7 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 			if (entity ? entity->deleted : catalog.get_state(id) == EntityReferenceState::DELETED || deleted_storage.has(id)) {
 				continue;
 			}
-			EntityCatalog::Record *record = catalog.records.getptr(id);
+			EntityCatalog::Record *record = catalog.edit_record(id);
 			DEV_ASSERT(record);
 			if (!record) {
 				continue;
@@ -1584,7 +1711,7 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 			if (record->has_cell && previous_key != *p_streamed_cell) {
 				CellMembers *previous_members = cells.getptr(previous_key);
 				if (previous_members) {
-					previous_members->erase(id);
+					_cell_members_erase(*previous_members, id);
 					if (previous_members->is_empty()) {
 						cells.erase(previous_key);
 					}
@@ -1593,8 +1720,8 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 					profile.metadata_membership_removals++;
 				}
 			}
-			globals.erase(id);
-			members.insert(id, true);
+			_set_global(id, false);
+			members.push_back(id);
 			record->cell_grid = p_streamed_cell->grid;
 			record->cell_x = p_streamed_cell->x;
 			record->cell_y = p_streamed_cell->y;
@@ -1604,6 +1731,7 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 				profile.cell_membership_insertions++;
 			}
 		}
+		_sort_snapshot_ids(members);
 	} else {
 		for (const CommitItem &item : p_items) {
 			_assign_cell(item.id);
@@ -1707,21 +1835,23 @@ Error EntityScene::load_subset(const Vector<EntityId> &p_ids) {
 
 Error EntityScene::unload_subset(const Vector<EntityId> &p_ids) {
 	ERR_FAIL_COND_V(_owner() != OK, ERR_UNAUTHORIZED);
-	HashSet<EntityId, EntityIdHasher> requested;
-	HashMap<EntityId, Section, EntityIdHasher> saved;
-	for (EntityId id : p_ids) {
-		requested.insert(id);
-		if (pins.has(id) || dirty.has(id)) {
+	Vector<EntityId> requested = p_ids;
+	_sort_snapshot_ids(requested);
+	Vector<Section> saved;
+	saved.resize(p_ids.size());
+	for (int32_t requested_index = 0; requested_index < requested.size(); requested_index++) {
+		const EntityId id = requested[requested_index];
+		if (_is_pinned(id) || _is_dirty(id)) {
 			return ERR_BUSY;
 		}
 		if (resolve(id).state != EntityReferenceState::RESIDENT) {
 			return ERR_UNAVAILABLE;
 		}
-		const Section *stored = sections.getptr(id);
+		const Section *stored = _get_section(id);
 		if (stored && !stored->path.is_empty()) {
 			Section section = *stored;
 			section.record = Dictionary();
-			saved.insert(id, section);
+			saved.write[requested_index] = section;
 			continue;
 		}
 		Dictionary record;
@@ -1734,11 +1864,11 @@ Error EntityScene::unload_subset(const Vector<EntityId> &p_ids) {
 			return error;
 		}
 		section.record = record;
-		saved.insert(id, section);
+		saved.write[requested_index] = section;
 	}
 	for (EntityId id : p_ids) {
 		for (EntityId child : catalog.get_children(id)) {
-			if (resolve(child).state == EntityReferenceState::RESIDENT && !requested.has(child)) {
+			if (resolve(child).state == EntityReferenceState::RESIDENT && !_snapshot_has(requested, child)) {
 				return ERR_BUSY;
 			}
 		}
@@ -1750,8 +1880,10 @@ Error EntityScene::unload_subset(const Vector<EntityId> &p_ids) {
 	}
 	for (int i = ordered.size() - 1; i >= 0; i--) {
 		EntityId id = ordered[i];
-		if (requested.has(id)) {
-			sections.insert(id, saved[id]);
+		if (_snapshot_has(requested, id)) {
+			const int32_t saved_index = requested.bsearch_custom<SnapshotIdOrder>(id, true);
+			DEV_ASSERT(saved_index >= 0);
+			*_edit_section(id) = saved[saved_index];
 			world->unload_entity(resolve(id).handle);
 		}
 	}
@@ -1764,7 +1896,7 @@ Error EntityScene::pin(const Vector<EntityId> &p_ids) {
 		return error;
 	}
 	for (EntityId id : p_ids) {
-		pins[id]++;
+		_pin_row(id);
 	}
 	return OK;
 }
@@ -1772,10 +1904,7 @@ Error EntityScene::pin(const Vector<EntityId> &p_ids) {
 void EntityScene::unpin(const Vector<EntityId> &p_ids) {
 	ERR_FAIL_COND(_owner() != OK);
 	for (EntityId id : p_ids) {
-		uint32_t *count = pins.getptr(id);
-		if (count && --(*count) == 0) {
-			pins.erase(id);
-		}
+		_unpin_row(id);
 	}
 }
 
@@ -1807,29 +1936,42 @@ Error EntityScene::create_play_document(Ref<EntityScene> &r_scene) {
 	result->default_range = default_range;
 	result->prefab_instances = prefab_instances.duplicate(true);
 	result->storage_path = storage_path;
-	result->dirty = dirty;
-	for (EntityId id : catalog.get_ids()) {
+	const Vector<EntityId> ids = catalog.get_ids();
+	Vector<EntityCatalog::Record> copied_records;
+	Vector<Dictionary> serialized_records;
+	copied_records.resize(ids.size());
+	serialized_records.resize(ids.size());
+	for (int32_t i = 0; i < ids.size(); i++) {
+		const EntityId id = ids[i];
 		Dictionary record;
 		Error error = _read_record(id, record);
 		if (error != OK) {
 			return error;
 		}
-		result->catalog.records.insert(id, catalog.records[id]);
-		result->order.insert(id, get_order(id));
-		if (!catalog.records[id].deleted) {
-			result->catalog._set_parent(id, catalog.get_parent(id));
+		copied_records.write[i] = *catalog.get_record(id);
+		serialized_records.write[i] = record;
+	}
+	ERR_FAIL_COND_V(result->catalog.add_block(ids, copied_records) == UINT32_MAX, ERR_CANT_CREATE);
+	for (int32_t i = 0; i < ids.size(); i++) {
+		const EntityId id = ids[i];
+		result->_set_dirty(id, _is_dirty(id));
+		if (!copied_records[i].deleted) {
 			Section section;
-			error = _describe(id, record, section);
+			Error error = _describe(id, serialized_records[i], section);
 			if (error != OK) {
 				return error;
 			}
-			section.record = record;
-			const Section *source = sections.getptr(id);
+			section.record = serialized_records[i];
+			const Section *source = _get_section(id);
 			if (source) {
 				section.path = source->path;
 				section.cluster = source->cluster;
 			}
-			result->sections.insert(id, section);
+			*result->_edit_section(id) = section;
+			error = result->_install(id, serialized_records[i]);
+			if (error != OK) {
+				return error;
+			}
 		}
 	}
 	result->_index_prefabs();
@@ -1848,8 +1990,8 @@ Error EntityScene::load_global() {
 		return OK;
 	}
 	Vector<EntityId> ids;
-	for (EntityId id : globals) {
-		if (catalog.get_state(id) == EntityReferenceState::UNLOADED) {
+	for (EntityId id : catalog.get_ids()) {
+		if (_is_global(id) && catalog.get_state(id) == EntityReferenceState::UNLOADED) {
 			ids.push_back(id);
 		}
 	}
@@ -1902,27 +2044,37 @@ Error EntityScene::_dispatch_cell(const CellKey &p_cell) {
 	static std::atomic<uint64_t> next_snapshot{ 2 };
 	const uint64_t snapshot = next_snapshot.fetch_add(2, std::memory_order_relaxed);
 	const uint64_t member_count = members ? members->size() : 0;
+	uint64_t global_count = 0;
+	for (const EntityCatalog::CellRuntimeBlock *block : catalog.blocks) {
+		if (!block) {
+			continue;
+		}
+		for (const EntityCatalog::RowState &state : block->states) {
+			global_count += state.active && state.global;
+		}
+	}
 	uint64_t ancestor_count = 0;
-	uint64_t snapshot_bytes = sizeof(CellJob) + 16384 + uint64_t(globals.size()) * sizeof(EntityId) * 4 + member_count * sizeof(EntityId) * 8 + uint64_t(deleted_storage.size()) * sizeof(EntityId) * 4;
+	uint64_t snapshot_bytes = sizeof(CellJob) + 16384 + global_count * sizeof(EntityId) * 4 + member_count * sizeof(EntityId) * 8 + uint64_t(deleted_storage.size()) * sizeof(EntityId) * 4;
 	snapshot_bytes += uint64_t(storage_path.length() + p_cell.grid.length() + 128) * 128;
 	if (members) {
-		for (const KeyValue<EntityId, bool> &member : *members) {
-			EntityId id = member.key;
-			if (resolve(id).state == EntityReferenceState::RESIDENT || dirty.has(id)) {
+		for (EntityId member : *members) {
+			EntityId id = member;
+			if (resolve(id).state == EntityReferenceState::RESIDENT || _is_dirty(id)) {
 				continue;
 			}
 			while (id.is_valid()) {
-				EntityCatalog::Record *record = catalog.records.getptr(id);
+				const EntityCatalog::Record *record = catalog.get_record(id);
+				EntityCatalog::RowState *state = catalog.get_state_ptr(id);
 				if (!record) {
 					return _fail(id, "required", ERR_DOES_NOT_EXIST);
 				}
-				if (record->snapshot_visit == snapshot) {
+				if (state->snapshot_visit == snapshot) {
 					break;
 				}
-				if (record->snapshot_visit == snapshot + 1) {
+				if (state->snapshot_visit == snapshot + 1) {
 					return _fail(id, "required", ERR_CYCLIC_LINK);
 				}
-				record->snapshot_visit = snapshot + 1;
+				state->snapshot_visit = snapshot + 1;
 				ancestor_count++;
 				snapshot_bytes += sizeof(EntityId) * 16 + sizeof(PendingRecord) * 4 + 2048 + uint64_t(record->section.path.length() + 1) * 64;
 				if (snapshot_bytes > CellJob::BYTE_BUDGET) {
@@ -1930,13 +2082,14 @@ Error EntityScene::_dispatch_cell(const CellKey &p_cell) {
 				}
 				id = record->deleted ? EntityId() : record->parent.id;
 			}
-			for (id = member.key; id.is_valid();) {
-				EntityCatalog::Record &record = catalog.records[id];
-				if (record.snapshot_visit != snapshot + 1) {
+			for (id = member; id.is_valid();) {
+				const EntityCatalog::Record *record = catalog.get_record(id);
+				EntityCatalog::RowState *state = catalog.get_state_ptr(id);
+				if (!record || !state || state->snapshot_visit != snapshot + 1) {
 					break;
 				}
-				record.snapshot_visit = snapshot;
-				id = record.deleted ? EntityId() : record.parent.id;
+				state->snapshot_visit = snapshot;
+				id = record->deleted ? EntityId() : record->parent.id;
 			}
 		}
 	}
@@ -1956,20 +2109,20 @@ Error EntityScene::_dispatch_cell(const CellKey &p_cell) {
 	job->members.resize(int(member_count));
 	int member_index = 0;
 	if (members) {
-		for (const KeyValue<EntityId, bool> &member : *members) {
-			const EntityId member_id = member.key;
+		for (EntityId member_id : *members) {
 			job->members.write[member_index++] = member_id;
-			if (resolve(member_id).state == EntityReferenceState::RESIDENT || dirty.has(member_id)) {
+			if (resolve(member_id).state == EntityReferenceState::RESIDENT || _is_dirty(member_id)) {
 				continue;
 			}
 			for (EntityId id = member_id; id.is_valid();) {
-				EntityCatalog::Record &record = catalog.records[id];
-				if (record.snapshot_visit != snapshot) {
+				const EntityCatalog::Record *record = catalog.get_record(id);
+				EntityCatalog::RowState *state = catalog.get_state_ptr(id);
+				if (!record || !state || state->snapshot_visit != snapshot) {
 					break;
 				}
-				record.snapshot_visit = snapshot + 1;
+				state->snapshot_visit = snapshot + 1;
 				required_rows[required_count++] = id;
-				id = record.deleted ? EntityId() : record.parent.id;
+				id = record->deleted ? EntityId() : record->parent.id;
 			}
 		}
 	}
@@ -1998,7 +2151,7 @@ Error EntityScene::_dispatch_cell(const CellKey &p_cell) {
 	LocalVector<EntityId, uint32_t, false, true> skipped;
 	skipped.reserve(uint32_t(member_count) + unique_count + deleted_storage.size());
 	for (EntityId id : job->members) {
-		if (resolve(id).state == EntityReferenceState::RESIDENT || dirty.has(id)) {
+		if (resolve(id).state == EntityReferenceState::RESIDENT || _is_dirty(id)) {
 			skipped.push_back(id);
 		}
 	}
@@ -2008,12 +2161,13 @@ Error EntityScene::_dispatch_cell(const CellKey &p_cell) {
 		if (!_snapshot_has(job->members, id)) {
 			job->ancestors.write[external_count++] = id;
 		}
-		if (resolve(id).state == EntityReferenceState::RESIDENT || dirty.has(id)) {
+		if (resolve(id).state == EntityReferenceState::RESIDENT || _is_dirty(id)) {
 			skipped.push_back(id);
 			continue;
 		}
-		const Section *section = sections.getptr(id);
-		const bool prefab = prefab_members.has(id);
+		const Section *section = _get_section(id);
+		const EntityCatalog::Record *record_metadata = catalog.get_record(id);
+		const bool prefab = record_metadata && !record_metadata->prefab_instance.is_empty();
 		if (catalog.get_state(id) == EntityReferenceState::DELETED || (!prefab && (!section || (section->record.is_empty() && (section->path.is_empty() || storage_path.is_empty()))))) {
 			skipped.reset();
 			memdelete(job);
@@ -2075,10 +2229,17 @@ Error EntityScene::_dispatch_cell(const CellKey &p_cell) {
 		}
 	}
 	skipped.reset();
-	job->globals.resize(globals.size());
+	job->globals.resize(global_count);
 	int global_index = 0;
-	for (EntityId id : globals) {
-		job->globals.write[global_index++] = id;
+	for (const EntityCatalog::CellRuntimeBlock *block : catalog.blocks) {
+		if (!block) {
+			continue;
+		}
+		for (uint32_t row = 0; row < uint32_t(block->ids.size()); row++) {
+			if (block->states[row].active && block->states[row].global) {
+				job->globals.write[global_index++] = block->ids[row];
+			}
+		}
 	}
 	_sort_snapshot_ids(job->globals);
 	job->directory = _cell_path(p_cell);
@@ -2565,7 +2726,7 @@ Error EntityScene::_revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids) {
 		if (entity.live) {
 			continue;
 		}
-		const EntityCatalog::Record *record = catalog.records.getptr(entity.id);
+		const EntityCatalog::Record *record = catalog.get_record(entity.id);
 		if (record) {
 			if (record->deleted != entity.deleted) {
 				return ERR_INVALID_DATA;
@@ -2578,24 +2739,23 @@ Error EntityScene::_revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids) {
 				continue;
 			}
 		}
-		if (dirty.has(entity.id)) {
+		if (_is_dirty(entity.id)) {
 			return ERR_BUSY;
 		}
 		r_ids.push_back(entity.id);
 	}
-	HashSet<EntityId, EntityIdHasher> inside;
+	Vector<EntityId> inside;
+	inside.reserve(p_job.result.entities.size() + p_job.ancestors.size());
 	for (const PreparedEntity &entity : p_job.result.entities) {
-		inside.insert(entity.id);
+		inside.push_back(entity.id);
 	}
-	HashSet<EntityId, EntityIdHasher> pinned_ancestors;
-	pinned_ancestors.reserve(p_job.ancestors.size());
-	for (EntityId id : p_job.ancestors) {
-		pinned_ancestors.insert(id);
-	}
+	_sort_snapshot_ids(inside);
+	Vector<EntityId> pinned_ancestors = p_job.ancestors;
+	_sort_snapshot_ids(pinned_ancestors);
 	LocalVector<PreparedEntity> ancestors;
 	for (const PreparedEntity &entity : p_job.result.entities) {
 		EntityId parent = entity.parent.id;
-		while (parent.is_valid() && !inside.has(parent)) {
+		while (parent.is_valid() && !_snapshot_has(inside, parent)) {
 			const EntityReferenceState parent_state = resolve(parent).state;
 			if (parent_state == EntityReferenceState::DELETED || parent_state == EntityReferenceState::MISSING) {
 				p_job.result.failing = entity.id;
@@ -2610,11 +2770,13 @@ Error EntityScene::_revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids) {
 			live.live = true;
 			live.parent = catalog.get_parent(parent);
 			live.order = get_order(parent);
-			inside.insert(parent);
+			inside.push_back(parent);
+			_sort_snapshot_ids(inside);
 			ancestors.push_back(std::move(live));
-			if (!globals.has(parent) && !pinned_ancestors.has(parent)) {
+			if (!_is_global(parent) && !_snapshot_has(pinned_ancestors, parent)) {
 				p_job.ancestors.push_back(parent);
-				pinned_ancestors.insert(parent);
+				pinned_ancestors.push_back(parent);
+				_sort_snapshot_ids(pinned_ancestors);
 			}
 			parent = catalog.get_parent(parent).id;
 		}
@@ -3052,20 +3214,20 @@ Error EntityScene::release_cells(const Vector<CellKey> &p_cells) {
 		if (!members) {
 			continue;
 		}
-		HashSet<EntityId, EntityIdHasher> candidates;
-		for (const KeyValue<EntityId, bool> &member : *members) {
-			const EntityId id = member.key;
-			if (resolve(id).state == EntityReferenceState::RESIDENT && !pins.has(id) && !dirty.has(id)) {
-				candidates.insert(id);
+		Vector<EntityId> candidates;
+		for (EntityId id : *members) {
+			if (resolve(id).state == EntityReferenceState::RESIDENT && !_is_pinned(id) && !_is_dirty(id)) {
+				candidates.push_back(id);
 			}
 		}
+		_sort_snapshot_ids(candidates);
 		bool blocked = true;
 		while (blocked) {
 			blocked = false;
 			Vector<EntityId> rejected;
 			for (EntityId id : candidates) {
 				for (EntityId child : catalog.get_children(id)) {
-					if (resolve(child).state == EntityReferenceState::RESIDENT && !candidates.has(child)) {
+					if (resolve(child).state == EntityReferenceState::RESIDENT && !_snapshot_has(candidates, child)) {
 						rejected.push_back(id);
 						break;
 					}
@@ -3089,19 +3251,21 @@ Error EntityScene::release_cells(const Vector<CellKey> &p_cells) {
 			result = error;
 			continue;
 		}
-		HashSet<EntityId, EntityIdHasher> forgotten;
+		Vector<EntityId> forgotten;
 		for (EntityId id : unloading) {
-			if (!prefab_members.has(id)) {
-				forgotten.insert(id);
+			const EntityCatalog::Record *record = catalog.get_record(id);
+			if (!record || record->prefab_instance.is_empty()) {
+				forgotten.push_back(id);
 			}
 		}
+		_sort_snapshot_ids(forgotten);
 		bool pending = true;
 		while (pending) {
 			pending = false;
 			Vector<EntityId> kept;
 			for (EntityId id : forgotten) {
 				for (EntityId child : catalog.get_children(id)) {
-					if (!forgotten.has(child)) {
+					if (!_snapshot_has(forgotten, child)) {
 						kept.push_back(id);
 						break;
 					}
@@ -3174,7 +3338,7 @@ double EntityScene::get_grid_range(const String &p_grid) const {
 }
 
 String EntityScene::get_entity_name(EntityId p_id) const {
-	const Section *section = sections.getptr(p_id);
+	const Section *section = _get_section(p_id);
 	return section ? section->name : String();
 }
 

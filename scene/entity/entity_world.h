@@ -7,8 +7,7 @@
 #include "entity_transform_system.h"
 
 #include "core/os/thread.h"
-#include "core/templates/a_hash_map.h"
-#include "core/templates/hash_set.h"
+#include "core/templates/local_vector.h"
 #include "scene/resources/environment.h"
 
 class EntityWorld {
@@ -18,10 +17,7 @@ class EntityWorld {
 	friend class EntitySceneCommands;
 	struct Identity {
 		EntityId id;
-	};
-	struct Resident {
-		EntityHandle handle;
-		uint64_t revision = 0;
+		EntityCatalog::RowLocation row;
 	};
 	struct MaterializeProfile {
 		uint64_t catalog_usec = 0;
@@ -33,13 +29,16 @@ class EntityWorld {
 		int entities_materialized = 0;
 		int parent_sets = 0;
 	};
+	struct ChangedRow {
+		EntityCatalog::RowLocation location;
+		EntityId id;
+	};
 
 	EntityCatalog &catalog;
 	flecs::world ecs;
 	EntitySchemaRegistry schemas;
-	AHashMap<EntityId, Resident, EntityIdHasher> residents;
 	LocalVector<ecs_entity_t> bulk_storage_tags;
-	AHashMap<EntityId, bool, EntityIdHasher> changed;
+	LocalVector<ChangedRow> changed_rows;
 	uint64_t generation = 0;
 	uint64_t change_serial = 0;
 	Thread::ID owner_thread = Thread::get_caller_id();
@@ -51,6 +50,10 @@ class EntityWorld {
 	Ref<Environment> fallback_environment;
 
 	bool _is_owner() const { return owner_thread == Thread::get_caller_id(); }
+	EntityCatalog::RowState *_resident(EntityId p_id);
+	const EntityCatalog::RowState *_resident(EntityId p_id) const;
+	void _set_resident(EntityId p_id, EntityHandle p_handle);
+	void _clear_resident(EntityId p_id);
 	EntityHandle _materialize(EntityId p_id, MaterializeProfile *r_profile = nullptr);
 	Error _materialize_bulk(const LocalVector<EntityId> &p_ids, ecs_bulk_desc_t &r_desc, const ecs_table_t *&r_table, ecs_entity_t &r_storage_tag, MaterializeProfile *r_profile);
 	const void *_get_transform_states(const ecs_table_t *p_table) const { return ecs_table_get_id(ecs.c_ptr(), p_table, ecs.id<EntityTransformSystem::State>(), 0); }
@@ -92,7 +95,7 @@ public:
 	EntityId get_id(EntityHandle p_handle) const;
 	uint64_t get_revision(EntityHandle p_handle) const;
 	uint64_t get_generation() const { return generation; }
-	int get_resident_count() const { return residents.size(); }
+	int get_resident_count() const { return catalog.get_resident_count(); }
 	Vector<EntityId> drain_changed();
 	const EntitySchemaRegistry &get_schemas() const { return schemas; }
 

@@ -159,14 +159,23 @@ class EntityScene : public Resource {
 	};
 
 	struct PreparedSet {
+		struct RowOrder {
+			const LocalVector<PreparedEntity> *entities = nullptr;
+			bool operator()(uint32_t p_left, uint32_t p_right) const {
+				const EntityId left = (*entities)[p_left].id;
+				const EntityId right = (*entities)[p_right].id;
+				return left.high != right.high ? left.high < right.high : left.low < right.low;
+			}
+		};
 		EntityScene *scene = nullptr;
 		const LocalVector<PreparedEntity> *entities = nullptr;
 		const LocalVector<PreparedGroup *> *bulk_groups = nullptr;
-		AHashMap<EntityId, uint32_t, EntityIdHasher> lookup;
+		Vector<uint32_t> sorted_rows;
 
 		PreparedSet(EntityScene &p_scene) :
 				scene(&p_scene) {}
 		explicit PreparedSet(const LocalVector<PreparedEntity> &p_entities, const LocalVector<PreparedGroup *> *p_bulk_groups = nullptr);
+		int32_t find_row(EntityId p_id) const;
 		const PreparedEntity *find(EntityId p_id) const;
 		bool is_deleted(EntityId p_id) const;
 		EntityRef get_parent(EntityId p_id) const;
@@ -359,74 +368,11 @@ private:
 	double default_range = 0.0;
 	String cluster_path;
 	Dictionary cluster_records;
-	class SectionMap {
-		EntityCatalog &catalog;
-
-	public:
-		explicit SectionMap(EntityCatalog &p_catalog) :
-				catalog(p_catalog) {}
-		Section *getptr(EntityId p_id) {
-			EntityCatalog::Record *record = catalog.records.getptr(p_id);
-			return record && record->has_section ? &record->section : nullptr;
-		}
-		const Section *getptr(EntityId p_id) const {
-			const EntityCatalog::Record *record = catalog.records.getptr(p_id);
-			return record && record->has_section ? &record->section : nullptr;
-		}
-		bool has(EntityId p_id) const { return getptr(p_id) != nullptr; }
-		Section &operator[](EntityId p_id) {
-			EntityCatalog::Record &record = catalog.records[p_id];
-			record.has_section = true;
-			return record.section;
-		}
-		void insert(EntityId p_id, const Section &p_section) { (*this)[p_id] = p_section; }
-		void erase(EntityId p_id) {
-			EntityCatalog::Record *record = catalog.records.getptr(p_id);
-			if (record && record->has_section) {
-				record->section = Section();
-				record->has_section = false;
-			}
-		}
-		void reserve(uint32_t) {}
-		uint32_t size() const { return catalog.records.size(); }
-	};
-	class OrderMap {
-		EntityCatalog &catalog;
-
-	public:
-		explicit OrderMap(EntityCatalog &p_catalog) :
-				catalog(p_catalog) {}
-		int64_t *getptr(EntityId p_id) {
-			EntityCatalog::Record *record = catalog.records.getptr(p_id);
-			return record && record->has_order ? &record->order : nullptr;
-		}
-		const int64_t *getptr(EntityId p_id) const {
-			const EntityCatalog::Record *record = catalog.records.getptr(p_id);
-			return record && record->has_order ? &record->order : nullptr;
-		}
-		void insert(EntityId p_id, int64_t p_order) {
-			EntityCatalog::Record &record = catalog.records[p_id];
-			record.order = p_order;
-			record.has_order = true;
-		}
-		void erase(EntityId p_id) {
-			EntityCatalog::Record *record = catalog.records.getptr(p_id);
-			if (record) {
-				record->order = 0;
-				record->has_order = false;
-			}
-		}
-		void reserve(uint32_t) {}
-		uint32_t size() const { return catalog.records.size(); }
-	};
-	using CellMembers = AHashMap<EntityId, bool, EntityIdHasher>;
-	SectionMap sections{ catalog };
+	using CellMembers = Vector<EntityId>;
 	HashMap<EntityId, Section, EntityIdHasher> deleted_storage;
 	HashMap<CellKey, CellMembers, CellKeyHasher> cells;
 	String assigned_directory;
 	CellKey assigned_key;
-	HashSet<EntityId, EntityIdHasher> globals;
-	HashSet<EntityId, EntityIdHasher> dirty;
 	HashMap<CellKey, Vector<EntityId>, CellKeyHasher> resident_cells;
 	LocalVector<CellJob *> cell_jobs;
 	Ref<EntityTaskScheduler::Mailbox> cell_mailbox;
@@ -438,11 +384,8 @@ private:
 		String instance;
 		String source;
 	};
-	HashMap<EntityId, PrefabMember, EntityIdHasher> prefab_members;
 	uint64_t residency_serial = 0;
 	bool global_pinned = false;
-	HashMap<EntityId, uint32_t, EntityIdHasher> pins;
-	OrderMap order{ catalog };
 	Dictionary prefab_instances;
 	uint64_t revision = 0;
 	String last_error;
@@ -459,6 +402,22 @@ private:
 	};
 
 	Error _owner();
+	const Section *_get_section(EntityId p_id) const;
+	Section *_edit_section(EntityId p_id);
+	void _erase_section(EntityId p_id);
+	const int64_t *_get_order_ptr(EntityId p_id) const;
+	void _set_order(EntityId p_id, int64_t p_order);
+	void _erase_order(EntityId p_id);
+	bool _is_dirty(EntityId p_id) const;
+	void _set_dirty(EntityId p_id, bool p_dirty = true);
+	bool _is_global(EntityId p_id) const;
+	void _set_global(EntityId p_id, bool p_global);
+	bool _is_pinned(EntityId p_id) const;
+	void _pin_row(EntityId p_id);
+	void _unpin_row(EntityId p_id);
+	static bool _cell_members_has(const CellMembers &p_members, EntityId p_id);
+	static void _cell_members_insert(CellMembers &r_members, EntityId p_id);
+	static void _cell_members_erase(CellMembers &r_members, EntityId p_id);
 	static bool _parse_cell_directory(const String &p_directory, CellKey &r_key);
 	static int32_t _cell_index(double p_value, double p_size);
 	String _storage_directory(EntityId p_id, String &r_source) const;

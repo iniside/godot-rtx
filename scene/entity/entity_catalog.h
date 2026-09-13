@@ -2,9 +2,7 @@
 
 #include "entity_id.h"
 
-#include "core/templates/a_hash_map.h"
-#include "core/templates/hash_map.h"
-#include "core/templates/hash_set.h"
+#include "core/templates/local_vector.h"
 #include "core/templates/vector.h"
 #include "core/variant/array.h"
 #include "core/variant/dictionary.h"
@@ -16,6 +14,8 @@ class EntityCatalog {
 	friend class EntityScene;
 	friend class EntitySceneCommands;
 	friend class EntitySceneIO;
+
+public:
 	struct Section {
 		String path;
 		bool cluster = false;
@@ -23,88 +23,140 @@ class EntityCatalog {
 		Dictionary record;
 		Array components;
 	};
+
 	struct Record {
 		bool deleted = false;
 		EntityRef parent;
 		int64_t order = 0;
 		Section section;
 		String cell_grid;
+		String prefab_instance;
+		String prefab_source;
 		int32_t cell_x = 0;
 		int32_t cell_y = 0;
 		int32_t cell_z = 0;
 		bool has_order = false;
 		bool has_section = false;
 		bool has_cell = false;
-		uint64_t snapshot_visit = 0;
 	};
-	using RecordMap = AHashMap<EntityId, Record, EntityIdHasher>;
-	RecordMap records;
-	HashMap<EntityId, HashSet<EntityId, EntityIdHasher>, EntityIdHasher> children;
 
-	void _unlink_parent(EntityId p_id) {
-		EntityId parent = records[p_id].parent.id;
-		auto *siblings = children.getptr(parent);
-		if (siblings) {
-			siblings->erase(p_id);
-			if (siblings->is_empty()) {
-				children.erase(parent);
-			}
-		}
-	}
+	struct RowLocation {
+		uint32_t block = UINT32_MAX;
+		uint32_t generation = 0;
+		uint32_t row = UINT32_MAX;
+		bool is_valid() const { return block != UINT32_MAX && row != UINT32_MAX; }
+		bool operator==(const RowLocation &p_other) const { return block == p_other.block && generation == p_other.generation && row == p_other.row; }
+	};
 
-	void _set_parent(EntityId p_id, EntityRef p_parent) {
-		_unlink_parent(p_id);
-		records[p_id].parent = p_parent;
-		if (p_parent.id.is_valid()) {
-			children[p_parent.id].insert(p_id);
+	struct RowState {
+		EntityHandle handle;
+		uint64_t revision = 0;
+		mutable uint64_t snapshot_visit = 0;
+		uint64_t incarnation = 1;
+		uint32_t overlay = UINT32_MAX;
+		uint32_t pin_count = 0;
+		uint32_t render_mask = 0;
+		bool active = true;
+		bool resident = false;
+		bool document_dirty = false;
+		bool world_changed = false;
+		bool global = false;
+		bool prefab = false;
+		bool dependency = false;
+		bool tombstone = false;
+	};
+
+	struct ArchetypeSpan {
+		Vector<uint64_t> signature;
+		uint32_t first = 0;
+		uint32_t count = 0;
+	};
+	struct ParentEdge {
+		EntityId parent;
+		uint32_t child = 0;
+	};
+	struct ParentEdgeOrder {
+		bool operator()(const ParentEdge &p_left, const ParentEdge &p_right) const {
+			return p_left.parent.high != p_right.parent.high ? p_left.parent.high < p_right.parent.high : (p_left.parent.low != p_right.parent.low ? p_left.parent.low < p_right.parent.low : p_left.child < p_right.child);
 		}
-	}
+	};
+
+	struct CellRuntimeBlock {
+		uint32_t generation = 1;
+		String grid;
+		int32_t x = 0;
+		int32_t y = 0;
+		int32_t z = 0;
+		bool ordinary_cell = false;
+		Vector<EntityId> ids;
+		Vector<Record> base;
+		Vector<Record> overlays;
+		Vector<RowState> states;
+		Vector<uint32_t> topological_rows;
+		Vector<uint32_t> child_offsets;
+		Vector<uint32_t> child_rows;
+		Vector<ParentEdge> external_parent_edges;
+		Vector<ArchetypeSpan> archetypes;
+	};
+
+private:
+	struct LocatorEntry {
+		EntityId id;
+		RowLocation location;
+	};
+	struct LocatorRun {
+		Vector<LocatorEntry> entries;
+	};
+	struct LocatorOrder {
+		bool operator()(const LocatorEntry &p_left, const LocatorEntry &p_right) const { return _id_less(p_left.id, p_right.id); }
+	};
+	struct IdOrder {
+		bool operator()(EntityId p_left, EntityId p_right) const { return _id_less(p_left, p_right); }
+	};
+
+	LocalVector<CellRuntimeBlock *> blocks;
+	LocalVector<LocatorRun *> locator_runs;
+	uint32_t next_block_generation = 1;
+	uint32_t active_records = 0;
+	uint32_t resident_records = 0;
+
+	static bool _id_less(EntityId p_left, EntityId p_right);
+	const LocatorEntry *_find_in_run(const LocatorRun &p_run, EntityId p_id) const;
+	void _add_locator_run(uint32_t p_block);
+	void _rebuild_block_indices(uint32_t p_block);
 
 public:
-	Vector<EntityId> get_ids() const {
-		Vector<EntityId> result;
-		result.reserve(records.size());
-		for (const KeyValue<EntityId, Record> &entry : records) {
-			result.push_back(entry.key);
-		}
-		return result;
-	}
-
-	Vector<EntityId> get_children(EntityId p_id) const {
-		Vector<EntityId> result;
-		const auto *entries = children.getptr(p_id);
-		if (entries) {
-			for (EntityId id : *entries) {
-				result.push_back(id);
-			}
-		}
-		return result;
-	}
-
-	Error add_record(EntityId p_id, EntityRef p_parent = {}) {
-		ERR_FAIL_COND_V(!p_id.is_valid(), ERR_INVALID_PARAMETER);
-		ERR_FAIL_COND_V(records.has(p_id), ERR_ALREADY_EXISTS);
-		ERR_FAIL_COND_V(p_parent.id.is_valid() && get_state(p_parent.id) != EntityReferenceState::UNLOADED, ERR_INVALID_PARAMETER);
-		records.insert(p_id, { false, p_parent });
-		if (p_parent.id.is_valid()) {
-			children[p_parent.id].insert(p_id);
-		}
-		return OK;
-	}
-
-	EntityReferenceState get_state(EntityId p_id) const {
-		const Record *record = records.getptr(p_id);
-		return record ? (record->deleted ? EntityReferenceState::DELETED : EntityReferenceState::UNLOADED) : EntityReferenceState::MISSING;
-	}
-
-	EntityRef get_parent(EntityId p_id) const {
-		const Record *record = records.getptr(p_id);
-		return record ? record->parent : EntityRef();
-	}
-
-	int get_record_count() const { return records.size(); }
-
 	EntityCatalog() = default;
+	~EntityCatalog();
 	EntityCatalog(const EntityCatalog &) = delete;
 	EntityCatalog &operator=(const EntityCatalog &) = delete;
+
+	RowLocation locate(EntityId p_id) const;
+	Record *edit_record(EntityId p_id);
+	const Record *get_record(EntityId p_id) const;
+	RowState *get_state_ptr(EntityId p_id);
+	const RowState *get_state_ptr(EntityId p_id) const;
+	RowState *get_state_ptr(RowLocation p_location);
+	const RowState *get_state_ptr(RowLocation p_location) const;
+	Record *edit_record(RowLocation p_location);
+	const Record *get_record(RowLocation p_location) const;
+
+	uint32_t add_block(const Vector<EntityId> &p_ids, const Vector<Record> &p_records, const String &p_grid = String(), int32_t p_x = 0, int32_t p_y = 0, int32_t p_z = 0, bool p_ordinary_cell = false);
+	Error add_record(EntityId p_id, EntityRef p_parent = {});
+	Error insert_record(EntityId p_id, const Record &p_record);
+	bool erase_record(EntityId p_id);
+	bool has_record(EntityId p_id) const { return locate(p_id).is_valid(); }
+	void clear();
+
+	Vector<EntityId> get_ids() const;
+	Vector<EntityId> get_children(EntityId p_id) const;
+	void _unlink_parent(EntityId p_id);
+	void _set_parent(EntityId p_id, EntityRef p_parent);
+	EntityReferenceState get_state(EntityId p_id) const;
+	EntityRef get_parent(EntityId p_id) const;
+	int get_record_count() const;
+	int get_resident_count() const;
+	CellRuntimeBlock *get_block(uint32_t p_block);
+	const CellRuntimeBlock *get_block(uint32_t p_block) const;
+	const LocalVector<CellRuntimeBlock *> &get_blocks() const { return blocks; }
 };

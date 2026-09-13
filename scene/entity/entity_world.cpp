@@ -22,13 +22,53 @@ EntityWorld::EntityWorld(EntityCatalog &p_catalog) :
 EntityWorld::~EntityWorld() {
 	DEV_ASSERT(_is_owner());
 	ecs.quit();
-	for (const KeyValue<EntityId, Resident> &entry : residents) {
-		if (ecs_is_alive(ecs.c_ptr(), entry.value.handle.entity)) {
-			ecs.entity(entry.value.handle.entity).destruct();
+	for (EntityCatalog::CellRuntimeBlock *block : catalog.blocks) {
+		if (!block) {
+			continue;
+		}
+		for (EntityCatalog::RowState &state : block->states) {
+			if (state.resident && ecs_is_alive(ecs.c_ptr(), state.handle.entity)) {
+				ecs.entity(state.handle.entity).destruct();
+			}
+			state.resident = false;
+			state.handle = {};
 		}
 	}
-	residents.clear();
+	catalog.resident_records = 0;
 	finalize_services();
+}
+
+EntityCatalog::RowState *EntityWorld::_resident(EntityId p_id) {
+	EntityCatalog::RowState *state = catalog.get_state_ptr(p_id);
+	return state && state->resident ? state : nullptr;
+}
+
+const EntityCatalog::RowState *EntityWorld::_resident(EntityId p_id) const {
+	const EntityCatalog::RowState *state = catalog.get_state_ptr(p_id);
+	return state && state->resident ? state : nullptr;
+}
+
+void EntityWorld::_set_resident(EntityId p_id, EntityHandle p_handle) {
+	EntityCatalog::RowState *state = catalog.get_state_ptr(p_id);
+	DEV_ASSERT(state);
+	if (state) {
+		if (!state->resident) {
+			catalog.resident_records++;
+		}
+		state->handle = p_handle;
+		state->resident = true;
+	}
+}
+
+void EntityWorld::_clear_resident(EntityId p_id) {
+	EntityCatalog::RowState *state = catalog.get_state_ptr(p_id);
+	if (state) {
+		if (state->resident) {
+			catalog.resident_records--;
+		}
+		state->resident = false;
+		state->handle = {};
+	}
 }
 
 Error EntityWorld::initialize_services() {
@@ -60,8 +100,15 @@ Error EntityWorld::initialize_services() {
 		navigation->map_set_active(navigation_map, true);
 	}
 #endif
-	for (const KeyValue<EntityId, Resident> &entry : residents) {
-		rendering.mark_dirty(entry.key);
+	for (const EntityCatalog::CellRuntimeBlock *block : catalog.blocks) {
+		if (!block) {
+			continue;
+		}
+		for (uint32_t row = 0; row < uint32_t(block->ids.size()); row++) {
+			if (block->states[row].resident) {
+				rendering.mark_dirty(block->ids[row]);
+			}
+		}
 	}
 	return OK;
 }
@@ -123,18 +170,25 @@ bool EntityWorld::_has_resident_children(EntityHandle p_handle) const {
 
 void EntityWorld::_mark_changed(EntityId p_id, uint32_t p_render_mask) {
 	change_serial++;
-	Resident *resident = residents.getptr(p_id);
-	if (resident) {
-		resident->revision = change_serial;
+	EntityCatalog::RowLocation location = catalog.locate(p_id);
+	EntityCatalog::RowState *state = catalog.get_state_ptr(location);
+	if (state) {
+		state->revision = change_serial;
+		state->render_mask |= p_render_mask;
+		if (!state->world_changed) {
+			state->world_changed = true;
+			changed_rows.push_back({ location, p_id });
+		}
 	}
-	changed.insert(p_id, true);
 	rendering.mark_dirty(p_id, p_render_mask);
 }
 
 EntityHandle EntityWorld::_materialize(EntityId p_id, MaterializeProfile *r_profile) {
 	const bool timed = r_profile != nullptr;
 	uint64_t began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
-	flecs::entity entity = ecs.entity().set<Identity>({ p_id });
+	const EntityCatalog::RowLocation location = catalog.locate(p_id);
+	DEV_ASSERT(location.is_valid());
+	flecs::entity entity = ecs.entity().set<Identity>({ p_id, location });
 	if (timed) {
 		r_profile->ecs_entity_create_identity_usec += OS::get_singleton()->get_ticks_usec() - began;
 		r_profile->entities_materialized++;
@@ -159,7 +213,7 @@ EntityHandle EntityWorld::_materialize(EntityId p_id, MaterializeProfile *r_prof
 	}
 	EntityHandle handle{ generation, entity.id() };
 	began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
-	residents.insert(p_id, { handle, 0 });
+	_set_resident(p_id, handle);
 	if (timed) {
 		r_profile->resident_insert_usec += OS::get_singleton()->get_ticks_usec() - began;
 	}
@@ -176,8 +230,9 @@ Error EntityWorld::_materialize_bulk(const LocalVector<EntityId> &p_ids, ecs_bul
 	LocalVector<Identity> identities;
 	identities.resize(p_ids.size());
 	for (uint32_t i = 0; i < p_ids.size(); i++) {
-		DEV_ASSERT(!residents.has(p_ids[i]));
-		identities[i].id = p_ids[i];
+		DEV_ASSERT(!_resident(p_ids[i]));
+		identities[i] = { p_ids[i], catalog.locate(p_ids[i]) };
+		DEV_ASSERT(identities[i].row.is_valid());
 	}
 	r_desc.ids[0] = ecs.id<Identity>();
 	r_desc.ids[1] = ecs.id<EntityTransformSystem::State>();
@@ -211,7 +266,7 @@ Error EntityWorld::_materialize_bulk(const LocalVector<EntityId> &p_ids, ecs_bul
 	r_table = ecs_get_table(ecs.c_ptr(), entities[0]);
 	r_storage_tag = storage_tag;
 	for (uint32_t i = 0; i < p_ids.size(); i++) {
-		residents.insert(p_ids[i], { { generation, entities[i] }, 0 });
+		_set_resident(p_ids[i], { generation, entities[i] });
 	}
 	if (r_profile) {
 		r_profile->resident_insert_usec += OS::get_singleton()->get_ticks_usec() - began;
@@ -240,7 +295,7 @@ Error EntityWorld::create_entity(EntityHandle &r_handle, EntityId p_id) {
 
 Error EntityWorld::load_entity(EntityId p_id, EntityHandle &r_handle) {
 	ERR_FAIL_COND_V(!_is_owner(), ERR_UNAUTHORIZED);
-	ERR_FAIL_COND_V(residents.has(p_id), ERR_ALREADY_EXISTS);
+	ERR_FAIL_COND_V(_resident(p_id), ERR_ALREADY_EXISTS);
 	ERR_FAIL_COND_V(catalog.get_state(p_id) != EntityReferenceState::UNLOADED, ERR_DOES_NOT_EXIST);
 	EntityRef parent = catalog.get_parent(p_id);
 	ERR_FAIL_COND_V(parent.id.is_valid() && resolve(parent).state != EntityReferenceState::RESIDENT, ERR_UNAVAILABLE);
@@ -253,7 +308,8 @@ Error EntityWorld::restore_entity(EntityId p_id, EntityHandle &r_handle) {
 	ERR_FAIL_COND_V(catalog.get_state(p_id) != EntityReferenceState::DELETED, ERR_INVALID_PARAMETER);
 	EntityRef parent = catalog.get_parent(p_id);
 	ERR_FAIL_COND_V(parent.id.is_valid() && resolve(parent).state != EntityReferenceState::RESIDENT, ERR_UNAVAILABLE);
-	catalog.records[p_id].deleted = false;
+	catalog.edit_record(p_id)->deleted = false;
+	catalog.get_state_ptr(p_id)->tombstone = false;
 	catalog._set_parent(p_id, parent);
 	r_handle = _materialize(p_id);
 	return OK;
@@ -265,7 +321,7 @@ Error EntityWorld::unload_entity(EntityHandle p_handle) {
 	ERR_FAIL_COND_V(_has_resident_children(p_handle), ERR_BUSY);
 	EntityId id = get_id(p_handle);
 	transforms.forget(p_handle.entity);
-	residents.erase(id);
+	_clear_resident(id);
 	ecs.entity(p_handle.entity).destruct();
 	_mark_changed(id);
 	return OK;
@@ -273,20 +329,21 @@ Error EntityWorld::unload_entity(EntityHandle p_handle) {
 
 Error EntityWorld::delete_entity(EntityId p_id) {
 	ERR_FAIL_COND_V(!_is_owner(), ERR_UNAUTHORIZED);
-	EntityCatalog::Record *record = catalog.records.getptr(p_id);
+	EntityCatalog::Record *record = catalog.edit_record(p_id);
 	ERR_FAIL_COND_V(!record, ERR_DOES_NOT_EXIST);
 	if (record->deleted) {
 		return OK;
 	}
-	ERR_FAIL_COND_V(catalog.children.has(p_id), ERR_BUSY);
-	Resident *resident = residents.getptr(p_id);
+	ERR_FAIL_COND_V(!catalog.get_children(p_id).is_empty(), ERR_BUSY);
+	EntityCatalog::RowState *resident = _resident(p_id);
 	if (resident) {
 		EntityHandle handle = resident->handle;
 		transforms.forget(handle.entity);
-		residents.erase(p_id);
+		_clear_resident(p_id);
 		ecs.entity(handle.entity).destruct();
 	}
 	record->deleted = true;
+	catalog.get_state_ptr(p_id)->tombstone = true;
 	catalog._unlink_parent(p_id);
 	_mark_changed(p_id);
 	return OK;
@@ -294,27 +351,25 @@ Error EntityWorld::delete_entity(EntityId p_id) {
 
 Error EntityWorld::delete_hierarchy(EntityId p_id) {
 	ERR_FAIL_COND_V(!_is_owner(), ERR_UNAUTHORIZED);
-	ERR_FAIL_COND_V(!catalog.records.has(p_id), ERR_DOES_NOT_EXIST);
+	ERR_FAIL_COND_V(!catalog.has_record(p_id), ERR_DOES_NOT_EXIST);
 	Vector<EntityId> ordered;
 	ordered.push_back(p_id);
 	for (int i = 0; i < ordered.size(); i++) {
-		const HashSet<EntityId, EntityIdHasher> *descendants = catalog.children.getptr(ordered[i]);
-		if (descendants) {
-			for (EntityId descendant : *descendants) {
-				ordered.push_back(descendant);
-			}
+		for (EntityId descendant : catalog.get_children(ordered[i])) {
+			ordered.push_back(descendant);
 		}
 	}
 	for (int i = ordered.size() - 1; i >= 0; i--) {
 		EntityId id = ordered[i];
-		Resident *resident = residents.getptr(id);
+		EntityCatalog::RowState *resident = _resident(id);
 		if (resident) {
 			EntityHandle handle = resident->handle;
 			transforms.forget(handle.entity);
-			residents.erase(id);
+			_clear_resident(id);
 			ecs.entity(handle.entity).destruct();
 		}
-		catalog.records[id].deleted = true;
+		catalog.edit_record(id)->deleted = true;
+		catalog.get_state_ptr(id)->tombstone = true;
 		catalog._unlink_parent(id);
 		_mark_changed(id);
 	}
@@ -359,11 +414,8 @@ Error EntityWorld::reparent(EntityHandle p_handle, EntityRef p_parent, ReparentM
 				}
 				local_changes.push_back({ descendant.handle, local });
 			} else {
-				const HashSet<EntityId, EntityIdHasher> *children = catalog.children.getptr(pending[i]);
-				if (children) {
-					for (EntityId child : *children) {
-						pending.push_back(child);
-					}
+				for (EntityId child : catalog.get_children(pending[i])) {
+					pending.push_back(child);
 				}
 			}
 		}
@@ -395,7 +447,7 @@ Error EntityWorld::teleport(EntityHandle p_handle, const EntityPose &p_local) {
 
 EntityResolution EntityWorld::resolve(EntityRef p_reference) const {
 	ERR_FAIL_COND_V(!_is_owner(), EntityResolution());
-	const Resident *resident = residents.getptr(p_reference.id);
+	const EntityCatalog::RowState *resident = _resident(p_reference.id);
 	if (resident && is_alive(resident->handle)) {
 		return { EntityReferenceState::RESIDENT, resident->handle };
 	}
@@ -411,7 +463,7 @@ bool EntityWorld::is_alive(EntityHandle p_handle) const {
 	if (!identity) {
 		return false;
 	}
-	const Resident *resident = residents.getptr(identity->id);
+	const EntityCatalog::RowState *resident = catalog.get_state_ptr(identity->row);
 	return resident && resident->handle == p_handle;
 }
 
@@ -422,17 +474,25 @@ EntityId EntityWorld::get_id(EntityHandle p_handle) const {
 
 uint64_t EntityWorld::get_revision(EntityHandle p_handle) const {
 	ERR_FAIL_COND_V(!is_alive(p_handle), 0);
-	return residents[get_id(p_handle)].revision;
+	const EntityCatalog::RowState *resident = _resident(get_id(p_handle));
+	return resident ? resident->revision : 0;
 }
 
 Vector<EntityId> EntityWorld::drain_changed() {
 	ERR_FAIL_COND_V(!_is_owner(), Vector<EntityId>());
 	Vector<EntityId> result;
-	result.reserve(changed.size());
-	for (const KeyValue<EntityId, bool> &entry : changed) {
-		result.push_back(entry.key);
+	result.reserve(changed_rows.size());
+	for (const ChangedRow &changed : changed_rows) {
+		EntityCatalog::RowState *state = catalog.get_state_ptr(changed.location);
+		if (state && state->active && state->world_changed) {
+			result.push_back(changed.id);
+			state->world_changed = false;
+			state->render_mask = 0;
+		} else if (!state || !state->active) {
+			result.push_back(changed.id);
+		}
 	}
-	changed.clear();
+	changed_rows.clear();
 	return result;
 }
 

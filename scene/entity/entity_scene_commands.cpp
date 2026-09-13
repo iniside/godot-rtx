@@ -39,6 +39,7 @@ Error EntitySceneCommands::_restore(const Dictionary &p_records, const Dictionar
 	Ref<EntityScene> prepared;
 	prepared.instantiate();
 	Vector<EntityId> ids;
+	Vector<EntityCatalog::Record> catalog_records;
 	for (const Variant &key : p_records.get_key_list()) {
 		EntityId id;
 		EntityId parent;
@@ -46,17 +47,22 @@ Error EntitySceneCommands::_restore(const Dictionary &p_records, const Dictionar
 		if (EntityId::parse(key, id) != OK || EntityId::parse(record["parent"], parent) != OK) {
 			return ERR_INVALID_DATA;
 		}
-		prepared->catalog.records.insert(id, { bool(record["deleted"]), { parent } });
-		prepared->order.insert(id, record["order"]);
+		EntityCatalog::Record metadata;
+		metadata.deleted = bool(record["deleted"]);
+		metadata.parent = { parent };
+		metadata.order = record["order"];
+		metadata.has_order = true;
+		catalog_records.push_back(metadata);
 		ids.push_back(id);
 	}
+	ERR_FAIL_COND_V(prepared->catalog.add_block(ids, catalog_records) == UINT32_MAX, ERR_CANT_CREATE);
 	Vector<EntityId> ordered;
 	Error error = prepared->_collect_required(ids, ordered);
 	if (error != OK) {
 		return error;
 	}
 	for (EntityId id : ordered) {
-		if (prepared->catalog.records[id].deleted) {
+		if (prepared->catalog.get_record(id)->deleted) {
 			continue;
 		}
 		prepared->catalog._set_parent(id, prepared->catalog.get_parent(id));
@@ -139,7 +145,7 @@ Error EntitySceneCommands::_apply(EntityScene &p_scene, const Command &p_command
 			ERR_FAIL_COND_V(!id.is_valid() || target.state != EntityReferenceState::MISSING, ERR_ALREADY_EXISTS);
 			ERR_FAIL_COND_V(p_command.after.get_type() != Variant::DICTIONARY, ERR_INVALID_PARAMETER);
 			Dictionary record = Dictionary(p_command.after).duplicate(true);
-			p_scene.catalog.records.insert(id, { false, { p_command.parent } });
+			p_scene.catalog.insert_record(id, { false, { p_command.parent } });
 			p_scene.catalog._set_parent(id, { p_command.parent });
 			error = p_scene._install(id, record);
 			r_changed.push_back(id);
@@ -182,9 +188,9 @@ Error EntitySceneCommands::_apply(EntityScene &p_scene, const Command &p_command
 				EntityId parent;
 				EntityId::parse(remap[original.to_string()], copy);
 				EntityId::parse(record["parent"], parent);
-				p_scene.catalog.records.insert(copy, { false, { parent } });
+				p_scene.catalog.insert_record(copy, { false, { parent } });
 				p_scene.catalog._set_parent(copy, { parent });
-				p_scene.order.insert(copy, record["order"]);
+				p_scene._set_order(copy, record["order"]);
 				error = p_scene._install(copy, record);
 				if (error != OK) {
 					return error;
@@ -222,7 +228,7 @@ Error EntitySceneCommands::_apply(EntityScene &p_scene, const Command &p_command
 		case SET_ORDER: {
 			ERR_FAIL_COND_V(target.state != EntityReferenceState::RESIDENT || p_command.after.get_type() != Variant::INT, ERR_INVALID_PARAMETER);
 			ERR_FAIL_COND_V(Variant(p_scene.get_order(id)) != p_command.before, ERR_BUSY);
-			p_scene.order.insert(id, p_command.after);
+			p_scene._set_order(id, p_command.after);
 		} break;
 	}
 	return error;
@@ -259,7 +265,8 @@ Error EntitySceneCommands::execute(const String &p_name, const Vector<Command> &
 				needed.push_back(id);
 				if (command.kind == REPARENT) {
 					EntityResolution resolution = document.resolve(id);
-					bool transformed = resolution.state == EntityReferenceState::RESIDENT ? document.world->has<EntityTransform>(resolution.handle) : document.sections.has(id) && document.sections[id].components.has(transform_key);
+					const EntityScene::Section *section = document._get_section(id);
+					bool transformed = resolution.state == EntityReferenceState::RESIDENT ? document.world->has<EntityTransform>(resolution.handle) : section && section->components.has(transform_key);
 					if (transformed) {
 						continue;
 					}
@@ -433,7 +440,7 @@ Error EntitySceneCommands::execute(const String &p_name, const Vector<Command> &
 			if (error != OK) {
 				return error;
 			}
-			prepared->sections.insert(id, section);
+			*prepared->_edit_section(id) = section;
 		}
 	}
 	error = document._can_commit(**prepared, changed);
@@ -577,10 +584,10 @@ Error EntitySceneCommands::_override_record(Dictionary &r_record, const Dictiona
 
 Error EntitySceneCommands::_prefab_record(EntityId p_id, Dictionary &r_record, bool &r_found) {
 	r_found = false;
-	const EntityScene::PrefabMember *member = document.prefab_members.getptr(p_id);
-	if (member) {
-		const String key = member->instance;
-		const String source_id = member->source;
+	const EntityCatalog::Record *member = document.catalog.get_record(p_id);
+	if (member && !member->prefab_instance.is_empty()) {
+		const String key = member->prefab_instance;
+		const String source_id = member->prefab_source;
 		Dictionary instance = document.prefab_instances[key];
 		Dictionary mapping = instance["mapping"];
 		if (source_id.is_empty() || mapping.get(source_id, Variant()) != p_id.to_string()) {
@@ -684,11 +691,14 @@ Error EntitySceneCommands::_reconcile_prefab_catalog() {
 				return error;
 			}
 			mapping[source_id.to_string()] = id.to_string();
-			document.catalog.records.insert(id, {});
+			document.catalog.insert_record(id, {});
 			EntityScene::Section section;
-			section.components = prefab->sections[source_id].components;
-			section.name = prefab->sections[source_id].name;
-			document.sections.insert(id, section);
+			const EntityScene::Section *source_section = prefab->_get_section(source_id);
+			if (source_section) {
+				section.components = source_section->components;
+				section.name = source_section->name;
+			}
+			*document._edit_section(id) = section;
 		}
 		Array conflicts;
 		for (const Variant &source_key : mapping.get_key_list()) {
@@ -732,18 +742,20 @@ Error EntitySceneCommands::_reconcile_prefab_catalog() {
 				conflicted.insert(id);
 				continue;
 			}
-			const bool was_deleted = document.catalog.records[id].deleted;
-			const EntityId was_parent = document.catalog.records[id].parent.id;
+			EntityCatalog::Record *record = document.catalog.edit_record(id);
+			ERR_FAIL_NULL_V(record, ERR_DOES_NOT_EXIST);
+			const bool was_deleted = record->deleted;
+			const EntityId was_parent = record->parent.id;
 			const int64_t was_order = document.get_order(id);
 			document.catalog._unlink_parent(id);
-			document.catalog.records[id].deleted = explicitly_deleted || (removed && !added);
-			document.catalog.records[id].parent = { parent };
-			document.order.insert(id, order);
-			if (!document.catalog.records[id].deleted) {
+			record->deleted = explicitly_deleted || (removed && !added);
+			record->parent = { parent };
+			document._set_order(id, order);
+			if (!record->deleted) {
 				document.catalog._set_parent(id, { parent });
 			}
-			if (was_deleted != document.catalog.records[id].deleted || was_parent != parent || was_order != order) {
-				document.dirty.insert(id);
+			if (was_deleted != record->deleted || was_parent != parent || was_order != order) {
+				document._set_dirty(id);
 			}
 		}
 		instance["mapping"] = mapping;
@@ -759,9 +771,9 @@ Error EntitySceneCommands::_reconcile_prefab_catalog() {
 	for (int i = 0; i < deleted.size(); i++) {
 		for (EntityId child : document.catalog.get_children(deleted[i])) {
 			if (document.catalog.get_state(child) != EntityReferenceState::DELETED && !conflicted.has(child)) {
-				document.catalog.records[child].deleted = true;
+				document.catalog.edit_record(child)->deleted = true;
 				document.catalog._unlink_parent(child);
-				document.dirty.insert(child);
+				document._set_dirty(child);
 				deleted.push_back(child);
 			}
 		}
@@ -885,14 +897,19 @@ Error EntitySceneCommands::_refresh_instance(EntityScene &p_target, EntityId p_i
 		if (p_target.resolve(id).state == EntityReferenceState::RESIDENT) {
 			EntityHandle handle = p_target.resolve(id).handle;
 			p_target.world->transforms.forget(handle.entity);
-			p_target.world->residents.erase(id);
+			p_target.world->_clear_resident(id);
 			p_target.world->ecs.entity(handle.entity).destruct();
 		}
-		if (p_target.catalog.records.has(id)) {
+		if (p_target.catalog.has_record(id)) {
 			p_target.catalog._unlink_parent(id);
+			p_target.catalog.erase_record(id);
 		}
-		p_target.catalog.records.insert(id, { bool(record["deleted"]), { parent } });
-		p_target.order.insert(id, record["order"]);
+		EntityCatalog::Record metadata;
+		metadata.deleted = bool(record["deleted"]);
+		metadata.parent = { parent };
+		metadata.order = record["order"];
+		metadata.has_order = true;
+		p_target.catalog.insert_record(id, metadata);
 		if (!r_changed.has(id)) {
 			r_changed.push_back(id);
 		}
@@ -903,7 +920,7 @@ Error EntitySceneCommands::_refresh_instance(EntityScene &p_target, EntityId p_i
 		return error;
 	}
 	for (EntityId id : ordered) {
-		if (!records.has(id.to_string()) || p_target.catalog.records[id].deleted) {
+		if (!records.has(id.to_string()) || p_target.catalog.get_record(id)->deleted) {
 			continue;
 		}
 		p_target.catalog._set_parent(id, p_target.catalog.get_parent(id));
@@ -911,7 +928,7 @@ Error EntitySceneCommands::_refresh_instance(EntityScene &p_target, EntityId p_i
 		if (error != OK) {
 			return error;
 		}
-		p_target.sections[id].record = Dictionary(records[id.to_string()]).duplicate(true);
+		p_target._edit_section(id)->record = Dictionary(records[id.to_string()]).duplicate(true);
 	}
 	instance["revision"] = int64_t(p_source_changes ? p_source_changes->revision : p_source.revision);
 	p_target.prefab_instances[key] = instance;
@@ -1019,8 +1036,9 @@ Error EntitySceneCommands::refresh_prefab(EntityId p_instance, const Ref<EntityS
 		return error;
 	}
 	for (EntityId id : changed) {
-		if (prepared->catalog.get_state(id) != EntityReferenceState::DELETED && prepared->sections[id].record.is_empty()) {
-			prepared->sections[id].record = Dictionary(item.after[id.to_string()]).duplicate(true);
+		EntityScene::Section *section = prepared->_edit_section(id);
+		if (prepared->catalog.get_state(id) != EntityReferenceState::DELETED && section && section->record.is_empty()) {
+			section->record = Dictionary(item.after[id.to_string()]).duplicate(true);
 		}
 	}
 	error = document._can_commit(**prepared, changed);
@@ -1170,7 +1188,7 @@ Error EntitySceneCommands::apply_overrides(EntityId p_instance, const Ref<Entity
 			if (error != OK) {
 				return error;
 			}
-			source_prepared->sections[id].record = record;
+			source_prepared->_edit_section(id)->record = record;
 		}
 	}
 	Vector<Ref<EntityScene>> users = p_users;
@@ -1231,7 +1249,7 @@ Error EntitySceneCommands::apply_overrides(EntityId p_instance, const Ref<Entity
 				if (error != OK) {
 					return error;
 				}
-				prepared->sections[id].record = record;
+				prepared->_edit_section(id)->record = record;
 			}
 		}
 		prepared_users.push_back(prepared);
