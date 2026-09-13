@@ -83,6 +83,8 @@ Error entity_encode_asset(const Ref<Resource> &p_asset, Variant &r_value);
 Error entity_decode_asset(const Variant &p_value, Ref<Resource> &r_asset);
 void entity_decode_assets_cached_only(bool p_enabled);
 void entity_decode_take_missing_assets(Vector<String> &r_paths);
+void entity_decode_set_budget(bool (*p_reserve)(void *, uint64_t), void *p_userdata = nullptr);
+bool entity_decode_reserve_bytes(uint64_t p_bytes);
 void entity_asset_profile_reset();
 void entity_asset_profile_get(uint64_t &r_usec, uint32_t &r_loads, uint32_t &r_cache_hits);
 
@@ -369,6 +371,9 @@ struct EntityCodec<Vector<T>> {
 		}
 		Array values = p_value;
 		Vector<T> result;
+		if (!entity_decode_reserve_bytes(uint64_t(values.size()) * sizeof(T) * 2 + 64)) {
+			return ERR_OUT_OF_MEMORY;
+		}
 		result.resize(values.size());
 		for (int i = 0; i < values.size(); i++) {
 			Error error = EntityCodec<T>::decode(values[i], result.write[i]);

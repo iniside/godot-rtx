@@ -105,6 +105,17 @@ void entity_asset_profile_get(uint64_t &r_usec, uint32_t &r_loads, uint32_t &r_c
 
 static thread_local bool entity_assets_cached_only = false;
 static thread_local Vector<String> entity_missing_assets;
+static thread_local bool (*entity_decode_reserve)(void *, uint64_t) = nullptr;
+static thread_local void *entity_decode_budget_userdata = nullptr;
+
+void entity_decode_set_budget(bool (*p_reserve)(void *, uint64_t), void *p_userdata) {
+	entity_decode_reserve = p_reserve;
+	entity_decode_budget_userdata = p_userdata;
+}
+
+bool entity_decode_reserve_bytes(uint64_t p_bytes) {
+	return !entity_decode_reserve || entity_decode_reserve(entity_decode_budget_userdata, p_bytes);
+}
 
 void entity_decode_assets_cached_only(bool p_enabled) {
 	entity_assets_cached_only = p_enabled;

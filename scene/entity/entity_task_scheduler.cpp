@@ -31,6 +31,7 @@ EntityTaskScheduler::Graph *EntityTaskScheduler::Mailbox::pop() {
 }
 
 EntityTaskScheduler::Graph::Graph() {
+	budget = singleton->budget;
 	for (uint32_t i = 0; i < 3; i++) {
 		tasks[i].graph = this;
 		tasks[i].phase = i;
@@ -41,9 +42,31 @@ EntityTaskScheduler::Graph::Graph() {
 EntityTaskScheduler::Graph::~Graph() {
 	if (budget.is_valid()) {
 		MutexLock lock(budget->mutex);
-		budget->reserved_bytes -= BYTE_BUDGET;
-		budget->graphs--;
+		if (profile) {
+			print_line(vformat("Entity request release payload_reserved_bytes=%d global_reserved_bytes=%d", payload_bytes.load(std::memory_order_relaxed), budget->reserved_bytes));
+		}
+		budget->reserved_bytes -= payload_bytes.load(std::memory_order_relaxed);
+		if (submitted) {
+			budget->graphs--;
+		}
 	}
+}
+
+bool EntityTaskScheduler::Graph::reserve_payload(uint64_t p_bytes) const {
+	MutexLock lock(budget->mutex);
+	const uint64_t current = payload_bytes.load(std::memory_order_relaxed);
+	if (p_bytes > BYTE_BUDGET - current || p_bytes > MAX_RESERVED_BYTES - budget->reserved_bytes) {
+		return false;
+	}
+	payload_bytes.store(current + p_bytes, std::memory_order_relaxed);
+	budget->reserved_bytes += p_bytes;
+	return true;
+}
+
+void EntityTaskScheduler::Graph::release_payload(uint64_t p_bytes) const {
+	MutexLock lock(budget->mutex);
+	payload_bytes.fetch_sub(p_bytes, std::memory_order_relaxed);
+	budget->reserved_bytes -= p_bytes;
 }
 
 void EntityTaskScheduler::Graph::Task::ExecuteRange(enki::TaskSetPartition p_range, uint32_t p_thread) {
@@ -53,13 +76,16 @@ void EntityTaskScheduler::Graph::Task::ExecuteRange(enki::TaskSetPartition p_ran
 	const uint64_t began = graph->profile ? OS::get_singleton()->get_ticks_usec() : 0;
 	if (phase == 0) {
 		graph->range_count = graph->cancelled.is_set() ? 0 : graph->enumerate();
-		graph->tasks[1].m_SetSize = MAX(uint32_t(1), graph->range_count);
+		graph->read_lane_count = MAX(uint32_t(1), MIN(MAX_READ_LANES, graph->range_count));
+		graph->tasks[1].m_SetSize = graph->read_lane_count;
 	} else if (phase == 1) {
-		for (uint32_t i = p_range.start; i < p_range.end && i < graph->range_count; i++) {
-			if (graph->cancelled.is_set()) {
-				break;
+		for (uint32_t lane = p_range.start; lane < p_range.end; lane++) {
+			for (uint32_t i = lane; i < graph->range_count; i += graph->read_lane_count) {
+				if (graph->cancelled.is_set()) {
+					break;
+				}
+				graph->read_range(i);
 			}
-			graph->read_range(i);
 		}
 	} else if (!graph->cancelled.is_set()) {
 		graph->prepare(graph->decode_only);
@@ -157,14 +183,14 @@ Error EntityTaskScheduler::submit(Graph *p_graph, const Ref<Mailbox> &p_mailbox,
 	if (request_count == INGRESS_CAPACITY) {
 		return ERR_BUSY;
 	}
-	if (p_graph->budget.is_null()) {
+	if (!p_graph->submitted) {
 		MutexLock budget_lock(budget->mutex);
-		if (budget->graphs == MAX_GRAPHS || budget->reserved_bytes + Graph::BYTE_BUDGET > MAX_RESERVED_BYTES) {
+		if (budget->graphs == MAX_GRAPHS || sizeof(Graph) > MAX_RESERVED_BYTES - budget->reserved_bytes) {
 			return ERR_BUSY;
 		}
 		budget->graphs++;
-		budget->reserved_bytes += Graph::BYTE_BUDGET;
-		p_graph->budget = budget;
+		budget->reserved_bytes += sizeof(Graph);
+		p_graph->payload_bytes.fetch_add(sizeof(Graph), std::memory_order_relaxed);
 	}
 	p_graph->mailbox = p_mailbox;
 	p_graph->owner_thread = Thread::get_caller_id();
@@ -217,7 +243,7 @@ EntityTaskScheduler::~EntityTaskScheduler() {
 	ingress.wait_to_finish();
 	scheduler.WaitforAllAndShutdown();
 	if (OS::get_singleton()->is_use_benchmark_set()) {
-		print_line(vformat("Entity scheduler shutdown workers=%d allocations=%d active_workers=%d", worker_count, scheduler_allocations.get(), active_workers.get()));
+		print_line(vformat("Entity scheduler shutdown workers=%d allocations=%d active_workers=%d reserved_bytes=%d", worker_count, scheduler_allocations.get(), active_workers.get(), budget->reserved_bytes));
 	}
 	singleton = nullptr;
 }

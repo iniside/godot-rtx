@@ -429,19 +429,115 @@ Error EntitySceneIO::decode(const String &p_text, Variant &r_value) {
 	return error;
 }
 
-Error EntitySceneIO::read_variant_file(const String &p_path, Variant &r_value) {
+Error EntitySceneIO::reserve_record(const Variant &p_value, const EntityTaskScheduler::Graph &p_job, uint32_t p_depth) {
+	if (p_depth > 64 || !p_job.reserve_payload(512)) {
+		return ERR_OUT_OF_MEMORY;
+	}
+	if (p_value.get_type() == Variant::STRING) {
+		const String text = p_value;
+		return p_job.reserve_payload(uint64_t(text.length() + 1) * 16) ? OK : ERR_OUT_OF_MEMORY;
+	}
+	if (p_value.get_type() == Variant::DICTIONARY) {
+		const Dictionary dictionary = p_value;
+		if (!p_job.reserve_payload(uint64_t(dictionary.size()) * 256)) {
+			return ERR_OUT_OF_MEMORY;
+		}
+		for (const Variant *key = dictionary.next(nullptr); key; key = dictionary.next(key)) {
+			Error error = reserve_record(*key, p_job, p_depth + 1);
+			if (error == OK) {
+				error = reserve_record(dictionary[*key], p_job, p_depth + 1);
+			}
+			if (error != OK) {
+				return error;
+			}
+		}
+	} else if (p_value.get_type() == Variant::ARRAY) {
+		const Array array = p_value;
+		for (const Variant &value : array) {
+			const Error error = reserve_record(value, p_job, p_depth + 1);
+			if (error != OK) {
+				return error;
+			}
+		}
+	} else if (p_value.get_type() >= Variant::PACKED_BYTE_ARRAY || p_value.get_type() == Variant::OBJECT) {
+		return ERR_INVALID_DATA;
+	}
+	return OK;
+}
+
+Error EntitySceneIO::read_variant_file(const String &p_path, Variant &r_value, const EntityTaskScheduler::Graph *p_job) {
 	Error error = OK;
 	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::READ, &error);
 	if (error != OK) {
 		return error;
 	}
 	const uint64_t length = file->get_length();
+	const uint64_t source_bytes = (length + 1) * 2;
+	if (length >= UINT32_MAX || (p_job && !p_job->reserve_payload(source_bytes))) {
+		return ERR_OUT_OF_MEMORY;
+	}
+	struct SourceReservation {
+		const EntityTaskScheduler::Graph *job;
+		uint64_t bytes;
+		~SourceReservation() {
+			if (job) {
+				job->release_payload(bytes);
+			}
+		}
+	} source_reservation{ p_job, source_bytes };
 	LocalVector<uint8_t> data;
 	data.resize(length + 1);
 	if (file->get_buffer(data.ptr(), length) != length) {
 		return ERR_FILE_CANT_READ;
 	}
 	data[length] = 0;
+	if (p_job) {
+		uint64_t payload = length * 16 + 512;
+		uint32_t depth = 0;
+		for (uint64_t i = 0; i < length; i++) {
+			const uint8_t character = data[i];
+			if (character == '"' || character == '\'') {
+				while (++i < length && data[i] != character) {
+					if (data[i] == '\\') {
+						i++;
+					}
+				}
+			} else if (character == ';') {
+				while (++i < length && data[i] != '\n') {
+				}
+			} else if (character == '{' || character == '[' || character == '(') {
+				if (++depth > 64) {
+					return ERR_FILE_CORRUPT;
+				}
+				payload += 512;
+			} else if (character == '}' || character == ']' || character == ')') {
+				if (depth == 0) {
+					return ERR_FILE_CORRUPT;
+				}
+				depth--;
+			} else if (character == ',' || character == ':') {
+				payload += 256;
+			} else if (character >= 'A' && character <= 'Z') {
+				char identifier[64];
+				uint32_t count = 0;
+				while (i < length && ((data[i] >= 'a' && data[i] <= 'z') || (data[i] >= 'A' && data[i] <= 'Z') || (data[i] >= '0' && data[i] <= '9') || data[i] == '_')) {
+					if (count == sizeof(identifier) - 1) {
+						return ERR_FILE_CORRUPT;
+					}
+					identifier[count++] = char(data[i++]);
+				}
+				i--;
+				identifier[count] = 0;
+				if (strcmp(identifier, "Object") == 0 || strcmp(identifier, "Resource") == 0 || strcmp(identifier, "SubResource") == 0 || strcmp(identifier, "ExtResource") == 0) {
+					return ERR_INVALID_DATA;
+				}
+			}
+		}
+		// This envelope covers parser/COW growth and retained metadata, not allocator bookkeeping or shared resources.
+		if (!p_job->reserve_payload(payload)) {
+			return ERR_OUT_OF_MEMORY;
+		}
+	}
 	if (EntityRecordParser::parse_utf8(data.ptr(), length, r_value)) {
 		return OK;
 	}

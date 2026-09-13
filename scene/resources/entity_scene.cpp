@@ -1224,6 +1224,27 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 	if (required_error != OK) {
 		return _fail(active.is_empty() ? EntityId() : active[0], "required", required_error);
 	}
+	HashSet<EntityId, EntityIdHasher> residency;
+	HashSet<EntityId, EntityIdHasher> item_ids;
+	for (const CommitItem &item : p_items) {
+		item_ids.insert(item.id);
+	}
+	for (EntityId id : required) {
+		if (p_prepared.is_deleted(id)) {
+			return _fail(id, "required ancestor", ERR_DOES_NOT_EXIST);
+		}
+		residency.insert(id);
+		if (!item_ids.has(id) && resolve(id).state != EntityReferenceState::RESIDENT) {
+			Vector<EntityId> added_ids;
+			added_ids.push_back(id);
+			LocalVector<CommitItem> added_items;
+			_build_commit_items(p_prepared, added_ids, added_items);
+			p_items.push_back(std::move(added_items[0]));
+		}
+		if (p_prepared.scene && p_prepared.scene->resolve(id).state != EntityReferenceState::RESIDENT && resolve(id).state != EntityReferenceState::RESIDENT) {
+			return _fail(id, "prepared ancestor", ERR_UNAVAILABLE);
+		}
+	}
 	if (bulk) {
 		began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
 		target->transforms.update();
@@ -1277,7 +1298,7 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 		children.reserve(children.size() + entry.value);
 	}
 	for (CommitItem &item : p_items) {
-		item.install = !item.deleted && (p_resident || item.existing.state == EntityReferenceState::RESIDENT);
+		item.install = !item.deleted && residency.has(item.id);
 	}
 	began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
 	HashSet<EntityId, EntityIdHasher> touched_parents;
@@ -1360,6 +1381,13 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 		profile.metadata_commit_usec += OS::get_singleton()->get_ticks_usec() - began;
 	}
 	EntityWorld::MaterializeProfile materialize_profile;
+	if (!bulk) {
+		for (EntityId id : required) {
+			if (resolve(id).state != EntityReferenceState::RESIDENT) {
+				target->_materialize(id, timed ? &materialize_profile : nullptr);
+			}
+		}
+	}
 	for (const CommitItem &item : p_items) {
 		bool resident = item.existing.state == EntityReferenceState::RESIDENT;
 		if (resident && !item.deleted && item.parent_changed) {
@@ -1386,7 +1414,7 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 			resident = false;
 		}
 		if (!item.deleted && item.install && !bulk) {
-			EntityHandle handle = resident ? item.existing.handle : target->_materialize(item.id, timed ? &materialize_profile : nullptr);
+			EntityHandle handle = resident ? item.existing.handle : resolve(item.id).handle;
 			p_prepared.write_components(*target, handle, item.id, item.prepared, timed ? &profile : nullptr);
 			began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
 			target->_component_changed(handle);
@@ -1901,11 +1929,23 @@ Error EntityScene::_dispatch_cell(const CellKey &p_cell) {
 			}
 			const bool cluster = section && section->cluster;
 			if (prefab || !section->record.is_empty()) {
+				if (section && !section->record.is_empty()) {
+					const Error reserve_error = EntitySceneIO::reserve_record(section->record, *job);
+					if (reserve_error != OK) {
+						memdelete(job);
+						return reserve_error;
+					}
+				}
 				Dictionary record;
 				const Error record_error = _read_record(id, record);
 				if (record_error != OK) {
 					memdelete(job);
 					return record_error;
+				}
+				const Error reserve_error = EntitySceneIO::reserve_record(record, *job);
+				if (reserve_error != OK) {
+					memdelete(job);
+					return reserve_error;
 				}
 				job->pending.push_back({ id, path, cluster, record.duplicate(true) });
 				job->skip.insert(id);
@@ -1983,12 +2023,13 @@ void EntityScene::_enumerate_cell(void *p_job) {
 	CellJob *job = static_cast<CellJob *>(p_job);
 	const uint64_t began = job->profile ? OS::get_singleton()->get_ticks_usec() : 0;
 	if (!job->cancelled.is_set() && !ResourceLoader::is_cleaning_tasks()) {
-		PackedStringArray names;
-		if (!job->directory.is_empty() && DirAccess::dir_exists_absolute(job->directory)) {
-			names = DirAccess::get_files_at(job->directory);
-		}
 		HashMap<String, String> files;
 		auto add_file = [&](const String &p_path) {
+			if (!job->reserve_payload(uint64_t(p_path.length() + 1) * 32 + 1024)) {
+				job->result.error = ERR_OUT_OF_MEMORY;
+				job->result.failing_field = "file catalog budget";
+				return;
+			}
 #ifdef WINDOWS_ENABLED
 			const String key = p_path.to_lower();
 #else
@@ -1999,18 +2040,31 @@ void EntityScene::_enumerate_cell(void *p_job) {
 				files.insert(key, p_path);
 			}
 		};
-		names.sort();
-		for (const String &name : names) {
-			if (job->cancelled.is_set() || ResourceLoader::is_cleaning_tasks()) {
-				job->result.error = ERR_SKIP;
-				break;
+		if (!job->directory.is_empty() && DirAccess::dir_exists_absolute(job->directory)) {
+			Ref<DirAccess> directory = DirAccess::open(job->directory);
+			if (directory.is_null() || directory->list_dir_begin() != OK) {
+				job->result.error = ERR_CANT_OPEN;
+				return;
 			}
-			if (name.get_extension().to_lower() == "escn") {
-				add_file(job->relative.path_join(name));
+			for (String name = directory->get_next(); !name.is_empty(); name = directory->get_next()) {
+				if (job->cancelled.is_set() || ResourceLoader::is_cleaning_tasks()) {
+					job->result.error = ERR_SKIP;
+					break;
+				}
+				if (!directory->current_is_dir() && name.get_extension().to_lower() == "escn") {
+					add_file(job->relative.path_join(name));
+					if (job->result.error != OK) {
+						break;
+					}
+				}
 			}
+			directory->list_dir_end();
 		}
 		HashMap<String, bool> required_files;
 		for (const KeyValue<String, bool> &entry : job->required_files) {
+			if (job->result.error != OK) {
+				break;
+			}
 			add_file(entry.key);
 #ifdef WINDOWS_ENABLED
 			required_files.insert(entry.key.to_lower(), entry.value);
@@ -2061,7 +2115,7 @@ Error EntityScene::_read_cell_range(const CellJob &p_job, uint32_t p_index, Cell
 		}
 		Variant parsed;
 		const uint64_t began = p_job.profile ? OS::get_singleton()->get_ticks_usec() : 0;
-		Error error = EntitySceneIO::read_variant_file(path, parsed);
+		Error error = EntitySceneIO::read_variant_file(path, parsed, &p_job);
 		if (p_job.profile) {
 			r_range.read_parse_usec += OS::get_singleton()->get_ticks_usec() - began;
 		}
@@ -2178,14 +2232,14 @@ uint32_t EntityScene::CellJob::enumerate() {
 		return 0;
 	}
 	const uint32_t ranges = (uint32_t(filenames.size()) + CELL_READ_RANGE_FILES - 1) / CELL_READ_RANGE_FILES;
-	if (uint64_t(ranges) * sizeof(CellReadRange) > BYTE_BUDGET) {
+	if (!reserve_payload(uint64_t(ranges) * sizeof(CellReadRange))) {
 		result.error = ERR_OUT_OF_MEMORY;
 		result.failing_field = "read range arena";
 		return 0;
 	}
 	read_ranges.resize(ranges);
 	read_range_count = ranges;
-	read_lanes = MIN(ranges, EntityTaskScheduler::get_singleton()->get_worker_count() + 1);
+	read_lanes = MIN(ranges, MAX_READ_LANES);
 	return ranges;
 }
 
@@ -2280,7 +2334,7 @@ Error EntityScene::_decode_cell(CellJob &p_job) {
 				}
 				bytes += uint64_t(group->capacity) * schema->size + schema->alignment - 1 + sizeof(uint32_t);
 			}
-			if (bytes > CellJob::BYTE_BUDGET - p_job.prepared_bytes) {
+			if (!p_job.reserve_payload(bytes)) {
 				p_job.result.failing_field = "prepared column arena";
 				return ERR_OUT_OF_MEMORY;
 			}
@@ -2347,8 +2401,13 @@ void EntityScene::_run_cell_decode(void *p_job) {
 	CellJob *job = static_cast<CellJob *>(p_job);
 	const uint64_t began = job->profile ? OS::get_singleton()->get_ticks_usec() : 0;
 	entity_decode_assets_cached_only(true);
+	entity_decode_set_budget([](void *p_userdata, uint64_t p_bytes) {
+		return static_cast<CellJob *>(p_userdata)->reserve_payload(p_bytes);
+	},
+			job);
 	const uint64_t decoding = job->profile ? OS::get_singleton()->get_ticks_usec() : 0;
 	job->result.error = _decode_cell(*job);
+	entity_decode_set_budget(nullptr);
 	if (job->profile) {
 		job->decode_usec += OS::get_singleton()->get_ticks_usec() - decoding;
 	}
