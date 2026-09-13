@@ -203,6 +203,7 @@ public:
 	const Record *get_record(RowLocation p_location) const;
 
 	uint32_t add_block(const Vector<EntityId> &p_ids, const Vector<Record> &p_records, const String &p_grid = String(), int32_t p_x = 0, int32_t p_y = 0, int32_t p_z = 0, bool p_ordinary_cell = false);
+	uint32_t add_prepared_block(Vector<EntityId> &&p_ids, Vector<Record> &&p_records, Vector<uint32_t> &&p_topological_rows, Vector<uint32_t> &&p_child_offsets, Vector<uint32_t> &&p_child_rows, Vector<ArchetypeSpan> &&p_archetypes, const String &p_grid, int32_t p_x, int32_t p_y, int32_t p_z);
 	Error add_record(EntityId p_id, EntityRef p_parent = {});
 	Error insert_record(EntityId p_id, const Record &p_record);
 	bool erase_record(EntityId p_id);

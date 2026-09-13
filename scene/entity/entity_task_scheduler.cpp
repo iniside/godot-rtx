@@ -42,9 +42,6 @@ EntityTaskScheduler::Graph::Graph() {
 EntityTaskScheduler::Graph::~Graph() {
 	if (budget.is_valid()) {
 		MutexLock lock(budget->mutex);
-		if (profile) {
-			print_line(vformat("Entity request release payload_reserved_bytes=%d global_reserved_bytes=%d", payload_bytes.load(std::memory_order_relaxed), budget->reserved_bytes));
-		}
 		budget->reserved_bytes -= payload_bytes.load(std::memory_order_relaxed);
 		if (admitted) {
 			if (maintenance) {
@@ -85,7 +82,6 @@ void EntityTaskScheduler::Graph::Task::ExecuteRange(enki::TaskSetPartition p_ran
 	ScriptServer::thread_enter();
 	const Thread::ID caller = Thread::get_caller_id();
 	CRASH_COND_MSG(caller == graph->owner_thread, "Entity preparation ran on its owner thread.");
-	const uint64_t began = graph->profile ? OS::get_singleton()->get_ticks_usec() : 0;
 	if (phase == 0) {
 		graph->range_count = graph->cancelled.is_set() ? 0 : graph->enumerate();
 		graph->read_lane_count = MAX(uint32_t(1), MIN(MAX_READ_LANES, graph->range_count));
@@ -114,9 +110,6 @@ void EntityTaskScheduler::Graph::Task::ExecuteRange(enki::TaskSetPartition p_ran
 		}
 	} else if (!graph->cancelled.is_set()) {
 		graph->finish_prepare();
-	}
-	if (graph->profile) {
-		print_line(vformat("Entity task phase=%d thread=%d enki_thread=%d owner_thread=%d begin=%d end=%d work_us=%d queue_us=%d", phase, caller, p_thread, graph->owner_thread, p_range.start, p_range.end, OS::get_singleton()->get_ticks_usec() - began, graph->queue_usec));
 	}
 }
 

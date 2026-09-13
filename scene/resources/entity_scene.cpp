@@ -15,6 +15,7 @@
 
 EntityScene::EntityScene() {
 	cell_mailbox.instantiate();
+	cleanup_mailbox.instantiate();
 	Error error = EntityId::generate(document_id);
 	ERR_FAIL_COND(error != OK);
 	default_grid = "default";
@@ -859,7 +860,7 @@ Error EntityScene::PreparedSet::materialize_groups(EntityWorld &p_target, LocalV
 		}
 		const ecs_table_t *table = nullptr;
 		ecs_entity_t storage_tag = 0;
-		const Error error = p_target._materialize_bulk(ids, desc, table, storage_tag, r_profile ? &materialize_profile : nullptr);
+		const Error error = p_target._materialize_bulk(ids, nullptr, desc, table, storage_tag, nullptr, nullptr, r_profile ? &materialize_profile : nullptr);
 		if (error != OK) {
 			return error;
 		}
@@ -2214,6 +2215,7 @@ Error EntityScene::_dispatch_cell(const CellKey &p_cell) {
 	CellJob *job = memnew(CellJob);
 	scheduler->adopt(job, reservation);
 	job->profile = OS::get_singleton()->is_use_benchmark_set();
+	job->scene_revision = revision;
 	job->result.key = p_cell;
 	job->storage_directory = EntitySceneIO::scene_directory(storage_path).simplify_path();
 	LocalVector<EntityId, uint32_t, false, true> required_rows;
@@ -2355,6 +2357,32 @@ Error EntityScene::_dispatch_cell(const CellKey &p_cell) {
 		}
 	}
 	_sort_snapshot_ids(job->globals);
+	Vector<EntityId> external_ids = job->globals;
+	for (EntityId id : job->skip) {
+		external_ids.push_back(id);
+	}
+	_sort_snapshot_ids(external_ids);
+	job->external_transforms.reserve(external_ids.size());
+	for (EntityId id : external_ids) {
+		const EntityResolution resolved = resolve(id);
+		if (resolved.state != EntityReferenceState::RESIDENT) {
+			continue;
+		}
+		ExternalTransformSnapshot snapshot;
+		snapshot.id = id;
+		snapshot.parent = catalog.get_parent(id);
+		const EntityCatalog::RowState *state = catalog.get_state_ptr(id);
+		snapshot.revision = state ? state->revision : 0;
+		if (const EntityTransform *transform = world->get<EntityTransform>(resolved.handle)) {
+			snapshot.pose = transform->current;
+			snapshot.has_transform = true;
+		}
+		if (const EntityVisibility *visibility = world->get<EntityVisibility>(resolved.handle)) {
+			snapshot.visible = visibility->effective;
+			snapshot.has_visibility = true;
+		}
+		job->external_transforms.push_back(snapshot);
+	}
 	job->directory = _cell_path(p_cell);
 	if ((job->directory.is_empty() || !DirAccess::dir_exists_absolute(job->directory)) && job->required_files.is_empty() && job->pending.is_empty()) {
 		if (members) {
@@ -2672,9 +2700,6 @@ uint32_t EntityScene::CellJob::prepare(bool p_decode_only) {
 			p_job.read_parse_wall_usec = last - first;
 		}
 		p_job.result.error = _merge_cell_reads(p_job);
-		if (p_job.profile) {
-			print_line(vformat("Entity cell reads grid=%s cell=%d_%d_%d enumerate_ms=%.3f read_parse_cpu_ms=%.3f read_parse_wall_ms=%.3f files=%d ranges=%d lanes=%d", p_job.result.key.grid, p_job.result.key.x, p_job.result.key.y, p_job.result.key.z, p_job.enumerate_usec / 1000.0, p_job.read_parse_usec / 1000.0, p_job.read_parse_wall_usec / 1000.0, p_job.files_read, p_job.read_ranges.size(), p_job.read_lanes));
-		}
 		p_job.read_ranges.clear();
 		p_job.filenames.clear();
 	}
@@ -2696,9 +2721,67 @@ void EntityScene::CellJob::finish_prepare() {
 	}
 }
 
+EntityScene::CleanupJob::~CleanupJob() {
+	if (payload) {
+		memdelete(payload);
+	}
+}
+
+void EntityScene::CleanupJob::finish_prepare() {
+	memdelete(payload);
+	payload = nullptr;
+}
+
 void EntityScene::_collect_cell_jobs() {
 	while (EntityTaskScheduler::Graph *graph = cell_mailbox->pop()) {
 		graph->ready = true;
+	}
+}
+
+void EntityScene::_collect_cleanup_jobs() {
+	while (EntityTaskScheduler::Graph *graph = cleanup_mailbox->pop()) {
+		CleanupJob *job = static_cast<CleanupJob *>(graph);
+		for (uint32_t i = 0; i < cleanup_jobs.size(); i++) {
+			if (cleanup_jobs[i] == job) {
+				cleanup_jobs.remove_at(i);
+				break;
+			}
+		}
+		memdelete(job);
+	}
+	while (!pending_cleanup_jobs.is_empty()) {
+		CellJob *payload = pending_cleanup_jobs[pending_cleanup_jobs.size() - 1];
+		EntityTaskScheduler *scheduler = EntityTaskScheduler::get_singleton();
+		EntityTaskScheduler::Reservation reservation;
+		if (!scheduler || scheduler->reserve(reservation, 0, true) != OK) {
+			break;
+		}
+		CleanupJob *cleanup = memnew(CleanupJob(payload));
+		scheduler->adopt(cleanup, reservation);
+		const Error error = scheduler->submit(cleanup, cleanup_mailbox, true, EntityTaskScheduler::LOW);
+		if (error != OK) {
+			memdelete(cleanup);
+			pending_cleanup_jobs.resize(pending_cleanup_jobs.size() - 1);
+			continue;
+		}
+		pending_cleanup_jobs.resize(pending_cleanup_jobs.size() - 1);
+		cleanup_jobs.push_back(cleanup);
+	}
+}
+
+void EntityScene::_defer_job_cleanup(CellJob *p_job) {
+	p_job->assets.clear();
+	pending_cleanup_jobs.push_back(p_job);
+	_collect_cleanup_jobs();
+}
+
+void EntityScene::_flush_cleanup_jobs() {
+	while (!cleanup_jobs.is_empty() || !pending_cleanup_jobs.is_empty()) {
+		catalog.maintenance();
+		_collect_cleanup_jobs();
+		if (!cleanup_jobs.is_empty() || !pending_cleanup_jobs.is_empty()) {
+			OS::get_singleton()->delay_usec(1000);
+		}
 	}
 }
 
@@ -2959,75 +3042,303 @@ Error EntityScene::_finish_cell_decode(CellJob &p_job) {
 	if (p_job.result.layer_rows.size() != entity_count) {
 		return ERR_CYCLIC_LINK;
 	}
+	auto column = [](PreparedEntity &p_entity, uint64_t p_type) -> void * {
+		if (!p_entity.group) {
+			return nullptr;
+		}
+		for (const PreparedColumn &prepared_column : p_entity.group->columns) {
+			if (prepared_column.schema->id == p_type) {
+				return prepared_column.row(p_entity.row);
+			}
+		}
+		return nullptr;
+	};
+	auto external = [&](EntityId p_id) -> const ExternalTransformSnapshot * {
+		int32_t low = 0;
+		int32_t high = p_job.external_transforms.size() - 1;
+		while (low <= high) {
+			const int32_t middle = low + (high - low) / 2;
+			const ExternalTransformSnapshot &candidate = p_job.external_transforms[middle];
+			if (candidate.id == p_id) {
+				return &candidate;
+			}
+			if (SnapshotIdOrder()(candidate.id, p_id)) {
+				low = middle + 1;
+			} else {
+				high = middle - 1;
+			}
+		}
+		return nullptr;
+	};
+	for (uint32_t row : p_job.result.layer_rows) {
+		PreparedEntity &entity = p_job.result.entities[row];
+		EntityTransform *transform = static_cast<EntityTransform *>(column(entity, EntityComponentTraits<EntityTransform>::id));
+		if (transform) {
+			EntityPose pose = transform->local;
+			int32_t parent_row = p_job.result.parent_rows[row];
+			EntityId external_parent = entity.parent.id;
+			while (parent_row >= 0) {
+				PreparedEntity &parent = p_job.result.entities[parent_row];
+				if (EntityTransform *parent_transform = static_cast<EntityTransform *>(column(parent, EntityComponentTraits<EntityTransform>::id))) {
+					pose = EntityTransformSystem::compose(parent_transform->current, pose);
+					external_parent = EntityId();
+					break;
+				}
+				external_parent = parent.parent.id;
+				parent_row = p_job.result.parent_rows[parent_row];
+			}
+			while (external_parent.is_valid()) {
+				const ExternalTransformSnapshot *snapshot = external(external_parent);
+				if (!snapshot) {
+					break;
+				}
+				if (snapshot->has_transform) {
+					pose = EntityTransformSystem::compose(snapshot->pose, pose);
+					break;
+				}
+				external_parent = snapshot->parent.id;
+			}
+			transform->current = pose;
+			transform->previous = pose;
+			transform->render = pose;
+		}
+		EntityVisibility *visibility = static_cast<EntityVisibility *>(column(entity, EntityComponentTraits<EntityVisibility>::id));
+		if (visibility) {
+			visibility->effective = visibility->visible;
+			if (visibility->inherit_parent && entity.parent.id.is_valid()) {
+				const int32_t parent_row = p_job.result.parent_rows[row];
+				if (parent_row >= 0) {
+					if (EntityVisibility *parent_visibility = static_cast<EntityVisibility *>(column(p_job.result.entities[parent_row], EntityComponentTraits<EntityVisibility>::id))) {
+						visibility->effective &= parent_visibility->effective;
+					}
+				} else if (const ExternalTransformSnapshot *snapshot = external(entity.parent.id)) {
+					if (snapshot->has_visibility) {
+						visibility->effective &= snapshot->visible;
+					}
+				}
+			}
+		}
+	}
+	for (PreparedGroup *group : p_job.result.groups) {
+		group->ids.resize(group->capacity);
+		group->catalog_rows.resize(group->capacity);
+		group->render_updates.resize(group->capacity);
+	}
+	auto copy_render = [&](PreparedEntity &p_entity) {
+		if (!p_entity.group || p_entity.deleted) {
+			return;
+		}
+		PreparedGroup &group = *p_entity.group;
+		group.ids[p_entity.row] = p_entity.id;
+		EntityRenderUpdate &update = group.render_updates.write[p_entity.row];
+		update.id = p_entity.id;
+		for (const PreparedColumn &prepared_column : group.columns) {
+			const uint64_t id = prepared_column.schema->id;
+			const void *value = prepared_column.row(p_entity.row);
+			update.components |= EntityRenderSystem::component_mask(id) & EntityRenderUpdate::COMPONENTS;
+			if (id == EntityComponentTraits<EntityTransform>::id) {
+				update.pose = static_cast<const EntityTransform *>(value)->render;
+			} else if (id == EntityComponentTraits<EntityVisibility>::id) {
+				update.visible = static_cast<const EntityVisibility *>(value)->effective;
+			} else if (id == EntityComponentTraits<EntityMesh>::id) {
+				update.mesh = *static_cast<const EntityMesh *>(value);
+			} else if (id == EntityComponentTraits<EntityGeometry>::id) {
+				update.geometry = *static_cast<const EntityGeometry *>(value);
+				update.procedural = update.geometry.rt_procedural;
+			} else if (id == EntityComponentTraits<EntityCamera>::id) {
+				update.camera = *static_cast<const EntityCamera *>(value);
+			} else if (id == EntityComponentTraits<EntityLight>::id) {
+				update.light = *static_cast<const EntityLight *>(value);
+			} else if (id == EntityComponentTraits<EntityEnvironment>::id) {
+				update.environment = *static_cast<const EntityEnvironment *>(value);
+			} else if (id == EntityComponentTraits<EntityMultiMesh>::id) {
+				update.multimesh = *static_cast<const EntityMultiMesh *>(value);
+			} else if (id == EntityComponentTraits<EntityDecal>::id) {
+				update.decal = *static_cast<const EntityDecal *>(value);
+			} else if (id == EntityComponentTraits<EntityFogVolume>::id) {
+				update.fog_volume = *static_cast<const EntityFogVolume *>(value);
+			} else if (id == EntityComponentTraits<EntityReflectionProbe>::id) {
+				update.reflection_probe = *static_cast<const EntityReflectionProbe *>(value);
+			} else if (id == EntityComponentTraits<EntityParticles>::id) {
+				update.particles = *static_cast<const EntityParticles *>(value);
+			} else if (id == EntityComponentTraits<EntityVoxelGI>::id) {
+				update.voxel_gi = *static_cast<const EntityVoxelGI *>(value);
+			} else if (id == EntityComponentTraits<EntityLightmap>::id) {
+				update.lightmap = *static_cast<const EntityLightmap *>(value);
+			} else if (id == EntityComponentTraits<EntitySkinningPose>::id) {
+				update.skinning_pose = *static_cast<const EntitySkinningPose *>(value);
+			} else if (id == EntityComponentTraits<EntityParticlesCollision>::id) {
+				update.particles_collision = *static_cast<const EntityParticlesCollision *>(value);
+			}
+		}
+		update.changed_components = EntityRenderUpdate::COMPONENTS;
+	};
+	for (PreparedEntity &entity : p_job.result.entities) {
+		copy_render(entity);
+	}
+	Vector<uint32_t> original_to_catalog;
+	original_to_catalog.resize(entity_count);
+	p_job.result.catalog_ids.resize(entity_count);
+	p_job.result.catalog_records.resize(entity_count);
+	for (uint32_t catalog_row = 0; catalog_row < entity_count; catalog_row++) {
+		const uint32_t original_row = p_job.result.sorted_rows[catalog_row];
+		PreparedEntity &entity = p_job.result.entities[original_row];
+		original_to_catalog.write[original_row] = catalog_row;
+		p_job.result.catalog_ids.write[catalog_row] = entity.id;
+		EntityCatalog::Record &record = p_job.result.catalog_records.write[catalog_row];
+		record.deleted = entity.deleted;
+		record.parent = entity.parent;
+		record.order = entity.order;
+		record.has_order = entity.order != 0;
+		record.cell_grid = p_job.result.key.grid;
+		record.cell_x = p_job.result.key.x;
+		record.cell_y = p_job.result.key.y;
+		record.cell_z = p_job.result.key.z;
+		record.has_cell = !entity.deleted;
+		if (!entity.deleted) {
+			record.section.name = entity.name;
+			record.section.path = entity.path;
+			record.section.cluster = entity.cluster;
+			record.section.components = entity.components;
+			record.has_section = true;
+		}
+		const Vector<uint64_t> signature = entity.group ? entity.group->signature : Vector<uint64_t>();
+		if (!p_job.result.catalog_archetypes.is_empty() && p_job.result.catalog_archetypes[p_job.result.catalog_archetypes.size() - 1].signature == signature) {
+			p_job.result.catalog_archetypes.write[p_job.result.catalog_archetypes.size() - 1].count++;
+		} else {
+			p_job.result.catalog_archetypes.push_back({ signature, catalog_row, 1 });
+		}
+	}
+	for (uint32_t row = 0; row < entity_count; row++) {
+		const PreparedEntity &entity = p_job.result.entities[row];
+		if (entity.group && !entity.deleted) {
+			entity.group->catalog_rows[entity.row] = original_to_catalog[row];
+		}
+	}
+	p_job.result.catalog_topological_rows.resize(entity_count);
+	for (uint32_t i = 0; i < entity_count; i++) {
+		p_job.result.catalog_topological_rows.write[i] = original_to_catalog[p_job.result.layer_rows[i]];
+	}
+	p_job.result.catalog_child_offsets.resize_initialized(entity_count + 1);
+	for (uint32_t row = 0; row < entity_count; row++) {
+		const int32_t parent_row = p_job.result.parent_rows[row];
+		if (parent_row >= 0) {
+			p_job.result.catalog_child_offsets.write[original_to_catalog[parent_row] + 1]++;
+		}
+	}
+	for (uint32_t row = 1; row <= entity_count; row++) {
+		p_job.result.catalog_child_offsets.write[row] += p_job.result.catalog_child_offsets[row - 1];
+	}
+	p_job.result.catalog_child_rows.resize(p_job.result.catalog_child_offsets[entity_count]);
+	Vector<uint32_t> catalog_child_cursor = p_job.result.catalog_child_offsets;
+	for (uint32_t row = 0; row < entity_count; row++) {
+		const int32_t parent_row = p_job.result.parent_rows[row];
+		if (p_job.result.entities[row].parent.id.is_valid()) {
+			p_job.result.parent_edge_rows.push_back(original_to_catalog[row]);
+		}
+		if (parent_row >= 0) {
+			const uint32_t catalog_parent = original_to_catalog[parent_row];
+			p_job.result.catalog_child_rows.write[catalog_child_cursor.write[catalog_parent]++] = original_to_catalog[row];
+		}
+	}
 	return OK;
 }
 
-Error EntityScene::_revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids) {
+Error EntityScene::_revalidate_job(CellJob &p_job) {
 	if (resident_cells.has(p_job.result.key)) {
 		return ERR_BUSY;
 	}
-	for (PreparedEntity &entity : p_job.result.entities) {
-		if (entity.live) {
-			continue;
-		}
-		const EntityCatalog::Record *record = catalog.get_record(entity.id);
-		if (record) {
-			if (record->deleted != entity.deleted) {
-				return ERR_INVALID_DATA;
-			}
-			if (resolve(entity.id).state == EntityReferenceState::RESIDENT) {
-				entity.live = true;
-				entity.parent = record->parent;
-				entity.order = get_order(entity.id);
-				entity.release();
-				continue;
-			}
-		}
-		if (_is_dirty(entity.id)) {
+	for (const PreparedEntity &entity : p_job.result.entities) {
+		if (catalog.has_record(entity.id)) {
 			return ERR_BUSY;
 		}
-		r_ids.push_back(entity.id);
 	}
-	Vector<EntityId> inside;
-	inside.reserve(p_job.result.entities.size() + p_job.ancestors.size());
-	for (const PreparedEntity &entity : p_job.result.entities) {
-		inside.push_back(entity.id);
-	}
-	_sort_snapshot_ids(inside);
-	Vector<EntityId> pinned_ancestors = p_job.ancestors;
-	_sort_snapshot_ids(pinned_ancestors);
-	LocalVector<PreparedEntity> ancestors;
-	for (const PreparedEntity &entity : p_job.result.entities) {
-		EntityId parent = entity.parent.id;
-		while (parent.is_valid() && !_snapshot_has(inside, parent)) {
-			const EntityReferenceState parent_state = resolve(parent).state;
-			if (parent_state == EntityReferenceState::DELETED || parent_state == EntityReferenceState::MISSING) {
-				p_job.result.failing = entity.id;
-				p_job.result.failing_field = "parent (" + parent.to_string() + ")";
-				return ERR_DOES_NOT_EXIST;
-			}
-			if (parent_state != EntityReferenceState::RESIDENT) {
-				return ERR_BUSY;
-			}
-			PreparedEntity live;
-			live.id = parent;
-			live.live = true;
-			live.parent = catalog.get_parent(parent);
-			live.order = get_order(parent);
-			inside.push_back(parent);
-			_sort_snapshot_ids(inside);
-			ancestors.push_back(std::move(live));
-			if (!_is_global(parent) && !_snapshot_has(pinned_ancestors, parent)) {
-				p_job.ancestors.push_back(parent);
-				pinned_ancestors.push_back(parent);
-				_sort_snapshot_ids(pinned_ancestors);
-			}
-			parent = catalog.get_parent(parent).id;
+	return OK;
+}
+
+Error EntityScene::_commit_prepared_cell(CellJob &p_job, CommitProfile *r_profile) {
+	EntityWorld *target = get_world();
+	for (const ExternalTransformSnapshot &snapshot : p_job.external_transforms) {
+		const EntityCatalog::RowState *state = catalog.get_state_ptr(snapshot.id);
+		if (!state || !state->resident || state->revision != snapshot.revision) {
+			return ERR_BUSY;
 		}
 	}
-	for (PreparedEntity &entity : ancestors) {
-		p_job.result.entities.push_back(std::move(entity));
+	const uint64_t began = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
+	const uint32_t block_index = catalog.add_prepared_block(std::move(p_job.result.catalog_ids), std::move(p_job.result.catalog_records), std::move(p_job.result.catalog_topological_rows), std::move(p_job.result.catalog_child_offsets), std::move(p_job.result.catalog_child_rows), std::move(p_job.result.catalog_archetypes), p_job.result.key.grid, p_job.result.key.x, p_job.result.key.y, p_job.result.key.z);
+	ERR_FAIL_COND_V(block_index == UINT32_MAX, catalog.get_last_publish_error() == OK ? ERR_CANT_CREATE : catalog.get_last_publish_error());
+	EntityCatalog::CellRuntimeBlock *block = catalog.get_block(block_index);
+	ERR_FAIL_NULL_V(block, ERR_BUG);
+	const uint64_t row_revision = ++target->change_serial;
+	for (PreparedGroup *group : p_job.result.groups) {
+		if (group->ids.is_empty()) {
+			continue;
+		}
+		ecs_bulk_desc_t desc = {};
+		void *data[FLECS_ID_DESC_MAX] = {};
+		desc.data = data;
+		for (uint32_t column_index = 0; column_index < group->columns.size(); column_index++) {
+			const PreparedColumn &column = group->columns[column_index];
+			const EntityComponentSchema *schema = target->schemas.find(column.schema->id);
+			ERR_FAIL_NULL_V(schema, ERR_BUG);
+			desc.ids[column_index + 2] = schema->runtime_id;
+			data[column_index + 2] = column.buffer;
+		}
+		LocalVector<EntityCatalog::RowLocation> locations;
+		locations.resize(group->ids.size());
+		for (uint32_t row = 0; row < group->ids.size(); row++) {
+			locations[row] = { block_index, block->generation, group->catalog_rows[row] };
+		}
+		const ecs_table_t *table = nullptr;
+		ecs_entity_t storage_tag = 0;
+		LocalVector<EntityHandle> handles;
+		LocalVector<uint64_t> reset_revisions;
+		handles.reserve(group->ids.size());
+		reset_revisions.reserve(group->ids.size());
+		EntityWorld::MaterializeProfile materialize_profile;
+		const Error materialize_error = target->_materialize_bulk(group->ids, &locations, desc, table, storage_tag, &handles, &reset_revisions, r_profile ? &materialize_profile : nullptr);
+		if (materialize_error != OK) {
+			return materialize_error;
+		}
+		for (uint32_t row = 0; row < handles.size(); row++) {
+			EntityRenderUpdate &update = group->render_updates.write[row];
+			update.handle = handles[row];
+			update.reset_revision = reset_revisions[row];
+			EntityCatalog::RowState &state = block->states.write[group->catalog_rows[row]];
+			state.revision = row_revision;
+		}
+		target->rendering.enqueue_initial(std::move(group->render_updates));
+		if (r_profile) {
+			r_profile->ecs_bulk_create_components_usec += materialize_profile.ecs_bulk_create_components_usec;
+			r_profile->resident_insert_usec += materialize_profile.resident_insert_usec;
+			r_profile->entities_materialized += materialize_profile.entities_materialized;
+			r_profile->bulk_groups++;
+			r_profile->bulk_rows += group->ids.size();
+			r_profile->initial_packet_updates += group->ids.size();
+		}
 	}
+	for (uint32_t row : p_job.result.parent_edge_rows) {
+		const EntityCatalog::Record &record = block->base[row];
+		if (record.deleted || !record.parent.id.is_valid() || !block->states[row].resident) {
+			continue;
+		}
+		const EntityResolution parent = resolve(record.parent.id);
+		if (parent.state != EntityReferenceState::RESIDENT) {
+			return _fail(block->ids[row], "parent (" + record.parent.id.to_string() + ")", ERR_BUSY);
+		}
+		target->ecs.entity(block->states[row].handle.entity).set<flecs::Parent>({ parent.handle.entity });
+		if (r_profile) {
+			r_profile->final_parent_sets++;
+		}
+	}
+	CellMembers &members = cells[p_job.result.key];
+	members = std::move(p_job.members);
+	if (r_profile) {
+		r_profile->cell_membership_insertions += members.size();
+		r_profile->metadata_new_records += block->ids.size();
+		r_profile->metadata_commit_usec += OS::get_singleton()->get_ticks_usec() - began;
+	}
+	revision++;
 	return OK;
 }
 
@@ -3122,9 +3433,8 @@ Error EntityScene::_commit_cell(CellJob &p_job, Stats &r_stats, OwnerProfile *r_
 		cell_assets.erase(p_job.result.key);
 		return _fail(p_job.result.failing, p_job.result.failing_field, p_job.result.error);
 	}
-	Vector<EntityId> ids;
 	uint64_t began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
-	const Error stale = _revalidate_job(p_job, ids);
+	const Error stale = _revalidate_job(p_job);
 	if (timed) {
 		r_profile->revalidate_usec += OS::get_singleton()->get_ticks_usec() - began;
 	}
@@ -3137,22 +3447,10 @@ Error EntityScene::_commit_cell(CellJob &p_job, Stats &r_stats, OwnerProfile *r_
 		}
 		return OK;
 	}
-	const PreparedSet set(p_job.result.entities, &p_job.result.groups);
-	LocalVector<CommitItem> items;
-	began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
-	Error error = _can_commit(set, ids, items);
-	if (timed) {
-		r_profile->commit_validate_usec += OS::get_singleton()->get_ticks_usec() - began;
-	}
-	if (error != OK) {
-		failed_cells.insert(p_job.result.key, revision);
-		cell_assets.erase(p_job.result.key);
-		return error;
-	}
 	const uint64_t previous_revision = revision;
 	const CommitProfile previous_install = timed ? r_profile->install : CommitProfile();
 	began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
-	error = _commit(set, items, true, false, timed ? &r_profile->install : nullptr, &p_job.result.key, &p_job.members);
+	Error error = _commit_prepared_cell(p_job, timed ? &r_profile->install : nullptr);
 	if (timed) {
 		r_profile->install_usec += OS::get_singleton()->get_ticks_usec() - began;
 		const CommitProfile &install = r_profile->install;
@@ -3177,7 +3475,7 @@ Error EntityScene::_commit_cell(CellJob &p_job, Stats &r_stats, OwnerProfile *r_
 	resident_cells.insert(p_job.result.key, p_job.ancestors);
 	residency_serial++;
 	r_stats.cells_committed++;
-	r_stats.entities_committed += ids.size();
+	r_stats.entities_committed += p_job.result.entities.size();
 	if (timed) {
 		r_profile->residency_usec += OS::get_singleton()->get_ticks_usec() - began;
 	}
@@ -3187,6 +3485,7 @@ Error EntityScene::_commit_cell(CellJob &p_job, Stats &r_stats, OwnerProfile *r_
 Error EntityScene::commit_ready(int p_max_entities, Stats *r_stats) {
 	ERR_FAIL_COND_V(_owner() != OK, ERR_UNAUTHORIZED);
 	catalog.maintenance();
+	_collect_cleanup_jobs();
 	if (cell_jobs.is_empty()) {
 		return OK;
 	}
@@ -3303,7 +3602,7 @@ Error EntityScene::commit_ready(int p_max_entities, Stats *r_stats) {
 			stats.peak_cell_prepared_column_bytes = MAX(stats.peak_cell_prepared_column_bytes, bytes);
 			print_line(vformat("Entity cell prepared grid=%s cell=%d_%d_%d groups=%d columns=%d column_allocations=%d component_rows_constructed=%d component_rows_owned=%d moved_rows=%d peak_column_bytes=%d result=%d", job->result.key.grid, job->result.key.x, job->result.key.y, job->result.key.z, job->result.groups.size(), columns, columns, constructed_rows, live_rows, moved_rows, bytes, job->result.error));
 		}
-		memdelete(job);
+		_defer_job_cleanup(job);
 	}
 	if (profiling) {
 		stats.owner_total_usec = OS::get_singleton()->get_ticks_usec() - began;
@@ -3423,6 +3722,7 @@ Error EntityScene::commit_ready(int p_max_entities, Stats *r_stats) {
 
 void EntityScene::flush_streaming() {
 	if (cell_jobs.is_empty()) {
+		_flush_cleanup_jobs();
 		catalog.flush_maintenance();
 		return;
 	}
@@ -3459,6 +3759,7 @@ void EntityScene::flush_streaming() {
 	}
 	cell_jobs.clear();
 	cell_assets.clear();
+	_flush_cleanup_jobs();
 	catalog.flush_maintenance();
 }
 

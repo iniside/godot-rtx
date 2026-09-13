@@ -56,7 +56,7 @@ class EntityWorld {
 	void _clear_resident(EntityCatalog::RowLocation p_location);
 	void _clear_resident(EntityId p_id);
 	EntityHandle _materialize(EntityId p_id, MaterializeProfile *r_profile = nullptr);
-	Error _materialize_bulk(const LocalVector<EntityId> &p_ids, ecs_bulk_desc_t &r_desc, const ecs_table_t *&r_table, ecs_entity_t &r_storage_tag, MaterializeProfile *r_profile);
+	Error _materialize_bulk(const LocalVector<EntityId> &p_ids, const LocalVector<EntityCatalog::RowLocation> *p_locations, ecs_bulk_desc_t &r_desc, const ecs_table_t *&r_table, ecs_entity_t &r_storage_tag, LocalVector<EntityHandle> *r_handles, LocalVector<uint64_t> *r_reset_revisions, MaterializeProfile *r_profile);
 	const void *_get_transform_states(const ecs_table_t *p_table) const { return ecs_table_get_id(ecs.c_ptr(), p_table, ecs.id<EntityTransformSystem::State>(), 0); }
 	uint64_t _get_transform_reset_revision(const void *p_states, int32_t p_row) const { return static_cast<const EntityTransformSystem::State *>(p_states)[p_row].reset_revision; }
 	void _mark_changed(EntityCatalog::RowLocation p_location, EntityId p_id, uint32_t p_render_mask);

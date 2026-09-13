@@ -38,6 +38,9 @@ class EntityScene : public Resource {
 		uint64_t allocated_bytes = 0;
 		SafeNumeric<uint64_t> constructions;
 		uint32_t moved_rows = 0;
+		LocalVector<EntityId> ids;
+		LocalVector<uint32_t> catalog_rows;
+		Vector<EntityRenderUpdate> render_updates;
 		bool profile = false;
 
 		PreparedGroup() = default;
@@ -274,6 +277,13 @@ private:
 		Vector<uint32_t> children;
 		Vector<uint32_t> layer_offsets;
 		Vector<uint32_t> layer_rows;
+		Vector<EntityId> catalog_ids;
+		Vector<EntityCatalog::Record> catalog_records;
+		Vector<uint32_t> catalog_topological_rows;
+		Vector<uint32_t> catalog_child_offsets;
+		Vector<uint32_t> catalog_child_rows;
+		Vector<uint32_t> parent_edge_rows;
+		Vector<EntityCatalog::ArchetypeSpan> catalog_archetypes;
 		bool grouped = false;
 		Error error = OK;
 		EntityId failing;
@@ -333,6 +343,15 @@ private:
 		String path;
 		bool consumed = false;
 	};
+	struct ExternalTransformSnapshot {
+		EntityId id;
+		EntityRef parent;
+		EntityPose pose;
+		uint64_t revision = 0;
+		bool has_transform = false;
+		bool visible = true;
+		bool has_visibility = false;
+	};
 
 	struct CellJob : EntityTaskScheduler::Graph {
 		String directory;
@@ -351,12 +370,14 @@ private:
 		LocalVector<Ref<Resource>> assets;
 		LocalVector<CellAssetTicket> asset_tickets;
 		Vector<EntityId> ancestors;
+		Vector<ExternalTransformSnapshot> external_transforms;
 		LocalVector<PendingRecord> pending;
 		bool resume = false;
 		bool awaiting_assets = false;
 		Error asset_request_error = OK;
 		PreparedCell result;
 		uint64_t worker_total_usec = 0;
+		uint64_t scene_revision = 0;
 		uint64_t enumerate_usec = 0;
 		uint64_t read_parse_usec = 0;
 		uint64_t read_parse_wall_usec = 0;
@@ -370,6 +391,18 @@ private:
 		void read_range(uint32_t p_index) override;
 		uint32_t prepare(bool p_decode_only) override;
 		void prepare_range(uint32_t p_index) override;
+		void finish_prepare() override;
+	};
+
+	struct CleanupJob : EntityTaskScheduler::Graph {
+		CellJob *payload = nullptr;
+		explicit CleanupJob(CellJob *p_payload) :
+				payload(p_payload) {}
+		~CleanupJob() override;
+		uint32_t enumerate() override { return 0; }
+		void read_range(uint32_t p_index) override {}
+		uint32_t prepare(bool p_decode_only) override { return 0; }
+		void prepare_range(uint32_t p_index) override {}
 		void finish_prepare() override;
 	};
 
@@ -411,6 +444,9 @@ private:
 	HashMap<CellKey, Vector<EntityId>, CellKeyHasher> resident_cells;
 	LocalVector<CellJob *> cell_jobs;
 	Ref<EntityTaskScheduler::Mailbox> cell_mailbox;
+	LocalVector<CleanupJob *> cleanup_jobs;
+	LocalVector<CellJob *> pending_cleanup_jobs;
+	Ref<EntityTaskScheduler::Mailbox> cleanup_mailbox;
 	HashMap<CellKey, uint64_t, CellKeyHasher> failed_cells;
 	HashMap<CellKey, bool, CellKeyHasher> probed_cells;
 	uint64_t probed_revision = 0;
@@ -496,10 +532,14 @@ private:
 	static void _run_cell_read_range(void *p_job, uint32_t p_index);
 	static Error _merge_cell_reads(CellJob &p_job);
 	void _collect_cell_jobs();
+	void _collect_cleanup_jobs();
+	void _defer_job_cleanup(CellJob *p_job);
+	void _flush_cleanup_jobs();
 	static Error _plan_cell_decode(CellJob &p_job);
 	static void _run_cell_decode_range(CellJob &p_job, uint32_t p_index);
 	static Error _finish_cell_decode(CellJob &p_job);
-	Error _revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids);
+	Error _revalidate_job(CellJob &p_job);
+	Error _commit_prepared_cell(CellJob &p_job, CommitProfile *r_profile);
 	Error _commit_cell(CellJob &p_job, Stats &r_stats, OwnerProfile *r_profile = nullptr);
 	Error _fail(EntityId p_id, const String &p_field, Error p_error);
 	void _relocate(const String &p_path);

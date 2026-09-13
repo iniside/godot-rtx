@@ -201,7 +201,16 @@ void EntityCatalog::_publish_locator_entries(Vector<LocatorEntry> &&p_entries) {
 	Ref<LocatorRun> run;
 	run.instantiate();
 	run->entries = std::move(p_entries);
-	run->entries.sort_custom<LocatorOrder>();
+	bool sorted = true;
+	for (int32_t i = 1; i < run->entries.size(); i++) {
+		if (_id_less(run->entries[i].id, run->entries[i - 1].id)) {
+			sorted = false;
+			break;
+		}
+	}
+	if (!sorted) {
+		run->entries.sort_custom<LocatorOrder>();
+	}
 	locator_runs.push_back(run);
 	_record_run_high_water();
 }
@@ -344,6 +353,65 @@ uint32_t EntityCatalog::add_block(const Vector<EntityId> &p_ids, const Vector<Re
 	_publish_locator_rows(index);
 	_rebuild_block_indices(index);
 	_publish_child_rows(index);
+	maintenance();
+	return index;
+}
+
+uint32_t EntityCatalog::add_prepared_block(Vector<EntityId> &&p_ids, Vector<Record> &&p_records, Vector<uint32_t> &&p_topological_rows, Vector<uint32_t> &&p_child_offsets, Vector<uint32_t> &&p_child_rows, Vector<ArchetypeSpan> &&p_archetypes, const String &p_grid, int32_t p_x, int32_t p_y, int32_t p_z) {
+	last_publish_error = OK;
+	ERR_FAIL_COND_V(p_ids.size() != p_records.size(), UINT32_MAX);
+	ERR_FAIL_COND_V(p_child_offsets.size() != p_ids.size() + 1, UINT32_MAX);
+	for (int32_t i = 1; i < p_ids.size(); i++) {
+		ERR_FAIL_COND_V(!_id_less(p_ids[i - 1], p_ids[i]), UINT32_MAX);
+	}
+	ERR_FAIL_COND_V(!p_ids.is_empty() && !p_ids[0].is_valid(), UINT32_MAX);
+	const uint64_t run_bytes = uint64_t(p_ids.size()) * (sizeof(LocatorEntry) + sizeof(ChildEntry) * 2);
+	last_publish_error = _ensure_run_capacity(1, 1, run_bytes);
+	ERR_FAIL_COND_V(last_publish_error != OK, UINT32_MAX);
+	CellRuntimeBlock *block = memnew(CellRuntimeBlock);
+	block->generation = next_block_generation++;
+	block->grid = p_grid;
+	block->x = p_x;
+	block->y = p_y;
+	block->z = p_z;
+	block->ordinary_cell = true;
+	block->ids = std::move(p_ids);
+	block->base = std::move(p_records);
+	block->topological_rows = std::move(p_topological_rows);
+	block->child_offsets = std::move(p_child_offsets);
+	block->child_rows = std::move(p_child_rows);
+	block->archetypes = std::move(p_archetypes);
+	block->states.resize(block->ids.size());
+	for (uint32_t row = 0; row < uint32_t(block->ids.size()); row++) {
+		block->states.write[row].tombstone = block->base[row].deleted;
+		block->states.write[row].prefab = !block->base[row].prefab_instance.is_empty();
+	}
+	uint32_t index = blocks.size();
+	for (uint32_t slot = 0; slot < blocks.size(); slot++) {
+		if (!blocks[slot]) {
+			index = slot;
+			break;
+		}
+	}
+	if (index == blocks.size()) {
+		blocks.push_back(block);
+	} else {
+		blocks[index] = block;
+	}
+	active_records += block->ids.size();
+	_publish_locator_rows(index);
+	Vector<ChildEntry> external_children;
+	for (uint32_t row = 0; row < uint32_t(block->ids.size()); row++) {
+		const Record &record = block->base[row];
+		if (record.deleted || !record.parent.id.is_valid()) {
+			continue;
+		}
+		const RowLocation parent = locate(record.parent.id);
+		if (parent.is_valid() && parent.block != index) {
+			external_children.push_back({ block->ids[row], record.parent.id, { index, block->generation, row } });
+		}
+	}
+	_publish_child_entries(std::move(external_children));
 	maintenance();
 	return index;
 }

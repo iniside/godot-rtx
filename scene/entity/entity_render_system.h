@@ -97,6 +97,7 @@ public:
 		}
 	}
 	void prepare_initial(const LocalVector<EntityInitialRenderGroup> &p_groups, EntityInitialRenderProfile *r_profile = nullptr);
+	void enqueue_initial(Vector<EntityRenderUpdate> &&p_updates);
 	void publish();
 	void release();
 };

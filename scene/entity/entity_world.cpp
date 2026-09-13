@@ -234,18 +234,23 @@ EntityHandle EntityWorld::_materialize(EntityId p_id, MaterializeProfile *r_prof
 	return handle;
 }
 
-Error EntityWorld::_materialize_bulk(const LocalVector<EntityId> &p_ids, ecs_bulk_desc_t &r_desc, const ecs_table_t *&r_table, ecs_entity_t &r_storage_tag, MaterializeProfile *r_profile) {
+Error EntityWorld::_materialize_bulk(const LocalVector<EntityId> &p_ids, const LocalVector<EntityCatalog::RowLocation> *p_locations, ecs_bulk_desc_t &r_desc, const ecs_table_t *&r_table, ecs_entity_t &r_storage_tag, LocalVector<EntityHandle> *r_handles, LocalVector<uint64_t> *r_reset_revisions, MaterializeProfile *r_profile) {
 	DEV_ASSERT(_is_owner());
 	LocalVector<Identity> identities;
+	LocalVector<EntityTransformSystem::State> transform_states;
 	identities.resize(p_ids.size());
+	transform_states.resize(p_ids.size());
 	for (uint32_t i = 0; i < p_ids.size(); i++) {
 		DEV_ASSERT(!_resident(p_ids[i]));
-		identities[i] = { p_ids[i], catalog.locate(p_ids[i]) };
+		identities[i] = { p_ids[i], p_locations ? (*p_locations)[i] : catalog.locate(p_ids[i]) };
 		DEV_ASSERT(identities[i].row.is_valid());
+		transform_states[i].initialized = true;
+		transform_states[i].reset_revision = ++transforms.reset_serial;
 	}
 	r_desc.ids[0] = ecs.id<Identity>();
 	r_desc.ids[1] = ecs.id<EntityTransformSystem::State>();
 	r_desc.data[0] = identities.ptr();
+	r_desc.data[1] = transform_states.ptr();
 	r_desc.count = p_ids.size();
 	uint64_t began = r_profile ? OS::get_singleton()->get_ticks_usec() : 0;
 	ecs_entity_t storage_tag = 0;
@@ -275,13 +280,29 @@ Error EntityWorld::_materialize_bulk(const LocalVector<EntityId> &p_ids, ecs_bul
 	r_table = ecs_get_table(ecs.c_ptr(), entities[0]);
 	r_storage_tag = storage_tag;
 	for (uint32_t i = 0; i < p_ids.size(); i++) {
-		_set_resident(p_ids[i], { generation, entities[i] });
+		EntityHandle handle{ generation, entities[i] };
+		EntityCatalog::RowState *state = catalog.get_state_ptr(identities[i].row);
+		DEV_ASSERT(state);
+		if (state) {
+			if (!state->resident) {
+				catalog.resident_records++;
+			}
+			state->handle = handle;
+			state->resident = true;
+		}
+		if (r_handles) {
+			r_handles->push_back(handle);
+		}
+		if (r_reset_revisions) {
+			r_reset_revisions->push_back(transform_states[i].reset_revision);
+		}
 	}
 	if (r_profile) {
 		r_profile->resident_insert_usec += OS::get_singleton()->get_ticks_usec() - began;
 		r_profile->entities_materialized += p_ids.size();
 	}
 	r_desc.data[0] = nullptr;
+	r_desc.data[1] = nullptr;
 	r_desc.ids[tag_index] = 0;
 	return OK;
 }

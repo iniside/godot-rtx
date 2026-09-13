@@ -218,6 +218,17 @@ void EntityRenderSystem::prepare_initial(const LocalVector<EntityInitialRenderGr
 	DEV_ASSERT(written == entity_count);
 }
 
+void EntityRenderSystem::enqueue_initial(Vector<EntityRenderUpdate> &&p_updates) {
+	if (world.get_scenario().is_null()) {
+		return;
+	}
+	if (initial_updates.is_empty()) {
+		initial_updates = std::move(p_updates);
+	} else {
+		initial_updates.append_array(p_updates);
+	}
+}
+
 void EntityRenderSystem::publish() {
 	if ((dirty.is_empty() && initial_updates.is_empty()) || world.get_scenario().is_null()) {
 		return;
