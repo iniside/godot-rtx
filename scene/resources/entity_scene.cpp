@@ -527,7 +527,7 @@ Error EntityScene::PreparedGroup::decode_row(uint32_t p_row, const Dictionary &p
 		column.schema->construct(value);
 		constructed[p_row]++;
 		if (profile) {
-			constructions++;
+			constructions.increment();
 		}
 		const Error error = column.schema->decode(value, p_components[column.schema->key]);
 		if (error != OK) {
@@ -547,7 +547,7 @@ void EntityScene::PreparedGroup::move_row(uint32_t p_from, uint32_t p_to, const 
 		column.schema->construct(destination);
 		constructed[p_to]++;
 		if (profile) {
-			constructions++;
+			constructions.increment();
 		}
 		if (p_types[i]->hooks.move) {
 			p_types[i]->hooks.move(destination, column.row(p_from), 1, p_types[i]);
@@ -2651,11 +2651,11 @@ void EntityScene::CellJob::read_range(uint32_t p_index) {
 	_run_cell_read_range(this, p_index);
 }
 
-void EntityScene::CellJob::prepare(bool p_decode_only) {
+uint32_t EntityScene::CellJob::prepare(bool p_decode_only) {
 	CellJob &p_job = *this;
 	if (p_job.cancelled.is_set() || ResourceLoader::is_cleaning_tasks()) {
 		p_job.result.error = ERR_SKIP;
-		return;
+		return 0;
 	}
 	if (!p_decode_only && p_job.result.error == OK) {
 		uint64_t first = UINT64_MAX;
@@ -2679,7 +2679,20 @@ void EntityScene::CellJob::prepare(bool p_decode_only) {
 		p_job.filenames.clear();
 	}
 	if (p_job.result.error == OK) {
-		_run_cell_decode(this);
+		p_job.result.error = _plan_cell_decode(p_job);
+	}
+	return p_job.result.error == OK ? p_job.decode_ranges.size() : 0;
+}
+
+void EntityScene::CellJob::prepare_range(uint32_t p_index) {
+	_run_cell_decode_range(*this, p_index);
+}
+
+void EntityScene::CellJob::finish_prepare() {
+	const uint64_t began = profile ? OS::get_singleton()->get_ticks_usec() : 0;
+	result.error = _finish_cell_decode(*this);
+	if (profile) {
+		worker_total_usec += OS::get_singleton()->get_ticks_usec() - began;
 	}
 }
 
@@ -2689,43 +2702,49 @@ void EntityScene::_collect_cell_jobs() {
 	}
 }
 
-Error EntityScene::_decode_cell(CellJob &p_job) {
+Error EntityScene::_plan_cell_decode(CellJob &p_job) {
 	if (!p_job.result.grouped) {
-		HashMap<Vector<uint64_t>, uint32_t, PreparedSignatureHasher> groups;
 		p_job.result.entities.reserve(p_job.pending.size());
-		for (PendingRecord &record : p_job.pending) {
+		Vector<uint32_t> signature_rows;
+		signature_rows.reserve(p_job.pending.size());
+		for (uint32_t pending_index = 0; pending_index < p_job.pending.size(); pending_index++) {
+			PendingRecord &record = p_job.pending[pending_index];
 			if (p_job.cancelled.is_set() || ResourceLoader::is_cleaning_tasks()) {
 				return ERR_SKIP;
 			}
 			PreparedEntity prepared;
 			prepared.path = record.path;
 			prepared.cluster = record.cluster;
-			Vector<uint64_t> types;
 			String field;
-			const Error error = _prepare_stored(record.id, record.record, prepared, types, field);
+			const Error error = _prepare_stored(record.id, record.record, prepared, record.signature, field);
 			if (error != OK) {
 				p_job.result.failing = record.id;
 				p_job.result.failing_field = field + " (" + p_job.storage_directory.path_join(record.path) + ")";
 				return error;
 			}
 			if (!prepared.deleted) {
-				types.sort();
-				uint32_t *existing = groups.getptr(types);
-				if (existing) {
-					prepared.group_index = *existing;
-					prepared.group = p_job.result.groups[prepared.group_index];
-				} else {
-					prepared.group = memnew(PreparedGroup);
-					prepared.group->profile = p_job.profile;
-					prepared.group->signature = types;
-					prepared.group_index = p_job.result.groups.size();
-					p_job.result.groups.push_back(prepared.group);
-					groups.insert(types, prepared.group_index);
-				}
-				prepared.row = prepared.group->capacity++;
+				record.signature.sort();
+				signature_rows.push_back(pending_index);
 			}
 			record.prepared_index = p_job.result.entities.size();
 			p_job.result.entities.push_back(std::move(prepared));
+		}
+		signature_rows.sort_custom<PendingSignatureOrder>(&p_job.pending);
+		PreparedGroup *group = nullptr;
+		Vector<uint64_t> previous_signature;
+		for (uint32_t pending_index : signature_rows) {
+			PendingRecord &record = p_job.pending[pending_index];
+			if (!group || record.signature != previous_signature) {
+				group = memnew(PreparedGroup);
+				group->profile = p_job.profile;
+				group->signature = record.signature;
+				p_job.result.groups.push_back(group);
+				previous_signature = record.signature;
+			}
+			PreparedEntity &prepared = p_job.result.entities[record.prepared_index];
+			prepared.group = group;
+			prepared.group_index = p_job.result.groups.size() - 1;
+			prepared.row = group->capacity++;
 		}
 		for (PreparedGroup *group : p_job.result.groups) {
 			if (p_job.cancelled.is_set() || ResourceLoader::is_cleaning_tasks()) {
@@ -2753,41 +2772,104 @@ Error EntityScene::_decode_cell(CellJob &p_job) {
 		}
 		p_job.result.grouped = true;
 	}
-	Error result = OK;
-	uint32_t remaining = 0;
-	for (uint32_t i = 0; i < p_job.pending.size(); i++) {
+	const uint32_t ranges = (p_job.pending.size() + CELL_DECODE_RANGE_RECORDS - 1) / CELL_DECODE_RANGE_RECORDS;
+	if (!p_job.reserve_payload(uint64_t(ranges) * sizeof(CellDecodeRange))) {
+		return ERR_OUT_OF_MEMORY;
+	}
+	p_job.decode_ranges.resize(ranges);
+	for (uint32_t i = 0; i < ranges; i++) {
+		CellDecodeRange &range = p_job.decode_ranges[i];
+		range.begin = i * CELL_DECODE_RANGE_RECORDS;
+		range.end = MIN(range.begin + CELL_DECODE_RANGE_RECORDS, uint32_t(p_job.pending.size()));
+		range.error = OK;
+		range.failing = EntityId();
+		range.failing_field = String();
+		range.missing.clear();
+		range.decode_usec = 0;
+	}
+	return OK;
+}
+
+void EntityScene::_run_cell_decode_range(CellJob &p_job, uint32_t p_index) {
+	CellDecodeRange &range = p_job.decode_ranges[p_index];
+	const uint64_t began = p_job.profile ? OS::get_singleton()->get_ticks_usec() : 0;
+	entity_decode_assets_cached_only(true);
+	entity_decode_set_budget([](void *p_userdata, uint64_t p_bytes) {
+		return static_cast<CellJob *>(p_userdata)->reserve_payload(p_bytes);
+	},
+			&p_job);
+	for (uint32_t i = range.begin; i < range.end; i++) {
 		if (p_job.cancelled.is_set() || ResourceLoader::is_cleaning_tasks()) {
-			return ERR_SKIP;
+			range.error = ERR_SKIP;
+			break;
 		}
 		PendingRecord &record = p_job.pending[i];
 		PreparedEntity &prepared = p_job.result.entities[record.prepared_index];
 		String field;
 		const Error record_error = prepared.deleted ? OK : prepared.group->decode_row(prepared.row, record.record["components"], field);
 		if (record_error == ERR_UNAVAILABLE) {
-			if (result == OK) {
-				p_job.result.failing = record.id;
-				p_job.result.failing_field = field + " (" + p_job.storage_directory.path_join(record.path) + ")";
+			if (range.error == OK) {
+				range.error = ERR_UNAVAILABLE;
+				range.failing = record.id;
+				range.failing_field = field + " (" + p_job.storage_directory.path_join(record.path) + ")";
 			}
-			if (remaining != i) {
-				p_job.pending[remaining] = std::move(record);
-			}
-			remaining++;
-			result = ERR_UNAVAILABLE;
 			continue;
 		}
 		if (record_error != OK) {
-			p_job.result.failing = record.id;
-			p_job.result.failing_field = field + " (" + p_job.directory.path_join(record.path.get_file()) + ")";
-			return record_error;
+			range.error = record_error;
+			range.failing = record.id;
+			range.failing_field = field + " (" + p_job.directory.path_join(record.path.get_file()) + ")";
+			break;
 		}
 		record.record = Dictionary();
 	}
+	entity_decode_set_budget(nullptr);
+	entity_decode_assets_cached_only(false);
+	entity_decode_take_missing_assets(range.missing);
+	if (p_job.profile) {
+		range.decode_usec = OS::get_singleton()->get_ticks_usec() - began;
+	}
+}
+
+Error EntityScene::_finish_cell_decode(CellJob &p_job) {
+	Error result = OK;
+	p_job.missing.clear();
+	uint32_t remaining = 0;
+	for (const CellDecodeRange &range : p_job.decode_ranges) {
+		p_job.decode_usec += range.decode_usec;
+		p_job.worker_total_usec += range.decode_usec;
+		if (range.error != OK && result == OK) {
+			result = range.error;
+			p_job.result.failing = range.failing;
+			p_job.result.failing_field = range.failing_field;
+		}
+		for (const String &path : range.missing) {
+			if (!p_job.missing.has(path)) {
+				p_job.missing.push_back(path);
+			}
+		}
+	}
+	if (result != OK && result != ERR_UNAVAILABLE) {
+		p_job.decode_ranges.clear();
+		return result;
+	}
+	for (uint32_t i = 0; i < p_job.pending.size(); i++) {
+		if (!p_job.pending[i].record.is_empty()) {
+			if (remaining != i) {
+				p_job.pending[remaining] = std::move(p_job.pending[i]);
+			}
+			remaining++;
+		}
+	}
 	p_job.pending.resize(remaining);
-	if (result != OK) {
+	p_job.decode_ranges.clear();
+	if (result == ERR_UNAVAILABLE) {
+		p_job.missing.sort();
 		return result;
 	}
 	const uint64_t inside_count = uint64_t(p_job.skip.size()) + p_job.result.entities.size();
-	if (!p_job.reserve_payload(inside_count * sizeof(EntityId) * 4 + 64)) {
+	const uint64_t hierarchy_bytes = inside_count * sizeof(EntityId) * 4 + uint64_t(p_job.result.entities.size()) * (sizeof(uint32_t) * 5 + sizeof(int32_t)) + 128;
+	if (!p_job.reserve_payload(hierarchy_bytes)) {
 		return ERR_OUT_OF_MEMORY;
 	}
 	Vector<EntityId> inside;
@@ -2809,28 +2891,75 @@ Error EntityScene::_decode_cell(CellJob &p_job) {
 		p_job.result.failing_field = "parent (" + p_job.storage_directory.path_join(entity.path) + ")";
 		return ERR_INVALID_DATA;
 	}
+	const uint32_t entity_count = p_job.result.entities.size();
+	p_job.result.sorted_rows.resize(entity_count);
+	p_job.result.parent_rows.resize(entity_count);
+	p_job.result.child_offsets.resize(entity_count + 1);
+	for (uint32_t row = 0; row < entity_count; row++) {
+		p_job.result.sorted_rows.write[row] = row;
+		p_job.result.parent_rows.write[row] = -1;
+		p_job.result.child_offsets.write[row] = 0;
+	}
+	p_job.result.child_offsets.write[entity_count] = 0;
+	p_job.result.sorted_rows.sort_custom<PreparedSet::RowOrder>(&p_job.result.entities);
+	auto find_row = [&](EntityId p_id) -> int32_t {
+		int32_t low = 0;
+		int32_t high = p_job.result.sorted_rows.size() - 1;
+		while (low <= high) {
+			const int32_t middle = low + (high - low) / 2;
+			const EntityId candidate = p_job.result.entities[p_job.result.sorted_rows[middle]].id;
+			if (candidate == p_id) {
+				return p_job.result.sorted_rows[middle];
+			}
+			if (candidate.high < p_id.high || (candidate.high == p_id.high && candidate.low < p_id.low)) {
+				low = middle + 1;
+			} else {
+				high = middle - 1;
+			}
+		}
+		return -1;
+	};
+	for (uint32_t row = 0; row < entity_count; row++) {
+		const EntityId parent = p_job.result.entities[row].parent.id;
+		const int32_t parent_row = parent.is_valid() ? find_row(parent) : -1;
+		p_job.result.parent_rows.write[row] = parent_row;
+		if (parent_row >= 0) {
+			p_job.result.child_offsets.write[parent_row + 1]++;
+		}
+	}
+	for (uint32_t row = 1; row <= entity_count; row++) {
+		p_job.result.child_offsets.write[row] += p_job.result.child_offsets[row - 1];
+	}
+	p_job.result.children.resize(p_job.result.child_offsets[entity_count]);
+	Vector<uint32_t> child_cursor = p_job.result.child_offsets;
+	for (uint32_t row = 0; row < entity_count; row++) {
+		const int32_t parent_row = p_job.result.parent_rows[row];
+		if (parent_row >= 0) {
+			p_job.result.children.write[child_cursor.write[parent_row]++] = row;
+		}
+	}
+	Vector<uint32_t> frontier;
+	for (uint32_t row = 0; row < entity_count; row++) {
+		if (p_job.result.parent_rows[row] < 0) {
+			frontier.push_back(row);
+		}
+	}
+	p_job.result.layer_offsets.push_back(0);
+	while (!frontier.is_empty()) {
+		Vector<uint32_t> next;
+		for (uint32_t row : frontier) {
+			p_job.result.layer_rows.push_back(row);
+			for (uint32_t child = p_job.result.child_offsets[row]; child < p_job.result.child_offsets[row + 1]; child++) {
+				next.push_back(p_job.result.children[child]);
+			}
+		}
+		p_job.result.layer_offsets.push_back(p_job.result.layer_rows.size());
+		frontier = std::move(next);
+	}
+	if (p_job.result.layer_rows.size() != entity_count) {
+		return ERR_CYCLIC_LINK;
+	}
 	return OK;
-}
-
-void EntityScene::_run_cell_decode(void *p_job) {
-	CellJob *job = static_cast<CellJob *>(p_job);
-	const uint64_t began = job->profile ? OS::get_singleton()->get_ticks_usec() : 0;
-	entity_decode_assets_cached_only(true);
-	entity_decode_set_budget([](void *p_userdata, uint64_t p_bytes) {
-		return static_cast<CellJob *>(p_userdata)->reserve_payload(p_bytes);
-	},
-			job);
-	const uint64_t decoding = job->profile ? OS::get_singleton()->get_ticks_usec() : 0;
-	job->result.error = _decode_cell(*job);
-	entity_decode_set_budget(nullptr);
-	if (job->profile) {
-		job->decode_usec += OS::get_singleton()->get_ticks_usec() - decoding;
-	}
-	entity_decode_assets_cached_only(false);
-	entity_decode_take_missing_assets(job->missing);
-	if (job->profile) {
-		job->worker_total_usec += OS::get_singleton()->get_ticks_usec() - began;
-	}
 }
 
 Error EntityScene::_revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids) {
@@ -2902,20 +3031,60 @@ Error EntityScene::_revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids) {
 	return OK;
 }
 
-Error EntityScene::_load_cell_assets(CellJob &p_job) {
-	LocalVector<Ref<Resource>> &held = cell_assets[p_job.result.key];
+Error EntityScene::_request_cell_assets(CellJob &p_job) {
+	p_job.asset_tickets.clear();
+	p_job.asset_request_error = OK;
 	for (const String &path : p_job.missing) {
-		Error error = OK;
-		Ref<Resource> asset = ResourceLoader::load(path, "", ResourceFormatLoader::CACHE_MODE_REUSE, &error);
-		if (error != OK || asset.is_null()) {
-			cell_assets.erase(p_job.result.key);
-			return error == OK ? ERR_FILE_CORRUPT : error;
+		if (p_job.loaded.has(path)) {
+			continue;
 		}
-		held.push_back(asset);
-		p_job.assets.push_back(asset);
-		p_job.loaded.insert(path);
+		const Error error = ResourceLoader::load_threaded_request(path, "", true, ResourceFormatLoader::CACHE_MODE_REUSE);
+		if (error != OK) {
+			if (p_job.asset_request_error == OK) {
+				p_job.asset_request_error = error;
+			}
+			continue;
+		}
+		p_job.asset_tickets.push_back({ path, false });
 	}
-	return OK;
+	p_job.awaiting_assets = !p_job.asset_tickets.is_empty();
+	return p_job.awaiting_assets ? OK : p_job.asset_request_error;
+}
+
+Error EntityScene::_poll_cell_assets(CellJob &p_job, bool p_retain) {
+	bool pending = false;
+	Error result = p_job.asset_request_error;
+	for (CellAssetTicket &ticket : p_job.asset_tickets) {
+		if (ticket.consumed) {
+			continue;
+		}
+		const ResourceLoader::ThreadLoadStatus status = ResourceLoader::load_threaded_get_status(ticket.path);
+		if (status == ResourceLoader::THREAD_LOAD_IN_PROGRESS) {
+			pending = true;
+			continue;
+		}
+		Error error = OK;
+		Ref<Resource> asset = ResourceLoader::load_threaded_get(ticket.path, &error);
+		ticket.consumed = true;
+		if (status != ResourceLoader::THREAD_LOAD_LOADED || error != OK || asset.is_null()) {
+			if (result == OK) {
+				result = error == OK ? ERR_FILE_CORRUPT : error;
+			}
+			continue;
+		}
+		if (p_retain) {
+			p_job.assets.push_back(asset);
+			p_job.loaded.insert(ticket.path);
+			cell_assets[p_job.result.key].push_back(asset);
+		}
+	}
+	if (pending) {
+		return ERR_BUSY;
+	}
+	p_job.asset_tickets.clear();
+	p_job.awaiting_assets = false;
+	p_job.asset_request_error = OK;
+	return result;
 }
 
 Error EntityScene::_commit_cell(CellJob &p_job, Stats &r_stats, OwnerProfile *r_profile) {
@@ -2933,7 +3102,7 @@ Error EntityScene::_commit_cell(CellJob &p_job, Stats &r_stats, OwnerProfile *r_
 		Error error = ERR_FILE_NOT_FOUND;
 		if (progress) {
 			const uint64_t began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
-			error = _load_cell_assets(p_job);
+			error = _request_cell_assets(p_job);
 			if (timed) {
 				r_profile->asset_load_usec += OS::get_singleton()->get_ticks_usec() - began;
 			}
@@ -2944,7 +3113,7 @@ Error EntityScene::_commit_cell(CellJob &p_job, Stats &r_stats, OwnerProfile *r_
 			cell_assets.erase(p_job.result.key);
 			return _fail(p_job.result.failing, p_job.result.failing_field, error);
 		}
-		p_job.resume = true;
+		p_job.resume = !p_job.awaiting_assets;
 		r_stats.jobs_resumed++;
 		return OK;
 	}
@@ -3030,6 +3199,38 @@ Error EntityScene::commit_ready(int p_max_entities, Stats *r_stats) {
 	uint32_t index = 0;
 	while (index < cell_jobs.size()) {
 		CellJob *job = cell_jobs[index];
+		if (job->awaiting_assets) {
+			const Error asset_error = _poll_cell_assets(*job, !job->cancelled.is_set());
+			if (asset_error == ERR_BUSY) {
+				index++;
+				continue;
+			}
+			if (job->cancelled.is_set() || asset_error != OK) {
+				cell_jobs.remove_at(index);
+				stats.jobs_discarded++;
+				cell_assets.erase(job->result.key);
+				if (asset_error != OK && result == OK) {
+					failed_cells.insert(job->result.key, revision);
+					result = _fail(job->result.failing, job->result.failing_field, asset_error);
+				}
+				memdelete(job);
+				continue;
+			}
+			job->result.error = OK;
+			const Error submit_error = EntityTaskScheduler::get_singleton()->submit(job, cell_mailbox, true);
+			if (submit_error != OK) {
+				cell_jobs.remove_at(index);
+				stats.jobs_discarded++;
+				cell_assets.erase(job->result.key);
+				if (result == OK) {
+					result = submit_error;
+				}
+				memdelete(job);
+				continue;
+			}
+			index++;
+			continue;
+		}
 		const bool budgeted = stats.cells_committed > 0 && p_max_entities > 0 && stats.entities_committed >= p_max_entities;
 		if (!job->ready || (budgeted && !job->cancelled.is_set())) {
 			index++;
@@ -3052,6 +3253,10 @@ Error EntityScene::commit_ready(int p_max_entities, Stats *r_stats) {
 			const Error error = _commit_cell(*job, stats, profiling ? &profile : nullptr);
 			if (error != OK && result == OK) {
 				result = error;
+			}
+			if (job->awaiting_assets) {
+				cell_jobs.push_back(job);
+				continue;
 			}
 			if (job->resume) {
 				job->resume = false;
@@ -3084,7 +3289,7 @@ Error EntityScene::commit_ready(int p_max_entities, Stats *r_stats) {
 			uint64_t bytes = 0;
 			for (const PreparedGroup *group : job->result.groups) {
 				columns += group->columns.size();
-				constructed_rows += group->constructions;
+				constructed_rows += group->constructions.get();
 				bytes += group->allocated_bytes;
 				moved_rows += group->moved_rows;
 				for (uint32_t count : group->constructed) {
@@ -3230,7 +3435,13 @@ void EntityScene::flush_streaming() {
 		const uint64_t began = OS::get_singleton()->get_ticks_usec();
 		bool reported = false;
 		_collect_cell_jobs();
-		while (!job->ready) {
+		while (!job->ready || job->awaiting_assets) {
+			if (job->awaiting_assets) {
+				const Error asset_error = _poll_cell_assets(*job, false);
+				if (asset_error != ERR_BUSY) {
+					job->ready = true;
+				}
+			}
 			if (pump) {
 				queue->flush();
 				if (RenderingServer::get_singleton()) {

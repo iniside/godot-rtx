@@ -32,7 +32,7 @@ EntityTaskScheduler::Graph *EntityTaskScheduler::Mailbox::pop() {
 
 EntityTaskScheduler::Graph::Graph() {
 	budget = singleton->budget;
-	for (uint32_t i = 0; i < 3; i++) {
+	for (uint32_t i = 0; i < 5; i++) {
 		tasks[i].graph = this;
 		tasks[i].phase = i;
 	}
@@ -99,8 +99,21 @@ void EntityTaskScheduler::Graph::Task::ExecuteRange(enki::TaskSetPartition p_ran
 				graph->read_range(i);
 			}
 		}
+	} else if (phase == 2) {
+		graph->prepare_range_count = graph->cancelled.is_set() ? 0 : graph->prepare(graph->decode_only);
+		graph->prepare_lane_count = MAX(uint32_t(1), MIN(MAX_PREPARE_LANES, graph->prepare_range_count));
+		graph->tasks[3].m_SetSize = graph->prepare_lane_count;
+	} else if (phase == 3) {
+		for (uint32_t lane = p_range.start; lane < p_range.end; lane++) {
+			for (uint32_t i = lane; i < graph->prepare_range_count; i += graph->prepare_lane_count) {
+				if (graph->cancelled.is_set()) {
+					break;
+				}
+				graph->prepare_range(i);
+			}
+		}
 	} else if (!graph->cancelled.is_set()) {
-		graph->prepare(graph->decode_only);
+		graph->finish_prepare();
 	}
 	if (graph->profile) {
 		print_line(vformat("Entity task phase=%d thread=%d enki_thread=%d owner_thread=%d begin=%d end=%d work_us=%d queue_us=%d", phase, caller, p_thread, graph->owner_thread, p_range.start, p_range.end, OS::get_singleton()->get_ticks_usec() - began, graph->queue_usec));
@@ -176,7 +189,9 @@ void EntityTaskScheduler::_ingress(void *p_userdata) {
 					graph->dependencies[0].SetDependency(&graph->tasks[0], &graph->tasks[1]);
 					graph->dependencies[1].SetDependency(&graph->tasks[1], &graph->tasks[2]);
 				}
-				graph->dependencies[2].SetDependency(&graph->tasks[2], &graph->completion);
+				graph->dependencies[2].SetDependency(&graph->tasks[2], &graph->tasks[3]);
+				graph->dependencies[3].SetDependency(&graph->tasks[3], &graph->tasks[4]);
+				graph->dependencies[4].SetDependency(&graph->tasks[4], &graph->completion);
 				graph->pipeline_linked = true;
 			}
 			self.scheduler.AddTaskSetToPipe(&graph->tasks[graph->decode_only ? 2 : 0]);

@@ -906,7 +906,7 @@ Error EntityCatalog::_set_parent(EntityId p_id, EntityRef p_parent) {
 	return ERR_DOES_NOT_EXIST;
 }
 
-void EntityCatalog::CompactionJob::prepare(bool) {
+void EntityCatalog::CompactionJob::finish_prepare() {
 	const uint64_t began = profile ? OS::get_singleton()->get_ticks_usec() : 0;
 	struct StampedLocator {
 		LocatorEntry entry;

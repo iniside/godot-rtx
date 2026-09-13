@@ -36,7 +36,7 @@ class EntityScene : public Resource {
 		LocalVector<uint32_t> constructed;
 		uint32_t capacity = 0;
 		uint64_t allocated_bytes = 0;
-		uint64_t constructions = 0;
+		SafeNumeric<uint64_t> constructions;
 		uint32_t moved_rows = 0;
 		bool profile = false;
 
@@ -48,16 +48,6 @@ class EntityScene : public Resource {
 		Error decode_row(uint32_t p_row, const Dictionary &p_components, String &r_field);
 		void release_row(uint32_t p_row);
 		void move_row(uint32_t p_from, uint32_t p_to, const LocalVector<const ecs_type_info_t *> &p_types);
-	};
-
-	struct PreparedSignatureHasher {
-		static uint32_t hash(const Vector<uint64_t> &p_signature) {
-			uint32_t hash = HASH_MURMUR3_SEED;
-			for (uint64_t id : p_signature) {
-				hash = hash_murmur3_one_64(id, hash);
-			}
-			return hash_fmix32(hash);
-		}
 	};
 
 	struct PreparedEntity {
@@ -278,6 +268,12 @@ private:
 		CellKey key;
 		LocalVector<PreparedGroup *> groups;
 		LocalVector<PreparedEntity> entities;
+		Vector<uint32_t> sorted_rows;
+		Vector<int32_t> parent_rows;
+		Vector<uint32_t> child_offsets;
+		Vector<uint32_t> children;
+		Vector<uint32_t> layer_offsets;
+		Vector<uint32_t> layer_rows;
 		bool grouped = false;
 		Error error = OK;
 		EntityId failing;
@@ -290,9 +286,25 @@ private:
 		String path;
 		bool cluster = false;
 		Dictionary record;
+		Vector<uint64_t> signature;
 		uint32_t prepared_index = 0;
 		bool operator<(const PendingRecord &p_other) const {
 			return path != p_other.path ? path < p_other.path : (id.high != p_other.id.high ? id.high < p_other.id.high : id.low < p_other.id.low);
+		}
+	};
+
+	struct PendingSignatureOrder {
+		const LocalVector<PendingRecord> *records = nullptr;
+		bool operator()(uint32_t p_left, uint32_t p_right) const {
+			const Vector<uint64_t> &left = (*records)[p_left].signature;
+			const Vector<uint64_t> &right = (*records)[p_right].signature;
+			const int count = MIN(left.size(), right.size());
+			for (int i = 0; i < count; i++) {
+				if (left[i] != right[i]) {
+					return left[i] < right[i];
+				}
+			}
+			return left.size() != right.size() ? left.size() < right.size() : p_left < p_right;
 		}
 	};
 
@@ -307,6 +319,21 @@ private:
 		uint32_t files_read = 0;
 	};
 
+	struct CellDecodeRange {
+		uint32_t begin = 0;
+		uint32_t end = 0;
+		Error error = OK;
+		EntityId failing;
+		String failing_field;
+		Vector<String> missing;
+		uint64_t decode_usec = 0;
+	};
+
+	struct CellAssetTicket {
+		String path;
+		bool consumed = false;
+	};
+
 	struct CellJob : EntityTaskScheduler::Graph {
 		String directory;
 		String storage_directory;
@@ -315,15 +342,19 @@ private:
 		HashMap<String, bool> required_files;
 		Vector<EntityId> required;
 		LocalVector<CellReadRange> read_ranges;
+		LocalVector<CellDecodeRange> decode_ranges;
 		Vector<EntityId> skip;
 		Vector<EntityId> globals;
 		Vector<EntityId> members;
 		Vector<String> missing;
 		HashSet<String> loaded;
 		LocalVector<Ref<Resource>> assets;
+		LocalVector<CellAssetTicket> asset_tickets;
 		Vector<EntityId> ancestors;
 		LocalVector<PendingRecord> pending;
 		bool resume = false;
+		bool awaiting_assets = false;
+		Error asset_request_error = OK;
 		PreparedCell result;
 		uint64_t worker_total_usec = 0;
 		uint64_t enumerate_usec = 0;
@@ -337,7 +368,9 @@ private:
 		uint32_t enumerate() override;
 		uint64_t prepared_bytes = 0;
 		void read_range(uint32_t p_index) override;
-		void prepare(bool p_decode_only) override;
+		uint32_t prepare(bool p_decode_only) override;
+		void prepare_range(uint32_t p_index) override;
+		void finish_prepare() override;
 	};
 
 	struct OwnerProfile {
@@ -358,6 +391,7 @@ private:
 	static bool _snapshot_has(const Vector<EntityId> &p_ids, EntityId p_id);
 	static void _sort_snapshot_ids(Vector<EntityId> &r_ids);
 	static constexpr uint32_t CELL_READ_RANGE_FILES = 64;
+	static constexpr uint32_t CELL_DECODE_RANGE_RECORDS = 128;
 
 	EntityId document_id;
 	EntityCatalog catalog;
@@ -454,15 +488,17 @@ private:
 	Error _describe(EntityId p_id, const Dictionary &p_record, Section &r_section);
 	bool _is_cell_in_flight(const CellKey &p_cell) const;
 	Error _dispatch_cell(const CellKey &p_cell);
-	Error _load_cell_assets(CellJob &p_job);
+	Error _request_cell_assets(CellJob &p_job);
+	Error _poll_cell_assets(CellJob &p_job, bool p_retain);
 	static Error _prepare_stored(EntityId p_id, const Dictionary &p_record, PreparedEntity &r_prepared, Vector<uint64_t> &r_types, String &r_field);
 	static void _enumerate_cell(void *p_job);
 	static Error _read_cell_range(const CellJob &p_job, uint32_t p_index, CellReadRange &r_range);
 	static void _run_cell_read_range(void *p_job, uint32_t p_index);
 	static Error _merge_cell_reads(CellJob &p_job);
 	void _collect_cell_jobs();
-	static Error _decode_cell(CellJob &p_job);
-	static void _run_cell_decode(void *p_job);
+	static Error _plan_cell_decode(CellJob &p_job);
+	static void _run_cell_decode_range(CellJob &p_job, uint32_t p_index);
+	static Error _finish_cell_decode(CellJob &p_job);
 	Error _revalidate_job(CellJob &p_job, Vector<EntityId> &r_ids);
 	Error _commit_cell(CellJob &p_job, Stats &r_stats, OwnerProfile *r_profile = nullptr);
 	Error _fail(EntityId p_id, const String &p_field, Error p_error);

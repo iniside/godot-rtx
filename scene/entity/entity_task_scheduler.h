@@ -62,9 +62,9 @@ public:
 			Graph *graph = nullptr;
 			void OnDependenciesComplete(enki::TaskScheduler *p_scheduler, uint32_t p_thread) override;
 		};
-		Task tasks[3];
+		Task tasks[5];
 		Completion completion;
-		enki::Dependency dependencies[3];
+		enki::Dependency dependencies[5];
 		Ref<Mailbox> mailbox;
 		Ref<Budget> budget;
 		Graph *completion_next = nullptr;
@@ -77,17 +77,22 @@ public:
 		uint64_t queue_usec = 0;
 		uint32_t range_count = 0;
 		uint32_t read_lane_count = 1;
+		uint32_t prepare_range_count = 0;
+		uint32_t prepare_lane_count = 1;
 		mutable std::atomic<uint64_t> payload_bytes{ 0 };
 		Thread::ID owner_thread = 0;
 
 	protected:
 		virtual uint32_t enumerate() = 0;
 		virtual void read_range(uint32_t p_index) = 0;
-		virtual void prepare(bool p_decode_only) = 0;
+		virtual uint32_t prepare(bool p_decode_only) = 0;
+		virtual void prepare_range(uint32_t p_index) = 0;
+		virtual void finish_prepare() = 0;
 
 	public:
 		static constexpr uint64_t BYTE_BUDGET = 256 * 1024 * 1024;
 		static constexpr uint32_t MAX_READ_LANES = 8;
+		static constexpr uint32_t MAX_PREPARE_LANES = 32;
 		bool reserve_payload(uint64_t p_bytes) const;
 		void release_payload(uint64_t p_bytes) const;
 		uint64_t get_payload_bytes() const { return payload_bytes.load(std::memory_order_relaxed); }

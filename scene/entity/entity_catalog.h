@@ -148,7 +148,9 @@ private:
 		uint64_t retained_bytes = 0;
 		uint32_t enumerate() override { return 0; }
 		void read_range(uint32_t) override {}
-		void prepare(bool) override;
+		uint32_t prepare(bool) override { return 0; }
+		void prepare_range(uint32_t) override {}
+		void finish_prepare() override;
 	};
 
 	static constexpr uint32_t RUN_COMPACTION_THRESHOLD = 4;
