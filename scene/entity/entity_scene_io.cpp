@@ -717,6 +717,37 @@ Error EntitySceneIO::load(const String &p_path, Ref<EntityScene> &r_scene) {
 		}
 		catalog_record.section = section;
 		catalog_record.has_section = true;
+		EntityScene::CellKey cell;
+		const String section_directory = section.path.get_base_dir();
+		if (EntityScene::_parse_cell_directory(section_directory, cell)) {
+			catalog_record.cell_grid = cell.grid;
+			catalog_record.cell_x = cell.x;
+			catalog_record.cell_y = cell.y;
+			catalog_record.cell_z = cell.z;
+			catalog_record.has_cell = true;
+		}
+	}
+	for (const Variant &instance_key : tree.prefabs.get_key_list()) {
+		const Variant instance_value = tree.prefabs[instance_key];
+		if (instance_value.get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		const Variant mapping_value = Dictionary(instance_value).get("mapping", Variant());
+		if (mapping_value.get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		const Dictionary mapping = mapping_value;
+		for (const Variant &source : mapping.get_key_list()) {
+			EntityId id;
+			if (mapping[source].get_type() != Variant::STRING || EntityId::parse(mapping[source], id) != OK) {
+				continue;
+			}
+			const int index = ids.bsearch_custom<EntityIdSorter>(id, true);
+			if (index < ids.size() && ids[index] == id && catalog_records[index].prefab_instance.is_empty()) {
+				catalog_records.write[index].prefab_instance = instance_key;
+				catalog_records.write[index].prefab_source = source;
+			}
+		}
 	}
 	ERR_FAIL_COND_V(scene->catalog.add_block(ids, catalog_records) == UINT32_MAX, ERR_CANT_CREATE);
 	for (EntityId id : scene->catalog.get_ids()) {
@@ -727,7 +758,6 @@ Error EntitySceneIO::load(const String &p_path, Ref<EntityScene> &r_scene) {
 		if (parent.id.is_valid() && scene->catalog.get_state(parent.id) != EntityReferenceState::UNLOADED) {
 			return scene->_fail(id, "parent", ERR_INVALID_DATA);
 		}
-		scene->catalog._set_parent(id, parent);
 	}
 	Vector<EntityId> ordered;
 	error = scene->_collect_required(scene->catalog.get_ids(), ordered);

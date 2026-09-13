@@ -134,17 +134,21 @@ void EntityScene::_unpin_row(EntityId p_id) {
 }
 
 bool EntityScene::_cell_members_has(const CellMembers &p_members, EntityId p_id) {
-	return p_members.has(p_id);
+	return _snapshot_has(p_members, p_id);
 }
 
 void EntityScene::_cell_members_insert(CellMembers &r_members, EntityId p_id) {
-	if (!r_members.has(p_id)) {
-		r_members.push_back(p_id);
+	const int index = r_members.bsearch_custom<SnapshotIdOrder>(p_id, true);
+	if (index == r_members.size() || r_members[index] != p_id) {
+		r_members.insert(index, p_id);
 	}
 }
 
 void EntityScene::_cell_members_erase(CellMembers &r_members, EntityId p_id) {
-	r_members.erase(p_id);
+	const int index = r_members.bsearch_custom<SnapshotIdOrder>(p_id, true);
+	if (index < r_members.size() && r_members[index] == p_id) {
+		r_members.remove_at(index);
+	}
 }
 
 EntityWorld *EntityScene::get_world() {
@@ -261,26 +265,7 @@ String EntityScene::_storage_directory(EntityId p_id, String &r_source) const {
 	return cell.get_type() == Variant::STRING ? String(cell) : String();
 }
 
-void EntityScene::_forget_cell(EntityId p_id) {
-	_set_global(p_id, false);
-	EntityCatalog::Record *record = catalog.edit_record(p_id);
-	if (!record || !record->has_cell) {
-		return;
-	}
-	const CellKey key{ record->cell_grid, record->cell_x, record->cell_y, record->cell_z };
-	record->cell_grid = String();
-	record->has_cell = false;
-	CellMembers *members = cells.getptr(key);
-	if (members) {
-		_cell_members_erase(*members, p_id);
-		if (members->is_empty()) {
-			cells.erase(key);
-		}
-	}
-}
-
 Error EntityScene::_assign_cell(EntityId p_id) {
-	_forget_cell(p_id);
 	if (catalog.get_state(p_id) != EntityReferenceState::UNLOADED) {
 		return OK;
 	}
@@ -301,34 +286,81 @@ Error EntityScene::_assign_cell(EntityId p_id) {
 		assigned_directory = directory;
 		assigned_key = key;
 	}
+	const EntityCatalog::Record *current = catalog.get_record(p_id);
+	ERR_FAIL_NULL_V(current, ERR_DOES_NOT_EXIST);
+	const CellKey previous{ current->cell_grid, current->cell_x, current->cell_y, current->cell_z };
+	EntityCatalog::Record *record = nullptr;
+	if (!current->has_cell || previous != assigned_key) {
+		if (current->has_cell) {
+			CellMembers *old_members = cells.getptr(previous);
+			if (old_members) {
+				_cell_members_erase(*old_members, p_id);
+			}
+		}
+		record = catalog.edit_record(p_id);
+		ERR_FAIL_NULL_V(record, ERR_DOES_NOT_EXIST);
+		record->cell_grid = assigned_key.grid;
+		record->cell_x = assigned_key.x;
+		record->cell_y = assigned_key.y;
+		record->cell_z = assigned_key.z;
+		record->has_cell = true;
+	}
+	_set_global(p_id, false);
 	_cell_members_insert(cells[assigned_key], p_id);
-	EntityCatalog::Record *record = catalog.edit_record(p_id);
-	ERR_FAIL_NULL_V(record, ERR_DOES_NOT_EXIST);
-	record->cell_grid = assigned_key.grid;
-	record->cell_x = assigned_key.x;
-	record->cell_y = assigned_key.y;
-	record->cell_z = assigned_key.z;
-	record->has_cell = true;
 	return OK;
 }
 
 Error EntityScene::_assign_cells(const Vector<EntityId> &p_ids) {
 	Error result = OK;
+	HashMap<CellKey, CellMembers, CellKeyHasher> batches;
 	for (EntityId id : p_ids) {
-		const Error error = _assign_cell(id);
-		if (error != OK && result == OK) {
-			result = error;
+		if (catalog.get_state(id) != EntityReferenceState::UNLOADED) {
+			continue;
 		}
+		String source;
+		const String directory = _storage_directory(id, source);
+		if (directory.is_empty()) {
+			if (!source.is_empty() && result == OK) {
+				result = _fail(id, "cell/" + source, ERR_INVALID_DATA);
+			}
+			continue;
+		}
+		if (directory == "global") {
+			_set_global(id, true);
+			continue;
+		}
+		CellKey key;
+		if (!_parse_cell_directory(directory, key) || !grids.has(key.grid)) {
+			if (result == OK) {
+				result = _fail(id, "cell/" + source, ERR_INVALID_DATA);
+			}
+			continue;
+		}
+		const EntityCatalog::Record *current = catalog.get_record(id);
+		if (!current) {
+			continue;
+		}
+		const CellKey previous{ current->cell_grid, current->cell_x, current->cell_y, current->cell_z };
+		if (!current->has_cell || previous != key) {
+			EntityCatalog::Record *record = catalog.edit_record(id);
+			if (!record) {
+				continue;
+			}
+			record->cell_grid = key.grid;
+			record->cell_x = key.x;
+			record->cell_y = key.y;
+			record->cell_z = key.z;
+			record->has_cell = true;
+		}
+		_set_global(id, false);
+		batches[key].push_back(id);
+	}
+	for (KeyValue<CellKey, CellMembers> &batch : batches) {
+		CellMembers &members = cells[batch.key];
+		members.append_array(batch.value);
+		_sort_snapshot_ids(members);
 	}
 	return result;
-}
-
-void EntityScene::_forget_entity(EntityId p_id) {
-	_forget_cell(p_id);
-	_erase_section(p_id);
-	_erase_order(p_id);
-	catalog._unlink_parent(p_id);
-	catalog.erase_record(p_id);
 }
 
 String EntityScene::_cell_path(const CellKey &p_cell) const {
@@ -364,13 +396,7 @@ bool EntityScene::cell_exists(const CellKey &p_cell, int *r_probe_budget) {
 }
 
 void EntityScene::_index_prefabs() {
-	for (EntityId id : catalog.get_ids()) {
-		EntityCatalog::Record *record = catalog.edit_record(id);
-		record->prefab_instance = String();
-		record->prefab_source = String();
-		EntityCatalog::RowState *state = catalog.get_state_ptr(id);
-		state->prefab = false;
-	}
+	HashMap<EntityId, PrefabMember, EntityIdHasher> desired;
 	for (const Variant &key : prefab_instances.get_key_list()) {
 		const Variant value = prefab_instances[key];
 		if (value.get_type() != Variant::DICTIONARY) {
@@ -383,14 +409,43 @@ void EntityScene::_index_prefabs() {
 		const Dictionary entries = mapping;
 		for (const Variant &source : entries.get_key_list()) {
 			EntityId id;
-			if (entries[source].get_type() == Variant::STRING && EntityId::parse(entries[source], id) == OK && id.is_valid()) {
-				EntityCatalog::Record *record = catalog.edit_record(id);
-				if (record && record->prefab_instance.is_empty()) {
-					record->prefab_instance = key;
-					record->prefab_source = source;
-					catalog.get_state_ptr(id)->prefab = true;
-				}
+			if (entries[source].get_type() == Variant::STRING && EntityId::parse(entries[source], id) == OK && id.is_valid() && !desired.has(id)) {
+				desired.insert(id, { key, source });
 			}
+		}
+	}
+	for (uint32_t block_index = 0; block_index < catalog.blocks.size(); block_index++) {
+		EntityCatalog::CellRuntimeBlock *block = catalog.blocks[block_index];
+		if (!block) {
+			continue;
+		}
+		for (uint32_t row = 0; row < uint32_t(block->states.size()); row++) {
+			EntityCatalog::RowState &state = block->states.write[row];
+			if (!state.active || !state.prefab) {
+				continue;
+			}
+			const EntityCatalog::RowLocation location{ block_index, block->generation, row };
+			const EntityCatalog::Record *record = catalog.get_record(location);
+			const PrefabMember *member = desired.getptr(block->ids[row]);
+			if (record && member && record->prefab_instance == member->instance && record->prefab_source == member->source) {
+				desired.erase(block->ids[row]);
+				continue;
+			}
+			state.prefab = false;
+			EntityCatalog::Record *edited = catalog.edit_record(location);
+			if (edited) {
+				edited->prefab_instance = String();
+				edited->prefab_source = String();
+			}
+		}
+	}
+	for (const KeyValue<EntityId, PrefabMember> &entry : desired) {
+		EntityCatalog::Record *record = catalog.edit_record(entry.key);
+		EntityCatalog::RowState *state = catalog.get_state_ptr(entry.key);
+		if (record && state) {
+			record->prefab_instance = entry.value.instance;
+			record->prefab_source = entry.value.source;
+			state->prefab = true;
 		}
 	}
 }
@@ -499,9 +554,11 @@ EntityScene::PreparedEntity &EntityScene::PreparedEntity::operator=(PreparedEnti
 	cluster = p_other.cluster;
 	components = std::move(p_other.components);
 	group = p_other.group;
+	group_index = p_other.group_index;
 	row = p_other.row;
 	owns_group = p_other.owns_group;
 	p_other.group = nullptr;
+	p_other.group_index = UINT32_MAX;
 	p_other.owns_group = false;
 	return *this;
 }
@@ -515,6 +572,7 @@ void EntityScene::PreparedEntity::release() {
 		memdelete(group);
 	}
 	group = nullptr;
+	group_index = UINT32_MAX;
 	owns_group = false;
 }
 
@@ -719,12 +777,8 @@ Error EntityScene::PreparedSet::materialize_groups(EntityWorld &p_target, LocalV
 	}
 	for (const PreparedEntity &entry : *entities) {
 		if (entry.group && !entry.live && !entry.deleted) {
-			for (uint32_t group_index = 0; group_index < bulk_groups->size(); group_index++) {
-				if ((*bulk_groups)[group_index] == entry.group) {
-					rows[group_index][entry.row] = &entry;
-					break;
-				}
-			}
+			DEV_ASSERT(entry.group_index < bulk_groups->size() && (*bulk_groups)[entry.group_index] == entry.group);
+			rows[entry.group_index][entry.row] = &entry;
 		}
 	}
 	if (r_profile) {
@@ -1428,6 +1482,13 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 				record.section = item.section;
 				record.has_section = true;
 			}
+			if (p_streamed_cell && !item.deleted) {
+				record.cell_grid = p_streamed_cell->grid;
+				record.cell_x = p_streamed_cell->x;
+				record.cell_y = p_streamed_cell->y;
+				record.cell_z = p_streamed_cell->z;
+				record.has_cell = true;
+			}
 			new_ids.push_back(item.id);
 			new_base.push_back(record);
 		}
@@ -1658,8 +1719,7 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 	}
 	began = timed ? OS::get_singleton()->get_ticks_usec() : 0;
 	if (bulk && p_resident && p_streamed_cell) {
-		HashSet<CellKey, CellKeyHasher> touched_cells;
-		touched_cells.reserve(MIN(uint32_t(p_items.size()), uint32_t(cells.size())));
+		HashMap<CellKey, Vector<EntityId>, CellKeyHasher> removals;
 		for (const CommitItem &item : p_items) {
 			if (item.had_global) {
 				_set_global(item.id, false);
@@ -1669,68 +1729,68 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem
 			}
 			const CellKey key{ item.cell_grid, item.cell_x, item.cell_y, item.cell_z };
 			if (!item.install || key != *p_streamed_cell) {
-				CellMembers *members = cells.getptr(key);
-				if (members) {
-					_cell_members_erase(*members, item.id);
-				}
-				touched_cells.insert(key);
-				EntityCatalog::Record *record = catalog.edit_record(item.id);
-				if (record) {
-					record->cell_grid = String();
-					record->has_cell = false;
-				}
+				removals[key].push_back(item.id);
 				if (timed) {
 					profile.metadata_membership_removals++;
 				}
 			}
 		}
-		for (const CellKey &cell : touched_cells) {
-			const CellMembers *members = cells.getptr(cell);
-			if (members && members->is_empty()) {
-				cells.erase(cell);
-			}
-		}
-		uint32_t member_count = 0;
-		for (EntityId id : *p_streamed_members) {
-			const PreparedEntity *entity = p_prepared.find(id);
-			member_count += entity ? !entity->deleted : catalog.get_state(id) != EntityReferenceState::DELETED && !deleted_storage.has(id);
-		}
-		CellMembers &members = cells[*p_streamed_cell];
-		members.reserve(members.size() + member_count);
+		Vector<EntityId> incoming;
+		incoming.reserve(p_streamed_members->size());
 		for (EntityId id : *p_streamed_members) {
 			const PreparedEntity *entity = p_prepared.find(id);
 			if (entity ? entity->deleted : catalog.get_state(id) == EntityReferenceState::DELETED || deleted_storage.has(id)) {
 				continue;
 			}
-			EntityCatalog::Record *record = catalog.edit_record(id);
-			DEV_ASSERT(record);
-			if (!record) {
+			const EntityCatalog::Record *current = catalog.get_record(id);
+			DEV_ASSERT(current);
+			if (!current) {
 				continue;
 			}
-			const CellKey previous_key{ record->cell_grid, record->cell_x, record->cell_y, record->cell_z };
-			if (record->has_cell && previous_key != *p_streamed_cell) {
-				CellMembers *previous_members = cells.getptr(previous_key);
-				if (previous_members) {
-					_cell_members_erase(*previous_members, id);
-					if (previous_members->is_empty()) {
-						cells.erase(previous_key);
-					}
-				}
+			const CellKey previous_key{ current->cell_grid, current->cell_x, current->cell_y, current->cell_z };
+			if (current->has_cell && previous_key != *p_streamed_cell) {
+				removals[previous_key].push_back(id);
 				if (timed) {
 					profile.metadata_membership_removals++;
 				}
 			}
+			if (!current->has_cell || previous_key != *p_streamed_cell) {
+				EntityCatalog::Record *record = catalog.edit_record(id);
+				record->cell_grid = p_streamed_cell->grid;
+				record->cell_x = p_streamed_cell->x;
+				record->cell_y = p_streamed_cell->y;
+				record->cell_z = p_streamed_cell->z;
+				record->has_cell = true;
+			}
 			_set_global(id, false);
-			members.push_back(id);
-			record->cell_grid = p_streamed_cell->grid;
-			record->cell_x = p_streamed_cell->x;
-			record->cell_y = p_streamed_cell->y;
-			record->cell_z = p_streamed_cell->z;
-			record->has_cell = true;
+			incoming.push_back(id);
 			if (timed) {
 				profile.cell_membership_insertions++;
 			}
 		}
+		for (KeyValue<CellKey, Vector<EntityId>> &entry : removals) {
+			CellMembers *members = cells.getptr(entry.key);
+			if (!members) {
+				continue;
+			}
+			_sort_snapshot_ids(entry.value);
+			int write = 0;
+			int remove = 0;
+			for (EntityId id : *members) {
+				while (remove < entry.value.size() && SnapshotIdOrder()(entry.value[remove], id)) {
+					remove++;
+				}
+				if (remove >= entry.value.size() || entry.value[remove] != id) {
+					members->write[write++] = id;
+				}
+			}
+			members->resize(write);
+			if (members->is_empty()) {
+				cells.erase(entry.key);
+			}
+		}
+		CellMembers &members = cells[*p_streamed_cell];
+		members.append_array(incoming);
 		_sort_snapshot_ids(members);
 	} else {
 		for (const CommitItem &item : p_items) {
@@ -2578,7 +2638,7 @@ void EntityScene::_collect_cell_jobs() {
 
 Error EntityScene::_decode_cell(CellJob &p_job) {
 	if (!p_job.result.grouped) {
-		HashMap<Vector<uint64_t>, PreparedGroup *, PreparedSignatureHasher> groups;
+		HashMap<Vector<uint64_t>, uint32_t, PreparedSignatureHasher> groups;
 		p_job.result.entities.reserve(p_job.pending.size());
 		for (PendingRecord &record : p_job.pending) {
 			if (p_job.cancelled.is_set() || ResourceLoader::is_cleaning_tasks()) {
@@ -2597,15 +2657,17 @@ Error EntityScene::_decode_cell(CellJob &p_job) {
 			}
 			if (!prepared.deleted) {
 				types.sort();
-				PreparedGroup **existing = groups.getptr(types);
+				uint32_t *existing = groups.getptr(types);
 				if (existing) {
-					prepared.group = *existing;
+					prepared.group_index = *existing;
+					prepared.group = p_job.result.groups[prepared.group_index];
 				} else {
 					prepared.group = memnew(PreparedGroup);
 					prepared.group->profile = p_job.profile;
 					prepared.group->signature = types;
+					prepared.group_index = p_job.result.groups.size();
 					p_job.result.groups.push_back(prepared.group);
-					groups.insert(types, prepared.group);
+					groups.insert(types, prepared.group_index);
 				}
 				prepared.row = prepared.group->capacity++;
 			}
@@ -2900,6 +2962,7 @@ Error EntityScene::_commit_cell(CellJob &p_job, Stats &r_stats, OwnerProfile *r_
 
 Error EntityScene::commit_ready(int p_max_entities, Stats *r_stats) {
 	ERR_FAIL_COND_V(_owner() != OK, ERR_UNAUTHORIZED);
+	catalog.maintenance();
 	if (cell_jobs.is_empty()) {
 		return OK;
 	}
@@ -3094,11 +3157,13 @@ Error EntityScene::commit_ready(int p_max_entities, Stats *r_stats) {
 		r_stats->initial_packet_table_rows += stats.initial_packet_table_rows;
 		r_stats->initial_packet_fallback_rows += stats.initial_packet_fallback_rows;
 	}
+	catalog.maintenance();
 	return result;
 }
 
 void EntityScene::flush_streaming() {
 	if (cell_jobs.is_empty()) {
+		catalog.flush_maintenance();
 		return;
 	}
 	for (CellJob *job : cell_jobs) {
@@ -3128,10 +3193,12 @@ void EntityScene::flush_streaming() {
 	}
 	cell_jobs.clear();
 	cell_assets.clear();
+	catalog.flush_maintenance();
 }
 
 Error EntityScene::request_cells(const Vector<CellKey> &p_cells, int *r_remaining, Stats *r_stats) {
 	ERR_FAIL_COND_V(_owner() != OK, ERR_UNAUTHORIZED);
+	catalog.maintenance();
 	const bool profiling = r_stats && OS::get_singleton()->is_use_benchmark_set();
 	const uint64_t began = profiling ? OS::get_singleton()->get_ticks_usec() : 0;
 	int remaining = 0;
@@ -3193,6 +3260,12 @@ Error EntityScene::request_cells(const Vector<CellKey> &p_cells, int *r_remainin
 
 Error EntityScene::release_cells(const Vector<CellKey> &p_cells) {
 	ERR_FAIL_COND_V(_owner() != OK, ERR_UNAUTHORIZED);
+	const bool profiling = OS::get_singleton()->is_use_benchmark_set();
+	const uint64_t began = profiling ? OS::get_singleton()->get_ticks_usec() : 0;
+	uint64_t unload_usec = 0;
+	uint64_t retire_usec = 0;
+	uint32_t unloaded_count = 0;
+	uint32_t retired_count = 0;
 	Error result = OK;
 	bool released = false;
 	for (const CellKey &cell : p_cells) {
@@ -3210,78 +3283,127 @@ Error EntityScene::release_cells(const Vector<CellKey> &p_cells) {
 		resident_cells.erase(cell);
 		unpin(ancestors);
 		released = true;
-		const CellMembers *members = cells.getptr(cell);
-		if (!members) {
+		const CellMembers *stored_members = cells.getptr(cell);
+		if (!stored_members) {
 			continue;
 		}
+		Vector<EntityId> members = *stored_members;
+		_sort_snapshot_ids(members);
 		Vector<EntityId> candidates;
-		for (EntityId id : *members) {
+		for (EntityId id : members) {
 			if (resolve(id).state == EntityReferenceState::RESIDENT && !_is_pinned(id) && !_is_dirty(id)) {
 				candidates.push_back(id);
 			}
 		}
 		_sort_snapshot_ids(candidates);
-		bool blocked = true;
-		while (blocked) {
-			blocked = false;
-			Vector<EntityId> rejected;
-			for (EntityId id : candidates) {
-				for (EntityId child : catalog.get_children(id)) {
-					if (resolve(child).state == EntityReferenceState::RESIDENT && !_snapshot_has(candidates, child)) {
-						rejected.push_back(id);
-						break;
-					}
+		Vector<EntityId> blocked;
+		for (EntityId id : candidates) {
+			for (EntityId child : catalog.get_children(id)) {
+				if (resolve(child).state == EntityReferenceState::RESIDENT && !_snapshot_has(candidates, child)) {
+					blocked.push_back(id);
+					break;
 				}
 			}
-			for (EntityId id : rejected) {
-				candidates.erase(id);
-				blocked = true;
-			}
 		}
-		if (candidates.is_empty()) {
-			continue;
+		_sort_snapshot_ids(blocked);
+		Vector<EntityId> blocked_queue = blocked;
+		for (uint32_t index = 0; index < uint32_t(blocked_queue.size()); index++) {
+			const EntityId parent = catalog.get_parent(blocked_queue[index]).id;
+			if (parent.is_valid() && _snapshot_has(candidates, parent) && !_snapshot_has(blocked, parent)) {
+				_cell_members_insert(blocked, parent);
+				blocked_queue.push_back(parent);
+			}
 		}
 		Vector<EntityId> unloading;
 		unloading.reserve(candidates.size());
 		for (EntityId id : candidates) {
-			unloading.push_back(id);
-		}
-		Error error = unload_subset(unloading);
-		if (error != OK) {
-			result = error;
-			continue;
-		}
-		Vector<EntityId> forgotten;
-		for (EntityId id : unloading) {
-			const EntityCatalog::Record *record = catalog.get_record(id);
-			if (!record || record->prefab_instance.is_empty()) {
-				forgotten.push_back(id);
+			if (!_snapshot_has(blocked, id)) {
+				unloading.push_back(id);
 			}
 		}
-		_sort_snapshot_ids(forgotten);
-		bool pending = true;
-		while (pending) {
-			pending = false;
-			Vector<EntityId> kept;
-			for (EntityId id : forgotten) {
-				for (EntityId child : catalog.get_children(id)) {
-					if (!_snapshot_has(forgotten, child)) {
-						kept.push_back(id);
-						break;
-					}
+		if (!unloading.is_empty()) {
+			const uint64_t unload_began = profiling ? OS::get_singleton()->get_ticks_usec() : 0;
+			const Error error = unload_subset(unloading);
+			if (profiling) {
+				unload_usec += OS::get_singleton()->get_ticks_usec() - unload_began;
+			}
+			if (error != OK) {
+				result = error;
+				continue;
+			}
+			unloaded_count += unloading.size();
+		}
+		Vector<EntityId> retire_candidates;
+		for (EntityId id : members) {
+			const EntityCatalog::RowLocation location = catalog.locate(id);
+			const EntityCatalog::CellRuntimeBlock *block = catalog.get_block(location.block);
+			const EntityCatalog::Record *record = catalog.get_record(id);
+			const EntityCatalog::RowState *state = catalog.get_state_ptr(location);
+			if (block && block->ordinary_cell && record && state && !state->resident && !state->document_dirty && !state->pin_count && !state->prefab && !state->dependency && !state->tombstone) {
+				retire_candidates.push_back(id);
+			}
+		}
+		_sort_snapshot_ids(retire_candidates);
+		Vector<EntityId> retained;
+		for (EntityId id : retire_candidates) {
+			for (EntityId child : catalog.get_children(id)) {
+				if (!_snapshot_has(retire_candidates, child)) {
+					retained.push_back(id);
+					break;
 				}
 			}
-			for (EntityId id : kept) {
-				forgotten.erase(id);
-				pending = true;
+		}
+		_sort_snapshot_ids(retained);
+		Vector<EntityId> retained_queue = retained;
+		for (uint32_t index = 0; index < uint32_t(retained_queue.size()); index++) {
+			const EntityId parent = catalog.get_parent(retained_queue[index]).id;
+			if (parent.is_valid() && _snapshot_has(retire_candidates, parent) && !_snapshot_has(retained, parent)) {
+				_cell_members_insert(retained, parent);
+				retained_queue.push_back(parent);
 			}
 		}
-		for (EntityId id : forgotten) {
-			_forget_entity(id);
+		Vector<EntityCatalog::RowLocation> retiring;
+		Vector<EntityId> retiring_ids;
+		retiring.reserve(retire_candidates.size());
+		retiring_ids.reserve(retire_candidates.size());
+		for (EntityId id : retire_candidates) {
+			if (!_snapshot_has(retained, id)) {
+				retiring.push_back(catalog.locate(id));
+				retiring_ids.push_back(id);
+			}
+		}
+		if (!retiring.is_empty()) {
+			const uint64_t retire_began = profiling ? OS::get_singleton()->get_ticks_usec() : 0;
+			catalog.retire_rows(retiring);
+			if (profiling) {
+				retire_usec += OS::get_singleton()->get_ticks_usec() - retire_began;
+			}
+			retired_count += retiring.size();
+			CellMembers *remaining = cells.getptr(cell);
+			if (remaining) {
+				int write = 0;
+				int retired = 0;
+				for (EntityId id : *remaining) {
+					while (retired < retiring_ids.size() && SnapshotIdOrder()(retiring_ids[retired], id)) {
+						retired++;
+					}
+					if (retired >= retiring_ids.size() || retiring_ids[retired] != id) {
+						remaining->write[write++] = id;
+					}
+				}
+				remaining->resize(write);
+				if (remaining->is_empty()) {
+					cells.erase(cell);
+				}
+			}
 		}
 	}
 	if (released) {
 		residency_serial++;
+	}
+	catalog.maintenance();
+	if (profiling) {
+		print_line(vformat("EntityScene release_cells cells=%d unloaded=%d retired=%d unload_ms=%.2f retire_ms=%.2f total_ms=%.2f locator_runs=%d child_runs=%d", p_cells.size(), unloaded_count, retired_count, unload_usec / 1000.0, retire_usec / 1000.0, (OS::get_singleton()->get_ticks_usec() - began) / 1000.0, catalog.get_locator_run_count(), catalog.get_child_run_count()));
 	}
 	return result;
 }

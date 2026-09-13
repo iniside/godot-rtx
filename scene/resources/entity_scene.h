@@ -71,6 +71,7 @@ class EntityScene : public Resource {
 		bool cluster = false;
 		Array components;
 		PreparedGroup *group = nullptr;
+		uint32_t group_index = UINT32_MAX;
 		uint32_t row = 0;
 		bool owns_group = false;
 
@@ -422,9 +423,7 @@ private:
 	static int32_t _cell_index(double p_value, double p_size);
 	String _storage_directory(EntityId p_id, String &r_source) const;
 	Error _assign_cell(EntityId p_id);
-	void _forget_cell(EntityId p_id);
 	Error _assign_cells(const Vector<EntityId> &p_ids);
-	void _forget_entity(EntityId p_id);
 	String _cell_path(const CellKey &p_cell) const;
 	void _index_prefabs();
 	Error _load_resident(const Vector<EntityId> &p_ids, LoadProfile *r_profile);

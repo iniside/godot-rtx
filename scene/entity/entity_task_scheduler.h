@@ -68,6 +68,7 @@ public:
 		bool decode_only = false;
 		bool submitted = false;
 		bool admitted = false;
+		bool pipeline_linked = false;
 		uint64_t queued_usec = 0;
 		uint64_t queue_usec = 0;
 		uint32_t range_count = 0;

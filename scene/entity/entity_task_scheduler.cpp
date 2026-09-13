@@ -159,10 +159,13 @@ void EntityTaskScheduler::_ingress(void *p_userdata) {
 				graph->cancelled.set();
 			}
 			graph->queue_usec = OS::get_singleton()->get_ticks_usec() - graph->queued_usec;
-			if (!graph->decode_only) {
-				graph->dependencies[0].SetDependency(&graph->tasks[0], &graph->tasks[1]);
-				graph->dependencies[1].SetDependency(&graph->tasks[1], &graph->tasks[2]);
+			if (!graph->pipeline_linked) {
+				if (!graph->decode_only) {
+					graph->dependencies[0].SetDependency(&graph->tasks[0], &graph->tasks[1]);
+					graph->dependencies[1].SetDependency(&graph->tasks[1], &graph->tasks[2]);
+				}
 				graph->dependencies[2].SetDependency(&graph->tasks[2], &graph->completion);
+				graph->pipeline_linked = true;
 			}
 			self.scheduler.AddTaskSetToPipe(&graph->tasks[graph->decode_only ? 2 : 0]);
 		} else if (stopping) {

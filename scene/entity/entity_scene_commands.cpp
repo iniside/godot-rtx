@@ -742,19 +742,22 @@ Error EntitySceneCommands::_reconcile_prefab_catalog() {
 				conflicted.insert(id);
 				continue;
 			}
-			EntityCatalog::Record *record = document.catalog.edit_record(id);
-			ERR_FAIL_NULL_V(record, ERR_DOES_NOT_EXIST);
-			const bool was_deleted = record->deleted;
-			const EntityId was_parent = record->parent.id;
+			const EntityCatalog::Record *current = document.catalog.get_record(id);
+			ERR_FAIL_NULL_V(current, ERR_DOES_NOT_EXIST);
+			const bool was_deleted = current->deleted;
+			const EntityId was_parent = current->parent.id;
 			const int64_t was_order = document.get_order(id);
-			document.catalog._unlink_parent(id);
-			record->deleted = explicitly_deleted || (removed && !added);
-			record->parent = { parent };
-			document._set_order(id, order);
-			if (!record->deleted) {
-				document.catalog._set_parent(id, { parent });
-			}
-			if (was_deleted != record->deleted || was_parent != parent || was_order != order) {
+			const bool deleted = explicitly_deleted || (removed && !added);
+			if (was_deleted != deleted || was_parent != parent || was_order != order) {
+				EntityCatalog::Record *record = document.catalog.edit_record(id);
+				record->deleted = deleted;
+				record->parent = { parent };
+				document._set_order(id, order);
+				if (!deleted) {
+					document.catalog._set_parent(id, { parent });
+				} else {
+					document.catalog._refresh_parent(id);
+				}
 				document._set_dirty(id);
 			}
 		}
@@ -772,7 +775,7 @@ Error EntitySceneCommands::_reconcile_prefab_catalog() {
 		for (EntityId child : document.catalog.get_children(deleted[i])) {
 			if (document.catalog.get_state(child) != EntityReferenceState::DELETED && !conflicted.has(child)) {
 				document.catalog.edit_record(child)->deleted = true;
-				document.catalog._unlink_parent(child);
+				document.catalog._refresh_parent(child);
 				document._set_dirty(child);
 				deleted.push_back(child);
 			}
@@ -901,7 +904,6 @@ Error EntitySceneCommands::_refresh_instance(EntityScene &p_target, EntityId p_i
 			p_target.world->ecs.entity(handle.entity).destruct();
 		}
 		if (p_target.catalog.has_record(id)) {
-			p_target.catalog._unlink_parent(id);
 			p_target.catalog.erase_record(id);
 		}
 		EntityCatalog::Record metadata;

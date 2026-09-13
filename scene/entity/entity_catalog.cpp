@@ -1,26 +1,28 @@
 #include "entity_catalog.h"
 
 #include "core/os/memory.h"
+#include "core/os/os.h"
+#include "core/string/print_string.h"
 
 bool EntityCatalog::_id_less(EntityId p_left, EntityId p_right) {
 	return p_left.high != p_right.high ? p_left.high < p_right.high : p_left.low < p_right.low;
 }
 
 EntityCatalog::~EntityCatalog() {
+	flush_maintenance();
 	clear();
 }
 
 void EntityCatalog::clear() {
+	flush_maintenance();
 	for (CellRuntimeBlock *block : blocks) {
 		if (block) {
 			memdelete(block);
 		}
 	}
 	blocks.clear();
-	for (LocatorRun *run : locator_runs) {
-		memdelete(run);
-	}
 	locator_runs.clear();
+	child_runs.clear();
 	active_records = 0;
 	resident_records = 0;
 }
@@ -45,15 +47,19 @@ const EntityCatalog::LocatorEntry *EntityCatalog::_find_in_run(const LocatorRun 
 
 EntityCatalog::RowLocation EntityCatalog::locate(EntityId p_id) const {
 	for (int32_t i = locator_runs.size() - 1; i >= 0; i--) {
-		const LocatorEntry *entry = _find_in_run(*locator_runs[i], p_id);
+		const LocatorEntry *entry = _find_in_run(*locator_runs[i].ptr(), p_id);
 		if (!entry) {
 			continue;
+		}
+		if (!entry->location.is_valid()) {
+			return {};
 		}
 		const RowState *state = get_state_ptr(entry->location);
 		const CellRuntimeBlock *block = get_block(entry->location.block);
 		if (state && state->active && block && block->ids[entry->location.row] == p_id) {
 			return entry->location;
 		}
+		return {};
 	}
 	return {};
 }
@@ -114,16 +120,44 @@ EntityCatalog::Record *EntityCatalog::edit_record(EntityId p_id) {
 	return edit_record(locate(p_id));
 }
 
-void EntityCatalog::_add_locator_run(uint32_t p_block) {
+void EntityCatalog::_publish_locator_rows(uint32_t p_block, const Vector<uint32_t> *p_rows, bool p_invalid) {
 	CellRuntimeBlock *block = get_block(p_block);
 	ERR_FAIL_NULL(block);
-	LocatorRun *run = memnew(LocatorRun);
-	run->entries.resize(block->ids.size());
-	for (uint32_t row = 0; row < uint32_t(block->ids.size()); row++) {
-		run->entries.write[row] = { block->ids[row], { p_block, block->generation, row } };
+	Ref<LocatorRun> run;
+	run.instantiate();
+	const uint32_t count = p_rows ? p_rows->size() : block->ids.size();
+	run->entries.resize(count);
+	for (uint32_t index = 0; index < count; index++) {
+		const uint32_t row = p_rows ? (*p_rows)[index] : index;
+		run->entries.write[index] = { block->ids[row], p_invalid ? RowLocation() : RowLocation{ p_block, block->generation, row } };
 	}
 	run->entries.sort_custom<LocatorOrder>();
 	locator_runs.push_back(run);
+}
+
+void EntityCatalog::_publish_child_rows(uint32_t p_block, const Vector<uint32_t> *p_rows, bool p_invalid) {
+	CellRuntimeBlock *block = get_block(p_block);
+	ERR_FAIL_NULL(block);
+	Ref<ChildRun> run;
+	run.instantiate();
+	const uint32_t count = p_rows ? p_rows->size() : block->ids.size();
+	run->by_child.resize(count);
+	for (uint32_t index = 0; index < count; index++) {
+		const uint32_t row = p_rows ? (*p_rows)[index] : index;
+		const RowLocation location{ p_block, block->generation, row };
+		const Record *record = p_invalid ? nullptr : get_record(location);
+		const RowLocation parent = record && record->parent.id.is_valid() ? locate(record->parent.id) : RowLocation();
+		const bool external = record && !record->deleted && parent.is_valid() && parent.block != p_block;
+		run->by_child.write[index] = { block->ids[row], external ? record->parent.id : EntityId(), external ? location : RowLocation() };
+	}
+	run->by_child.sort_custom<ChildOrder>();
+	for (const ChildEntry &entry : run->by_child) {
+		if (entry.location.is_valid()) {
+			run->by_parent.push_back(entry);
+		}
+	}
+	run->by_parent.sort_custom<ParentRunOrder>();
+	child_runs.push_back(run);
 }
 
 void EntityCatalog::_rebuild_block_indices(uint32_t p_block) {
@@ -135,7 +169,6 @@ void EntityCatalog::_rebuild_block_indices(uint32_t p_block) {
 	Vector<uint32_t> indegree;
 	indegree.resize_initialized(count);
 	block->child_offsets.resize_initialized(count + 1);
-	block->external_parent_edges.clear();
 	for (uint32_t row = 0; row < count; row++) {
 		const Record *record = get_record({ p_block, block->generation, row });
 		if (!record || record->deleted || !record->parent.id.is_valid()) {
@@ -145,8 +178,6 @@ void EntityCatalog::_rebuild_block_indices(uint32_t p_block) {
 		if (parent.is_valid() && parent.block == p_block) {
 			indegree.write[row]++;
 			block->child_offsets.write[parent.row + 1]++;
-		} else {
-			block->external_parent_edges.push_back({ record->parent.id, row });
 		}
 	}
 	for (uint32_t row = 1; row <= count; row++) {
@@ -164,7 +195,6 @@ void EntityCatalog::_rebuild_block_indices(uint32_t p_block) {
 			block->child_rows.write[cursors.write[parent.row]++] = row;
 		}
 	}
-	block->external_parent_edges.sort_custom<ParentEdgeOrder>();
 	Vector<uint32_t> ready;
 	for (uint32_t row = 0; row < count; row++) {
 		const Record *record = get_record({ p_block, block->generation, row });
@@ -206,12 +236,15 @@ uint32_t EntityCatalog::add_block(const Vector<EntityId> &p_ids, const Vector<Re
 	block->states.resize(p_ids.size());
 	for (uint32_t row = 0; row < uint32_t(p_ids.size()); row++) {
 		block->states.write[row].tombstone = p_records[row].deleted;
+		block->states.write[row].prefab = !p_records[row].prefab_instance.is_empty();
 	}
 	const uint32_t index = blocks.size();
 	blocks.push_back(block);
 	active_records += p_ids.size();
-	_add_locator_run(index);
+	_publish_locator_rows(index);
 	_rebuild_block_indices(index);
+	_publish_child_rows(index);
+	maintenance();
 	return index;
 }
 
@@ -233,29 +266,63 @@ Error EntityCatalog::insert_record(EntityId p_id, const Record &p_record) {
 }
 
 bool EntityCatalog::erase_record(EntityId p_id) {
-	RowLocation location = locate(p_id);
-	RowState *state = get_state_ptr(location);
-	if (!state) {
+	const RowLocation location = locate(p_id);
+	if (!location.is_valid()) {
 		return false;
 	}
-	state->active = false;
-	active_records--;
-	if (state->resident) {
-		resident_records--;
-	}
-	state->resident = false;
-	state->handle = {};
-	state->incarnation++;
-	_rebuild_block_indices(location.block);
-	bool retained = false;
-	for (const RowState &row : get_block(location.block)->states) {
-		retained |= row.active;
-	}
-	if (!retained) {
-		memdelete(blocks[location.block]);
-		blocks[location.block] = nullptr;
-	}
+	Vector<RowLocation> rows;
+	rows.push_back(location);
+	retire_rows(rows);
 	return true;
+}
+
+void EntityCatalog::retire_rows(const Vector<RowLocation> &p_rows) {
+	Vector<RowLocation> rows = p_rows;
+	struct RowOrder {
+		bool operator()(const RowLocation &p_left, const RowLocation &p_right) const {
+			return p_left.block != p_right.block ? p_left.block < p_right.block : p_left.row < p_right.row;
+		}
+	};
+	rows.sort_custom<RowOrder>();
+	uint32_t begin = 0;
+	while (begin < uint32_t(rows.size())) {
+		const uint32_t block_index = rows[begin].block;
+		CellRuntimeBlock *block = get_block(block_index);
+		uint32_t end = begin;
+		Vector<uint32_t> retired;
+		while (end < uint32_t(rows.size()) && rows[end].block == block_index) {
+			const RowLocation location = rows[end++];
+			RowState *state = get_state_ptr(location);
+			if (!block || !state || !state->active) {
+				continue;
+			}
+			state->active = false;
+			active_records--;
+			if (state->resident) {
+				resident_records--;
+			}
+			state->resident = false;
+			state->handle = {};
+			state->incarnation++;
+			retired.push_back(location.row);
+		}
+		if (block && !retired.is_empty()) {
+			_publish_locator_rows(block_index, &retired, true);
+			_publish_child_rows(block_index, &retired, true);
+			bool retained = false;
+			for (const RowState &row : block->states) {
+				retained |= row.active;
+			}
+			if (retained) {
+				_rebuild_block_indices(block_index);
+			} else {
+				memdelete(block);
+				blocks[block_index] = nullptr;
+			}
+		}
+		begin = end;
+	}
+	maintenance();
 }
 
 Vector<EntityId> EntityCatalog::get_ids() const {
@@ -277,45 +344,60 @@ Vector<EntityId> EntityCatalog::get_ids() const {
 Vector<EntityId> EntityCatalog::get_children(EntityId p_id) const {
 	Vector<EntityId> result;
 	const RowLocation parent = locate(p_id);
-	if (parent.is_valid()) {
-		const CellRuntimeBlock *parent_block = blocks[parent.block];
-		for (uint32_t index = parent_block->child_offsets[parent.row]; index < parent_block->child_offsets[parent.row + 1]; index++) {
-			const uint32_t child = parent_block->child_rows[index];
-			const Record *record = get_record({ parent.block, parent.generation, child });
-			if (record && !record->deleted) {
-				result.push_back(parent_block->ids[child]);
-			}
+	if (!parent.is_valid()) {
+		return result;
+	}
+	const CellRuntimeBlock *parent_block = blocks[parent.block];
+	for (uint32_t index = parent_block->child_offsets[parent.row]; index < parent_block->child_offsets[parent.row + 1]; index++) {
+		const uint32_t child = parent_block->child_rows[index];
+		const Record *record = get_record({ parent.block, parent.generation, child });
+		if (record && !record->deleted) {
+			result.push_back(parent_block->ids[child]);
 		}
 	}
-	for (uint32_t block_index = 0; block_index < blocks.size(); block_index++) {
-		const CellRuntimeBlock *block = blocks[block_index];
-		if (!block) {
-			continue;
-		}
+	for (int32_t run_index = child_runs.size() - 1; run_index >= 0; run_index--) {
+		const Vector<ChildEntry> &edges = child_runs[run_index]->by_parent;
 		int32_t low = 0;
-		int32_t high = block->external_parent_edges.size() - 1;
+		int32_t high = edges.size() - 1;
 		while (low <= high) {
 			const int32_t middle = low + (high - low) / 2;
-			const EntityId candidate = block->external_parent_edges[middle].parent;
+			const EntityId candidate = edges[middle].parent;
 			if (_id_less(candidate, p_id)) {
 				low = middle + 1;
 			} else {
 				high = middle - 1;
 			}
 		}
-		for (int32_t edge = low; edge < block->external_parent_edges.size() && block->external_parent_edges[edge].parent == p_id; edge++) {
-			const uint32_t child = block->external_parent_edges[edge].child;
-			const Record *record = get_record({ block_index, block->generation, child });
-			if (record && !record->deleted) {
-				result.push_back(block->ids[child]);
+		for (int32_t edge_index = low; edge_index < edges.size() && edges[edge_index].parent == p_id; edge_index++) {
+			const ChildEntry &edge = edges[edge_index];
+			const Record *record = get_record(edge.location);
+			const CellRuntimeBlock *child_block = get_block(edge.location.block);
+			if (record && child_block && !record->deleted && record->parent.id == p_id) {
+				result.push_back(edge.child);
 			}
 		}
 	}
+	result.sort_custom<IdOrder>();
+	int32_t unique = 0;
+	for (EntityId id : result) {
+		if (unique == 0 || result[unique - 1] != id) {
+			result.write[unique++] = id;
+		}
+	}
+	result.resize(unique);
 	return result;
 }
 
-void EntityCatalog::_unlink_parent(EntityId p_id) {
-	(void)p_id;
+void EntityCatalog::_refresh_parent(EntityId p_id) {
+	const RowLocation location = locate(p_id);
+	if (!location.is_valid()) {
+		return;
+	}
+	_rebuild_block_indices(location.block);
+	Vector<uint32_t> rows;
+	rows.push_back(location.row);
+	_publish_child_rows(location.block, &rows);
+	maintenance();
 }
 
 void EntityCatalog::_set_parent(EntityId p_id, EntityRef p_parent) {
@@ -323,8 +405,176 @@ void EntityCatalog::_set_parent(EntityId p_id, EntityRef p_parent) {
 	Record *record = edit_record(location);
 	if (record) {
 		record->parent = p_parent;
-		_rebuild_block_indices(location.block);
+		_refresh_parent(p_id);
 	}
+}
+
+void EntityCatalog::CompactionJob::prepare(bool) {
+	const uint64_t began = profile ? OS::get_singleton()->get_ticks_usec() : 0;
+	struct StampedLocator {
+		LocatorEntry entry;
+		uint32_t age = 0;
+	};
+	struct StampedLocatorOrder {
+		bool operator()(const StampedLocator &p_left, const StampedLocator &p_right) const {
+			if (p_left.entry.id == p_right.entry.id) {
+				return p_left.age > p_right.age;
+			}
+			return EntityCatalog::_id_less(p_left.entry.id, p_right.entry.id);
+		}
+	};
+	Vector<StampedLocator> locator_entries;
+	for (uint32_t age = 0; age < locator_snapshot.size(); age++) {
+		for (const LocatorEntry &entry : locator_snapshot[age]->entries) {
+			locator_entries.push_back({ entry, age });
+		}
+	}
+	locator_entries.sort_custom<StampedLocatorOrder>();
+	locator_result.instantiate();
+	for (int32_t i = 0; i < locator_entries.size();) {
+		const StampedLocator &newest = locator_entries[i];
+		if (newest.entry.location.is_valid()) {
+			locator_result->entries.push_back(newest.entry);
+		}
+		const EntityId id = newest.entry.id;
+		while (++i < locator_entries.size() && locator_entries[i].entry.id == id) {
+		}
+	}
+
+	struct StampedChild {
+		ChildEntry entry;
+		uint32_t age = 0;
+	};
+	struct StampedChildOrder {
+		bool operator()(const StampedChild &p_left, const StampedChild &p_right) const {
+			if (p_left.entry.child == p_right.entry.child) {
+				return p_left.age > p_right.age;
+			}
+			return EntityCatalog::_id_less(p_left.entry.child, p_right.entry.child);
+		}
+	};
+	Vector<StampedChild> child_entries;
+	for (uint32_t age = 0; age < child_snapshot.size(); age++) {
+		for (const ChildEntry &entry : child_snapshot[age]->by_child) {
+			child_entries.push_back({ entry, age });
+		}
+	}
+	child_entries.sort_custom<StampedChildOrder>();
+	child_result.instantiate();
+	for (int32_t i = 0; i < child_entries.size();) {
+		const StampedChild &newest = child_entries[i];
+		if (newest.entry.location.is_valid()) {
+			child_result->by_child.push_back(newest.entry);
+			child_result->by_parent.push_back(newest.entry);
+		}
+		const EntityId id = newest.entry.child;
+		while (++i < child_entries.size() && child_entries[i].entry.child == id) {
+		}
+	}
+	child_result->by_parent.sort_custom<ParentRunOrder>();
+	retained_bytes = uint64_t(locator_result->entries.size()) * sizeof(LocatorEntry) + uint64_t(child_result->by_child.size() + child_result->by_parent.size()) * sizeof(ChildEntry);
+	if (profile) {
+		worker_usec = OS::get_singleton()->get_ticks_usec() - began;
+	}
+}
+
+void EntityCatalog::_collect_compaction() {
+	if (!compaction_job || compaction_mailbox.is_null()) {
+		return;
+	}
+	EntityTaskScheduler::Graph *completed = compaction_mailbox->pop();
+	if (!completed) {
+		return;
+	}
+	completed->ready = true;
+	CompactionJob *job = static_cast<CompactionJob *>(completed);
+	const uint64_t began = job->profile ? OS::get_singleton()->get_ticks_usec() : 0;
+	bool valid = job->locator_snapshot.size() <= locator_runs.size() && job->child_snapshot.size() <= child_runs.size();
+	for (uint32_t i = 0; valid && i < job->locator_snapshot.size(); i++) {
+		valid = job->locator_snapshot[i].ptr() == locator_runs[i].ptr();
+	}
+	for (uint32_t i = 0; valid && i < job->child_snapshot.size(); i++) {
+		valid = job->child_snapshot[i].ptr() == child_runs[i].ptr();
+	}
+	if (valid && !job->cancelled.is_set()) {
+		LocalVector<Ref<LocatorRun>> compacted_locator;
+		if (!job->locator_result->entries.is_empty()) {
+			compacted_locator.push_back(job->locator_result);
+		}
+		for (uint32_t i = job->locator_snapshot.size(); i < locator_runs.size(); i++) {
+			compacted_locator.push_back(locator_runs[i]);
+		}
+		locator_runs = std::move(compacted_locator);
+		LocalVector<Ref<ChildRun>> compacted_children;
+		if (!job->child_result->by_child.is_empty()) {
+			compacted_children.push_back(job->child_result);
+		}
+		for (uint32_t i = job->child_snapshot.size(); i < child_runs.size(); i++) {
+			compacted_children.push_back(child_runs[i]);
+		}
+		child_runs = std::move(compacted_children);
+	}
+	if (job->profile) {
+		print_line(vformat("Entity catalog compaction locator_runs=%d child_runs=%d worker_us=%d owner_us=%d retained_bytes=%d valid=%d", int64_t(locator_runs.size()), int64_t(child_runs.size()), int64_t(job->worker_usec), int64_t(OS::get_singleton()->get_ticks_usec() - began), int64_t(job->retained_bytes), int64_t(valid)));
+	}
+	memdelete(job);
+	compaction_job = nullptr;
+}
+
+void EntityCatalog::_schedule_compaction() {
+	if (shutting_down || compaction_job || (locator_runs.size() <= RUN_COMPACTION_THRESHOLD && child_runs.size() <= RUN_COMPACTION_THRESHOLD)) {
+		return;
+	}
+	EntityTaskScheduler *scheduler = EntityTaskScheduler::get_singleton();
+	if (!scheduler) {
+		return;
+	}
+	uint64_t entry_bytes = 0;
+	for (const Ref<LocatorRun> &run : locator_runs) {
+		entry_bytes += uint64_t(run->entries.size()) * sizeof(LocatorEntry);
+	}
+	for (const Ref<ChildRun> &run : child_runs) {
+		entry_bytes += uint64_t(run->by_child.size()) * sizeof(ChildEntry);
+	}
+	EntityTaskScheduler::Reservation reservation;
+	if (scheduler->reserve(reservation, sizeof(CompactionJob) + entry_bytes * 4 + 4096) != OK) {
+		return;
+	}
+	if (compaction_mailbox.is_null()) {
+		compaction_mailbox.instantiate();
+	}
+	CompactionJob *job = memnew(CompactionJob);
+	job->profile = OS::get_singleton()->is_use_benchmark_set();
+	job->locator_snapshot = locator_runs;
+	job->child_snapshot = child_runs;
+	scheduler->adopt(job, reservation);
+	const Error submitted = scheduler->submit(job, compaction_mailbox, true, EntityTaskScheduler::LOW);
+	if (submitted != OK) {
+		memdelete(job);
+		return;
+	}
+	compaction_job = job;
+}
+
+void EntityCatalog::maintenance() {
+	_collect_compaction();
+	_schedule_compaction();
+}
+
+void EntityCatalog::flush_maintenance() {
+	shutting_down = true;
+	if (!compaction_job) {
+		shutting_down = false;
+		return;
+	}
+	compaction_job->cancelled.set();
+	while (compaction_job) {
+		_collect_compaction();
+		if (compaction_job) {
+			OS::get_singleton()->delay_usec(1000);
+		}
+	}
+	shutting_down = false;
 }
 
 EntityReferenceState EntityCatalog::get_state(EntityId p_id) const {

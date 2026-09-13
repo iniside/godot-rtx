@@ -1,6 +1,7 @@
 #pragma once
 
 #include "entity_id.h"
+#include "entity_task_scheduler.h"
 
 #include "core/templates/local_vector.h"
 #include "core/templates/vector.h"
@@ -95,7 +96,6 @@ public:
 		Vector<uint32_t> topological_rows;
 		Vector<uint32_t> child_offsets;
 		Vector<uint32_t> child_rows;
-		Vector<ParentEdge> external_parent_edges;
 		Vector<ArchetypeSpan> archetypes;
 	};
 
@@ -104,8 +104,27 @@ private:
 		EntityId id;
 		RowLocation location;
 	};
-	struct LocatorRun {
+	struct LocatorRun : RefCounted {
 		Vector<LocatorEntry> entries;
+	};
+	struct ChildEntry {
+		EntityId child;
+		EntityId parent;
+		RowLocation location;
+	};
+	struct ChildRun : RefCounted {
+		Vector<ChildEntry> by_child;
+		Vector<ChildEntry> by_parent;
+	};
+	struct ChildOrder {
+		bool operator()(const ChildEntry &p_left, const ChildEntry &p_right) const {
+			return p_left.child.high != p_right.child.high ? p_left.child.high < p_right.child.high : p_left.child.low < p_right.child.low;
+		}
+	};
+	struct ParentRunOrder {
+		bool operator()(const ChildEntry &p_left, const ChildEntry &p_right) const {
+			return p_left.parent.high != p_right.parent.high ? p_left.parent.high < p_right.parent.high : (p_left.parent.low != p_right.parent.low ? p_left.parent.low < p_right.parent.low : ChildOrder()(p_left, p_right));
+		}
 	};
 	struct LocatorOrder {
 		bool operator()(const LocatorEntry &p_left, const LocatorEntry &p_right) const { return _id_less(p_left.id, p_right.id); }
@@ -115,15 +134,35 @@ private:
 	};
 
 	LocalVector<CellRuntimeBlock *> blocks;
-	LocalVector<LocatorRun *> locator_runs;
+	struct CompactionJob : EntityTaskScheduler::Graph {
+		LocalVector<Ref<LocatorRun>> locator_snapshot;
+		LocalVector<Ref<ChildRun>> child_snapshot;
+		Ref<LocatorRun> locator_result;
+		Ref<ChildRun> child_result;
+		uint64_t worker_usec = 0;
+		uint64_t retained_bytes = 0;
+		uint32_t enumerate() override { return 0; }
+		void read_range(uint32_t) override {}
+		void prepare(bool) override;
+	};
+
+	static constexpr uint32_t RUN_COMPACTION_THRESHOLD = 8;
+	LocalVector<Ref<LocatorRun>> locator_runs;
+	LocalVector<Ref<ChildRun>> child_runs;
+	Ref<EntityTaskScheduler::Mailbox> compaction_mailbox;
+	CompactionJob *compaction_job = nullptr;
 	uint32_t next_block_generation = 1;
 	uint32_t active_records = 0;
 	uint32_t resident_records = 0;
+	bool shutting_down = false;
 
 	static bool _id_less(EntityId p_left, EntityId p_right);
 	const LocatorEntry *_find_in_run(const LocatorRun &p_run, EntityId p_id) const;
-	void _add_locator_run(uint32_t p_block);
+	void _publish_locator_rows(uint32_t p_block, const Vector<uint32_t> *p_rows = nullptr, bool p_invalid = false);
+	void _publish_child_rows(uint32_t p_block, const Vector<uint32_t> *p_rows = nullptr, bool p_invalid = false);
 	void _rebuild_block_indices(uint32_t p_block);
+	void _schedule_compaction();
+	void _collect_compaction();
 
 public:
 	EntityCatalog() = default;
@@ -145,12 +184,15 @@ public:
 	Error add_record(EntityId p_id, EntityRef p_parent = {});
 	Error insert_record(EntityId p_id, const Record &p_record);
 	bool erase_record(EntityId p_id);
+	void retire_rows(const Vector<RowLocation> &p_rows);
 	bool has_record(EntityId p_id) const { return locate(p_id).is_valid(); }
 	void clear();
+	void maintenance();
+	void flush_maintenance();
 
 	Vector<EntityId> get_ids() const;
 	Vector<EntityId> get_children(EntityId p_id) const;
-	void _unlink_parent(EntityId p_id);
+	void _refresh_parent(EntityId p_id);
 	void _set_parent(EntityId p_id, EntityRef p_parent);
 	EntityReferenceState get_state(EntityId p_id) const;
 	EntityRef get_parent(EntityId p_id) const;
@@ -159,4 +201,6 @@ public:
 	CellRuntimeBlock *get_block(uint32_t p_block);
 	const CellRuntimeBlock *get_block(uint32_t p_block) const;
 	const LocalVector<CellRuntimeBlock *> &get_blocks() const { return blocks; }
+	uint32_t get_locator_run_count() const { return locator_runs.size(); }
+	uint32_t get_child_run_count() const { return child_runs.size(); }
 };
