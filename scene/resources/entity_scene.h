@@ -303,11 +303,11 @@ private:
 		String relative;
 		PackedStringArray filenames;
 		HashMap<String, bool> required_files;
-		HashSet<EntityId, EntityIdHasher> required;
+		Vector<EntityId> required;
 		LocalVector<CellReadRange> read_ranges;
-		HashSet<EntityId, EntityIdHasher> skip;
-		HashSet<EntityId, EntityIdHasher> globals;
-		HashSet<EntityId, EntityIdHasher> members;
+		Vector<EntityId> skip;
+		Vector<EntityId> globals;
+		Vector<EntityId> members;
 		Vector<String> missing;
 		HashSet<String> loaded;
 		LocalVector<Ref<Resource>> assets;
@@ -340,6 +340,13 @@ private:
 	};
 
 	static uint32_t _max_cell_jobs();
+	struct SnapshotIdOrder {
+		bool operator()(EntityId p_left, EntityId p_right) const {
+			return p_left.high != p_right.high ? p_left.high < p_right.high : p_left.low < p_right.low;
+		}
+	};
+	static bool _snapshot_has(const Vector<EntityId> &p_ids, EntityId p_id);
+	static void _sort_snapshot_ids(Vector<EntityId> &r_ids);
 	static constexpr uint32_t CELL_READ_RANGE_FILES = 64;
 
 	EntityId document_id;
@@ -475,7 +482,7 @@ private:
 	Error _can_commit(const PreparedSet &p_prepared, const Vector<EntityId> &p_ids);
 	Error _can_commit(const PreparedSet &p_prepared, const Vector<EntityId> &p_ids, LocalVector<CommitItem> &r_items);
 	Error _commit(const PreparedSet &p_prepared, const Vector<EntityId> &p_ids, bool p_resident, bool p_dirty = true, CommitProfile *r_profile = nullptr);
-	Error _commit(const PreparedSet &p_prepared, LocalVector<CommitItem> &p_items, bool p_resident, bool p_dirty = true, CommitProfile *r_profile = nullptr, const CellKey *p_streamed_cell = nullptr, const HashSet<EntityId, EntityIdHasher> *p_streamed_members = nullptr);
+	Error _commit(const PreparedSet &p_prepared, LocalVector<CommitItem> &p_items, bool p_resident, bool p_dirty = true, CommitProfile *r_profile = nullptr, const CellKey *p_streamed_cell = nullptr, const Vector<EntityId> *p_streamed_members = nullptr);
 	Error _install(EntityId p_id, const Dictionary &p_record);
 	Error _validate_fields(EntityId p_id, uint64_t p_type, const Dictionary &p_fields, const String &p_prefix = String());
 	static Error _describe_components(const Dictionary &p_record, Section &r_section, Vector<uint64_t> &r_types, String &r_field);

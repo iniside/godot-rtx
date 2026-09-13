@@ -35,6 +35,18 @@ private:
 	};
 
 public:
+	class Reservation {
+		friend class EntityTaskScheduler;
+		Ref<Budget> budget;
+		uint64_t bytes = 0;
+
+	public:
+		Reservation() = default;
+		Reservation(const Reservation &) = delete;
+		Reservation &operator=(const Reservation &) = delete;
+		~Reservation();
+	};
+
 	class Graph {
 		friend class EntityTaskScheduler;
 		friend class Mailbox;
@@ -55,6 +67,7 @@ public:
 		Graph *completion_next = nullptr;
 		bool decode_only = false;
 		bool submitted = false;
+		bool admitted = false;
 		uint64_t queued_usec = 0;
 		uint64_t queue_usec = 0;
 		uint32_t range_count = 0;
@@ -109,6 +122,8 @@ private:
 public:
 	static EntityTaskScheduler *get_singleton() { return singleton; }
 	Error submit(Graph *p_graph, const Ref<Mailbox> &p_mailbox, bool p_decode_only = false, Priority p_priority = NORMAL);
+	Error reserve(Reservation &r_reservation, uint64_t p_snapshot_bytes);
+	void adopt(Graph *p_graph, Reservation &p_reservation);
 	uint32_t get_worker_count() const { return worker_count; }
 	EntityTaskScheduler();
 	~EntityTaskScheduler();

@@ -35,6 +35,7 @@ class EntityCatalog {
 		bool has_order = false;
 		bool has_section = false;
 		bool has_cell = false;
+		uint64_t snapshot_visit = 0;
 	};
 	using RecordMap = AHashMap<EntityId, Record, EntityIdHasher>;
 	RecordMap records;

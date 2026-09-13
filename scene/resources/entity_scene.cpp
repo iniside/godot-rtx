@@ -1196,7 +1196,7 @@ Error EntityScene::_commit(const PreparedSet &p_prepared, const Vector<EntityId>
 	return _commit(p_prepared, items, p_resident, p_dirty, r_profile, nullptr);
 }
 
-Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem> &p_items, bool p_resident, bool p_dirty, CommitProfile *r_profile, const CellKey *p_streamed_cell, const HashSet<EntityId, EntityIdHasher> *p_streamed_members) {
+Error EntityScene::_commit(const PreparedSet &p_prepared, LocalVector<CommitItem> &p_items, bool p_resident, bool p_dirty, CommitProfile *r_profile, const CellKey *p_streamed_cell, const Vector<EntityId> *p_streamed_members) {
 	EntityWorld *target = get_world();
 	const bool bulk = p_prepared.bulk_groups != nullptr;
 	LocalVector<EntityInitialRenderGroup> initial;
@@ -1877,94 +1877,216 @@ uint32_t EntityScene::_max_cell_jobs() {
 	return limit;
 }
 
+bool EntityScene::_snapshot_has(const Vector<EntityId> &p_ids, EntityId p_id) {
+	const int index = p_ids.bsearch_custom<SnapshotIdOrder>(p_id, true);
+	return index < p_ids.size() && p_ids[index] == p_id;
+}
+
+void EntityScene::_sort_snapshot_ids(Vector<EntityId> &r_ids) {
+	r_ids.sort_custom<SnapshotIdOrder>();
+	int count = 0;
+	for (int i = 0; i < r_ids.size(); i++) {
+		if (count == 0 || r_ids[i] != r_ids[count - 1]) {
+			r_ids.write[count++] = r_ids[i];
+		}
+	}
+	r_ids.resize(count);
+}
+
 Error EntityScene::_dispatch_cell(const CellKey &p_cell) {
-	Vector<EntityId> known;
-	CellJob *job = memnew(CellJob);
-	job->profile = OS::get_singleton()->is_use_benchmark_set();
-	job->result.key = p_cell;
-	job->storage_directory = EntitySceneIO::scene_directory(storage_path).simplify_path();
+	EntityTaskScheduler *scheduler = EntityTaskScheduler::get_singleton();
+	if (!scheduler) {
+		return ERR_UNAVAILABLE;
+	}
 	const CellMembers *members = cells.getptr(p_cell);
+	static std::atomic<uint64_t> next_snapshot{ 2 };
+	const uint64_t snapshot = next_snapshot.fetch_add(2, std::memory_order_relaxed);
+	const uint64_t member_count = members ? members->size() : 0;
+	uint64_t ancestor_count = 0;
+	uint64_t snapshot_bytes = sizeof(CellJob) + 16384 + uint64_t(globals.size()) * sizeof(EntityId) * 4 + member_count * sizeof(EntityId) * 8 + uint64_t(deleted_storage.size()) * sizeof(EntityId) * 4;
+	snapshot_bytes += uint64_t(storage_path.length() + p_cell.grid.length() + 128) * 128;
 	if (members) {
 		for (const KeyValue<EntityId, bool> &member : *members) {
-			const EntityId id = member.key;
-			job->members.insert(id);
+			EntityId id = member.key;
 			if (resolve(id).state == EntityReferenceState::RESIDENT || dirty.has(id)) {
-				job->skip.insert(id);
-			} else {
-				known.push_back(id);
+				continue;
+			}
+			while (id.is_valid()) {
+				EntityCatalog::Record *record = catalog.records.getptr(id);
+				if (!record) {
+					return _fail(id, "required", ERR_DOES_NOT_EXIST);
+				}
+				if (record->snapshot_visit == snapshot) {
+					break;
+				}
+				if (record->snapshot_visit == snapshot + 1) {
+					return _fail(id, "required", ERR_CYCLIC_LINK);
+				}
+				record->snapshot_visit = snapshot + 1;
+				ancestor_count++;
+				snapshot_bytes += sizeof(EntityId) * 16 + sizeof(PendingRecord) * 4 + 2048 + uint64_t(record->section.path.length() + 1) * 64;
+				if (snapshot_bytes > CellJob::BYTE_BUDGET) {
+					return ERR_OUT_OF_MEMORY;
+				}
+				id = record->deleted ? EntityId() : record->parent.id;
+			}
+			for (id = member.key; id.is_valid();) {
+				EntityCatalog::Record &record = catalog.records[id];
+				if (record.snapshot_visit != snapshot + 1) {
+					break;
+				}
+				record.snapshot_visit = snapshot;
+				id = record.deleted ? EntityId() : record.parent.id;
 			}
 		}
 	}
-	if (!known.is_empty()) {
-		HashSet<EntityId, EntityIdHasher> inside;
-		inside.reserve(members->size());
+	EntityTaskScheduler::Reservation reservation;
+	const Error admission_error = scheduler->reserve(reservation, snapshot_bytes);
+	if (admission_error != OK) {
+		return admission_error;
+	}
+	CellJob *job = memnew(CellJob);
+	scheduler->adopt(job, reservation);
+	job->profile = OS::get_singleton()->is_use_benchmark_set();
+	job->result.key = p_cell;
+	job->storage_directory = EntitySceneIO::scene_directory(storage_path).simplify_path();
+	LocalVector<EntityId, uint32_t, false, true> required_rows;
+	required_rows.resize(uint32_t(ancestor_count));
+	uint32_t required_count = 0;
+	job->members.resize(int(member_count));
+	int member_index = 0;
+	if (members) {
 		for (const KeyValue<EntityId, bool> &member : *members) {
-			inside.insert(member.key);
-		}
-		Vector<EntityId> required;
-		const Error error = _collect_required(known, required);
-		if (error != OK) {
-			memdelete(job);
-			return error;
-		}
-		for (EntityId id : required) {
-			job->required.insert(id);
-			if (!inside.has(id)) {
-				job->ancestors.push_back(id);
-			}
-			if (resolve(id).state == EntityReferenceState::RESIDENT || dirty.has(id)) {
-				job->skip.insert(id);
+			const EntityId member_id = member.key;
+			job->members.write[member_index++] = member_id;
+			if (resolve(member_id).state == EntityReferenceState::RESIDENT || dirty.has(member_id)) {
 				continue;
 			}
-			const Section *section = sections.getptr(id);
-			const bool prefab = prefab_members.has(id);
-			if (catalog.get_state(id) == EntityReferenceState::DELETED || (!prefab && (!section || (section->record.is_empty() && (section->path.is_empty() || storage_path.is_empty()))))) {
-				memdelete(job);
-				return _fail(id, "record", ERR_DOES_NOT_EXIST);
-			}
-			const String path = section ? section->path.simplify_path() : String();
-			if ((section && !section->path.is_empty() && path.is_empty()) || path.is_absolute_path() || path.contains(":") || path == ".." || path.begins_with("../")) {
-				memdelete(job);
-				return _fail(id, "record path", ERR_INVALID_DATA);
-			}
-			const bool cluster = section && section->cluster;
-			if (prefab || !section->record.is_empty()) {
-				if (section && !section->record.is_empty()) {
-					const Error reserve_error = EntitySceneIO::reserve_record(section->record, *job);
-					if (reserve_error != OK) {
-						memdelete(job);
-						return reserve_error;
-					}
+			for (EntityId id = member_id; id.is_valid();) {
+				EntityCatalog::Record &record = catalog.records[id];
+				if (record.snapshot_visit != snapshot) {
+					break;
 				}
-				Dictionary record;
-				const Error record_error = _read_record(id, record);
-				if (record_error != OK) {
-					memdelete(job);
-					return record_error;
-				}
-				const Error reserve_error = EntitySceneIO::reserve_record(record, *job);
+				record.snapshot_visit = snapshot + 1;
+				required_rows[required_count++] = id;
+				id = record.deleted ? EntityId() : record.parent.id;
+			}
+		}
+	}
+	required_rows.sort_custom<SnapshotIdOrder>();
+	uint32_t unique_count = 0;
+	for (uint32_t i = 0; i < required_count; i++) {
+		if (i == 0 || required_rows[i] != required_rows[i - 1]) {
+			unique_count++;
+		}
+	}
+	job->required.resize(unique_count);
+	unique_count = 0;
+	for (uint32_t i = 0; i < required_count; i++) {
+		if (i == 0 || required_rows[i] != required_rows[i - 1]) {
+			job->required.write[unique_count++] = required_rows[i];
+		}
+	}
+	required_rows.reset();
+	_sort_snapshot_ids(job->members);
+	uint32_t external_count = 0;
+	for (EntityId id : job->required) {
+		external_count += !_snapshot_has(job->members, id);
+	}
+	job->ancestors.resize(external_count);
+	external_count = 0;
+	LocalVector<EntityId, uint32_t, false, true> skipped;
+	skipped.reserve(uint32_t(member_count) + unique_count + deleted_storage.size());
+	for (EntityId id : job->members) {
+		if (resolve(id).state == EntityReferenceState::RESIDENT || dirty.has(id)) {
+			skipped.push_back(id);
+		}
+	}
+	job->required_files.reserve(unique_count);
+	job->pending.reserve(unique_count);
+	for (EntityId id : job->required) {
+		if (!_snapshot_has(job->members, id)) {
+			job->ancestors.write[external_count++] = id;
+		}
+		if (resolve(id).state == EntityReferenceState::RESIDENT || dirty.has(id)) {
+			skipped.push_back(id);
+			continue;
+		}
+		const Section *section = sections.getptr(id);
+		const bool prefab = prefab_members.has(id);
+		if (catalog.get_state(id) == EntityReferenceState::DELETED || (!prefab && (!section || (section->record.is_empty() && (section->path.is_empty() || storage_path.is_empty()))))) {
+			skipped.reset();
+			memdelete(job);
+			return _fail(id, "record", ERR_DOES_NOT_EXIST);
+		}
+		const String path = section ? section->path.simplify_path() : String();
+		if ((section && !section->path.is_empty() && path.is_empty()) || path.is_absolute_path() || path.contains(":") || path == ".." || path.begins_with("../")) {
+			skipped.reset();
+			memdelete(job);
+			return _fail(id, "record path", ERR_INVALID_DATA);
+		}
+		const bool cluster = section && section->cluster;
+		if (prefab || !section->record.is_empty()) {
+			if (section && !section->record.is_empty()) {
+				const Error reserve_error = EntitySceneIO::reserve_record(section->record, *job);
 				if (reserve_error != OK) {
+					skipped.reset();
 					memdelete(job);
 					return reserve_error;
 				}
-				job->pending.push_back({ id, path, cluster, record.duplicate(true) });
-				job->skip.insert(id);
-			} else {
-				job->required_files.insert(path, cluster);
 			}
+			Dictionary record;
+			const Error record_error = _read_record(id, record);
+			if (record_error != OK) {
+				skipped.reset();
+				memdelete(job);
+				return record_error;
+			}
+			const Error reserve_error = EntitySceneIO::reserve_record(record, *job);
+			if (reserve_error != OK) {
+				skipped.reset();
+				memdelete(job);
+				return reserve_error;
+			}
+			job->pending.push_back({ id, path, cluster, record.duplicate(true) });
+			skipped.push_back(id);
+		} else {
+			job->required_files.insert(path, cluster);
 		}
 	}
 	const String relative = EntitySceneIO::cell_directory(p_cell.grid, p_cell.x, p_cell.y, p_cell.z);
 	for (const KeyValue<EntityId, Section> &entry : deleted_storage) {
 		if (entry.value.path.get_base_dir() == relative) {
-			job->skip.insert(entry.key);
+			skipped.push_back(entry.key);
 		}
 	}
+	skipped.sort_custom<SnapshotIdOrder>();
+	uint32_t skip_count = 0;
+	for (uint32_t i = 0; i < skipped.size(); i++) {
+		if (i == 0 || skipped[i] != skipped[i - 1]) {
+			skip_count++;
+		}
+	}
+	job->skip.resize(skip_count);
+	skip_count = 0;
+	for (uint32_t i = 0; i < skipped.size(); i++) {
+		if (i == 0 || skipped[i] != skipped[i - 1]) {
+			job->skip.write[skip_count++] = skipped[i];
+		}
+	}
+	skipped.reset();
+	job->globals.resize(globals.size());
+	int global_index = 0;
+	for (EntityId id : globals) {
+		job->globals.write[global_index++] = id;
+	}
+	_sort_snapshot_ids(job->globals);
 	job->directory = _cell_path(p_cell);
 	if ((job->directory.is_empty() || !DirAccess::dir_exists_absolute(job->directory)) && job->required_files.is_empty() && job->pending.is_empty()) {
-		if (cells.has(p_cell)) {
+		if (members) {
 			const Error error = pin(job->ancestors);
 			if (error != OK) {
+				skipped.reset();
 				memdelete(job);
 				return error;
 			}
@@ -1973,14 +2095,17 @@ Error EntityScene::_dispatch_cell(const CellKey &p_cell) {
 		} else {
 			probed_cells.insert(p_cell, false);
 		}
+		skipped.reset();
 		memdelete(job);
 		return OK;
 	}
 	job->relative = relative;
-	job->globals = globals;
-	EntityTaskScheduler *scheduler = EntityTaskScheduler::get_singleton();
-	const Error error = scheduler ? scheduler->submit(job, cell_mailbox) : ERR_UNAVAILABLE;
+	if (job->profile) {
+		print_line(vformat("Entity request snapshot reserved_bytes=%d globals=%d members=%d required=%d skipped=%d ancestors=%d", snapshot_bytes, job->globals.size(), job->members.size(), job->required.size(), job->skip.size(), job->ancestors.size()));
+	}
+	const Error error = scheduler->submit(job, cell_mailbox);
 	if (error != OK) {
+		skipped.reset();
 		memdelete(job);
 		return error;
 	}
@@ -2108,7 +2233,7 @@ Error EntityScene::_read_cell_range(const CellJob &p_job, uint32_t p_index, Cell
 				r_range.failing_field = "record (" + path + ")";
 				return ERR_FILE_CORRUPT;
 			}
-			if (p_job.skip.has(file_id)) {
+			if (_snapshot_has(p_job.skip, file_id)) {
 				r_range.records.push_back({ file_id, relative, false, Dictionary() });
 				continue;
 			}
@@ -2164,6 +2289,10 @@ Error EntityScene::_merge_cell_reads(CellJob &p_job) {
 	for (const CellReadRange &range : p_job.read_ranges) {
 		record_count += range.records.size();
 	}
+	if (!p_job.reserve_payload((uint64_t(p_job.members.size()) + record_count) * sizeof(EntityId) * 4 + 64)) {
+		return ERR_OUT_OF_MEMORY;
+	}
+	p_job.members.reserve(p_job.members.size() + record_count);
 	struct Owner {
 		String path;
 		bool seen_file = false;
@@ -2185,7 +2314,7 @@ Error EntityScene::_merge_cell_reads(CellJob &p_job) {
 		for (PendingRecord &record : range.records) {
 			const String path = p_job.storage_directory.path_join(record.path);
 			if (record.path.get_base_dir() == p_job.relative) {
-				p_job.members.insert(record.id);
+				p_job.members.push_back(record.id);
 			}
 			Owner *owner = owners.getptr(record.id);
 			if (owner) {
@@ -2205,7 +2334,7 @@ Error EntityScene::_merge_cell_reads(CellJob &p_job) {
 				return ERR_FILE_CORRUPT;
 			}
 			owners.insert(record.id, { path, true });
-			if (p_job.skip.has(record.id) || (record.path.get_base_dir() != p_job.relative && !p_job.required.has(record.id))) {
+			if (_snapshot_has(p_job.skip, record.id) || (record.path.get_base_dir() != p_job.relative && !_snapshot_has(p_job.required, record.id))) {
 				continue;
 			}
 			p_job.pending.push_back(std::move(record));
@@ -2216,12 +2345,13 @@ Error EntityScene::_merge_cell_reads(CellJob &p_job) {
 		}
 	}
 	for (EntityId id : p_job.required) {
-		if (!p_job.skip.has(id) && !owners.has(id)) {
+		if (!_snapshot_has(p_job.skip, id) && !owners.has(id)) {
 			p_job.result.failing = id;
 			p_job.result.failing_field = "record";
 			return ERR_FILE_CORRUPT;
 		}
 	}
+	_sort_snapshot_ids(p_job.members);
 	p_job.pending.sort();
 	return OK;
 }
@@ -2380,14 +2510,23 @@ Error EntityScene::_decode_cell(CellJob &p_job) {
 	if (result != OK) {
 		return result;
 	}
-	HashSet<EntityId, EntityIdHasher> inside(p_job.skip);
-	inside.reserve(p_job.skip.size() + p_job.result.entities.size());
-	for (const PreparedEntity &entity : p_job.result.entities) {
-		inside.insert(entity.id);
+	const uint64_t inside_count = uint64_t(p_job.skip.size()) + p_job.result.entities.size();
+	if (!p_job.reserve_payload(inside_count * sizeof(EntityId) * 4 + 64)) {
+		return ERR_OUT_OF_MEMORY;
+	}
+	Vector<EntityId> inside;
+	inside.resize(inside_count);
+	int inside_index = 0;
+	for (EntityId id : p_job.skip) {
+		inside.write[inside_index++] = id;
 	}
 	for (const PreparedEntity &entity : p_job.result.entities) {
+		inside.write[inside_index++] = entity.id;
+	}
+	_sort_snapshot_ids(inside);
+	for (const PreparedEntity &entity : p_job.result.entities) {
 		const EntityId parent = entity.parent.id;
-		if (!parent.is_valid() || inside.has(parent) || p_job.globals.has(parent)) {
+		if (!parent.is_valid() || _snapshot_has(inside, parent) || _snapshot_has(p_job.globals, parent)) {
 			continue;
 		}
 		p_job.result.failing = entity.id;

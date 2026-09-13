@@ -46,7 +46,7 @@ EntityTaskScheduler::Graph::~Graph() {
 			print_line(vformat("Entity request release payload_reserved_bytes=%d global_reserved_bytes=%d", payload_bytes.load(std::memory_order_relaxed), budget->reserved_bytes));
 		}
 		budget->reserved_bytes -= payload_bytes.load(std::memory_order_relaxed);
-		if (submitted) {
+		if (admitted) {
 			budget->graphs--;
 		}
 	}
@@ -173,8 +173,46 @@ void EntityTaskScheduler::_ingress(void *p_userdata) {
 	self.scheduler.DeRegisterExternalTaskThread();
 }
 
+EntityTaskScheduler::Reservation::~Reservation() {
+	if (budget.is_valid()) {
+		MutexLock lock(budget->mutex);
+		budget->reserved_bytes -= bytes;
+		budget->graphs--;
+	}
+}
+
+Error EntityTaskScheduler::reserve(Reservation &r_reservation, uint64_t p_snapshot_bytes) {
+	ERR_FAIL_COND_V(r_reservation.budget.is_valid(), ERR_ALREADY_IN_USE);
+	if (p_snapshot_bytes > Graph::BYTE_BUDGET) {
+		return ERR_OUT_OF_MEMORY;
+	}
+	MutexLock lock(ingress_mutex);
+	if (!accepting || request_count == INGRESS_CAPACITY) {
+		return ERR_BUSY;
+	}
+	MutexLock budget_lock(budget->mutex);
+	if (budget->graphs >= MAX_GRAPHS || p_snapshot_bytes > MAX_RESERVED_BYTES - budget->reserved_bytes) {
+		return ERR_BUSY;
+	}
+	budget->graphs++;
+	budget->reserved_bytes += p_snapshot_bytes;
+	r_reservation.bytes = p_snapshot_bytes;
+	r_reservation.budget = budget;
+	return OK;
+}
+
+void EntityTaskScheduler::adopt(Graph *p_graph, Reservation &p_reservation) {
+	DEV_ASSERT(!p_graph->admitted && p_reservation.budget.is_valid());
+	p_graph->budget = p_reservation.budget;
+	p_graph->payload_bytes.fetch_add(p_reservation.bytes, std::memory_order_relaxed);
+	p_graph->admitted = true;
+	p_reservation.budget.unref();
+	p_reservation.bytes = 0;
+}
+
 Error EntityTaskScheduler::submit(Graph *p_graph, const Ref<Mailbox> &p_mailbox, bool p_decode_only, Priority p_priority) {
 	ERR_FAIL_COND_V(p_mailbox.is_null(), ERR_INVALID_PARAMETER);
+	ERR_FAIL_COND_V(!p_graph->admitted, ERR_UNCONFIGURED);
 	ERR_FAIL_COND_V(p_graph->submitted && !p_graph->ready, ERR_BUSY);
 	MutexLock lock(ingress_mutex);
 	if (!accepting) {
@@ -182,15 +220,6 @@ Error EntityTaskScheduler::submit(Graph *p_graph, const Ref<Mailbox> &p_mailbox,
 	}
 	if (request_count == INGRESS_CAPACITY) {
 		return ERR_BUSY;
-	}
-	if (!p_graph->submitted) {
-		MutexLock budget_lock(budget->mutex);
-		if (budget->graphs == MAX_GRAPHS || sizeof(Graph) > MAX_RESERVED_BYTES - budget->reserved_bytes) {
-			return ERR_BUSY;
-		}
-		budget->graphs++;
-		budget->reserved_bytes += sizeof(Graph);
-		p_graph->payload_bytes.fetch_add(sizeof(Graph), std::memory_order_relaxed);
 	}
 	p_graph->mailbox = p_mailbox;
 	p_graph->owner_thread = Thread::get_caller_id();
