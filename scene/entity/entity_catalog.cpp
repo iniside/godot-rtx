@@ -921,6 +921,11 @@ void EntityCatalog::CompactionJob::prepare(bool) {
 		}
 	};
 	Vector<StampedLocator> locator_entries;
+	uint32_t locator_entry_count = 0;
+	for (const Ref<LocatorRun> &run : locator_snapshot) {
+		locator_entry_count += run->entries.size();
+	}
+	locator_entries.reserve_exact(locator_entry_count);
 	for (uint32_t age = 0; age < locator_snapshot.size(); age++) {
 		for (const LocatorEntry &entry : locator_snapshot[age]->entries) {
 			locator_entries.push_back({ entry, age });
@@ -928,10 +933,22 @@ void EntityCatalog::CompactionJob::prepare(bool) {
 	}
 	locator_entries.sort_custom<StampedLocatorOrder>();
 	locator_result.instantiate();
+	uint32_t locator_result_count = 0;
 	for (int32_t i = 0; i < locator_entries.size();) {
 		const StampedLocator &newest = locator_entries[i];
 		if (newest.entry.location.is_valid()) {
-			locator_result->entries.push_back(newest.entry);
+			locator_result_count++;
+		}
+		const EntityId id = newest.entry.id;
+		while (++i < locator_entries.size() && locator_entries[i].entry.id == id) {
+		}
+	}
+	locator_result->entries.resize(locator_result_count);
+	locator_result_count = 0;
+	for (int32_t i = 0; i < locator_entries.size();) {
+		const StampedLocator &newest = locator_entries[i];
+		if (newest.entry.location.is_valid()) {
+			locator_result->entries.write[locator_result_count++] = newest.entry;
 		}
 		const EntityId id = newest.entry.id;
 		while (++i < locator_entries.size() && locator_entries[i].entry.id == id) {
@@ -951,6 +968,11 @@ void EntityCatalog::CompactionJob::prepare(bool) {
 		}
 	};
 	Vector<StampedChild> child_entries;
+	uint32_t child_entry_count = 0;
+	for (const Ref<ChildRun> &run : child_snapshot) {
+		child_entry_count += run->by_child.size();
+	}
+	child_entries.reserve_exact(child_entry_count);
 	for (uint32_t age = 0; age < child_snapshot.size(); age++) {
 		for (const ChildEntry &entry : child_snapshot[age]->by_child) {
 			child_entries.push_back({ entry, age });
@@ -958,11 +980,24 @@ void EntityCatalog::CompactionJob::prepare(bool) {
 	}
 	child_entries.sort_custom<StampedChildOrder>();
 	child_result.instantiate();
+	uint32_t child_result_count = 0;
 	for (int32_t i = 0; i < child_entries.size();) {
 		const StampedChild &newest = child_entries[i];
 		if (newest.entry.location.is_valid()) {
-			child_result->by_child.push_back(newest.entry);
-			child_result->by_parent.push_back(newest.entry);
+			child_result_count++;
+		}
+		const EntityId id = newest.entry.child;
+		while (++i < child_entries.size() && child_entries[i].entry.child == id) {
+		}
+	}
+	child_result->by_child.resize(child_result_count);
+	child_result->by_parent.resize(child_result_count);
+	child_result_count = 0;
+	for (int32_t i = 0; i < child_entries.size();) {
+		const StampedChild &newest = child_entries[i];
+		if (newest.entry.location.is_valid()) {
+			child_result->by_child.write[child_result_count] = newest.entry;
+			child_result->by_parent.write[child_result_count++] = newest.entry;
 		}
 		const EntityId id = newest.entry.child;
 		while (++i < child_entries.size() && child_entries[i].entry.child == id) {
