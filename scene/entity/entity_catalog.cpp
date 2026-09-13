@@ -33,10 +33,18 @@ void EntityCatalog::clear() {
 uint64_t EntityCatalog::_run_bytes() const {
 	uint64_t bytes = 0;
 	for (const Ref<LocatorRun> &run : locator_runs) {
-		bytes += uint64_t(run->entries.size()) * sizeof(LocatorEntry);
+		const uint64_t added = uint64_t(run->entries.size()) * sizeof(LocatorEntry);
+		if (added > UINT64_MAX - bytes) {
+			return UINT64_MAX;
+		}
+		bytes += added;
 	}
 	for (const Ref<ChildRun> &run : child_runs) {
-		bytes += uint64_t(run->by_child.size() + run->by_parent.size()) * sizeof(ChildEntry);
+		const uint64_t added = (uint64_t(run->by_child.size()) + uint64_t(run->by_parent.size())) * sizeof(ChildEntry);
+		if (added > UINT64_MAX - bytes) {
+			return UINT64_MAX;
+		}
+		bytes += added;
 	}
 	return bytes;
 }
@@ -44,20 +52,24 @@ uint64_t EntityCatalog::_run_bytes() const {
 void EntityCatalog::_record_run_high_water() {
 	max_locator_runs = MAX(max_locator_runs, uint64_t(locator_runs.size()));
 	max_child_runs = MAX(max_child_runs, uint64_t(child_runs.size()));
-	max_run_bytes = MAX(max_run_bytes, _run_bytes() + pending_compaction_bytes);
+	max_run_bytes = MAX(max_run_bytes, _run_bytes());
 }
 
 Error EntityCatalog::_ensure_run_capacity(uint32_t p_locator_runs, uint32_t p_child_runs, uint64_t p_bytes) {
 	_collect_compaction();
 	const uint64_t current_bytes = _run_bytes();
-	const bool bounded = locator_runs.size() + p_locator_runs <= RUN_HARD_CAP && child_runs.size() + p_child_runs <= RUN_HARD_CAP && current_bytes + pending_compaction_bytes + p_bytes <= RUN_BYTE_HARD_CAP;
+	const bool bounded_runs = p_locator_runs <= RUN_HARD_CAP - MIN(uint32_t(locator_runs.size()), RUN_HARD_CAP) && p_child_runs <= RUN_HARD_CAP - MIN(uint32_t(child_runs.size()), RUN_HARD_CAP);
+	const bool bounded_bytes = current_bytes <= RUN_BYTE_HARD_CAP && p_bytes <= RUN_BYTE_HARD_CAP - current_bytes;
+	const bool bounded = bounded_runs && bounded_bytes;
 	if (bounded) {
 		return OK;
 	}
-	_schedule_compaction();
+	_schedule_compaction(true);
 	_collect_compaction();
 	const uint64_t collected_bytes = _run_bytes();
-	if (locator_runs.size() + p_locator_runs <= RUN_HARD_CAP && child_runs.size() + p_child_runs <= RUN_HARD_CAP && collected_bytes + pending_compaction_bytes + p_bytes <= RUN_BYTE_HARD_CAP) {
+	const bool collected_runs = p_locator_runs <= RUN_HARD_CAP - MIN(uint32_t(locator_runs.size()), RUN_HARD_CAP) && p_child_runs <= RUN_HARD_CAP - MIN(uint32_t(child_runs.size()), RUN_HARD_CAP);
+	const bool collected_capacity = collected_bytes <= RUN_BYTE_HARD_CAP && p_bytes <= RUN_BYTE_HARD_CAP - collected_bytes;
+	if (collected_runs && collected_capacity) {
 		return OK;
 	}
 	run_backpressure_count++;
@@ -183,7 +195,9 @@ void EntityCatalog::_publish_locator_entries(Vector<LocatorEntry> &&p_entries) {
 		return;
 	}
 	ERR_FAIL_COND(locator_runs.size() >= RUN_HARD_CAP);
-	ERR_FAIL_COND(_run_bytes() + pending_compaction_bytes + uint64_t(p_entries.size()) * sizeof(LocatorEntry) > RUN_BYTE_HARD_CAP);
+	const uint64_t current_bytes = _run_bytes();
+	const uint64_t added_bytes = uint64_t(p_entries.size()) * sizeof(LocatorEntry);
+	ERR_FAIL_COND(current_bytes > RUN_BYTE_HARD_CAP || added_bytes > RUN_BYTE_HARD_CAP - current_bytes);
 	Ref<LocatorRun> run;
 	run.instantiate();
 	run->entries = std::move(p_entries);
@@ -215,7 +229,9 @@ void EntityCatalog::_publish_child_entries(Vector<ChildEntry> &&p_entries) {
 		return;
 	}
 	ERR_FAIL_COND(child_runs.size() >= RUN_HARD_CAP);
-	ERR_FAIL_COND(_run_bytes() + pending_compaction_bytes + uint64_t(p_entries.size()) * sizeof(ChildEntry) * 2 > RUN_BYTE_HARD_CAP);
+	const uint64_t current_bytes = _run_bytes();
+	const uint64_t added_bytes = uint64_t(p_entries.size()) * sizeof(ChildEntry) * 2;
+	ERR_FAIL_COND(current_bytes > RUN_BYTE_HARD_CAP || added_bytes > RUN_BYTE_HARD_CAP - current_bytes);
 	Ref<ChildRun> run;
 	run.instantiate();
 	run->by_child = std::move(p_entries);
@@ -953,7 +969,7 @@ void EntityCatalog::CompactionJob::prepare(bool) {
 		}
 	}
 	child_result->by_parent.sort_custom<ParentRunOrder>();
-	retained_bytes = uint64_t(locator_result->entries.size()) * sizeof(LocatorEntry) + uint64_t(child_result->by_child.size() + child_result->by_parent.size()) * sizeof(ChildEntry);
+	retained_bytes = uint64_t(locator_result->entries.size()) * sizeof(LocatorEntry) + (uint64_t(child_result->by_child.size()) + uint64_t(child_result->by_parent.size())) * sizeof(ChildEntry);
 	if (profile) {
 		worker_usec = OS::get_singleton()->get_ticks_usec() - began;
 	}
@@ -1004,8 +1020,8 @@ void EntityCatalog::_collect_compaction() {
 	compaction_job = nullptr;
 }
 
-void EntityCatalog::_schedule_compaction() {
-	if (shutting_down || compaction_job || (locator_runs.size() < RUN_COMPACTION_THRESHOLD && child_runs.size() < RUN_COMPACTION_THRESHOLD)) {
+void EntityCatalog::_schedule_compaction(bool p_force) {
+	if (shutting_down || compaction_job || (!p_force && locator_runs.size() < RUN_COMPACTION_THRESHOLD && child_runs.size() < RUN_COMPACTION_THRESHOLD)) {
 		return;
 	}
 	EntityTaskScheduler *scheduler = EntityTaskScheduler::get_singleton();
@@ -1014,16 +1030,26 @@ void EntityCatalog::_schedule_compaction() {
 	}
 	uint64_t entry_bytes = 0;
 	for (const Ref<LocatorRun> &run : locator_runs) {
-		entry_bytes += uint64_t(run->entries.size()) * sizeof(LocatorEntry);
+		const uint64_t added = uint64_t(run->entries.size()) * sizeof(LocatorEntry);
+		if (added > UINT64_MAX - entry_bytes) {
+			return;
+		}
+		entry_bytes += added;
 	}
 	for (const Ref<ChildRun> &run : child_runs) {
-		entry_bytes += uint64_t(run->by_child.size() + run->by_parent.size()) * sizeof(ChildEntry);
+		const uint64_t added = (uint64_t(run->by_child.size()) + uint64_t(run->by_parent.size())) * sizeof(ChildEntry);
+		if (added > UINT64_MAX - entry_bytes) {
+			return;
+		}
+		entry_bytes += added;
 	}
-	if (_run_bytes() + entry_bytes > RUN_BYTE_HARD_CAP) {
+	const uint64_t current_bytes = _run_bytes();
+	const uint64_t overhead = sizeof(CompactionJob) + 4096;
+	if (current_bytes > RUN_BYTE_HARD_CAP || entry_bytes > (EntityTaskScheduler::Graph::BYTE_BUDGET - overhead) / 4) {
 		return;
 	}
 	EntityTaskScheduler::Reservation reservation;
-	if (scheduler->reserve(reservation, sizeof(CompactionJob) + entry_bytes * 4 + 4096, true) != OK) {
+	if (scheduler->reserve(reservation, overhead + entry_bytes * 4, true) != OK) {
 		return;
 	}
 	if (compaction_mailbox.is_null()) {

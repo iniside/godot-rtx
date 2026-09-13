@@ -153,7 +153,8 @@ private:
 
 	static constexpr uint32_t RUN_COMPACTION_THRESHOLD = 4;
 	static constexpr uint32_t RUN_HARD_CAP = 8;
-	static constexpr uint64_t RUN_BYTE_HARD_CAP = 256 * 1024 * 1024;
+	static constexpr uint64_t RUN_BYTE_HARD_CAP = 60 * 1024 * 1024;
+	static_assert(RUN_BYTE_HARD_CAP <= (EntityTaskScheduler::Graph::BYTE_BUDGET - sizeof(CompactionJob) - 4096) / 4);
 	LocalVector<Ref<LocatorRun>> locator_runs;
 	LocalVector<Ref<ChildRun>> child_runs;
 	Ref<EntityTaskScheduler::Mailbox> compaction_mailbox;
@@ -180,7 +181,7 @@ private:
 	void _publish_locator_rows(uint32_t p_block, const Vector<uint32_t> *p_rows = nullptr, bool p_invalid = false);
 	void _publish_child_rows(uint32_t p_block, const Vector<uint32_t> *p_rows = nullptr, bool p_invalid = false);
 	void _rebuild_block_indices(uint32_t p_block);
-	void _schedule_compaction();
+	void _schedule_compaction(bool p_force = false);
 	void _collect_compaction();
 
 public:

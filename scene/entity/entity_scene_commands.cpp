@@ -662,6 +662,7 @@ Error EntitySceneCommands::_reconcile_prefab_catalog() {
 		for (const Variant &source_key : mapping.get_key_list()) {
 			EntityId source_id;
 			EntityId id;
+			// TODO: Make a prefab instance one atomic cell load/release unit before supporting streamed-cell prefabs.
 			if (EntityId::parse(source_key, source_id) != OK || !source_id.is_valid() || EntityId::parse(mapping[source_key], id) != OK || !id.is_valid() || document.catalog.get_state(id) == EntityReferenceState::MISSING) {
 				return document._fail(id, "prefab/mapping", ERR_INVALID_DATA);
 			}
